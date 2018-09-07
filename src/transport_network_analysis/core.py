@@ -3,3 +3,4 @@
 """
 Core code for package"""
 
+import networkx
