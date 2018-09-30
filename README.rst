@@ -13,17 +13,17 @@ Routines to perform actions on a basic networkx graph
 Installations
 =============
 
-git clone https://github.com/TUDelft-CITG/Transport-Network-Analysis
+    git clone https://github.com/TUDelft-CITG/Transport-Network-Analysis
 
-cd Transport-Network-Analysis
+    cd Transport-Network-Analysis
 
-pip install -U pip
+    pip install -U pip
 
-pip install -U setuptools
+    pip install -U setuptools
 
-pip install sphinx
+    pip install sphinx
 
-pip install -e .
+    pip install -e .
 
 
 Note
