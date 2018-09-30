@@ -3,13 +3,27 @@ transport-network-analysis
 ==========================
 
 
-Add a short description here!
-
+Transport network analysis package 
 
 Description
 ===========
 
-A longer description of your project goes here...
+Routines to perform actions on a basic networkx graph
+
+Installations
+=============
+
+git clone https://github.com/TUDelft-CITG/Transport-Network-Analysis
+
+cd Transport-Network-Analysis
+
+pip install -U pip
+
+pip install -U setuptools
+
+pip install sphinx
+
+pip install -e .
 
 
 Note
@@ -17,3 +31,4 @@ Note
 
 This project has been set up using PyScaffold 3.1. For details and usage
 information on PyScaffold see https://pyscaffold.org/.
+
