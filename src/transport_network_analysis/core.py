@@ -237,7 +237,8 @@ class Log(SimpyObject):
 
     log: log message [format: 'start activity' or 'stop activity']
     t: timestamp
-    value: a value can be logged as well"""
+    value: a value can be logged as well
+    geometry: value from locatable (lat, lon)"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -245,17 +246,19 @@ class Log(SimpyObject):
         self.log = []
         self.t = []
         self.value = []
+        self.geometry_log = []
 
-    def log_entry(self, log, t, value):
+    def log_entry(self, log, t, value, geometry_log):
         """Log"""
         self.log.append(log)
         self.t.append(t)
         self.value.append(value)
+        self.geometry_log.append(geometry_log)
 
     def get_log_as_json(self):
         json = []
-        for msg, t, value in zip(self.log, self.t, self.value):
-            json.append(dict(message=msg, time=t, value=value))
+        for msg, t, value in zip(self.log, self.t, self.value, self.geometry_log):
+            json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
         return json
 
 
