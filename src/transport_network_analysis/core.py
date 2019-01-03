@@ -153,11 +153,12 @@ class Movable(SimpyObject, Locatable, Routeable):
         self.v = v
         self.wgs84 = pyproj.Geod(ellps='WGS84')
 
-    def move(self, origination, destination):
+    def move(self):
         """determine distance between origin and destination, and
-        yield the time it takes to travel it"""
-        #orig = shapely.geometry.asShape(self.geometry)
-        #dest = shapely.geometry.asShape(destination.geometry)
+        yield the time it takes to travel it
+        
+        Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
+        """
         
         distance = 0
 
@@ -165,9 +166,8 @@ class Movable(SimpyObject, Locatable, Routeable):
             orig = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0]]]
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0] + 1]]
             
-            orig = shapely.geometry.asShape(orig)
-            dest = shapely.geometry.asShape(dest)
-            distance += self.wgs84.inv(orig.x, orig.y, dest.x, dest.y)[2]
+            distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+                                       shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
     
             if node[0] + 2 == len(self.route):
                 break
@@ -180,7 +180,7 @@ class Movable(SimpyObject, Locatable, Routeable):
             self.check_fuel(fuel_consumed)
 
         yield self.env.timeout(distance / speed)
-        self.geometry = destination.geometry
+        self.geometry = dest
         logger.debug('  distance: ' + '%4.2f' % distance + ' m')
         logger.debug('  sailing:  ' + '%4.2f' % speed + ' m/s')
         logger.debug('  duration: ' + '%4.2f' % ((distance / speed) / 3600) + ' hrs')
