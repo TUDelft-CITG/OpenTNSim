@@ -10,6 +10,7 @@ import uuid
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
+import networkx as nx
 
 # spatial libraries
 import pyproj
@@ -52,15 +53,17 @@ class Locatable:
         """Initialization"""
         self.geometry = geometry
 
-class Routeable:
-    """Something with a route (networkx format)
 
-    route: a networkx path"""
+class Neighbours:
+    """Can be added to a locatable object (list)
+    
+    travel_to: list of locatables to which can be travelled"""
 
-    def __init__(self, route, *args, **kwargs):
+    def ___init(self, travel_to, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.route = route
+        self.neighbours = travel_to
+
 
 class HasContainer(SimpyObject):
     """Container class
@@ -127,7 +130,17 @@ class HasFuel(SimpyObject):
             #self.log_entry(latest_log[0], self.env.now, latest_log[2])
 
 
-class Movable(SimpyObject, Locatable):
+class Routeable:
+    """Something with a route (networkx format)
+    route: a networkx path"""
+
+    def __init__(self, route, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.route = route
+
+
+class Movable(SimpyObject, Locatable, Routeable):
     """Movable class
 
     Used for object that can move with a fixed speed
@@ -140,12 +153,24 @@ class Movable(SimpyObject, Locatable):
         self.v = v
         self.wgs84 = pyproj.Geod(ellps='WGS84')
 
-    def move(self, destination):
+    def move(self, origination, destination):
         """determine distance between origin and destination, and
         yield the time it takes to travel it"""
-        orig = shapely.geometry.asShape(self.geometry)
-        dest = shapely.geometry.asShape(destination.geometry)
-        forward, backward, distance = self.wgs84.inv(orig.x, orig.y, dest.x, dest.y)
+        #orig = shapely.geometry.asShape(self.geometry)
+        #dest = shapely.geometry.asShape(destination.geometry)
+        dijkstra = nx.dijkstra_path(self.route, origination.name, destination.name)
+        distance = 0
+
+        for node in enumerate(dijkstra):
+            orig = nx.get_node_attributes(self.route, "geometry")[dijkstra[node[0]]]
+            dest = nx.get_node_attributes(self.route, "geometry")[dijkstra[node[0] + 1]]
+            
+            orig = shapely.geometry.asShape(orig)
+            dest = shapely.geometry.asShape(dest)
+            distance += self.wgs84.inv(orig.x, orig.y, dest.x, dest.y)[2]
+    
+            if node[0] + 2 == len(dijkstra):
+                break
 
         speed = self.current_speed
 
@@ -155,7 +180,7 @@ class Movable(SimpyObject, Locatable):
             self.check_fuel(fuel_consumed)
 
         yield self.env.timeout(distance / speed)
-        self.geometry = dest
+        self.geometry = destination.geometry
         logger.debug('  distance: ' + '%4.2f' % distance + ' m')
         logger.debug('  sailing:  ' + '%4.2f' % speed + ' m/s')
         logger.debug('  duration: ' + '%4.2f' % ((distance / speed) / 3600) + ' hrs')
@@ -212,8 +237,7 @@ class Log(SimpyObject):
 
     log: log message [format: 'start activity' or 'stop activity']
     t: timestamp
-    value: a value can be logged as well
-    geometry: value from locatable (lat, lon)"""
+    value: a value can be logged as well"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -221,19 +245,17 @@ class Log(SimpyObject):
         self.log = []
         self.t = []
         self.value = []
-        self.geometry_log = []
 
-    def log_entry(self, log, t, value, geometry_log):
+    def log_entry(self, log, t, value):
         """Log"""
         self.log.append(log)
         self.t.append(t)
         self.value.append(value)
-        self.geometry_log.append(geometry_log)
 
     def get_log_as_json(self):
         json = []
-        for msg, t, value in zip(self.log, self.t, self.value, self.geometry_log):
-            json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
+        for msg, t, value in zip(self.log, self.t, self.value):
+            json.append(dict(message=msg, time=t, value=value))
         return json
 
 
