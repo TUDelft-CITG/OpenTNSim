@@ -52,6 +52,15 @@ class Locatable:
         """Initialization"""
         self.geometry = geometry
 
+class Routeable:
+    """Something with a route (networkx format)
+
+    route: a networkx path"""
+
+    def __init__(self, route, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.route = route
 
 class HasContainer(SimpyObject):
     """Container class
