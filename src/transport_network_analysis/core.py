@@ -158,18 +158,18 @@ class Movable(SimpyObject, Locatable, Routeable):
         yield the time it takes to travel it"""
         #orig = shapely.geometry.asShape(self.geometry)
         #dest = shapely.geometry.asShape(destination.geometry)
-        dijkstra = nx.dijkstra_path(self.route, origination.name, destination.name)
+        
         distance = 0
 
-        for node in enumerate(dijkstra):
-            orig = nx.get_node_attributes(self.route, "geometry")[dijkstra[node[0]]]
-            dest = nx.get_node_attributes(self.route, "geometry")[dijkstra[node[0] + 1]]
+        for node in enumerate(self.route):
+            orig = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0]]]
+            dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0] + 1]]
             
             orig = shapely.geometry.asShape(orig)
             dest = shapely.geometry.asShape(dest)
             distance += self.wgs84.inv(orig.x, orig.y, dest.x, dest.y)[2]
     
-            if node[0] + 2 == len(dijkstra):
+            if node[0] + 2 == len(self.route):
                 break
 
         speed = self.current_speed
