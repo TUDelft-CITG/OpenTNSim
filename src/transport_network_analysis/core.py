@@ -160,26 +160,27 @@ class Movable(SimpyObject, Locatable, Routeable):
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
         
+        speed = self.current_speed
         distance = 0
 
         for node in enumerate(self.route):
             orig = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0]]]
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0] + 1]]
             
-            distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
-                                       shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+            distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+                                      shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
     
+            yield self.env.timeout(distance / speed)
+            self.log_entry("Sailing", self.env.now, 0, dest)
+
             if node[0] + 2 == len(self.route):
                 break
-
-        speed = self.current_speed
 
         # check for sufficient fuel
         if isinstance(self, HasFuel):
             fuel_consumed = self.fuel_use_sailing(distance, speed)
             self.check_fuel(fuel_consumed)
 
-        yield self.env.timeout(distance / speed)
         self.geometry = dest
         logger.debug('  distance: ' + '%4.2f' % distance + ' m')
         logger.debug('  sailing:  ' + '%4.2f' % speed + ' m/s')
