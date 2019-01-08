@@ -161,8 +161,19 @@ class Movable(SimpyObject, Locatable, Routeable):
         """
         
         speed = self.current_speed
-        distance = 0
 
+        # Check if vessel is at correct location - if note, move to location
+        if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
+            orig = self.geometry
+            dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+            
+            distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+                                      shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+    
+            yield self.env.timeout(distance / speed)
+            self.log_entry("Sailing to start", self.env.now, distance, dest)
+
+        # Move over the path and log every step
         for node in enumerate(self.route):
             orig = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0]]]
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0] + 1]]
@@ -171,7 +182,7 @@ class Movable(SimpyObject, Locatable, Routeable):
                                       shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
     
             yield self.env.timeout(distance / speed)
-            self.log_entry("Sailing", self.env.now, 0, dest)
+            self.log_entry("Sailing from node {} to node {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, distance, dest)
 
             if node[0] + 2 == len(self.route):
                 break
@@ -244,21 +255,21 @@ class Log(SimpyObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.log = []
-        self.t = []
-        self.value = []
-        self.geometry_log = []
+        self.log = {"Message": [],
+                    "Timestamp": [],
+                    "Value": [],
+                    "Geometry": []}
 
     def log_entry(self, log, t, value, geometry_log):
         """Log"""
-        self.log.append(log)
-        self.t.append(t)
-        self.value.append(value)
-        self.geometry_log.append(geometry_log)
+        self.log["Message"].append(log)
+        self.log["Timestamp"].append(t)
+        self.log["Value"].append(value)
+        self.log["Geometry"].append(geometry_log)
 
     def get_log_as_json(self):
         json = []
-        for msg, t, value in zip(self.log, self.t, self.value, self.geometry_log):
+        for msg, t, value, geometry_log in zip(self.log["Message"], self.log["Timestamp"], self.log["Value"], self.log["Geometry"]):
             json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
         return json
 
