@@ -163,9 +163,9 @@ class Movable(SimpyObject, Locatable, Routeable):
         speed = self.current_speed
 
         # Check if vessel is at correct location - if note, move to location
-        if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
+        if self.geometry != nx.get_node_attributes(self.env.FG, "Geometry")[self.route[0]]:
             orig = self.geometry
-            dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+            dest = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[0]]
             
             distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
                                       shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
@@ -175,8 +175,8 @@ class Movable(SimpyObject, Locatable, Routeable):
 
         # Move over the path and log every step
         for node in enumerate(self.route):
-            orig = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0]]]
-            dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[node[0] + 1]]
+            orig = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[node[0]]]
+            dest = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[node[0] + 1]]
             
             distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
                                       shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]

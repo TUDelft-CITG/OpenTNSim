@@ -72,7 +72,7 @@ class Graph():
     
 
     def create_graph_new_projection(self, to_EPSG = 4326):
-        new_graph = nx.DiGraph()
+        new_graph = nx.Graph()
         transform = self.transform_projection(to_EPSG)
         
         # Required to prevent loop-in-loop
@@ -92,6 +92,8 @@ class Graph():
             node_2 = nodes_dict[edge[1]]
             
             new_graph.add_edge(node_1, node_2, Info = edge[2])
+
+        new_graph = new_graph.to_directed()
 
         if nx.info(new_graph) == self.graph_info:
             self.graph = new_graph
