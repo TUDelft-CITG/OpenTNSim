@@ -234,46 +234,52 @@ class Movable(SimpyObject, Locatable, Routeable):
 
     def pass_lock(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
+        orig = nx.get_node_attributes(self.env.FG, "Geometry")[origin]
+        dest = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
         water_level = origin
         
-        # Check direction 
-        if "Water level" in edge.keys():
-            
-            # If water level at origin is not similar to lock-water level --> change water level and wait
-            if water_level != edge["Water level"]:
+        with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+            yield request
+        
+            # Check direction 
+            if "Water level" in edge.keys():
+                
+                # If water level at origin is not similar to lock-water level --> change water level and wait
+                if water_level != edge["Water level"]:
+                    
+                    # Doors closing
+                    self.log_entry("Doors closing", self.env.now, 10 * 60, orig)
+                    yield self.env.timeout(10 * 60)
+
+                    # Converting chamber
+                    chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
+                    self.log_entry("Converting chamber", self.env.now, 20 * 60, chamber)
+                    yield self.env.timeout(20 * 60)
+
+                    # Doors opening
+                    self.log_entry("Doors opening", self.env.now, 10 * 60, orig)
+                    yield self.env.timeout(10 * 60)
+
+                    # Change edge water level
+                    self.env.FG.edges[origin, destination]["Water level"] = water_level
+
+            # If direction is similar to lock-water level --> pass the lock
+            if not "Water level" in edge.keys() or edge["Water level"] == water_level:
                 
                 # Doors closing
-                self.log_entry("Doors closing", self.env.now, 0, origin)
-                yield self.env.timeout(10 * 60)
+                self.log_entry("Sailing into lock", self.env.now, 5 * 60, orig)
+                yield self.env.timeout(5 * 60)
 
                 # Converting chamber
-                self.log_entry("Converting chamber", self.env.now, 0, origin)
-                yield self.env.timeout(20 * 60)
+                chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
+                self.log_entry("Converting chamber", self.env.now, 20 * 60, chamber)
 
                 # Doors opening
-                self.log_entry("Doors opening", self.env.now, 0, origin)
-                yield self.env.timeout(10 * 60)
+                self.log_entry("Sailing out of lock", self.env.now, 5 * 60, orig)
+                yield self.env.timeout(5 * 60)
 
                 # Change edge water level
-                self.env.FG.edges[origin, destination]["Water level"] = water_level
-
-        # If direction is similar to lock-water level --> pass the lock
-        if not "Water level" in edge.keys() or edge["Water level"] == water_level:
-            
-            # Doors closing
-            self.log_entry("Sailing into lock", self.env.now, 0, origin)
-            yield self.env.timeout(5 * 60)
-
-            # Converting chamber
-            self.log_entry("Converting chamber", self.env.now, 0, origin)
-            yield self.env.timeout(20 * 60)
-
-            # Doors opening
-            self.log_entry("Sailing out of lock", self.env.now, 0, origin)
-            yield self.env.timeout(5 * 60)
-
-            # Change edge water level
-            self.env.FG.edges[origin, destination]["Water level"] = destination
+                self.env.FG.edges[origin, destination]["Water level"] = destination
 
     def is_at(self, locatable, tolerance=100):
         current_location = shapely.geometry.asShape(self.geometry)
