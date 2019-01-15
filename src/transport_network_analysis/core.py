@@ -159,62 +159,133 @@ class Movable(SimpyObject, Locatable, Routeable):
         
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
-        
-        speed = self.current_speed
+        self.distance = 0
 
         # Check if vessel is at correct location - if note, move to location
-        if self.geometry != nx.get_node_attributes(self.env.FG, "Geometry")[self.route[0]]:
+        if self.geometry != nx.get_node_attributes(self.env.FG.graph, "Geometry")[self.route[0]]:
             orig = self.geometry
-            dest = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[0]]
+            dest = nx.get_node_attributes(self.env.FG.graph, "Geometry")[self.route[0]]
             
-            distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
-                                      shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+            self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+                                            shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
     
-            yield self.env.timeout(distance / speed)
-            self.log_entry("Sailing to start", self.env.now, distance, dest)
+            yield self.env.timeout(self.distance / self.current_speed)
+            self.log_entry("Sailing to start", self.env.now, self.distance, dest)
 
         # Move over the path and log every step
         for node in enumerate(self.route):
-            orig = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[node[0]]]
-            dest = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[node[0] + 1]]
+            origin = self.route[node[0]]
+            destination = self.route[node[0] + 1]
 
-            distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
-                                        shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
-
-            arrival = self.env.now
-
-            if self.env.FG.edges[self.route[node[0]], self.route[node[0] + 1]]["Resources"]:
-                with self.env.FG.edges[self.route[node[0]], self.route[node[0] + 1]]["Resources"].request() as pass_edge:
-                    yield pass_edge
-
-                    if arrival != self.env.now:
-                        yield self.env.timeout(self.env.now - arrival)
-                        self.log_entry("Waiting to pass edge {} - {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, 0, orig)    
-            
-                    yield self.env.timeout(distance / speed)
-                    self.log_entry("Sailing from node {} to node {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, distance, dest)
-            
-            else:
-                yield self.env.timeout(distance / speed)
-                self.log_entry("Sailing from node {} to node {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, distance, dest)
+            #print(list(self.pass_edge(origin, destination)))
+            yield from self.pass_edge(origin, destination)
 
             if node[0] + 2 == len(self.route):
                 break
 
         # check for sufficient fuel
         if isinstance(self, HasFuel):
-            fuel_consumed = self.fuel_use_sailing(distance, speed)
+            fuel_consumed = self.fuel_use_sailing(self.distance, self.current_speed)
             self.check_fuel(fuel_consumed)
 
-        self.geometry = dest
-        logger.debug('  distance: ' + '%4.2f' % distance + ' m')
-        logger.debug('  sailing:  ' + '%4.2f' % speed + ' m/s')
-        logger.debug('  duration: ' + '%4.2f' % ((distance / speed) / 3600) + ' hrs')
+        self.geometry = nx.get_node_attributes(self.env.FG.graph, "Geometry")[destination]
+        logger.debug('  distance: ' + '%4.2f' % self.distance + ' m')
+        logger.debug('  sailing:  ' + '%4.2f' % self.current_speed + ' m/s')
+        logger.debug('  duration: ' + '%4.2f' % ((self.distance / self.current_speed) / 3600) + ' hrs')
 
         # lower the fuel
         if isinstance(self, HasFuel):
             # remove seconds of fuel
             self.consume(fuel_consumed)
+    
+    def pass_edge(self, origin, destination):
+        edge = self.env.FG.graph.edges[origin, destination]
+        orig = nx.get_node_attributes(self.env.FG.graph, "Geometry")[origin]
+        dest = nx.get_node_attributes(self.env.FG.graph, "Geometry")[destination]
+
+        distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+                                  shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+
+        self.distance += distance
+        arrival = self.env.now
+
+        print("***")
+        
+        if "Object" in edge.keys() and "Resources" in edge.keys():
+            with self.env.FG.graph.edges[origin, destination]["Resources"].request() as request:
+                yield request
+
+                if edge["Object"] == "Lock":
+                    self.pass_lock(origin, destination)
+                else:
+                    if arrival != self.env.now:
+                        yield self.env.timeout(self.env.now - arrival)
+                        self.log_entry("Waiting to pass edge {} - {}".format(origin, destination), self.env.now, 0, orig)    
+        
+                    self.env.timeout(distance / self.current_speed)
+                    self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, distance, dest)
+        
+        # Act based on resources
+        elif "Resources" in edge.keys():
+            print("*** ***")
+            with self.env.FG.graph.edges[origin, destination]["Resources"].request() as request:
+                yield request
+
+                print("*** *** ***")
+                if arrival != self.env.now:
+                    yield self.env.timeout(self.env.now - arrival)
+                    self.log_entry("Waiting to pass edge {} - {}".format(origin, destination), self.env.now, 0, orig)    
+
+                yield self.env.timeout(distance / self.current_speed)
+                self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, distance, dest)
+        
+        else:
+            yield self.env.timeout(distance / self.current_speed)
+            self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, distance, dest)
+        
+
+    def pass_lock(self, origin, destination):
+        edge = self.graph.edges[origin, destination]
+        water_level = origin
+        
+        # Check direction 
+        if edge["Water level"]:
+            
+            # If water level at origin is not similar to lock-water level --> change water level and wait
+            if water_level != edge["Water level"]:
+                
+                # Doors closing
+                passer.log_entry("Doors closing", passer.env.now, 0, origin)
+                passer.env.timeout(10 * 60)
+
+                # Converting chamber
+                passer.log_entry("Converting chamber", passer.env.now, 0, origin)
+                passer.env.timeout(20 * 60)
+
+                # Doors opening
+                passer.log_entry("Doors opening", passer.env.now, 0, origin)
+                passer.env.timeout(10 * 60)
+
+                # Change edge water level
+                self.graph.edges[origin, destination]["Water level"] = water_level
+
+        # If direction is similar to lock-water level --> pass the lock
+        if not edge["Water level"] or edge["Water level"] == water_level:
+            
+            # Doors closing
+            passer.log_entry("Sailing into lock", passer.env.now, 0, origin)
+            passer.env.timeout(5 * 60)
+
+            # Converting chamber
+            passer.log_entry("Converting chamber", passer.env.now, 0, origin)
+            passer.env.timeout(20 * 60)
+
+            # Doors opening
+            passer.log_entry("Sailing out of lock", passer.env.now, 0, origin)
+            passer.env.timeout(5 * 60)
+
+            # Change edge water level
+            self.graph.edges[origin, destination]["Water level"] = destination
 
     def is_at(self, locatable, tolerance=100):
         current_location = shapely.geometry.asShape(self.geometry)
