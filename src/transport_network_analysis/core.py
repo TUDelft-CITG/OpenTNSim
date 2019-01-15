@@ -234,13 +234,30 @@ class Movable(SimpyObject, Locatable, Routeable):
 
     def pass_lock(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
+        edge_opposite = self.env.FG.edges[destination, origin]
         orig = nx.get_node_attributes(self.env.FG, "Geometry")[origin]
         dest = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
         water_level = origin
+
+        # Check if it is in use
+        if "In use" in edge.keys():
+            while True:
+                if edge["In use"] == True:
+                    if self.log["Message"][-1] != "Waiting for lock start":
+                        self.log_entry("Waiting for lock start", self.env.now, 0, orig)
+                    
+                    yield self.env.timeout(60)
+                    continue
+                else:
+                    edge["In use"] = True
+                    edge_opposite["In use"] = True
+
+                    self.log_entry("Waiting for lock stop", self.env.now, 0, orig)
+                    break
         
         with self.env.FG.edges[origin, destination]["Resources"].request() as request:
             yield request
-        
+
             # Check direction 
             if "Water level" in edge.keys():
                 
@@ -280,6 +297,9 @@ class Movable(SimpyObject, Locatable, Routeable):
 
                 # Change edge water level
                 self.env.FG.edges[origin, destination]["Water level"] = destination
+            
+            edge["In use"] = False
+            edge_opposite["In use"] = False
 
     def is_at(self, locatable, tolerance=100):
         current_location = shapely.geometry.asShape(self.geometry)
