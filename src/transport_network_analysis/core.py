@@ -177,7 +177,6 @@ class Movable(SimpyObject, Locatable, Routeable):
             origin = self.route[node[0]]
             destination = self.route[node[0] + 1]
 
-            #print(list(self.pass_edge(origin, destination)))
             yield from self.pass_edge(origin, destination)
 
             if node[0] + 2 == len(self.route):
@@ -208,8 +207,6 @@ class Movable(SimpyObject, Locatable, Routeable):
 
         self.distance += distance
         arrival = self.env.now
-
-        print("***")
         
         if "Object" in edge.keys() and "Resources" in edge.keys():
             with self.env.FG.graph.edges[origin, destination]["Resources"].request() as request:
@@ -227,11 +224,9 @@ class Movable(SimpyObject, Locatable, Routeable):
         
         # Act based on resources
         elif "Resources" in edge.keys():
-            print("*** ***")
             with self.env.FG.graph.edges[origin, destination]["Resources"].request() as request:
                 yield request
 
-                print("*** *** ***")
                 if arrival != self.env.now:
                     yield self.env.timeout(self.env.now - arrival)
                     self.log_entry("Waiting to pass edge {} - {}".format(origin, destination), self.env.now, 0, orig)    
