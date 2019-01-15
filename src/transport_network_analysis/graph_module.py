@@ -19,6 +19,7 @@ import shapely.geometry
 from osgeo import ogr, osr
 
 # matplotlib
+import math
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,11 @@ class Graph():
             self.graph_info = nx.info(new_graph)
     
 
+    def add_resources(self, edges, resources, environment):
+        for i, edge in enumerate(edges):
+            self.graph.edges[edge]["Resources"] = simpy.Resource(environment, capacity = resources[i])
+
+    
     def plot(self, size = [10, 10], with_labels = False, node_size = 0.5, font_size = 2, width = 0.2, arrowsize = 3):
         plt.figure(figsize = size)
 

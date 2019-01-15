@@ -177,12 +177,26 @@ class Movable(SimpyObject, Locatable, Routeable):
         for node in enumerate(self.route):
             orig = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[node[0]]]
             dest = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[node[0] + 1]]
-            
+
             distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
-                                      shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
-    
-            yield self.env.timeout(distance / speed)
-            self.log_entry("Sailing from node {} to node {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, distance, dest)
+                                        shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+
+            arrival = self.env.now
+
+            if self.env.FG.edges[self.route[node[0]], self.route[node[0] + 1]]["Resources"]:
+                with self.env.FG.edges[self.route[node[0]], self.route[node[0] + 1]]["Resources"].request() as pass_edge:
+                    yield pass_edge
+
+                    if arrival != self.env.now:
+                        yield self.env.timeout(self.env.now - arrival)
+                        self.log_entry("Waiting to pass edge {} - {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, 0, orig)    
+            
+                    yield self.env.timeout(distance / speed)
+                    self.log_entry("Sailing from node {} to node {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, distance, dest)
+            
+            else:
+                yield self.env.timeout(distance / speed)
+                self.log_entry("Sailing from node {} to node {}".format(self.route[node[0]], self.route[node[0] + 1]), self.env.now, distance, dest)
 
             if node[0] + 2 == len(self.route):
                 break
