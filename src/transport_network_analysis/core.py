@@ -255,7 +255,15 @@ class Movable(SimpyObject, Locatable, Routeable):
                     self.log_entry("Waiting for lock stop", self.env.now, 0, orig)
                     break
         
-        with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+        if "Water level" in edge.keys():
+            if edge["Water level"] == water_level:
+                priority = 0
+            else:
+                priority = 1
+        else:
+            priority = 0
+
+        with self.env.FG.edges[origin, destination]["Resources"].request(priority = priority) as request:
             yield request
 
             # Check direction 
