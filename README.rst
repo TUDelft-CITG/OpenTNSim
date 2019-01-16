@@ -2,13 +2,12 @@
 transport-network-analysis
 ==========================
 
-
 Transport network analysis package 
 
 Description
 ===========
 
-Routines to perform actions on a basic networkx graph
+The Transport Network Analysis package aims to facilitate basic nautical traffic simulations. For routing issues this package primarily makes use of the python package networkx. It furthermore contains a number of generically formulated vessel classes. These classes can easily be used and expanded to enable investigation of: travel times, rough cost estimates, fuel use, emissions, congestions, etc. To simulate how vessels move over the network and sometimes interact with eachother and with the infrastructure the SimPy package is used. A number of basic visualisation routines is included to enable easy inspection of the simulation results.
 
 Installations
 =============
