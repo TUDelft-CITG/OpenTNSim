@@ -181,6 +181,8 @@ class Movable(SimpyObject, Locatable, Routeable):
             if "Object" in edge.keys():
                 if edge["Object"] == "Lock":
                     yield from self.pass_lock(origin, destination)
+                elif edge["Object"] == "Waiting Area":
+                    yield from self.pass_waiting_area(origin, destination, self.route[node[0] + 2])
                 else:
                     yield from self.pass_edge(origin, destination)
             else:
@@ -221,15 +223,17 @@ class Movable(SimpyObject, Locatable, Routeable):
                 yield request
 
                 if arrival != self.env.now:
-                    yield self.env.timeout(self.env.now - arrival)
-                    self.log_entry("Waiting to pass edge {} - {}".format(origin, destination), self.env.now, 0, orig)    
+                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
+                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
 
+                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
                 yield self.env.timeout(distance / self.current_speed)
-                self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, distance, dest)
+                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
         
         else:
+            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
             yield self.env.timeout(distance / self.current_speed)
-            self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, distance, dest)
+            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest)
         
 
     def pass_lock(self, origin, destination):
@@ -239,21 +243,11 @@ class Movable(SimpyObject, Locatable, Routeable):
         dest = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
         water_level = origin
 
-        # Check if it is in use
-        if "In use" in edge.keys():
-            while True:
-                if edge["In use"] == True:
-                    if self.log["Message"][-1] != "Waiting for lock start":
-                        self.log_entry("Waiting for lock start", self.env.now, 0, orig)
-                    
-                    yield self.env.timeout(60)
-                    continue
-                else:
-                    edge["In use"] = True
-                    edge_opposite["In use"] = True
+        distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+                                  shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
 
-                    self.log_entry("Waiting for lock stop", self.env.now, 0, orig)
-                    break
+        self.distance += distance
+        arrival = self.env.now
         
         if "Water level" in edge.keys():
             if edge["Water level"] == water_level:
@@ -266,6 +260,10 @@ class Movable(SimpyObject, Locatable, Routeable):
         with self.env.FG.edges[origin, destination]["Resources"].request(priority = priority) as request:
             yield request
 
+            if arrival != self.env.now:
+                self.log_entry("Waiting to pass lock start".format(origin, destination), arrival, 0, orig)
+                self.log_entry("Waiting to pass lock stop".format(origin, destination), self.env.now, 0, orig)
+
             # Check direction 
             if "Water level" in edge.keys():
                 
@@ -273,41 +271,104 @@ class Movable(SimpyObject, Locatable, Routeable):
                 if water_level != edge["Water level"]:
                     
                     # Doors closing
-                    self.log_entry("Doors closing", self.env.now, 10 * 60, orig)
+                    self.log_entry("Doors closing start", self.env.now, 0, orig)
                     yield self.env.timeout(10 * 60)
+                    self.log_entry("Doors closing stop", self.env.now, 0, orig)
 
                     # Converting chamber
-                    chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
-                    self.log_entry("Converting chamber", self.env.now, 20 * 60, chamber)
+                    self.log_entry("Converting chamber start", self.env.now, 0, orig)
                     yield self.env.timeout(20 * 60)
+                    self.log_entry("Converting chamber stop", self.env.now, 0, orig)
 
                     # Doors opening
-                    self.log_entry("Doors opening", self.env.now, 10 * 60, orig)
+                    self.log_entry("Doors opening start", self.env.now, 0, orig)
                     yield self.env.timeout(10 * 60)
+                    self.log_entry("Doors opening start", self.env.now, 0, orig)
 
                     # Change edge water level
                     self.env.FG.edges[origin, destination]["Water level"] = water_level
 
             # If direction is similar to lock-water level --> pass the lock
             if not "Water level" in edge.keys() or edge["Water level"] == water_level:
+                chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
                 
-                # Doors closing
-                self.log_entry("Sailing into lock", self.env.now, 5 * 60, orig)
+                # Sailing in
+                self.log_entry("Sailing into lock start", self.env.now, 0, orig)
                 yield self.env.timeout(5 * 60)
+                self.log_entry("Sailing into lock stop", self.env.now, 0, chamber)
+
+                # Doors closing
+                self.log_entry("Doors closing start", self.env.now, 0, chamber)
+                yield self.env.timeout(10 * 60)
+                self.log_entry("Doors closing stop", self.env.now, 0, chamber)
 
                 # Converting chamber
                 chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
-                self.log_entry("Converting chamber", self.env.now, 20 * 60, chamber)
+                self.log_entry("Converting chamber start", self.env.now, 0, chamber)
+                yield self.env.timeout(20 * 60)
+                self.log_entry("Converting chamber stop", self.env.now, 0, chamber)
 
                 # Doors opening
-                self.log_entry("Sailing out of lock", self.env.now, 5 * 60, orig)
+                self.log_entry("Doors opening start", self.env.now, 0, chamber)
+                yield self.env.timeout(10 * 60)
+                self.log_entry("Doors opening stop", self.env.now, 0, chamber)
+
+                # Sailing out
+                self.log_entry("Sailing out of lock start", self.env.now, 0, chamber)
                 yield self.env.timeout(5 * 60)
+                self.log_entry("Sailing out of lock stop", self.env.now, 0, dest)
 
                 # Change edge water level
                 self.env.FG.edges[origin, destination]["Water level"] = destination
-            
-            edge["In use"] = False
-            edge_opposite["In use"] = False
+        
+            # Change edge water level
+            self.env.FG.edges[origin, destination]["Water level"] = destination
+    
+    def pass_waiting_area(self, origin, destination, lock):
+        edge = self.env.FG.edges[origin, destination]
+        edge_lock = self.env.FG.edges[destination, lock]
+        orig = nx.get_node_attributes(self.env.FG, "Geometry")[origin]
+        dest = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
+        water_level = destination
+
+        distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+                                  shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+
+        self.distance += distance
+        arrival = self.env.now
+        
+        # Act based on resources
+        if "Resources" in edge.keys():
+            with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+                yield request
+
+                if arrival != self.env.now:
+                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
+                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
+
+                if "Water level" in edge_lock.keys():
+                    if edge_lock["Water level"] != water_level:
+                        self.log_entry("Waiting to pass lock start".format(origin, destination), self.env.now, 0, orig)
+
+                        while edge_lock["Water level"] != water_level:
+                            yield self.env.timeout(60)
+                        
+                        self.log_entry("Waiting to pass lock stop".format(origin, destination), self.env.now, 0, dest)
+                    
+                    else:
+                        self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+                        yield self.env.timeout(distance / self.current_speed)
+                        self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+                    
+                else:
+                    self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+                    yield self.env.timeout(distance / self.current_speed)
+                    self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+        
+        else:
+            yield self.env.timeout(distance / self.current_speed)
+            self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+
 
     def is_at(self, locatable, tolerance=100):
         current_location = shapely.geometry.asShape(self.geometry)
