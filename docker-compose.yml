@@ -1,0 +1,9 @@
+version: '2'
+
+services:
+  transport_network_analysis:
+    image: transport_network_analysis
+    container_name: transport_network_analysis
+    ports:
+      - "8888:8888"
+    tty: true

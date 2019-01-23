@@ -1,1 +1,40 @@
-version: 2.0
+version: 2
+jobs:
+  build:
+    machine: true
+    steps:
+      - checkout
+
+      - run:
+          name: Start containers
+          command: docker-compose up -d
+
+      - run:
+          name: Run tests
+          command: |
+            docker exec -it transport_network_analysis bash -c "python setup.py test"
+            sudo mv htmlcov /tmp/artifacts
+
+      - run:
+          name: Build docs
+          command: |
+            docker exec -it transport_network_analysis bash -c "python setup.py docs"
+            sudo mv docs/_build/html /tmp/artifacts/docs
+
+      - run:
+          name: Generate coverage badge
+          command: |
+            docker exec -it transport_network_analysis bash -c "coverage-badge -o coverage.svg"
+            sudo mv coverage.svg /tmp/artifacts/
+
+      - store_artifacts:
+          path: /tmp/artifacts
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build:
+          filters:
+            tags:
+              only: /.*/
