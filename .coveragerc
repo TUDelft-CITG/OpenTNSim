@@ -1,3 +1,2 @@
 [run]
-source = pyramid_app_metis
-omit = pyramid_app_metis/test*
+source = Transport-Network-Analysis
