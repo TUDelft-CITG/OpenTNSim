@@ -12,19 +12,19 @@ jobs:
       - run:
           name: Run tests
           command: |
-            docker exec -it transport_network_analysis bash -c "python setup.py test"
+            docker exec -it transport-network-analysis bash -c "python setup.py test"
             sudo mv htmlcov /tmp/artifacts
 
       - run:
           name: Build docs
           command: |
-            docker exec -it transport_network_analysis bash -c "python setup.py docs"
+            docker exec -it transport-network-analysis bash -c "python setup.py docs"
             sudo mv docs/_build/html /tmp/artifacts/docs
 
       - run:
           name: Generate coverage badge
           command: |
-            docker exec -it transport_network_analysis bash -c "coverage-badge -o coverage.svg"
+            docker exec -it transport-network-analysis bash -c "coverage-badge -o coverage.svg"
             sudo mv coverage.svg /tmp/artifacts/
 
       - store_artifacts:
