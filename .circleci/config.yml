@@ -5,7 +5,7 @@ jobs:
     steps:
       - checkout
 
-      -run:
+      - run:
           name: Build container
           command: docker build -t transport_network_analysis .
 
