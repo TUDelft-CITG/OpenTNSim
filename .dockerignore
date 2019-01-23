@@ -5,7 +5,6 @@ dist
 *.pyc
 *.swp
 .tox
-.coverage
 html/*
 **/__pycache__
 
