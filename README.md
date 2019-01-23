@@ -1,12 +1,11 @@
-**CircleCI:** [![CircleCI][circleci_image]][circleci_link]
+**CircleCI:** [![CircleCI][https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg]][https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis]
 
-[circleci_link]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis
-[circleci_image]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg
 
-[![CircleCI](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg)](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis)
+[![CircleCI][circleci_image]][circleci_link]
+[circleci_link]: https://circleci.com/gh/amueller/word_cloud/tree/master
+[circleci_image]: https://circleci.com/gh/amueller/word_cloud/tree/master.svg?style=svg
 
-==========================
-transport-network-analysis
+Transport Network Analysis
 ==========================
 
 Transport network analysis package 
