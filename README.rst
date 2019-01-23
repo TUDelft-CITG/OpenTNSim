@@ -1,7 +1,7 @@
-Passing: [![CircleCI][circleci_image]][circleci_link]
+**CircleCI:** [![CircleCI][circleci_image]][circleci_link]
 
-[circleci_link]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis/tree/master
-[circleci_image]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis/tree/master.svg?style=svg
+[circleci_link]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis
+[circleci_image]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg
 
 ==========================
 transport-network-analysis
