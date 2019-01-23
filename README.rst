@@ -3,6 +3,8 @@
 [circleci_link]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis
 [circleci_image]: https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg
 
+[![CircleCI](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg)](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis)
+
 ==========================
 transport-network-analysis
 ==========================
