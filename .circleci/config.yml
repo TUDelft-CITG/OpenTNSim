@@ -7,7 +7,7 @@ jobs:
 
       - run:
           name: Build container
-          command: docker build -t transport_network_analysis .
+          command: docker build -t transport-network-analysis .
 
       - run:
           name: Start containers
