@@ -11,4 +11,4 @@ RUN pip install -e .
 
 EXPOSE 8888
 
-# Build with: docker build -t transport_network_analysis .
+# Build with: docker build -t transport-network-analysis .

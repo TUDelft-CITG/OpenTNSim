@@ -5,6 +5,10 @@ jobs:
     steps:
       - checkout
 
+      -run:
+          name: Build container
+          command: docker build -t transport_network_analysis .
+
       - run:
           name: Start containers
           command: docker-compose up -d

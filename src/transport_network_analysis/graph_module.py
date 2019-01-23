@@ -16,7 +16,6 @@ import networkx as nx
 # spatial libraries
 import pyproj
 import shapely.geometry
-from osgeo import ogr, osr
 
 # matplotlib
 import math
@@ -36,7 +35,7 @@ class Graph():
         self.graph_info = nx.info(self.graph)
 
 
-    def from_shape(self, file_location, shapefile):
+    def from_shape(self, file_location, shapefile, simplify = True, strict = True):
         """Generate nx.Graph() from shapefile
         
         file_location: location on server of the shapefile
@@ -44,7 +43,7 @@ class Graph():
         """
 
         # Create graph
-        self.graph = nx.read_shp(os.path.join(file_location, shapefile), simplify=True)
+        self.graph = nx.read_shp(os.path.join(file_location, shapefile), simplify = simplify, strict = strict)
         self.graph_info = nx.info(self.graph)
 
         # Get spatial reference
@@ -54,6 +53,7 @@ class Graph():
     
     
     def transform_projection(self, to_EPSG):
+        from osgeo import ogr, osr
         outSpatialRef = osr.SpatialReference()
         outSpatialRef.ImportFromEPSG(to_EPSG)
 
@@ -64,6 +64,7 @@ class Graph():
     
 
     def change_projection(self, transform, point):
+        from osgeo import ogr, osr
         point = ogr.CreateGeometryFromWkt(str(point))
         
         point.Transform(transform)

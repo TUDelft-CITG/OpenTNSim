@@ -82,6 +82,7 @@ def vessel_planning(vessels, activities, colors, web=False):
 def vessel_kml(env, vessels, 
                fname='vessel_movements.kml',
                icon='http://maps.google.com/mapfiles/kml/shapes/donut.png',
+               stepsize=600,
                size=1,
                scale=1):
         """Create a kml visualisation of vessels. Env variable needs to contain 
@@ -101,21 +102,42 @@ def vessel_kml(env, vessels,
 
         # each timestep will be represented as a single point
         for vessel in vessels:
-            for log_index, value in enumerate(vessel.log["Geometry"][:-1]):
+            geom_x = []
+            geom_y = []
+
+            for geom in vessel.log["Geometry"]:
+                geom_x.append(geom.x)
+                geom_y.append(geom.y)
+
+            vessel.log["Geometry - x"] = geom_x
+            vessel.log["Geometry - y"] = geom_y
+
+            time_stamp_min = min(time_stamp_min)
+            time_stamp_max = max(time_stamp_max)
+
+            stepsize = 60
+            steps = int(np.floor((time_stamp_max - time_stamp_min) / stepsize))
+
+            timestamps_t = np.linspace(time_stamp_min, time_stamp_max, steps)
+            vessel.log["timestamps_t"] = timestamps_t
+            vessel.log["timestamps_x"] = np.interp(timestamps_t, vessel.log["Timestamp"], vessel.log["Geometry - x"])
+            vessel.log["timestamps_y"] = np.interp(timestamps_t, vessel.log["Timestamp"], vessel.log["Geometry - y"])
+
+            for log_index, value in enumerate(vessel.log["timestamps_t"][:-1]):
                 
-                begin = env.epoch + datetime.timedelta(seconds=vessel.log["Timestamp"][log_index])
-                end = env.epoch + datetime.timedelta(seconds=vessel.log["Timestamp"][log_index + 1])
+                begin = env.epoch + datetime.timedelta(seconds=vessel.log["timestamps_t"][log_index])
+                end = env.epoch + datetime.timedelta(seconds=vessel.log["timestamps_t"][log_index + 1])
                 
-                pnt = fol.newpoint(name=vessel.name, coords=[(vessel.log["Geometry"][log_index].x, vessel.log["Geometry"][log_index].y)])
+                pnt = fol.newpoint(name=vessel.name, coords=[(vessel.log["timestamps_x"][log_index], vessel.log["timestamps_y"][log_index])])
                 pnt.timespan.begin = begin.isoformat()
                 pnt.timespan.end = end.isoformat()
                 pnt.style = shared_style
 
             # include last point as well
-            begin = env.epoch + datetime.timedelta(seconds=vessel.log["Timestamp"][log_index + 1])
-            end = env.epoch + datetime.timedelta(seconds=vessel.log["Timestamp"][log_index + 1])
+            begin = env.epoch + datetime.timedelta(seconds=vessel.log["timestamps_t"][log_index + 1])
+            end = env.epoch + datetime.timedelta(seconds=vessel.log["timestamps_t"][log_index + 1])
            
-            pnt = fol.newpoint(name=vessel.name, coords=[(vessel.log["Geometry"][log_index + 1].x, vessel.log["Geometry"][log_index + 1].y)])
+            pnt = fol.newpoint(name=vessel.name, coords=[(vessel.log["timestamps_x"][log_index + 1], vessel.log["timestamps_y"][log_index + 1])])
             pnt.timespan.begin = begin.isoformat()
             pnt.timespan.end = end.isoformat()
             pnt.style = shared_style
@@ -165,4 +187,3 @@ def graph_kml(env,
             lne.style = shared_style
                 
         kml.save(fname)
-
