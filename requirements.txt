@@ -1,3 +1,4 @@
 simpy
 networkx
 shapely
+plotly
