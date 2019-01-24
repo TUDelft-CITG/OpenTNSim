@@ -1,3 +1,3 @@
 [run]
-source = transport-network-analysis
-omit = transport-network-analysis/test*
+source = transport_network_analysis
+omit = transport_network_analysis/test*
