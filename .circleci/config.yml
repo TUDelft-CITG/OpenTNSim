@@ -17,6 +17,9 @@ jobs:
           name: Run tests
           command: |
             docker exec -it transport-network-analysis bash -c "python setup.py test"
+            echo printing the current working environment
+            echo $PWD
+            ls
             sudo mv htmlcov /tmp/artifacts
 
       - run:
