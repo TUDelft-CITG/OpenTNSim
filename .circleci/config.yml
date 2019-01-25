@@ -4,58 +4,38 @@ jobs:
     machine: true
     steps:
       - checkout
+      - run:
+          name: Build and start container
+          command: docker-compose up -d
 
       - run:
-          name: Build container
-          command: docker build -t transport-network-analysis .
-  test:
-    docker:
-      - image: continuumio/anaconda3
-    steps:
-      - checkout
-
-      - run:
-          name: Install requirements
+          name: Install coverage badge beforte running tests
           command: |
-            pip install -r ./requirements.txt --quiet
-            conda install pyproj
-            pip install -e .
-
+            docker exec -it transport-network-analysis bash -c "pip install coverage coverage-badge "
       - run:
           name: Run tests
           command: |
-            python setup.py test
-            echo printing the current working environment
-            echo $PWD
-            ls
-            mv htmlcov /tmp/artifacts
-
+            docker exec -it transport-network-analysis bash -c "python setup.py test"
+            docker cp transport-network-analysis:/Transport-Network-Analysis/htmlcov /tmp/artifacts
       - run:
           name: Build docs
           command: |
-            python setup.py docs
-            mv docs/_build/html /tmp/artifacts/docs
-
-#      - run:
-#          name: Generate coverage badge
-#          command: |
-#            coverage-badge -o coverage.svg
-#            mv coverage.svg /tmp/artifacts/
-
+            docker exec -it transport-network-analysis bash -c "pip install sphinx"
+            docker exec -it transport-network-analysis bash -c "python setup.py docs"
+            docker cp transport-network-analysis:/Transport-Network-Analysis/docs/_build/html /tmp/artifacts/docs
+      - run:
+          name: Generate coverage badge
+          command: |
+            docker exec -it transport-network-analysis bash -c "coverage-badge -o coverage.svg"
+            docker cp transport-network-analysis:/Transport-Network-Analysis/coverage.svg /tmp/artifacts/
       - store_artifacts:
           path: /tmp/artifacts
 
 workflows:
   version: 2
-  test:
+  build:
     jobs:
-#      - build:
-#          filters:
-#            tags:
-#              only: /.*/
-      - test:
-#          requires:
-#            - build
+      - build:
           filters:
             tags:
-              only: /.*/
+only: /.*/
