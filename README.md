@@ -1,4 +1,4 @@
-**CircleCI:** [![CircleCI][https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg]][https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis]
+**CircleCI:** [![CircleCI](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg)](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis)
 
 
 [![CircleCI][circleci_image]][circleci_link]
