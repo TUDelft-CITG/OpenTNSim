@@ -10,7 +10,7 @@ jobs:
           command: docker build -t transport-network-analysis .
   test:
     docker:
-      image: transport-network-analysis:latest
+      - image: transport-network-analysis:latest
     steps:
       - checkout
 
