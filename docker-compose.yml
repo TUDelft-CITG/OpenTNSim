@@ -4,6 +4,6 @@ services:
   main:
     build: .
     container_name: transport-network-analysis
-    # this helps wieht https://github.com/docker/compose/issues/3106
+    # this helps with https://github.com/docker/compose/issues/3106
     # also make sure to run docker compose with -f flag
     command: sleep 9999d
