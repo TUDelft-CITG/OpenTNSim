@@ -8,31 +8,31 @@ jobs:
       - run:
           name: Build container
           command: docker build -t transport-network-analysis .
-
-      - run:
-          name: Start containers
-          command: docker-compose up -d
+  test:
+    image: transport-network-analysis:latest
+    steps:
+      - checkout
 
       - run:
           name: Run tests
           command: |
-            docker exec -it transport-network-analysis bash -c "python setup.py test"
+            python setup.py test
             echo printing the current working environment
             echo $PWD
             ls
-            sudo mv htmlcov /tmp/artifacts
+            mv htmlcov /tmp/artifacts
 
       - run:
           name: Build docs
           command: |
-            docker exec -it transport-network-analysis bash -c "python setup.py docs"
-            sudo mv docs/_build/html /tmp/artifacts/docs
+            python setup.py docs
+            mv docs/_build/html /tmp/artifacts/docs
 
       - run:
           name: Generate coverage badge
           command: |
-            docker exec -it transport-network-analysis bash -c "coverage-badge -o coverage.svg"
-            sudo mv coverage.svg /tmp/artifacts/
+            coverage-badge -o coverage.svg
+            mv coverage.svg /tmp/artifacts/
 
       - store_artifacts:
           path: /tmp/artifacts
@@ -42,6 +42,12 @@ workflows:
   build:
     jobs:
       - build:
+          filters:
+            tags:
+              only: /.*/
+      - test:
+          requires:
+            - build
           filters:
             tags:
               only: /.*/
