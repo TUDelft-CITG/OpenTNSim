@@ -36,11 +36,11 @@ jobs:
             python setup.py docs
             mv docs/_build/html /tmp/artifacts/docs
 
-      - run:
-          name: Generate coverage badge
-          command: |
-            coverage-badge -o coverage.svg
-            mv coverage.svg /tmp/artifacts/
+#      - run:
+#          name: Generate coverage badge
+#          command: |
+#            coverage-badge -o coverage.svg
+#            mv coverage.svg /tmp/artifacts/
 
       - store_artifacts:
           path: /tmp/artifacts
