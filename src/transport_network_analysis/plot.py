@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import datetime
 
 # plotting libraries
@@ -111,9 +112,9 @@ def vessel_kml(env, vessels,
 
             vessel.log["Geometry - x"] = geom_x
             vessel.log["Geometry - y"] = geom_y
-
-            time_stamp_min = min(time_stamp_min)
-            time_stamp_max = max(time_stamp_max)
+            
+            time_stamp_min = min(vessel.log["Timestamp"])
+            time_stamp_max = max(vessel.log["Timestamp"])
 
             stepsize = 60
             steps = int(np.floor((time_stamp_max - time_stamp_min) / stepsize))
