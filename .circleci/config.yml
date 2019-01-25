@@ -10,9 +10,16 @@ jobs:
           command: docker build -t transport-network-analysis .
   test:
     docker:
-      - image: transport-network-analysis:latest
+      - image: continuumio/anaconda3
     steps:
       - checkout
+
+      - run:
+          name: Install requirements
+          command: |
+            pip install -r ./requirements.txt --quiet
+            conda install pyproj
+            pip install -e .
 
       - run:
           name: Run tests
@@ -40,12 +47,12 @@ jobs:
 
 workflows:
   version: 2
-  build:
+  test:
     jobs:
-      - build:
-          filters:
-            tags:
-              only: /.*/
+#      - build:
+#          filters:
+#            tags:
+#              only: /.*/
       - test:
           requires:
             - build
