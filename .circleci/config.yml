@@ -9,6 +9,11 @@ jobs:
           command: docker-compose up -d
 
       - run:
+          name: Install coverage badge beforte running tests
+          command: |
+            docker exec -it transport-network-analysis bash -c "pip install coverage coverage-badge"
+
+      - run:
           name: Run tests
           command: |
             docker exec -it transport-network-analysis bash -c "python setup.py test"
@@ -23,7 +28,6 @@ jobs:
       - run:
           name: Generate coverage badge
           command: |
-            docker exec -it transport-network-analysis bash -c "pip install coverage coverage-badge"
             docker exec -it transport-network-analysis bash -c "coverage-badge -o coverage.svg"
             docker cp transport-network-analysis:/Transport-Network-Analysis/coverage.svg /tmp/artifacts/
 

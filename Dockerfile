@@ -9,4 +9,3 @@ ADD . /Transport-Network-Analysis
 
 # Then install rest via pip
 RUN python setup.py develop
-RUN pip install coverage coverage-badge
