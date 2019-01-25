@@ -9,7 +9,8 @@ jobs:
           name: Build container
           command: docker build -t transport-network-analysis .
   test:
-    image: transport-network-analysis:latest
+    docker:
+      image: transport-network-analysis:latest
     steps:
       - checkout
 
