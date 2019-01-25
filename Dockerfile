@@ -2,7 +2,7 @@
 FROM continuumio/miniconda3
 
 # Install conda stuff first
-RUN conda install pyproj
+RUN conda install nomkl pyproj
 
 WORKDIR /Transport-Network-Analysis
 ADD . /Transport-Network-Analysis
