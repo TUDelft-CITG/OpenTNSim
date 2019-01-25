@@ -4,35 +4,27 @@ jobs:
     machine: true
     steps:
       - checkout
-
       - run:
-          name: Build container
-          command: docker build -t transport-network-analysis .
-
-      - run:
-          name: Start containers
+          name: Build and start container
           command: docker-compose up -d
 
       - run:
           name: Run tests
           command: |
             docker exec -it transport-network-analysis bash -c "python setup.py test"
-            echo printing the current working environment
-            echo $PWD
-            ls
-            sudo mv htmlcov /tmp/artifacts
+            docker cp transport-network-analysis:/Transport-Network-Analysis/htmlcov /tmp/artifacts
 
       - run:
           name: Build docs
           command: |
             docker exec -it transport-network-analysis bash -c "python setup.py docs"
-            sudo mv docs/_build/html /tmp/artifacts/docs
+            docker cp transport-network-analysis:/Transport-Network-Analysis/docs/_build/html /tmp/artifacts/docs
 
       - run:
           name: Generate coverage badge
           command: |
             docker exec -it transport-network-analysis bash -c "coverage-badge -o coverage.svg"
-            sudo mv coverage.svg /tmp/artifacts/
+            docker cp transport-network-analysis:/Transport-Network-Analysis/coverage.svg /tmp/artifacts/
 
       - store_artifacts:
           path: /tmp/artifacts

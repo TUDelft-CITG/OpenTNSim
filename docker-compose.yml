@@ -1,9 +1,9 @@
-version: '2'
+version: '3'
 
 services:
-  transport-network-analysis:
-    image: transport-network-analysis
+  main:
+    build: .
     container_name: transport-network-analysis
-    ports:
-      - "8888:8888"
-    tty: true
+    # this helps wieht https://github.com/docker/compose/issues/3106
+    # also make sure to run docker compose with -f flag
+    command: sleep 9999d
