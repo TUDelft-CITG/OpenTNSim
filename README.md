@@ -1,9 +1,6 @@
-**CircleCI:** [![CircleCI](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg)](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis)
+**CircleCI:** [![CircleCI](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg&circle-token=59b1f167ed771129459d86e822fd2faaae8f4a34)](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis)
 
-
-[![CircleCI][circleci_image]][circleci_link]
-[circleci_link]: https://circleci.com/gh/amueller/word_cloud/tree/master
-[circleci_image]: https://circleci.com/gh/amueller/word_cloud/tree/master.svg?style=svg
+**Coverage:**
 
 Transport Network Analysis
 ==========================
