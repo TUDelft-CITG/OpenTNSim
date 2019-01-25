@@ -1,3 +1,5 @@
 [run]
-source = transport_network_analysis
-omit = transport_network_analysis/test*
+source = src
+
+[report]
+omit = test*, .eggs*
