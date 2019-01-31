@@ -36,7 +36,7 @@ def graph():
 
     for node in nodes:
         graph.graph.add_node(node["Name"], 
-                            Geometry = node["Geometry"], 
+                            geometry = node["Geometry"], 
                             Position = (node["Geometry"].x, node["Geometry"].y))
 
     edges = [[node_1, node_2], [node_2, node_3]]
@@ -97,7 +97,7 @@ def test_simulation_1(graph, vessel):
             yield from vessel.move()
             vessel.log_entry("Stop sailing", env.now, "", vessel.geometry)
             
-            if vessel.geometry == networkx.get_node_attributes(graph, "Geometry")[vessel.route[-1]]:
+            if vessel.geometry == networkx.get_node_attributes(graph, "geometry")[vessel.route[-1]]:
                 break
     
     # Run simulation
@@ -109,8 +109,8 @@ def test_simulation_1(graph, vessel):
     distance = 0
 
     for i, _ in enumerate(path):
-        point_1 = networkx.get_node_attributes(graph, "Geometry")[path[i]]
-        point_2 = networkx.get_node_attributes(graph, "Geometry")[path[i + 1]]
+        point_1 = networkx.get_node_attributes(graph, "geometry")[path[i]]
+        point_2 = networkx.get_node_attributes(graph, "geometry")[path[i + 1]]
         distance += wgs84.inv(point_1.x, point_1.y, point_2.x, point_2.y)[2]
 
         if i == len(path) - 2:
@@ -141,7 +141,7 @@ def test_simulation_2(graph, vessel):
             yield from vessel.move()
             vessel.log_entry("Stop sailing", env.now, "", vessel.geometry)
             
-            if vessel.geometry == networkx.get_node_attributes(graph, "Geometry")[vessel.route[-1]]:
+            if vessel.geometry == networkx.get_node_attributes(graph, "geometry")[vessel.route[-1]]:
                 break
     
     # Run simulation
@@ -153,8 +153,8 @@ def test_simulation_2(graph, vessel):
     distance = 0
 
     for i, _ in enumerate(path):
-        point_1 = networkx.get_node_attributes(graph, "Geometry")[path[i]]
-        point_2 = networkx.get_node_attributes(graph, "Geometry")[path[i + 1]]
+        point_1 = networkx.get_node_attributes(graph, "geometry")[path[i]]
+        point_2 = networkx.get_node_attributes(graph, "geometry")[path[i + 1]]
         distance += wgs84.inv(point_1.x, point_1.y, point_2.x, point_2.y)[2]
 
         if i == len(path) - 2:
