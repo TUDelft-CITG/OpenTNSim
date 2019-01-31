@@ -88,7 +88,7 @@ class Graph():
             geometry = shapely.geometry.Point(coordinates[0], coordinates[1])
             
             nodes_dict[list(self.graph.nodes)[i]] = name
-            new_graph.add_node(name, Name = name, Position = coordinates, Geometry = geometry, Old = node[1])
+            new_graph.add_node(name, Name = name, Position = coordinates, geometry = geometry, Old = node[1])
             
         for edge in self.graph.edges(data = True):
             node_1 = nodes_dict[edge[0]]

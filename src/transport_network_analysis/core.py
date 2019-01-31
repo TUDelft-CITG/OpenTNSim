@@ -162,9 +162,9 @@ class Movable(SimpyObject, Locatable, Routeable):
         self.distance = 0
 
         # Check if vessel is at correct location - if note, move to location
-        if self.geometry != nx.get_node_attributes(self.env.FG, "Geometry")[self.route[0]]:
+        if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
             orig = self.geometry
-            dest = nx.get_node_attributes(self.env.FG, "Geometry")[self.route[0]]
+            dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
             
             self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
                                             shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
@@ -196,7 +196,7 @@ class Movable(SimpyObject, Locatable, Routeable):
             fuel_consumed = self.fuel_use_sailing(self.distance, self.current_speed)
             self.check_fuel(fuel_consumed)
 
-        self.geometry = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
+        self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
         logger.debug('  distance: ' + '%4.2f' % self.distance + ' m')
         logger.debug('  sailing:  ' + '%4.2f' % self.current_speed + ' m/s')
         logger.debug('  duration: ' + '%4.2f' % ((self.distance / self.current_speed) / 3600) + ' hrs')
@@ -208,8 +208,8 @@ class Movable(SimpyObject, Locatable, Routeable):
     
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
-        orig = nx.get_node_attributes(self.env.FG, "Geometry")[origin]
-        dest = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
+        orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
+        dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
         distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
                                   shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
@@ -239,8 +239,8 @@ class Movable(SimpyObject, Locatable, Routeable):
     def pass_lock(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
         edge_opposite = self.env.FG.edges[destination, origin]
-        orig = nx.get_node_attributes(self.env.FG, "Geometry")[origin]
-        dest = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
+        orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
+        dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
         water_level = origin
 
         distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
@@ -327,8 +327,8 @@ class Movable(SimpyObject, Locatable, Routeable):
     def pass_waiting_area(self, origin, destination, lock):
         edge = self.env.FG.edges[origin, destination]
         edge_lock = self.env.FG.edges[destination, lock]
-        orig = nx.get_node_attributes(self.env.FG, "Geometry")[origin]
-        dest = nx.get_node_attributes(self.env.FG, "Geometry")[destination]
+        orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
+        dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
         water_level = destination
 
         distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 

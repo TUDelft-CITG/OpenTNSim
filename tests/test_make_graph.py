@@ -29,7 +29,7 @@ def graph():
 
     for node in nodes:
         graph.graph.add_node(node["Name"], 
-                            Geometry = node["Geometry"], 
+                            geometry = node["Geometry"], 
                             Position = (node["Geometry"].x, node["Geometry"].y))
 
     edge = [node_1, node_2]
@@ -47,8 +47,8 @@ def test_type(graph):
     node_1 = list(graph.nodes(data=True))[0]
     node_2 = list(graph.nodes(data=True))[1]
     
-    assert shapely.geometry.Point(4.4954, 51.905505) == node_1[1]["Geometry"]
-    assert shapely.geometry.Point(4.4833, 51.910485) == node_2[1]["Geometry"]
+    assert shapely.geometry.Point(4.4954, 51.905505) == node_1[1]["geometry"]
+    assert shapely.geometry.Point(4.4833, 51.910485) == node_2[1]["geometry"]
 
     # Test is there is indeed only one edge
     edge = list(graph.edges(data=False))
