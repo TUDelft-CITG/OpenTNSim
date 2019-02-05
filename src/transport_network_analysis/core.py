@@ -147,11 +147,33 @@ class Movable(SimpyObject, Locatable, Routeable):
     geometry: point used to track its current location
     v: speed"""
 
+ 
     def __init__(self, v=1, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.v = v
         self.wgs84 = pyproj.Geod(ellps='WGS84')
+
+    def calculate_power(self):
+        #return 200
+        Pb = 2*(self.speed*self.resistance)
+        return Pb 
+
+    def calculate_energy_consumption(self):
+        stationary_phase_indicator = ['Doors closing stop', 'Converting chamber stop', 'Doors opening stop']
+        energy = {'total_energy': 0,'stationary': 0}
+        times = self.log['Timestamp']
+        messages = self.log['Message']
+        for i in range(len(times) - 1):
+            # add to energy
+            delta_t = times[i+1] - times[i]
+            if messages[i + 1] in stationary_phase_indicator:
+                energy_delta =  self.calculate_power() *  delta_t / 3600
+                energy['total_energy'] = energy['total_energy'] + energy_delta
+                energy['stationary'] = energy['stationary'] + energy_delta
+            else:
+                energy['total_energy'] = energy['total_energy'] + self.calculate_power() *  delta_t/ 3600
+        return energy 
 
     def move(self):
         """determine distance between origin and destination, and
@@ -238,6 +260,7 @@ class Movable(SimpyObject, Locatable, Routeable):
 
     def pass_lock(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
+        lock = edge['attribute']
         edge_opposite = self.env.FG.edges[destination, origin]
         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
@@ -258,8 +281,7 @@ class Movable(SimpyObject, Locatable, Routeable):
             priority = 0
 
         with self.env.FG.edges[origin, destination]["Resources"].request(priority = priority) as request:
-            yield request
-
+            # yield request
             if arrival != self.env.now:
                 self.log_entry("Waiting to pass lock start".format(origin, destination), arrival, 0, orig)
                 self.log_entry("Waiting to pass lock stop".format(origin, destination), self.env.now, 0, orig)
@@ -299,18 +321,18 @@ class Movable(SimpyObject, Locatable, Routeable):
 
                 # Doors closing
                 self.log_entry("Doors closing start", self.env.now, 0, chamber)
-                yield self.env.timeout(10 * 60)
+                yield self.env.timeout(lock.doors_close)
                 self.log_entry("Doors closing stop", self.env.now, 0, chamber)
 
                 # Converting chamber
                 chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
                 self.log_entry("Converting chamber start", self.env.now, 0, chamber)
-                yield self.env.timeout(20 * 60)
+                yield self.env.timeout(lock.operating_time)
                 self.log_entry("Converting chamber stop", self.env.now, 0, chamber)
 
                 # Doors opening
                 self.log_entry("Doors opening start", self.env.now, 0, chamber)
-                yield self.env.timeout(10 * 60)
+                yield self.env.timeout(lock.doors_open)
                 self.log_entry("Doors opening stop", self.env.now, 0, chamber)
 
                 # Sailing out
