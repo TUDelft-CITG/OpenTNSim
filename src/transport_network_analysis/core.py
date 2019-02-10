@@ -16,6 +16,9 @@ import networkx as nx
 import pyproj
 import shapely.geometry
 
+# additional packages
+import datetime, time
+
 logger = logging.getLogger(__name__)
 
 
@@ -431,7 +434,7 @@ class Log(SimpyObject):
     def log_entry(self, log, t, value, geometry_log):
         """Log"""
         self.log["Message"].append(log)
-        self.log["Timestamp"].append(t)
+        self.log["Timestamp"].append(datetime.datetime.fromtimestamp(t))
         self.log["Value"].append(value)
         self.log["Geometry"].append(geometry_log)
 

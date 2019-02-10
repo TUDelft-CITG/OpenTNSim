@@ -229,18 +229,18 @@ def graph_kml(env,
         for log_index, value in enumerate(list(env.FG.nodes)[0:-1-1]):
 
             pnt = fol.newpoint(name='', 
-                               coords=[(nx.get_node_attributes(env.FG, "Geometry")[nodes[log_index]].x,
-                                        nx.get_node_attributes(env.FG, "Geometry")[nodes[log_index]].y)])
+                               coords=[(nx.get_node_attributes(env.FG, "geometry")[nodes[log_index]].x,
+                                        nx.get_node_attributes(env.FG, "geometry")[nodes[log_index]].y)])
             pnt.style = shared_style
 
         edges = list(env.FG.edges)
         for log_index, value in enumerate(list(env.FG.edges)[0:-1-1]):
 
             lne = fol.newlinestring(name='',
-                                    coords = [(nx.get_node_attributes(env.FG, "Geometry")[edges[log_index][0]].x,
-                                               nx.get_node_attributes(env.FG, "Geometry")[edges[log_index][0]].y),
-                                              (nx.get_node_attributes(env.FG, "Geometry")[edges[log_index][1]].x,
-                                               nx.get_node_attributes(env.FG, "Geometry")[edges[log_index][1]].y)])
+                                    coords = [(nx.get_node_attributes(env.FG, "geometry")[edges[log_index][0]].x,
+                                               nx.get_node_attributes(env.FG, "geometry")[edges[log_index][0]].y),
+                                              (nx.get_node_attributes(env.FG, "geometry")[edges[log_index][1]].x,
+                                               nx.get_node_attributes(env.FG, "geometry")[edges[log_index][1]].y)])
             lne.style = shared_style
                 
         kml.save(fname)

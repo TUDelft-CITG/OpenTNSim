@@ -1,10 +1,14 @@
 # Importing libraries
 # import pytest library for testing
 import pytest
+import numpy as np
 
 # tranport network analysis package
 import transport_network_analysis.core as core
 import transport_network_analysis.graph_module as graph_module
+
+# package(s) related to time
+import datetime, time
 
 # import spatial libraries
 import pyproj
@@ -77,7 +81,9 @@ def vessel():
 # Actual testing starts here
 def test_simulation_1(graph, vessel):
     # Start simpy environment
-    env = simpy.Environment()
+    simulation_start = datetime.datetime.now()
+    env = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
+    env.epoch = time.mktime(simulation_start.timetuple())
 
     # Add graph to environment
     env.FG = graph
@@ -116,12 +122,14 @@ def test_simulation_1(graph, vessel):
         if i == len(path) - 2:
             break
 
-    assert distance == env.now
-
+    np.testing.assert_almost_equal(distance, env.now-env.epoch)
+    
 # Actual testing starts here
 def test_simulation_2(graph, vessel):
     # Start simpy environment
-    env = simpy.Environment()
+    simulation_start = datetime.datetime.now()
+    env = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
+    env.epoch = time.mktime(simulation_start.timetuple())
 
     # Add graph to environment
     env.FG = graph
@@ -159,5 +167,7 @@ def test_simulation_2(graph, vessel):
 
         if i == len(path) - 2:
             break
+  
+    np.testing.assert_almost_equal(distance, env.now-env.epoch)
 
-    assert distance == env.now
+    # assert distance == env.now-env.epoch
