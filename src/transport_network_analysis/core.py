@@ -156,7 +156,7 @@ class Movable(SimpyObject, Locatable, Routeable):
 
     def calculate_power(self):
         #return 200
-        Pb = 2*(self.speed*self.resistance)
+        Pb = 2*(self.speed*self.resistance*10**-3)  #kW
         return Pb 
 
     def calculate_energy_consumption(self):
@@ -168,11 +168,11 @@ class Movable(SimpyObject, Locatable, Routeable):
             # add to energy
             delta_t = times[i+1] - times[i]
             if messages[i + 1] in stationary_phase_indicator:
-                energy_delta =  self.calculate_power() *  delta_t / 3600
+                energy_delta =  self.calculate_power()*10**3 *  delta_t  #/ 3600
                 energy['total_energy'] = energy['total_energy'] + energy_delta
-                energy['stationary'] = energy['stationary'] + energy_delta
+                energy['stationary'] = energy['stationary'] + energy_delta*0.15
             else:
-                energy['total_energy'] = energy['total_energy'] + self.calculate_power() *  delta_t/ 3600
+                energy['total_energy'] = energy['total_energy'] + self.calculate_power()*10**3 *  delta_t #/ 3600
         return energy 
 
     def move(self):
