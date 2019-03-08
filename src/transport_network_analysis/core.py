@@ -22,6 +22,28 @@ import datetime, time
 logger = logging.getLogger(__name__)
 
 
+class quay:
+    """Something with a quay"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.available_length = available_length
+        
+class Identifiable:
+    """Something that has a name and id
+
+    name: a name
+    id: a unique id generated with uuid"""
+
+    def __init__(self, name, id=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.name = name
+        # generate some id, in this case based on m
+        self.id = id if id else str(uuid.uuid1())
+        
+
 class SimpyObject:
     """General object which can be extended by any class requiring a simpy environment
 
@@ -141,9 +163,19 @@ class Routeable:
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.route = route
+        
+        
+class Berthable:
+    """Something that can berth"""
+
+    def __init__(self, quaylength, length, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.quaylength = quaylength
+        self.length = length
 
 
-class Movable(SimpyObject, Locatable, Routeable):
+class Movable(SimpyObject, Locatable, Routeable, Berthable):
     """Movable class
 
     Used for object that can move with a fixed speed
@@ -184,6 +216,8 @@ class Movable(SimpyObject, Locatable, Routeable):
             if "Object" in edge.keys():
                 if edge["Object"] == "Lock":
                     yield from self.pass_lock(origin, destination)
+                elif edge["Object"] == "quay":
+                    yield from self.service_quay()
                 elif edge["Object"] == "Waiting Area":
                     yield from self.pass_waiting_area(origin, destination, self.route[node[0] + 2])
                 else:
@@ -327,6 +361,12 @@ class Movable(SimpyObject, Locatable, Routeable):
             # Change edge water level
             self.env.FG.edges[origin, destination]["Water level"] = destination
     
+    def service_quay(self):
+        print('%s at quay, service time is %d sec' %(str(self.name), self.service_time))
+        self.quaylength -= self.length
+        print('Remaining available quay length is %2.1f m.' %self.quaylength)
+        yield self.env.timeout(self.service_time)
+        
     def pass_waiting_area(self, origin, destination, lock):
         edge = self.env.FG.edges[origin, destination]
         edge_lock = self.env.FG.edges[destination, lock]
