@@ -21,28 +21,24 @@ import datetime, time
 
 logger = logging.getLogger(__name__)
 
-
-class quay:
+class HasLength:
     """Something with a quay"""
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, length, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.available_length = available_length
-        
-class Identifiable:
-    """Something that has a name and id
+        self.length = length
 
-    name: a name
-    id: a unique id generated with uuid"""
+class RequiresTurning:
+    """RequiresTurning basin class
+    
+    A turning basin has a required turning time"""
+    
+    def __init__(self, turntime):
+        """initialization"""
 
-    def __init__(self, name, id=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.name = name
-        # generate some id, in this case based on m
-        self.id = id if id else str(uuid.uuid1())
-        
+        # tb properties
+        self.turntime = turntime
 
 class SimpyObject:
     """General object which can be extended by any class requiring a simpy environment
@@ -53,7 +49,6 @@ class SimpyObject:
         super().__init__(*args, **kwargs)
         self.env = env
 
-
 class Identifiable:
     """Something that has a name and id
 
@@ -66,7 +61,6 @@ class Identifiable:
         self.name = name
         # generate some id, in this case based on m
         self.id = id if id else str(uuid.uuid1())
-
 
 class Locatable:
     """Something with a geometry (geojson format)
@@ -78,7 +72,6 @@ class Locatable:
         """Initialization"""
         self.geometry = geometry
 
-
 class Neighbours:
     """Can be added to a locatable object (list)
     
@@ -88,7 +81,6 @@ class Neighbours:
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.neighbours = travel_to
-
 
 class HasContainer(SimpyObject):
     """Container class
@@ -102,7 +94,6 @@ class HasContainer(SimpyObject):
         """Initialization"""
         self.container = simpy.Container(self.env, capacity, init=level)
         self.total_requested = total_requested
-
 
 class HasFuel(SimpyObject):
     """
@@ -154,7 +145,6 @@ class HasFuel(SimpyObject):
 
             #self.log_entry(latest_log[0], self.env.now, latest_log[2])
 
-
 class Routeable:
     """Something with a route (networkx format)
     route: a networkx path"""
@@ -164,16 +154,14 @@ class Routeable:
         """Initialization"""
         self.route = route
         
-        
 class Berthable:
     """Something that can berth"""
 
-    def __init__(self, quaylength, length, *args, **kwargs):
+    def __init__(self, lengthquay, lengthvessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.quaylength = quaylength
-        self.length = length
-
+        self.lengthquay = lengthquay
+        self.lengthvessel = lengthvessel
 
 class Movable(SimpyObject, Locatable, Routeable, Berthable):
     """Movable class
@@ -363,8 +351,8 @@ class Movable(SimpyObject, Locatable, Routeable, Berthable):
     
     def service_quay(self):
         print('%s at quay, service time is %d sec' %(str(self.name), self.service_time))
-        self.quaylength -= self.length
-        print('Remaining available quay length is %2.1f m.' %self.quaylength)
+        self.lengthquay -= self.lengthvessel
+        print('Remaining available quay length is %2.1f m.' %self.lengthquay)
         yield self.env.timeout(self.service_time)
         
     def pass_waiting_area(self, origin, destination, lock):
