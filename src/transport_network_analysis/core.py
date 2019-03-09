@@ -350,10 +350,14 @@ class Movable(SimpyObject, Locatable, Routeable, Berthable):
             self.env.FG.edges[origin, destination]["Water level"] = destination
     
     def service_quay(self):
-        print('%s at quay, service time is %d sec' %(str(self.name), self.service_time))
         self.lengthquay -= self.lengthvessel
         print('Remaining available quay length is %2.1f m.' %self.lengthquay)
+ 
         yield self.env.timeout(self.service_time)
+        print('%s at quay, service time is %d sec' %(str(self.name), self.service_time))
+ 
+        self.lengthquay += self.lengthvessel
+        print('Remaining available quay length is %2.1f m.' %self.lengthquay)
         
     def pass_waiting_area(self, origin, destination, lock):
         edge = self.env.FG.edges[origin, destination]
