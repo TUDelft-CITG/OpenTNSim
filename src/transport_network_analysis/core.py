@@ -24,21 +24,39 @@ logger = logging.getLogger(__name__)
 class HasLength:
     """Something with a quay"""
     
-    def __init__(self, length, *args, **kwargs):
+    def __init__(self, quaylength, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.length = length
+        self.quaylength = quaylength
+
+class HasTurningCircle:
+    """Something with a turning circle - a turning basin"""
+    
+    def __init__(self, turntime, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.turntime = turntime
 
 class RequiresTurning:
     """RequiresTurning basin class
     
     A turning basin has a required turning time"""
     
-    def __init__(self, turntime):
-        """initialization"""
-
-        # tb properties
-        self.turntime = turntime
+    def __init__(self, maketurnat, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.maketurnat = maketurnat
+#         self.turntime = self.turntime        # I tried to include an optional vessel-dependent turntime, but I didn't manage yet...
+        
+    
+    def make_turn(self, turnbasin):
+#         if hasattr(self, "turntime")==0:
+#             print("No vessel-dependent turntime")
+#             self.turntime = turnbasin.turntime   # If not specified, then take the value from the Turn object.
+#         else:
+#             print("Vessel-dependent turntime:",self.turntime,"s")
+        print(self.name," arrived in Turning Basin",turnbasin.name,", now turning...")
+        yield self.env.timeout(turnbasin.turntime)
+    
 
 class SimpyObject:
     """General object which can be extended by any class requiring a simpy environment
@@ -153,17 +171,31 @@ class Routeable:
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.route = route
+
         
 class Berthable:
     """Something that can berth"""
 
-    def __init__(self, lengthquay, lengthvessel, *args, **kwargs):
+    def __init__(self, lengthvessel, servicetime, quayobject, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.lengthquay = lengthquay
         self.lengthvessel = lengthvessel
-
-class Movable(SimpyObject, Locatable, Routeable, Berthable):
+        self.servicetime = servicetime
+        self.quayobject = quayobject
+    
+    def service_quay(self, quay):
+        quay.quaylength-=self.lengthvessel
+        self.log_entry("Arrived at quay {}".format(quay.name), self.env.now, 0, quay.geometry)
+        print("t = ", self.env.now, self.name,"arrived at quay",quay.name,"(service time is",self.servicetime,"s), remaining quay length:",quay.quaylength,"m")
+        yield self.env.timeout(self.servicetime)
+        quay.quaylength+=self.lengthvessel
+        print("t = ", self.env.now, " Servicing done, quay space released (available quay length:",quay.quaylength,"m)")
+        
+        if quay.quaylength < self.lengthvessel:
+            print("Not enough quay length available!")            
+        
+        
+class Movable(SimpyObject, Locatable, Routeable):
     """Movable class
 
     Used for object that can move with a fixed speed
@@ -204,8 +236,13 @@ class Movable(SimpyObject, Locatable, Routeable, Berthable):
             if "Object" in edge.keys():
                 if edge["Object"] == "Lock":
                     yield from self.pass_lock(origin, destination)
-                elif edge["Object"] == "quay":
-                    yield from self.service_quay()
+                elif edge["Object"] == "Quay":
+                    yield from self.service_quay(self.quayobject)
+                    yield from self.pass_edge(origin, destination)
+                elif edge["Object"] == "Turning Basin":
+                    if self.maketurnat.name==origin:
+                        yield from self.make_turn(self.maketurnat)
+                    yield from self.pass_edge(origin, destination)
                 elif edge["Object"] == "Waiting Area":
                     yield from self.pass_waiting_area(origin, destination, self.route[node[0] + 2])
                 else:
@@ -348,16 +385,6 @@ class Movable(SimpyObject, Locatable, Routeable, Berthable):
         
             # Change edge water level
             self.env.FG.edges[origin, destination]["Water level"] = destination
-    
-    def service_quay(self):
-        self.lengthquay -= self.lengthvessel
-        print('Remaining available quay length is %2.1f m.' %self.lengthquay)
- 
-        yield self.env.timeout(self.service_time)
-        print('%s at quay, service time is %d sec' %(str(self.name), self.service_time))
- 
-        self.lengthquay += self.lengthvessel
-        print('Remaining available quay length is %2.1f m.' %self.lengthquay)
         
     def pass_waiting_area(self, origin, destination, lock):
         edge = self.env.FG.edges[origin, destination]
@@ -417,6 +444,7 @@ class Movable(SimpyObject, Locatable, Routeable, Berthable):
         return self.v
 
 
+
 class ContainerDependentMovable(Movable, HasContainer):
     """ContainerDependentMovable class
 
@@ -430,6 +458,8 @@ class ContainerDependentMovable(Movable, HasContainer):
         """Initialization"""
         self.compute_v = compute_v
         self.wgs84 = pyproj.Geod(ellps='WGS84')
+        
+#         print('inhoud is:',self.__dict__)
 
     @property
     def current_speed(self):
