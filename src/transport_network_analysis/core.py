@@ -236,22 +236,19 @@ class Movable(SimpyObject, Locatable, Routeable):
 
             if "Object" in nodei.keys():
                 if isinstance(nodei["Object"], HasTurningCircle):
+#                     Check if the vessel needs to make a turn (i.e. when the destination OR origin is a quay)
                     nodeimin=self.env.FG.nodes[self.route[node[0]-1]]
                     nodeiplus=self.env.FG.nodes[destination]
-#                     Check if the vessel needs to make a turn (i.e. when the destination OR origin is a quay)
                     if "Object" in nodeimin.keys():
                         if isinstance(nodeimin["Object"], HasLength):
                             print(self.name, "left quay",nodeimin["Object"].name," and makes turn in Turning Basin",nodei["Object"].name)
                             yield from self.make_turn(nodei["Object"])
-                    elif "Object" in nodeiplus.keys():
+                    if "Object" in nodeiplus.keys():
                         if isinstance(nodeiplus["Object"], HasLength):
                             print(self.name, "makes turn in Turning Basin",nodei["Object"].name," to approach quay",nodeiplus["Object"].name)
                             yield from self.make_turn(nodei["Object"])
                 elif isinstance(nodei["Object"], HasLength):    
                     yield from self.service_quay(nodei["Object"])
-                    
-                    
-                    
                     
             if "Object" in edge.keys():
                 if edge["Object"] == "Lock":
