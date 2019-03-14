@@ -54,7 +54,7 @@ class RequiresTurning:
 #             self.turntime = turnbasin.turntime   # If not specified, then take the value from the Turn object.
 #         else:
 #             print("Vessel-dependent turntime:",self.turntime,"s")
-        print(self.name," arrived in Turning Basin",turnbasin.name,", now turning...")
+#         print("t = ", self.env.now, ":", self.name," arrived in Turning Basin",turnbasin.name,", now turning...")
         yield self.env.timeout(turnbasin.turntime)
     
 
@@ -231,18 +231,31 @@ class Movable(SimpyObject, Locatable, Routeable):
         for node in enumerate(self.route):
             origin = self.route[node[0]]
             destination = self.route[node[0] + 1]
+            nodei = self.env.FG.nodes[origin]
             edge = self.env.FG.edges[origin, destination]
 
+            if "Object" in nodei.keys():
+                if isinstance(nodei["Object"], HasTurningCircle):
+                    nodeimin=self.env.FG.nodes[self.route[node[0]-1]]
+                    nodeiplus=self.env.FG.nodes[destination]
+#                     Check if the vessel needs to make a turn (i.e. when the destination OR origin is a quay)
+                    if "Object" in nodeimin.keys():
+                        if isinstance(nodeimin["Object"], HasLength):
+                            print(self.name, "left quay",nodeimin["Object"].name," and makes turn in Turning Basin",nodei["Object"].name)
+                            yield from self.make_turn(nodei["Object"])
+                    elif "Object" in nodeiplus.keys():
+                        if isinstance(nodeiplus["Object"], HasLength):
+                            print(self.name, "makes turn in Turning Basin",nodei["Object"].name," to approach quay",nodeiplus["Object"].name)
+                            yield from self.make_turn(nodei["Object"])
+                elif isinstance(nodei["Object"], HasLength):    
+                    yield from self.service_quay(nodei["Object"])
+                    
+                    
+                    
+                    
             if "Object" in edge.keys():
                 if edge["Object"] == "Lock":
                     yield from self.pass_lock(origin, destination)
-                elif edge["Object"] == "Quay":
-                    yield from self.service_quay(self.quayobject)
-                    yield from self.pass_edge(origin, destination)
-                elif edge["Object"] == "Turning Basin":
-                    if self.maketurnat.name==origin:
-                        yield from self.make_turn(self.maketurnat)
-                    yield from self.pass_edge(origin, destination)
                 elif edge["Object"] == "Waiting Area":
                     yield from self.pass_waiting_area(origin, destination, self.route[node[0] + 2])
                 else:
