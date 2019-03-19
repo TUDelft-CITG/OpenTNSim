@@ -130,14 +130,94 @@ class HasFuel(SimpyObject):
             #self.log_entry(latest_log[0], self.env.now, latest_log[2])
 
 
-class Routeable:
-    """Something with a route (networkx format)
-    route: a networkx path"""
+class HasRestrictions:
+    """
+    Add information on possible restrictions to the vessels.
+    Height, width, etc.
+    """
 
-    def __init__(self, route, *args, **kwargs):
+    def __init__(self, width, length, height, loaded,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        """Initialization"""
+        self.width = width
+        self.length = length
+        self.height = height
+        self.loaded = loaded
+
+
+class HasEnergy:
+    """
+    Add information on energy use and effects on energy use.
+    """
+
+    def __init__(self, emissionfactor, resistance,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        """Initialization"""
+        self.emissionfactor = emissionfactor
+        self.resistance = resistance
+        self.energy_use = {'total_energy': 0,'stationary': 0}
+    
+    @property
+    def power(self):
+        return 2 * (self.current_speed * self.resistance * 10**-3)  #kW
+    
+    def calculate_energy_consumption(self):
+        """Calculation of energy consumption based on total time in system and properties"""
+
+        stationary_phase_indicator = ['Doors closing stop', 'Converting chamber stop', 'Doors opening stop', 'aiting to pass lock stop']
+        
+        times = self.log['Timestamp']
+        messages = self.log['Message']
+        
+        for i in range(len(times) - 1):
+            delta_t = times[i+1] - times[i]
+            
+            if messages[i + 1] in stationary_phase_indicator:
+                energy_delta =  self.power *  delta_t / 3600 # KJ/3600
+
+                self.energy_use['total_energy'] += energy_delta * 0.15
+                self.energy_use['stationary'] += energy_delta * 0.15
+            
+            else:
+                self.energy_use['total_energy'] += self.power * delta_t / 3600
+
+
+class Routeable:
+    """
+    Something with a specified route (networkx format)
+    route: the nodes on the networkx path
+    complete_path: a networkx path
+    """
+
+    def __init__(self, route, complete_path = None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
         """Initialization"""
         self.route = route
+        self.complete_path = complete_path
+
+
+class IsLock:
+    """
+    Create a lock object
+    """
+
+    def __init__(self, nodes, neighbour_lock, lock_length, lock_width, 
+                 doors_open, doors_close, operating_time, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        """Initialization"""
+        self.nodes = nodes
+        self.neighbour_lock = neighbour_lock
+        self.lock_length = lock_length
+        self.lock_width = lock_width
+        self.doors_open = doors_open
+        self.doors_close = doors_close
+        self.operating_time = operating_time
 
 
 class Movable(SimpyObject, Locatable, Routeable):
@@ -157,36 +237,6 @@ class Movable(SimpyObject, Locatable, Routeable):
         self.path_has_next = True
         self.distance_convered = 0
 
-    def calculate_power(self):
-        #return 200
-        Pb = 2*(self.speed * self.resistance*10**-3)  #kW
-        return Pb
-
-    def report(self):
-        if (self.path_complete.name in self.env.paths):
-            self.env.paths[self.path_complete.name] += 1
-        else:
-            self.env.paths[self.path_complete.name] = 1
-        
-        energy_consumption = self.calculate_energy_consumption()
-        delta_t = self.log["Timestamp"][-1] - self.log["Timestamp"][0] # seconds
-        self.env.enviromental_report.add_entry(energy_consumption["total_energy"], delta_t,  self)
-
-    def calculate_energy_consumption(self):
-        stationary_phase_indicator = ['Doors closing stop', 'Converting chamber stop', 'Doors opening stop', 'Waiting to pass lock stop']
-        energy = {'total_energy': 0,'stationary': 0}
-        times = self.log['Timestamp']
-        messages = self.log['Message']
-        for i in range(len(times) - 1):
-            # add to energy
-            delta_t = times[i+1] - times[i]
-            if messages[i + 1] in stationary_phase_indicator:
-                energy_delta =  self.calculate_power() *  delta_t  / 3600 # KJ/3600
-                energy['total_energy'] = energy['total_energy'] + energy_delta * 0.15
-                energy['stationary'] = energy['stationary'] + energy_delta * 0.15
-            else:
-                energy['total_energy'] = energy['total_energy'] + self.calculate_power() *  delta_t / 3600
-        return energy 
 
     def do_switch(self, replace, with_this, destination):
         first_element_to_replace = self.route.index(replace[0])
@@ -210,7 +260,7 @@ class Movable(SimpyObject, Locatable, Routeable):
          
         queue_one = len(edge["Resources"].queue)
         queue_two = len(edge_opposite["Resources"].queue)
-        print("Queues: ",edge_opposite["attribute"].lock_name, queue_one, queue_two, self.env.now / (60 * 60))
+        # print("Queues: ",edge_opposite["attribute"].lock_name, queue_one, queue_two, self.env.now / (60 * 60))
         if ( queue_one < queue_two and path_options[0][i] not in self.route):
             # replace all values in path and in path_options[1] in favor of path_options[0]
             self.do_switch(path_options[1], path_options[0], destination)
@@ -250,9 +300,9 @@ class Movable(SimpyObject, Locatable, Routeable):
             # wait for bridges
             if (current_node["bridge"] == True):
                 if (self.height >= 9.1):
-                    self.log_entry("Waiting to pass bridge", self.env.now, 0, self.geometry)
+                    self.log_entry("waiting to pass bridge start", self.env.now, 0, self.geometry)
                     yield self.env.timeout(10*60)
-                    self.log_entry("Waiting to pass bridge done", self.env.now, 0, self.geometry)
+                    self.log_entry("waiting to pass bridge stop", self.env.now, 0, self.geometry)
 
             # update current index
             self.current_index += 1
@@ -310,8 +360,8 @@ class Movable(SimpyObject, Locatable, Routeable):
                 yield request
 
                 if arrival != self.env.now:
-                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
-                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
+                    self.log_entry("waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
+                    self.log_entry("waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
 
                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
 
@@ -355,8 +405,8 @@ class Movable(SimpyObject, Locatable, Routeable):
 
             if arrival != self.env.now:
 
-                self.log_entry("Waiting to pass lock start".format(origin, destination), arrival, 0, orig)
-                self.log_entry("Waiting to pass lock stop".format(origin, destination), self.env.now, 0, orig)
+                self.log_entry("waiting to pass lock start".format(origin, destination), arrival, 0, orig)
+                self.log_entry("waiting to pass lock stop".format(origin, destination), self.env.now, 0, orig)
 
             # Check direction (for now do not use this)
             if "Water level" in edge.keys():
@@ -385,7 +435,7 @@ class Movable(SimpyObject, Locatable, Routeable):
             # If direction is similar to lock-water level --> pass the lock
             if not "Water level" in edge.keys() or edge["Water level"] == water_level:
                 chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
-                lock.log_entry("Ship in lock", self.env.now, self.name)
+                lock.log_entry("Ship in lock", self.env.now, self.name, chamber)
                 # Sailing in
                 self.log_entry("Sailing into lock start", self.env.now, 0, orig)
                 yield self.env.timeout(5 * 60)
@@ -412,7 +462,7 @@ class Movable(SimpyObject, Locatable, Routeable):
                 yield self.env.timeout(5 * 60)
                 self.log_entry("Sailing out of lock stop", self.env.now, 0, dest)
                 
-                lock.log_entry("Ship out lock", self.env.now, self.name)
+                lock.log_entry("Ship out lock", self.env.now, self.name, chamber)
 
                 # Change edge water level
                 self.env.FG.edges[origin, destination]["Water level"] = destination
@@ -439,17 +489,17 @@ class Movable(SimpyObject, Locatable, Routeable):
                 yield request
 
                 if arrival != self.env.now:
-                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
-                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
+                    self.log_entry("waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
+                    self.log_entry("waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
 
                 if "Water level" in edge_lock.keys():
                     if edge_lock["Water level"] != water_level:
-                        self.log_entry("Waiting to pass lock start".format(origin, destination), self.env.now, 0, orig)
+                        self.log_entry("waiting to pass lock start".format(origin, destination), self.env.now, 0, orig)
 
                         while edge_lock["Water level"] != water_level:
                             yield self.env.timeout(60)
                         
-                        self.log_entry("Waiting to pass lock stop".format(origin, destination), self.env.now, 0, dest)
+                        self.log_entry("waiting to pass lock stop".format(origin, destination), self.env.now, 0, dest)
                     
                     else:
                         self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
@@ -502,10 +552,11 @@ class HasResource(SimpyObject):
 
     Adds a limited Simpy resource which should be requested before the object is used for processing."""
 
-    def __init__(self, nr_resources=1, *args, **kwargs):
+    def __init__(self, nr_resources = 1, priority = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.resource = simpy.Resource(self.env, capacity=nr_resources)
+
+        self.resource = simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
 
 
 class Log(SimpyObject):
