@@ -1,0 +1,51 @@
+"""Vessel generator."""
+
+# package(s) related to time, space and id
+import json
+import logging
+import uuid
+
+# you need these dependencies (you can get these from anaconda)
+# package(s) related to the simulation
+import simpy
+import networkx as nx
+
+# spatial libraries
+import pyproj
+import shapely.geometry
+
+# additional packages
+import datetime, time
+import random
+
+logger = logging.getLogger(__name__)
+
+
+class VesselGenerator:
+    """
+    A class to generate vessels from a database
+    """
+
+    def __init__(self, vessel_type, vessel_database, random_seed = 4, *args, **kwargs):
+        """ Initialization """
+
+        self.vessel_type = vessel_type
+        self.vessel_database = vessel_database
+
+        random.seed(random_seed)
+    
+    def generate(self, path):
+        """ Generate a vessel """
+
+        vessel_info = self.vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
+
+        vessel_data = {}
+        for key in vessel_info:
+            vessel_data[key] = vessel_info[key].values[0]
+        
+        vessel_data["route"] = path.nodes
+        vessel_data["complete_path"] = path
+        
+        return self.vessel_type(**vessel_data)
+
+

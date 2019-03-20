@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Main module."""
 
 # package(s) related to time, space and id
@@ -223,20 +221,11 @@ class Movable(SimpyObject, Locatable, Routeable):
             if node[0] + 2 == len(self.route):
                 break
 
-        # check for sufficient fuel
-        if isinstance(self, HasFuel):
-            fuel_consumed = self.fuel_use_sailing(self.distance, self.current_speed)
-            self.check_fuel(fuel_consumed)
-
         self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
         logger.debug('  distance: ' + '%4.2f' % self.distance + ' m')
         logger.debug('  sailing:  ' + '%4.2f' % self.current_speed + ' m/s')
         logger.debug('  duration: ' + '%4.2f' % ((self.distance / self.current_speed) / 3600) + ' hrs')
 
-        # lower the fuel
-        if isinstance(self, HasFuel):
-            # remove seconds of fuel
-            self.consume(fuel_consumed)
     
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
@@ -506,33 +495,6 @@ class Processor(SimpyObject):
 
         yield my_origin_turn
         yield my_dest_turn
-
-        # check fuel from origin
-        if isinstance(origin, HasFuel):
-            fuel_consumed_origin = origin.fuel_use_unloading(amount)
-            origin.check_fuel(fuel_consumed_origin)
-
-        # check fuel from destination
-        if isinstance(destination, HasFuel):
-            fuel_consumed_destination = destination.fuel_use_unloading(amount)
-            destination.check_fuel(fuel_consumed_destination)
-        
-        # check fuel from processor if not origin or destination  -- case of backhoe with barges
-        if self.id != origin.id and self.id != destination.id and isinstance(self, HasFuel):
-            # if origin is moveable -- unloading
-            if isinstance(origin, Movable):
-                fuel_consumed = self.fuel_use_unloading(amount)
-                self.check_fuel(fuel_consumed)
-            
-            # if destinaion is moveable -- loading
-            if isinstance(destination, Movable):
-                fuel_consumed = self.fuel_use_loading(amount)
-                self.check_fuel(fuel_consumed)
-
-            # third option -- from moveable to moveable -- take highest fuel consumption
-            else:
-                fuel_consumed = max(self.fuel_use_unloading(amount), self.fuel_use_loading(amount))
-                self.check_fuel(fuel_consumed)
                 
         origin.log_entry('unloading start', self.env.now, origin.container.level)
         destination.log_entry('loading start', self.env.now, destination.container.level)
@@ -540,16 +502,6 @@ class Processor(SimpyObject):
         origin.container.get(amount)
         destination.container.put(amount)
         yield self.env.timeout(amount / self.rate)
-
-        # lower the fuel for all active entities
-        if isinstance(origin, HasFuel):
-            origin.consume(fuel_consumed_origin)
-
-        if isinstance(destination, HasFuel):
-            destination.consume(fuel_consumed_destination)
-
-        if self.id != origin.id and self.id != destination.id and isinstance(self, HasFuel):
-            self.consume(fuel_consumed)
 
         origin.log_entry('unloading stop', self.env.now, origin.container.level)
         destination.log_entry('loading stop', self.env.now, destination.container.level)
