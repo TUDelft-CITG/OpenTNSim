@@ -221,6 +221,9 @@ class Movable(SimpyObject, Locatable, Routeable):
             orig = self.geometry
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
             
+            print("Origin", orig)
+            print("Destination", dest)
+
             self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
                                             shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
     
