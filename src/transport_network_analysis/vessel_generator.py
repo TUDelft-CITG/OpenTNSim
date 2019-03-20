@@ -26,7 +26,7 @@ class VesselGenerator:
     A class to generate vessels from a database
     """
 
-    def __init__(self, vessel_type, vessel_database, random_seed = 4, *args, **kwargs):
+    def __init__(self, vessel_type, vessel_database, random_seed = 4):
         """ Initialization """
 
         self.vessel_type = vessel_type
