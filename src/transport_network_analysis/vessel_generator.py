@@ -51,5 +51,3 @@ class VesselGenerator:
             vessel_data["complete_path"] = path
         
         return self.vessel_type(**vessel_data)
-
-

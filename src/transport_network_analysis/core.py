@@ -94,16 +94,19 @@ class VesselProperties:
     Height, width, etc.
     """
 
-    def __init__(self, width, length, block_coefficient, 
+    def __init__(self, vessel_type, installed_power,
+                 width, length,
                  height_empty, height_full, 
                  draught_empty, draught_full, 
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         """Initialization"""
+        self.vessel_type = vessel_type
+        self.installed_power = installed_power
+
         self.width = width
         self.length = length
-        self.block_coefficient = block_coefficient
 
         self.height_empty = height_empty
         self.height_full = height_full

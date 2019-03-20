@@ -1,0 +1,7 @@
+﻿vessel_id,vessel_type,width,length,height_empty,height_full,draught_empty,draught_full,capacity,installed_power
+12ad8a02-4aef-11e9-9940-b469212bff5b,CEMT - I,5.05,38.5,4.65,3.35,1.2,2.5,365,175
+17746aee-4aef-11e9-8ebf-b469212bff5b,CEMT - II,6.6,55,5.8,4.6,1.4,2.6,615,250
+1be5fb2e-4aef-11e9-9bfb-b469212bff5b,CEMT - III,8.2,85,6.3,5.1,1.5,2.7,1250,435
+208a5aca-4aef-11e9-b7e9-b469212bff5b,CEMT - IV,9.5,105,6.7,5.3,1.6,3,2040,690
+24f93100-4aef-11e9-8ff9-b469212bff5b,CEMT - Va,11.4,135,7.1,5.4,1.8,3.5,3735,1425
+289b8492-4aef-11e9-b34f-b469212bff5b,CEMT - VIa,17,135,10,8,2,4,6000,2015
