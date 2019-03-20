@@ -82,6 +82,10 @@ class HasContainer(SimpyObject):
     @property
     def is_loaded(self):
         return True if self.container.level > 0 else False
+    
+    @property
+    def filling_degree(self):
+        return self.container.level / self.container.capacity
 
 
 class VesselProperties:
@@ -90,16 +94,34 @@ class VesselProperties:
     Height, width, etc.
     """
 
-    def __init__(self, width, length, height, block_coefficient,
+    def __init__(self, width, length, block_coefficient, 
+                 height_empty, height_full, 
+                 draught_empty, draught_full, 
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         """Initialization"""
         self.width = width
         self.length = length
-        self.height = height
         self.block_coefficient = block_coefficient
 
+        self.height_empty = height_empty
+        self.height_full = height_full
+
+        self.draught_empty = draught_empty
+        self.draught_full = draught_full
+
+    @property
+    def current_height(self):
+        """ Calculate current height based on filling degree """
+
+        return self.filling_degree * (self.height_full - self.height_empty) + self.height_empty
+
+    @property
+    def current_draught(self):
+        """ Calculate current draught based on filling degree """
+
+        return self.filling_degree * (self.draught_full - self.draught_empty) + self.draught_empty
 
 class HasEnergy:
     """
@@ -409,9 +431,7 @@ class ContainerDependentMovable(Movable, HasContainer):
     Used for objects that move with a speed dependent on the container level
     compute_v: a function, given the fraction the container is filled (in [0,1]), returns the current speed"""
 
-    def __init__(self,
-                 compute_v,
-                 *args, **kwargs):
+    def __init__(self, compute_v, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.compute_v = compute_v

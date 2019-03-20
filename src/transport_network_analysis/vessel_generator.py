@@ -34,17 +34,21 @@ class VesselGenerator:
 
         random.seed(random_seed)
     
-    def generate(self, path):
+    def generate(self, path = None, scenario = None):
         """ Generate a vessel """
 
         vessel_info = self.vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
-
         vessel_data = {}
+
+        if scenario:
+            vessel_info = vessel_info[vessel_info["scenario"] == scenario]
+
         for key in vessel_info:
             vessel_data[key] = vessel_info[key].values[0]
         
-        vessel_data["route"] = path.nodes
-        vessel_data["complete_path"] = path
+        if path:
+            vessel_data["route"] = path.nodes
+            vessel_data["complete_path"] = path
         
         return self.vessel_type(**vessel_data)
 
