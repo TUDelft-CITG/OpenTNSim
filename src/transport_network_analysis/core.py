@@ -80,67 +80,96 @@ class HasContainer(SimpyObject):
         """Initialization"""
         self.container = simpy.Container(self.env, capacity, init=level)
         self.total_requested = total_requested
-
-
-class HasFuel(SimpyObject):
-    """
-    fuel_capacity: amount of fuel that the container can hold
-    fuel_level: amount the container holds initially
-    fuel_container: a simpy object that can hold stuff
-    refuel_method: method of refueling (bunker or returning to quay) or ignore for not tracking
-    """
-
-    def __init__(self, fuel_use_loading, fuel_use_unloading, fuel_use_sailing, 
-                 fuel_capacity, fuel_level, refuel_method="ignore", *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.fuel_use_loading = fuel_use_loading
-        self.fuel_use_unloading = fuel_use_unloading
-        self.fuel_use_sailing = fuel_use_sailing
-        self.fuel_container = simpy.Container(self.env, fuel_capacity, init=fuel_level)
-        self.refuel_method = refuel_method
-
-    def consume(self, amount):
-        """consume an amount of fuel"""
-        
-        self.log_entry("fuel consumed", self.env.now, amount)
-        self.fuel_container.get(amount)
-
-    def fill(self, fuel_delivery_rate=1):
-        """fill 'er up"""
-
-        amount = self.fuel_container.capacity - self.fuel_container.level
-        if 0 < amount:
-            self.fuel_container.put(amount)
-
-        if self.refuel_method == "ignore":
-            return 0
-        else:
-            return amount / fuel_delivery_rate
     
-    def check_fuel(self, fuel_use):
-        if self.fuel_container.level < fuel_use:
-            #latest_log = [self.log[-1], self.t[-1], self.value[-1]]
-            #del self.log[-1], self.t[-1], self.value[-1]
+    @property
+    def is_loaded(self):
+        return True if self.container.level > 0 else False
 
-            refuel_duration = self.fill()
 
-            if refuel_duration != 0:
-                self.log_entry("fuel loading start", self.env.now, self.fuel_container.level)
-                yield self.env.timeout(refuel_duration)
-                self.log_entry("fuel loading stop", self.env.now, self.fuel_container.level)
+class VesselProperties:
+    """
+    Add information on possible restrictions to the vessels.
+    Height, width, etc.
+    """
 
-            #self.log_entry(latest_log[0], self.env.now, latest_log[2])
+    def __init__(self, width, length, height, block_coefficient,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        """Initialization"""
+        self.width = width
+        self.length = length
+        self.height = height
+        self.block_coefficient = block_coefficient
+
+
+class HasEnergy:
+    """
+    Add information on energy use and effects on energy use.
+    """
+
+    def __init__(self, emissionfactor, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        """Initialization"""
+        self.emissionfactor = emissionfactor
+        self.energy_use = {'total': 0,'stationary': 0}
+        self.co2_footprint = {'total_footprint': 0,'stationary': 0}
+        self.mki_footprint = {'total_footprint': 0,'stationary': 0}
+    
+    @property
+    def power(self):
+        return 2 * (self.current_speed * self.resistance * 10**-3)  #kW
+    
+    def calculate_energy_consumption(self):
+        """Calculation of energy consumption based on total time in system and properties"""
+
+        stationary_phase_indicator = ['Doors closing stop', 'Converting chamber stop', 'Doors opening stop', 'aiting to pass lock stop']
+        
+        times = self.log['Timestamp']
+        messages = self.log['Message']
+        
+        for i in range(len(times) - 1):
+            delta_t = times[i+1] - times[i]
+            
+            if messages[i + 1] in stationary_phase_indicator:
+                energy_delta =  self.power *  delta_t / 3600 # KJ/3600
+
+                self.energy_use['total_energy'] += energy_delta * 0.15
+                self.energy_use['stationary'] += energy_delta * 0.15
+            
+            else:
+                self.energy_use['total_energy'] += self.power * delta_t / 3600
 
 
 class Routeable:
     """Something with a route (networkx format)
     route: a networkx path"""
 
-    def __init__(self, route, *args, **kwargs):
+    def __init__(self, route, complete_path = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.route = route
+        self.complete_path = complete_path
+
+
+class IsLock:
+    """
+    Create a lock object
+    """
+
+    def __init__(self, nodes, neighbour_lock, lock_length, lock_width, 
+                 doors_open, doors_close, operating_time, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        """Initialization"""
+        self.nodes = nodes
+        self.neighbour_lock = neighbour_lock
+        self.lock_length = lock_length
+        self.lock_width = lock_width
+        self.doors_open = doors_open
+        self.doors_close = doors_close
+        self.operating_time = operating_time
 
 
 class Movable(SimpyObject, Locatable, Routeable):
@@ -409,10 +438,11 @@ class HasResource(SimpyObject):
 
     Adds a limited Simpy resource which should be requested before the object is used for processing."""
 
-    def __init__(self, nr_resources=1, *args, **kwargs):
+    def __init__(self, nr_resources=1, priority = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.resource = simpy.Resource(self.env, capacity=nr_resources)
+
+        self.resource = simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
 
 
 class Log(SimpyObject):
@@ -552,3 +582,311 @@ class DictEncoder(json.JSONEncoder):
 
 def serialize(obj):
     return json.dumps(obj, cls=DictEncoder)
+
+
+# class Movable(SimpyObject, Locatable, Routeable):
+#     """Movable class
+
+#     Used for object that can move with a fixed speed
+#     geometry: point used to track its current location
+#     v: speed"""
+
+ 
+#     def __init__(self, v=1, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         """Initialization"""
+#         self.v = v
+#         self.wgs84 = pyproj.Geod(ellps='WGS84')
+#         self.current_index = 0
+#         self.path_has_next = True
+#         self.distance_convered = 0
+
+
+#     def do_switch(self, replace, with_this, destination):
+#         first_element_to_replace = self.route.index(replace[0])
+#         last_element_to_replace = self.route.index(replace[-1])
+#         new_route = self.route[:first_element_to_replace] + list(with_this) + self.route[last_element_to_replace + 1:]
+#         self.route = new_route
+
+#     def check_switch(self, destination):
+#         path_options = self.env.crossover_points[destination]
+#         # assume that bi directional
+#         edge = None
+#         edge_opposite = None
+#         for i in range(0, len(path_options[0]) - 1):
+#             if self.env.FG.edges[path_options[0][i], path_options[0][i + 1]]["Object"] == "Lock":
+#                 edge = self.env.FG.edges[path_options[0][i], path_options[0][i + 1]]
+#             if self.env.FG.edges[path_options[1][i], path_options[1][i + 1]]["Object"] == "Lock":
+#                 edge_opposite = self.env.FG.edges[path_options[1][i], path_options[1][i + 1]]
+#         if (edge == None and edge_opposite == None):
+#             # need two locks to work
+#             return
+         
+#         queue_one = len(edge["Resources"].queue)
+#         queue_two = len(edge_opposite["Resources"].queue)
+#         # print("Queues: ",edge_opposite["attribute"].lock_name, queue_one, queue_two, self.env.now / (60 * 60))
+#         if ( queue_one < queue_two and path_options[0][i] not in self.route):
+#             # replace all values in path and in path_options[1] in favor of path_options[0]
+#             self.do_switch(path_options[1], path_options[0], destination)
+#         if (queue_one >= queue_two and  path_options[1][i] not in self.route):
+#             # put the alternative path on vessel path
+#             self.do_switch(path_options[0], path_options[1], destination)
+
+#     def move(self):
+#         """determine distance between origin and destination, and
+#         yield the time it takes to travel it
+        
+#         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
+#         """
+#         self.distance = 0
+
+#         # Check if vessel is at correct location - if note, move to location
+#         if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
+#             orig = self.geometry
+#             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+            
+#             self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+#                                             shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+    
+#             yield self.env.timeout(self.distance / self.current_speed)
+#             self.log_entry("Sailing to start", self.env.now, self.distance, dest)
+
+#         # update position while we have a new node on the path
+#         while self.path_has_next:
+#             if (self.route[self.current_index + 1] == self.route[-1]):
+#                 self.path_has_next = False
+            
+#             origin = self.route[self.current_index]
+#             destination = self.route[self.current_index + 1]
+#             current_node = self.env.FG.nodes[origin]
+#             edge = self.env.FG.edges[origin, destination]
+#             self.geometry = current_node["geometry"]
+#             # wait for bridges
+#             if (current_node["bridge"] == True):
+#                 if (self.height >= 9.1):
+#                     self.log_entry("waiting to pass bridge start", self.env.now, 0, self.geometry)
+#                     yield self.env.timeout(10*60)
+#                     self.log_entry("waiting to pass bridge stop", self.env.now, 0, self.geometry)
+
+#             # update current index
+#             self.current_index += 1
+
+#             # if encountering a crossover point we check if we are goining into the lock
+#             if (destination in self.env.crossover_points):
+#                 # check if goining into lock
+#                 if (origin not in self.env.crossover_points[destination][0] \
+#                     and origin not in self.env.crossover_points[destination][1]):
+#                     self.check_switch(destination)
+
+#             if "Object" in edge.keys():
+#                 if edge["Object"] == "Lock":
+#                     yield from self.pass_lock(origin, destination)
+#                 elif edge["Object"] == "Waiting Area":
+#                     yield from self.pass_waiting_area(origin, destination, self.route[self.current_index + 1])
+#                 else:
+#                     yield from self.pass_edge(origin, destination)
+#             else:
+#                 yield from self.pass_edge(origin, destination)
+
+
+
+#         # check for sufficient fuel
+#         if isinstance(self, HasFuel):
+#             fuel_consumed = self.fuel_use_sailing(self.distance, self.current_speed)
+#             self.check_fuel(fuel_consumed)
+
+#         self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+#         logger.debug('  distance: ' + '%4.2f' % self.distance + ' m')
+#         logger.debug('  sailing:  ' + '%4.2f' % self.current_speed + ' m/s')
+#         logger.debug('  duration: ' + '%4.2f' % ((self.distance / self.current_speed) / 3600) + ' hrs')
+
+#         # lower the fuel
+#         if isinstance(self, HasFuel):
+#             # remove seconds of fuel
+#             self.consume(fuel_consumed)
+    
+#     def pass_edge(self, origin, destination):
+#         edge = self.env.FG.edges[origin, destination]
+#         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
+#         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+
+#         #next_node = self.env.FG.nodes[self.route[self.current_index + 1]]
+
+#         distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+#                                   shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+
+#         self.distance += distance
+#         arrival = self.env.now
+        
+#         # Act based on resources
+#         if "Resources" in edge.keys():
+#             with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+#                 yield request
+
+#                 if arrival != self.env.now:
+#                     self.log_entry("waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
+#                     self.log_entry("waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
+
+#                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
+
+#                 #if (next_node["slow_down"]):
+#                 #    yield self.env.timeout((distance - self.length * 7) / self.current_speed)
+#                 #else:
+#                 yield self.env.timeout((distance) / self.current_speed)
+
+#                 self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
+        
+#         else:
+#             self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
+#             yield self.env.timeout(distance / self.current_speed)
+#             self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest)
+        
+
+#     def pass_lock(self, origin, destination):
+#         edge = self.env.FG.edges[origin, destination]
+#         lock = edge['attribute']
+
+#         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
+#         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+#         water_level = origin
+
+#         distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+#                                   shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+
+#         self.distance += distance
+#         arrival = self.env.now
+        
+#         if "Water level" in edge.keys():
+#             if edge["Water level"] == water_level:
+#                 priority = 0
+#             else:
+#                 priority = 1
+#         else:
+#             priority = 0
+
+#         with self.env.FG.edges[origin, destination]["Resources"].request(priority = priority) as request:
+#             yield request
+
+#             if arrival != self.env.now:
+
+#                 self.log_entry("waiting to pass lock start".format(origin, destination), arrival, 0, orig)
+#                 self.log_entry("waiting to pass lock stop".format(origin, destination), self.env.now, 0, orig)
+
+#             # Check direction (for now do not use this)
+#             if "Water level" in edge.keys():
+                
+#                 # If water level at origin is not similar to lock-water level --> change water level and wait
+#                 if water_level != edge["Water level"]:
+                    
+#                     # Doors closing
+#                     self.log_entry("Doors closing start", self.env.now, 0, orig)
+#                     yield self.env.timeout(1 * 60)
+#                     self.log_entry("Doors closing stop", self.env.now, 0, orig)
+
+#                     # Converting chamber
+#                     self.log_entry("Converting chamber start", self.env.now, 0, orig)
+#                     yield self.env.timeout(14 * 60)
+#                     self.log_entry("Converting chamber stop", self.env.now, 0, orig)
+
+#                     # Doors opening
+#                     self.log_entry("Doors opening start", self.env.now, 0, orig)
+#                     yield self.env.timeout(1 * 60)
+#                     self.log_entry("Doors opening start", self.env.now, 0, orig)
+
+#                     # Change edge water level
+#                     self.env.FG.edges[origin, destination]["Water level"] = water_level
+
+#             # If direction is similar to lock-water level --> pass the lock
+#             if not "Water level" in edge.keys() or edge["Water level"] == water_level:
+#                 chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
+#                 lock.log_entry("Ship in lock", self.env.now, self.name, chamber)
+#                 # Sailing in
+#                 self.log_entry("Sailing into lock start", self.env.now, 0, orig)
+#                 yield self.env.timeout(5 * 60)
+#                 self.log_entry("Sailing into lock stop", self.env.now, 0, chamber)
+
+#                 # Doors closing
+#                 self.log_entry("Doors closing start", self.env.now, 0, chamber)
+#                 yield self.env.timeout(lock.doors_close)
+#                 self.log_entry("Doors closing stop", self.env.now, 0, chamber)
+
+#                 # Converting chamber
+#                 chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
+#                 self.log_entry("Converting chamber start", self.env.now, 0, chamber)
+#                 yield self.env.timeout(lock.operating_time)
+#                 self.log_entry("Converting chamber stop", self.env.now, 0, chamber)
+
+#                 # Doors opening
+#                 self.log_entry("Doors opening start", self.env.now, 0, chamber)
+#                 yield self.env.timeout(lock.doors_open)
+#                 self.log_entry("Doors opening stop", self.env.now, 0, chamber)
+
+#                 # Sailing out
+#                 self.log_entry("Sailing out of lock start", self.env.now, 0, chamber)
+#                 yield self.env.timeout(5 * 60)
+#                 self.log_entry("Sailing out of lock stop", self.env.now, 0, dest)
+                
+#                 lock.log_entry("Ship out lock", self.env.now, self.name, chamber)
+
+#                 # Change edge water level
+#                 self.env.FG.edges[origin, destination]["Water level"] = destination
+        
+#             # Change edge water level
+#             self.env.FG.edges[origin, destination]["Water level"] = destination
+    
+#     def pass_waiting_area(self, origin, destination, lock):
+#         edge = self.env.FG.edges[origin, destination]
+#         edge_lock = self.env.FG.edges[destination, lock]
+#         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
+#         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+#         water_level = destination
+
+#         distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
+#                                   shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+
+#         self.distance += distance
+#         arrival = self.env.now
+        
+#         # Act based on resources
+#         if "Resources" in edge.keys():
+#             with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+#                 yield request
+
+#                 if arrival != self.env.now:
+#                     self.log_entry("waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
+#                     self.log_entry("waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
+
+#                 if "Water level" in edge_lock.keys():
+#                     if edge_lock["Water level"] != water_level:
+#                         self.log_entry("waiting to pass lock start".format(origin, destination), self.env.now, 0, orig)
+
+#                         while edge_lock["Water level"] != water_level:
+#                             yield self.env.timeout(60)
+                        
+#                         self.log_entry("waiting to pass lock stop".format(origin, destination), self.env.now, 0, dest)
+                    
+#                     else:
+#                         self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+#                         yield self.env.timeout(distance / self.current_speed)
+#                         self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+                    
+#                 else:
+#                     self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+#                     yield self.env.timeout(distance / self.current_speed)
+#                     self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+        
+#         else:
+#             yield self.env.timeout(distance / self.current_speed)
+#             self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
+
+
+#     def is_at(self, locatable, tolerance=100):
+#         current_location = shapely.geometry.asShape(self.geometry)
+#         other_location = shapely.geometry.asShape(locatable.geometry)
+#         _, _, distance = self.wgs84.inv(current_location.x, current_location.y,
+#                                         other_location.x, other_location.y)
+#         return distance < tolerance
+
+#     @property
+#     def current_speed(self):
+#         return self.v
