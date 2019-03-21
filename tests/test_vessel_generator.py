@@ -11,6 +11,13 @@ import simpy
 # import networkx for graphs
 import networkx as nx
 
+# import spatial libraries
+import pyproj
+import shapely.geometry
+
+# import random for random selection
+import random
+
 # tranport network analysis package
 import transport_network_analysis.core as core
 import transport_network_analysis.model as model
@@ -22,7 +29,7 @@ Testing the VesselGenerator class of model.py
 
 @pytest.fixture()
 def vessel_database():
-    return pd.read_csv("../notebooks/Vessels/richtlijnen-vaarwegen-2017.csv")
+    return pd.read_csv("tests/vessels/vessels.csv")
 
 @pytest.fixture()
 def vessel_type():
@@ -43,13 +50,13 @@ def graph():
     nodes = [node_1, node_2, node_3]
 
     for node in nodes:
-        graph.graph.add_node(node["Name"], 
-                            geometry = node["Geometry"], 
-                            Position = (node["Geometry"].x, node["Geometry"].y))
+        FG.add_node(node["Name"], 
+                    geometry = node["Geometry"], 
+                    Position = (node["Geometry"].x, node["Geometry"].y))
 
     edges = [[node_1, node_2], [node_2, node_3]]
     for edge in edges:
-        graph.graph.add_edge(edge[0]["Name"], edge[1]["Name"], weight = 1)
+        FG.add_edge(edge[0]["Name"], edge[1]["Name"], weight = 1)
 
     return FG
 
@@ -63,12 +70,14 @@ def test_make_vessel(vessel_database, vessel_type, graph):
     # Generate a vessel
     path = nx.dijkstra_path(graph, list(graph)[0], list(graph)[-1])
     env = simpy.Environment()
+    env.FG = graph
 
     generator = model.VesselGenerator(vessel_type, vessel_database)
     generated_vessel = generator.generate(env, "Test vessel", path)
 
     # Make the test vessel
-    vessel_info = vessel_database.sample(n = 1, random_state = 4)
+    random.seed(4)
+    vessel_info = vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
     vessel_data = {}
 
     vessel_data["env"] = env
@@ -84,4 +93,6 @@ def test_make_vessel(vessel_database, vessel_type, graph):
 
     test_vessel = vessel_type(**vessel_data)
 
-    assert generated_vessel == test_vessel
+    for key in generated_vessel.__dict__:
+        if key != "container" or key != "resource":
+            generated_vessel.__dict__[key] == test_vessel.__dict__[key]
