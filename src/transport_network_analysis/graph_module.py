@@ -98,7 +98,7 @@ class Graph():
 
         new_graph = new_graph.to_directed()
 
-        if nx.info(new_graph) == self.graph_info:
+        if nx.info(new_graph) != self.graph_info:
             self.graph = new_graph
             self.graph_info = nx.info(new_graph)
         else:
