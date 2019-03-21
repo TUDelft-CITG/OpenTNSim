@@ -37,6 +37,7 @@ class VesselGenerator:
 
         random.seed(random_seed)
     
+    
     def generate(self, environment, vessel_name, path, scenario = None):
         """ Generate a vessel """
 
@@ -60,6 +61,7 @@ class VesselGenerator:
         
         return self.vessel_type(**vessel_data)
     
+    
     def arrival_process(self, environment, path, arrival_distribution, scenario, arrival_process):
         """ 
         Make arrival process
@@ -81,8 +83,6 @@ class VesselGenerator:
         
         else:
             raise ValueError("Specify an arrival distribution: type Integer or type List.")
-        
-        vessel_no = 1
 
         while True:
 
@@ -93,14 +93,12 @@ class VesselGenerator:
             if arrival_process == "Markovian":
 
                 # Make a timestep based on the poisson process
-                time = random.expovariate(inter_arrival)
-                
-                environment.arrivals.append(time)
+                time = random.expovariate(1 / inter_arrival)
                 yield environment.timeout(time)
 
                 # Create a vessel
-                vessel = environment.vessel_generator.generate(environment, "Vessel " + vessel_no, path, scenario)
-                vessel_no += 1
+                vessel = self.generate(environment, "Vessel", path, scenario)
+                environment.vessels.append(vessel)
 
                 # Move on path
                 environment.process(vessel.move())
@@ -109,14 +107,22 @@ class VesselGenerator:
                 raise ValueError("No other arrival processes are yet defined. You can add them to transport_network_analysis/vessel_generator.py.")
 
 
-class Simulation(core.SimpyObject, core.Identifiable):
+class Simulation(core.Identifiable):
     """
     A class to generate vessels from a database
     """
 
-    def __init__(self, scenario = None):
-        """ Initialization """
+    def __init__(self, simulation_start, graph, scenario = None):
+        """ 
+        Initialization 
+        
+        scenario: scenario with vessels - should be coupled to the database
+        """
+        self.environment = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
+        self.environment.FG = graph
         self.scenario = scenario
+
+        self.environment.vessels = []
     
     def add_vessels(self, path, vessel_generator, arrival_distribution = 1, arrival_process = "Markovian"):
         """ 
@@ -127,17 +133,16 @@ class Simulation(core.SimpyObject, core.Identifiable):
         arrival_process:        process of arrivals
         """
 
-        self.env.process(vessel_generator.arrival_process(self.env, path, arrival_distribution, self.scenario, arrival_process))
+        self.environment.process(vessel_generator.arrival_process(self.environment, path, arrival_distribution, self.scenario, arrival_process))
     
     def run(self, duration = 24 * 60 * 60):
         """ 
         Run the simulation 
         
         duration:               specify the duration of the simulation in seconds
-        scenario:               scenario with vessels - should be coupled to the database
         """ 
         
-        self.env.run(until = duration)
+        self.environment.run(until = self.environment.now + duration)
 
     
 
