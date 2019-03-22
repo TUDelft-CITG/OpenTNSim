@@ -5,6 +5,9 @@ import pytest
 # import pandas for data handling
 import pandas as pd
 
+# import numpy for math
+import numpy as np
+
 # import simpy for simulation environment
 import simpy
 
@@ -14,6 +17,9 @@ import networkx as nx
 # import spatial libraries
 import pyproj
 import shapely.geometry
+
+# import date and time handling
+import datetime
 
 # import random for random selection
 import random
@@ -67,11 +73,12 @@ Actual testing starts below
 
 def test_make_vessel(vessel_database, vessel_type, graph):
 
-    # Generate a vessel
+    # Generate a path
     path = nx.dijkstra_path(graph, list(graph)[0], list(graph)[-1])
     env = simpy.Environment()
     env.FG = graph
 
+    # Generate a vessel
     generator = model.VesselGenerator(vessel_type, vessel_database)
     generated_vessel = generator.generate(env, "Test vessel", path)
 
@@ -96,3 +103,29 @@ def test_make_vessel(vessel_database, vessel_type, graph):
     for key in generated_vessel.__dict__:
         if key != "container" or key != "resource":
             generated_vessel.__dict__[key] == test_vessel.__dict__[key]
+
+def test_inter_arrival_times(vessel_database, vessel_type, graph):
+
+    # Generate a path
+    path = nx.dijkstra_path(graph, list(graph)[0], list(graph)[-1])
+
+    # Create a vessel generator
+    generator = model.VesselGenerator(vessel_type, vessel_database)
+
+    # Create a simulation object
+    simulation_start = datetime.datetime(2019, 1, 1)
+    sim = model.Simulation(simulation_start, graph)
+    sim.add_vessels(path = path, vessel_generator = generator)
+
+    # Run the simulation
+    sim.run(duration = 100 * 24 * 60 * 60)
+
+    # The default arrival times of vessels is 1 per hour
+    inter_arrivals = []
+
+    for i, _ in enumerate(sim.environment.vessels):
+        if i > 0:
+            inter_arrivals.append(sim.environment.vessels[i].log["Timestamp"][0] - sim.environment.vessels[i - 1].log["Timestamp"][0])    
+
+    # Test if average inter_arrival time is indeed approximately 3600 seconds
+    assert np.isclose(3600, np.mean(inter_arrivals).total_seconds(), rtol = 0.01, atol = 60)
