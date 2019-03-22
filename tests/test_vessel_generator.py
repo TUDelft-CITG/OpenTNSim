@@ -30,7 +30,7 @@ import transport_network_analysis.model as model
 
 
 """
-Testing the VesselGenerator class of model.py
+Testing the VesselGenerator class and Simulation class of model.py
 """
 
 @pytest.fixture()
