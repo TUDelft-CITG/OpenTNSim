@@ -80,7 +80,7 @@ def test_make_vessel(vessel_database, vessel_type, graph):
 
     # Generate a vessel
     generator = model.VesselGenerator(vessel_type, vessel_database)
-    generated_vessel = generator.generate(env, "Test vessel", path)
+    generated_vessel = generator.generate(env, "Test vessel")
 
     # Make the test vessel
     random.seed(4)
@@ -89,8 +89,8 @@ def test_make_vessel(vessel_database, vessel_type, graph):
 
     vessel_data["env"] = env
     vessel_data["name"] = "Test vessel"
-    vessel_data["route"] = path
-    vessel_data["geometry"] = nx.get_node_attributes(graph, "geometry")[path[0]]
+    vessel_data["route"] = None
+    vessel_data["geometry"] = None
 
     for key in vessel_info:
         if key == "vessel_id":
@@ -106,16 +106,13 @@ def test_make_vessel(vessel_database, vessel_type, graph):
 
 def test_inter_arrival_times(vessel_database, vessel_type, graph):
 
-    # Generate a path
-    path = nx.dijkstra_path(graph, list(graph)[0], list(graph)[-1])
-
     # Create a vessel generator
     generator = model.VesselGenerator(vessel_type, vessel_database)
 
     # Create a simulation object
     simulation_start = datetime.datetime(2019, 1, 1)
     sim = model.Simulation(simulation_start, graph)
-    sim.add_vessels(path = path, vessel_generator = generator)
+    sim.add_vessels(origin = list(graph)[0], destination = list(graph)[-1], vessel_generator = generator)
 
     # Run the simulation
     sim.run(duration = 100 * 24 * 60 * 60)
