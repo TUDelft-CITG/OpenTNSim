@@ -18,7 +18,6 @@ import shapely.geometry
 import datetime, time
 import pandas as pd
 import random
-from random import seed
 
 # import core from self
 import transport_network_analysis.core as core
@@ -38,7 +37,7 @@ class VesselGenerator:
         self.vessel_database = vessel_database
         self.loaded = loaded
 
-        seed(4)
+        random.seed(random_seed)
     
     
     def generate(self, environment, vessel_name, scenario = None):

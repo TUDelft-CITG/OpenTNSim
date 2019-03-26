@@ -141,7 +141,7 @@ class VesselProperties:
         minDepth = minWidth if minDepth else 1.1 * self.current_draught
 
         # Check if information on restrictions is added to the edges
-        random.seed = randomSeed
+        random.seed(randomSeed)
         edge = random.choice(list(graph.edges(data = True)))
         edge_attrs = list(edge[2].keys())
         
