@@ -65,10 +65,9 @@ def graph():
     edges = [[node_1, node_2], [node_2, node_3], [node_2, node_4], [node_3, node_4]]
     for edge in edges:
         if edge != [node_2, node_4]:
-            FG.add_edge(edge[0]["Name"], edge[1]["Name"], MaxWidth = 25)
+            FG.add_edge(edge[0]["Name"], edge[1]["Name"], Width = 25, Height = 25, Depth = 25)
         else:
-            FG.add_edge(edge[0]["Name"], edge[1]["Name"], MaxWidth = 6.5)
-
+            FG.add_edge(edge[0]["Name"], edge[1]["Name"], Width = 6.5, Height = 25, Depth = 25)
     return FG
 
 
@@ -93,7 +92,7 @@ def test_route_selection_small(vessel_database, vessel_type, graph):
     edges = []
     nodes = []
     for edge in graph.edges(data = True):
-        if edge[2]["MaxWidth"] > vessel_width:
+        if edge[2]["Width"] > vessel_width:
             edges.append(edge)
             
             nodes.append(graph.nodes[edge[0]])
@@ -132,7 +131,7 @@ def test_route_selection_large(vessel_database, vessel_type, graph):
     edges = []
     nodes = []
     for edge in graph.edges(data = True):
-        if edge[2]["MaxWidth"] > vessel_width:
+        if edge[2]["Width"] > vessel_width:
             edges.append(edge)
             
             nodes.append(graph.nodes[edge[0]])
@@ -152,3 +151,22 @@ def test_route_selection_large(vessel_database, vessel_type, graph):
     path = nx.dijkstra_path(subGraph, subGraph.nodes["Node 1"]["name"], subGraph.nodes["Node 4"]["name"])
 
     assert path == ["Node 1", "Node 2", "Node 3", "Node 4"]
+
+def test_route_selection_self(vessel_database, vessel_type, graph):
+
+    # Create a vessel generator
+    generator = model.VesselGenerator(vessel_type, vessel_database)
+
+    # Create a simulation object
+    simulation_start = datetime.datetime(2019, 1, 1)
+    sim = model.Simulation(simulation_start, graph)
+    sim.add_vessels(origin = list(graph)[0], destination = list(graph)[-1], vessel_generator = generator)
+
+    # Run the simulation
+    sim.run(duration = 24 * 60 * 60)
+
+    for vessel in sim.environment.vessels:
+        if vessel.width < 6.5:
+            assert vessel.route == ["Node 1", "Node 2", "Node 4"]
+        else:
+            assert vessel.route == ["Node 1", "Node 2", "Node 3", "Node 4"]
