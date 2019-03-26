@@ -23,7 +23,6 @@ import datetime
 
 # import random for random selection
 import random
-from random import seed
 
 # tranport network analysis package
 import transport_network_analysis.core as core
@@ -84,7 +83,7 @@ def test_make_vessel(vessel_database, vessel_type, graph):
     generated_vessel = generator.generate(env, "Test vessel")
 
     # Make the test vessel
-    seed(4)
+    random.seed(4)
     vessel_info = vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
     vessel_data = {}
 
