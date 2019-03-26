@@ -2,4 +2,4 @@
 source = src
 
 [report]
-omit = test*, .eggs*
+omit = test*, .eggs*, src/transport_network_analysis/plot.py

@@ -8,6 +8,7 @@ import uuid
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
+import random
 import networkx as nx
 
 # spatial libraries
@@ -125,6 +126,59 @@ class VesselProperties:
         """ Calculate current draught based on filling degree """
 
         return self.filling_degree * (self.draught_full - self.draught_empty) + self.draught_empty
+    
+    def get_route(self, origin, destination,
+                  graph = None,
+                  minWidth = None, 
+                  minHeight = None, 
+                  minDepth = None,
+                  randomSeed = 4):
+        """ Calculate a path based on vessel restrictions """
+
+        graph = graph if graph else self.env.FG
+        minWidth = minWidth if minWidth else 1.1 * self.width
+        minHeight = minWidth if minHeight else 1.1 * self.current_height
+        minDepth = minWidth if minDepth else 1.1 * self.current_draught
+
+        # Check if information on restrictions is added to the edges
+        random.seed(randomSeed)
+        edge = random.choice(list(graph.edges(data = True)))
+        edge_attrs = list(edge[2].keys())
+        
+
+        # IMPROVE THIS TO CHECK ALL EDGES AND COMBINATIONS OF RESTRICTIONS
+
+        if all(item in edge_attrs for item in ["Width", "Height", "Depth"]):
+            edges = []
+            nodes = []
+
+            for edge in graph.edges(data = True):
+                if edge[2]["Width"] >= minWidth and edge[2]["Height"] >= minHeight and edge[2]["Depth"] >= minDepth:
+                    edges.append(edge)
+                    
+                    nodes.append(graph.nodes[edge[0]])
+                    nodes.append(graph.nodes[edge[1]])
+
+            subGraph = graph.__class__()
+
+            for node in nodes:
+                subGraph.add_node(node["name"],
+                        name = node["name"],
+                        geometry = node["geometry"], 
+                        position = (node["geometry"].x, node["geometry"].y))
+
+            for edge in edges:
+                subGraph.add_edge(edge[0], edge[1], attr_dict = edge[2])
+
+            try:
+                return nx.dijkstra_path(subGraph, origin, destination)
+            except:
+                raise ValueError("No path was found with the given boundary conditions.")
+
+        # If not, return shortest path
+        else:
+            return nx.dijkstra_path(graph, origin, destination)
+            
 
 class HasEnergy:
     """
