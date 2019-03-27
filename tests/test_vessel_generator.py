@@ -104,7 +104,7 @@ def test_make_vessel(vessel_database, vessel_type, graph):
         if key != "container" or key != "resource":
             generated_vessel.__dict__[key] == test_vessel.__dict__[key]
 
-def test_inter_arrival_times(vessel_database, vessel_type, graph):
+def test_inter_arrival_times_markovian(vessel_database, vessel_type, graph):
 
     # Create a vessel generator
     generator = model.VesselGenerator(vessel_type, vessel_database)
@@ -113,6 +113,29 @@ def test_inter_arrival_times(vessel_database, vessel_type, graph):
     simulation_start = datetime.datetime(2019, 1, 1)
     sim = model.Simulation(simulation_start, graph)
     sim.add_vessels(origin = list(graph)[0], destination = list(graph)[-1], vessel_generator = generator)
+
+    # Run the simulation
+    sim.run(duration = 100 * 24 * 60 * 60)
+
+    # The default arrival times of vessels is 1 per hour
+    inter_arrivals = []
+
+    for i, _ in enumerate(sim.environment.vessels):
+        if i > 0:
+            inter_arrivals.append(sim.environment.vessels[i].log["Timestamp"][0] - sim.environment.vessels[i - 1].log["Timestamp"][0])    
+
+    # Test if average inter_arrival time is indeed approximately 3600 seconds
+    assert np.isclose(3600, np.mean(inter_arrivals).total_seconds(), rtol = 0.01, atol = 60)
+
+def test_inter_arrival_times_uniform(vessel_database, vessel_type, graph):
+
+    # Create a vessel generator
+    generator = model.VesselGenerator(vessel_type, vessel_database)
+
+    # Create a simulation object
+    simulation_start = datetime.datetime(2019, 1, 1)
+    sim = model.Simulation(simulation_start, graph)
+    sim.add_vessels(origin = list(graph)[0], destination = list(graph)[-1], vessel_generator = generator, arrival_process = "Uniform")
 
     # Run the simulation
     sim.run(duration = 100 * 24 * 60 * 60)
