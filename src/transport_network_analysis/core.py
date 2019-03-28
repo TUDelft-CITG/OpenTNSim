@@ -31,6 +31,18 @@ class SimpyObject:
         self.env = env
 
 
+class HasResource(SimpyObject):
+    """HasProcessingLimit class
+
+    Adds a limited Simpy resource which should be requested before the object is used for processing."""
+
+    def __init__(self, nr_resources=1, priority = False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+
+        self.resource = simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
+
+
 class Identifiable:
     """Something that has a name and id
 
@@ -53,7 +65,8 @@ class Locatable:
     def __init__(self, geometry, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.geometry = geometry
+        self.node = geometry
+        self.node = None
 
 
 class Neighbours:
@@ -88,6 +101,35 @@ class HasContainer(SimpyObject):
     def filling_degree(self):
         return self.container.level / self.container.capacity
 
+
+class Log(SimpyObject):
+    """Log class
+
+    log: log message [format: 'start activity' or 'stop activity']
+    t: timestamp
+    value: a value can be logged as well
+    geometry: value from locatable (lat, lon)"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.log = {"Message": [],
+                    "Timestamp": [],
+                    "Value": [],
+                    "Geometry": []}
+
+    def log_entry(self, log, t, value, geometry_log):
+        """Log"""
+        self.log["Message"].append(log)
+        self.log["Timestamp"].append(datetime.datetime.fromtimestamp(t))
+        self.log["Value"].append(value)
+        self.log["Geometry"].append(geometry_log)
+
+    def get_log_as_json(self):
+        json = []
+        for msg, t, value, geometry_log in zip(self.log["Message"], self.log["Timestamp"], self.log["Value"], self.log["Geometry"]):
+            json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
+        return json
 
 class VesselProperties:
     """
@@ -230,23 +272,103 @@ class Routeable:
         self.complete_path = complete_path
 
 
-class IsLock:
+class IsLock(HasResource, Identifiable, Log):
     """
     Create a lock object
+
+    properties in meters
+    operation in seconds
     """
 
-    def __init__(self, nodes, neighbour_lock, lock_length, lock_width, 
-                 doors_open, doors_close, operating_time, *args, **kwargs):
+    def __init__(self, node_1, node_2, lock_length, lock_width, lock_depth,
+                 doors_open, doors_close, operating_time, waiting_area = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
         """Initialization"""
-        self.nodes = nodes
-        self.neighbour_lock = neighbour_lock
+        
+        # Properties
         self.lock_length = lock_length
         self.lock_width = lock_width
+        self.lock_depth = lock_depth
+
+        # Operating
         self.doors_open = doors_open
         self.doors_close = doors_close
         self.operating_time = operating_time
+
+        # Water level
+        assert node_1 != node_2
+
+        self.node_1 = node_1
+        self.node_2 = node_2
+        self.water_level = random.choice([node_1, node_2])
+
+        # Lay-Out
+        self.line_up_area = {node_1: simpy.Resource(self.env, capacity = 1), node_2: simpy.Resource(self.env, capacity = 1)}
+        
+        waiting_area_resources = 1 if waiting_area else 100
+        self.waiting_area = {node_1: simpy.Resource(self.env, capacity = waiting_area_resources), 
+                             node_2: simpy.Resource(self.env, capacity = waiting_area_resources)} 
+    
+    def pass_lock(self, vessel):
+        """Pass the lock"""
+
+        # Direction of the vessel
+        from_node = vessel.node
+        
+        print("Part 1")
+        # Request access to waiting area
+        wait_for_waiting_area_start = self.env.now
+
+        access_waiting_area = self.waiting_area[from_node].request()
+        yield access_waiting_area
+
+        if wait_for_waiting_area_start != self.env.now:
+            vessel.log_entry("Waiting to enter waiting area", self.env.now, wait_for_waiting_area_start - self.env.now, vessel.geometry)
+
+        print("Part 2")
+        # Request access to line-up area
+        wait_for_lineup_area_start = self.env.now
+
+        access_line_up_area = self.line_up_area[from_node].request()
+        yield access_line_up_area
+        self.waiting_area[from_node].release(access_waiting_area)
+
+        if wait_for_lineup_area_start != self.env.now:
+            vessel.log_entry("Waiting in waiting area", self.env.now, access_line_up_area - self.env.now, vessel.geometry)
+        
+        print("Part 3")
+        # Request access to lock
+        wait_for_lock_entry_start = self.env.now
+
+        if from_node == self.water_level:
+            priority = -1
+        else:
+            priority = 0
+
+        access_lock = self.resource.request(priority = priority)
+        yield access_lock
+        self.line_up_area[from_node].release(access_line_up_area)
+
+        if wait_for_lock_entry_start != self.env.now:
+            vessel.log_entry("Waiting in line-up area", self.env.now, wait_for_lock_entry_start - self.env.now, vessel.geometry)
+        
+        print("Part 4")
+        # Vessel inside the lock
+        vessel.log_entry("Passing lock start", self.env.now, 0, vessel.geometry)
+        
+        # Close the doors
+        yield self.env.timeout(self.doors_close * 60)
+
+        # Shift water
+        yield self.env.timeout(self.operating_time * 60)
+
+        # Open the doors
+        yield self.env.timeout(self.doors_open * 60)
+        
+        print("Part 5")
+        # Vessel outside the lock
+        passage_time = (self.doors_close + self.operating_time + self.doors_open) * 60
+        vessel.log_entry("Passing lock start", self.env.now, passage_time, vessel.geometry)
 
 
 class Movable(SimpyObject, Locatable, Routeable):
@@ -286,17 +408,14 @@ class Movable(SimpyObject, Locatable, Routeable):
 
         # Move over the path and log every step
         for node in enumerate(self.route):
+            self.node = node[1]
+
             origin = self.route[node[0]]
             destination = self.route[node[0] + 1]
             edge = self.env.FG.edges[origin, destination]
 
-            if "Object" in edge.keys():
-                if edge["Object"] == "Lock":
-                    yield from self.pass_lock(origin, destination)
-                elif edge["Object"] == "Waiting Area":
-                    yield from self.pass_waiting_area(origin, destination, self.route[node[0] + 2])
-                else:
-                    yield from self.pass_edge(origin, destination)
+            if "Lock" in edge.keys():
+                yield from edge["Lock"].pass_lock(self)
             else:
                 yield from self.pass_edge(origin, destination)
 
@@ -473,13 +592,6 @@ class Movable(SimpyObject, Locatable, Routeable):
             self.log_entry("Sailing from node {} to node {}".format(origin, destination), self.env.now, 0, dest)
 
 
-    def is_at(self, locatable, tolerance=100):
-        current_location = shapely.geometry.asShape(self.geometry)
-        other_location = shapely.geometry.asShape(locatable.geometry)
-        _, _, distance = self.wgs84.inv(current_location.x, current_location.y,
-                                        other_location.x, other_location.y)
-        return distance < tolerance
-
     @property
     def current_speed(self):
         return self.v
@@ -500,48 +612,6 @@ class ContainerDependentMovable(Movable, HasContainer):
     @property
     def current_speed(self):
         return self.compute_v(self.container.level / self.container.capacity)
-
-
-class HasResource(SimpyObject):
-    """HasProcessingLimit class
-
-    Adds a limited Simpy resource which should be requested before the object is used for processing."""
-
-    def __init__(self, nr_resources=1, priority = False, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-
-        self.resource = simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
-
-
-class Log(SimpyObject):
-    """Log class
-
-    log: log message [format: 'start activity' or 'stop activity']
-    t: timestamp
-    value: a value can be logged as well
-    geometry: value from locatable (lat, lon)"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.log = {"Message": [],
-                    "Timestamp": [],
-                    "Value": [],
-                    "Geometry": []}
-
-    def log_entry(self, log, t, value, geometry_log):
-        """Log"""
-        self.log["Message"].append(log)
-        self.log["Timestamp"].append(datetime.datetime.fromtimestamp(t))
-        self.log["Value"].append(value)
-        self.log["Geometry"].append(geometry_log)
-
-    def get_log_as_json(self):
-        json = []
-        for msg, t, value, geometry_log in zip(self.log["Message"], self.log["Timestamp"], self.log["Value"], self.log["Geometry"]):
-            json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
-        return json
 
 
 # class Movable(SimpyObject, Locatable, Routeable):
