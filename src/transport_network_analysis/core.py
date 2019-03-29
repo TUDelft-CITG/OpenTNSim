@@ -65,7 +65,7 @@ class Locatable:
     def __init__(self, geometry, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.node = geometry
+        self.geometry = geometry
         self.node = None
 
 
@@ -308,67 +308,6 @@ class IsLock(HasResource, Identifiable, Log):
         waiting_area_resources = 1 if waiting_area else 100
         self.waiting_area = {node_1: simpy.Resource(self.env, capacity = waiting_area_resources), 
                              node_2: simpy.Resource(self.env, capacity = waiting_area_resources)} 
-    
-    def pass_lock(self, vessel):
-        """Pass the lock"""
-
-        # Direction of the vessel
-        from_node = vessel.node
-        
-        print("Part 1")
-        # Request access to waiting area
-        wait_for_waiting_area_start = self.env.now
-
-        access_waiting_area = self.waiting_area[from_node].request()
-        yield access_waiting_area
-
-        if wait_for_waiting_area_start != self.env.now:
-            vessel.log_entry("Waiting to enter waiting area", self.env.now, wait_for_waiting_area_start - self.env.now, vessel.geometry)
-
-        print("Part 2")
-        # Request access to line-up area
-        wait_for_lineup_area_start = self.env.now
-
-        access_line_up_area = self.line_up_area[from_node].request()
-        yield access_line_up_area
-        self.waiting_area[from_node].release(access_waiting_area)
-
-        if wait_for_lineup_area_start != self.env.now:
-            vessel.log_entry("Waiting in waiting area", self.env.now, access_line_up_area - self.env.now, vessel.geometry)
-        
-        print("Part 3")
-        # Request access to lock
-        wait_for_lock_entry_start = self.env.now
-
-        if from_node == self.water_level:
-            priority = -1
-        else:
-            priority = 0
-
-        access_lock = self.resource.request(priority = priority)
-        yield access_lock
-        self.line_up_area[from_node].release(access_line_up_area)
-
-        if wait_for_lock_entry_start != self.env.now:
-            vessel.log_entry("Waiting in line-up area", self.env.now, wait_for_lock_entry_start - self.env.now, vessel.geometry)
-        
-        print("Part 4")
-        # Vessel inside the lock
-        vessel.log_entry("Passing lock start", self.env.now, 0, vessel.geometry)
-        
-        # Close the doors
-        yield self.env.timeout(self.doors_close * 60)
-
-        # Shift water
-        yield self.env.timeout(self.operating_time * 60)
-
-        # Open the doors
-        yield self.env.timeout(self.doors_open * 60)
-        
-        print("Part 5")
-        # Vessel outside the lock
-        passage_time = (self.doors_close + self.operating_time + self.doors_open) * 60
-        vessel.log_entry("Passing lock start", self.env.now, passage_time, vessel.geometry)
 
 
 class Movable(SimpyObject, Locatable, Routeable):
@@ -415,7 +354,21 @@ class Movable(SimpyObject, Locatable, Routeable):
             edge = self.env.FG.edges[origin, destination]
 
             if "Lock" in edge.keys():
-                yield from edge["Lock"].pass_lock(self)
+                queue_length = []
+                lock_ids = []
+
+                for lock in edge["Lock"]:
+                    queue = 0
+                    queue += len(lock.resource.users)
+                    queue += len(lock.line_up_area[self.node].users)
+                    queue += len(lock.waiting_area[self.node].users) + len(lock.waiting_area[self.node].queue)
+
+                    queue_length.append(queue)
+                    lock_ids.append(lock.id)
+                
+                lock_id = lock_ids[queue_length.index(min(queue_length))]
+                yield from self.pass_lock(origin, destination, lock_id)
+            
             else:
                 yield from self.pass_edge(origin, destination)
 
@@ -458,93 +411,73 @@ class Movable(SimpyObject, Locatable, Routeable):
             self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest)
         
 
-    def pass_lock(self, origin, destination):
-        edge = self.env.FG.edges[origin, destination]
-        edge_opposite = self.env.FG.edges[destination, origin]
-        orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
-        dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
-        water_level = origin
+    def pass_lock(self, origin, destination, lock_id):
+        """Pass the lock"""
 
-        distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
-                                  shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+        locks = self.env.FG.edges[origin, destination]["Lock"]
+        for lock in locks:
+            if lock.id == lock_id:
+                break
 
-        self.distance += distance
-        arrival = self.env.now
+        # Direction of the vessel
+        from_node = self.node
         
-        if "Water level" in edge.keys():
-            if edge["Water level"] == water_level:
-                priority = 0
-            else:
-                priority = 1
+        # Request access to waiting area
+        wait_for_waiting_area = self.env.now
+
+        access_waiting_area = lock.waiting_area[origin].request()
+        yield access_waiting_area
+
+        if wait_for_waiting_area != self.env.now:
+            waiting = self.env.now - wait_for_waiting_area
+            self.log_entry("Waiting to enter waiting area start", wait_for_waiting_area, 0, self.geometry)
+            self.log_entry("Waiting to enter waiting area stop", self.env.now, waiting, self.geometry)
+
+        # Request access to line-up area
+        wait_for_lineup_area = self.env.now
+
+        access_line_up_area = lock.line_up_area[from_node].request()
+        yield access_line_up_area
+        lock.waiting_area[from_node].release(access_waiting_area)
+
+        if wait_for_lineup_area != self.env.now:
+            waiting = self.env.now - wait_for_lineup_area
+            self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, self.geometry)
+            self.log_entry("Waiting in waiting area stop", self.env.now, waiting, self.geometry)
+        
+        # Request access to lock
+        wait_for_lock_entry = self.env.now
+
+        if from_node == lock.water_level:
+            priority = -1
         else:
             priority = 0
 
-        with self.env.FG.edges[origin, destination]["Resources"].request(priority = priority) as request:
-            yield request
+        access_lock = lock.resource.request(priority = priority)
+        yield access_lock
+        lock.line_up_area[from_node].release(access_line_up_area)
 
-            if arrival != self.env.now:
-                self.log_entry("Waiting to pass lock start".format(origin, destination), arrival, 0, orig)
-                self.log_entry("Waiting to pass lock stop".format(origin, destination), self.env.now, 0, orig)
-
-            # Check direction 
-            if "Water level" in edge.keys():
-                
-                # If water level at origin is not similar to lock-water level --> change water level and wait
-                if water_level != edge["Water level"]:
-                    
-                    # Doors closing
-                    self.log_entry("Doors closing start", self.env.now, 0, orig)
-                    yield self.env.timeout(10 * 60)
-                    self.log_entry("Doors closing stop", self.env.now, 0, orig)
-
-                    # Converting chamber
-                    self.log_entry("Converting chamber start", self.env.now, 0, orig)
-                    yield self.env.timeout(20 * 60)
-                    self.log_entry("Converting chamber stop", self.env.now, 0, orig)
-
-                    # Doors opening
-                    self.log_entry("Doors opening start", self.env.now, 0, orig)
-                    yield self.env.timeout(10 * 60)
-                    self.log_entry("Doors opening start", self.env.now, 0, orig)
-
-                    # Change edge water level
-                    self.env.FG.edges[origin, destination]["Water level"] = water_level
-
-            # If direction is similar to lock-water level --> pass the lock
-            if not "Water level" in edge.keys() or edge["Water level"] == water_level:
-                chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
-                
-                # Sailing in
-                self.log_entry("Sailing into lock start", self.env.now, 0, orig)
-                yield self.env.timeout(5 * 60)
-                self.log_entry("Sailing into lock stop", self.env.now, 0, chamber)
-
-                # Doors closing
-                self.log_entry("Doors closing start", self.env.now, 0, chamber)
-                yield self.env.timeout(10 * 60)
-                self.log_entry("Doors closing stop", self.env.now, 0, chamber)
-
-                # Converting chamber
-                chamber = shapely.geometry.Point((orig.x + dest.x) / 2, (orig.y + dest.y) / 2)
-                self.log_entry("Converting chamber start", self.env.now, 0, chamber)
-                yield self.env.timeout(20 * 60)
-                self.log_entry("Converting chamber stop", self.env.now, 0, chamber)
-
-                # Doors opening
-                self.log_entry("Doors opening start", self.env.now, 0, chamber)
-                yield self.env.timeout(10 * 60)
-                self.log_entry("Doors opening stop", self.env.now, 0, chamber)
-
-                # Sailing out
-                self.log_entry("Sailing out of lock start", self.env.now, 0, chamber)
-                yield self.env.timeout(5 * 60)
-                self.log_entry("Sailing out of lock stop", self.env.now, 0, dest)
-
-                # Change edge water level
-                self.env.FG.edges[origin, destination]["Water level"] = destination
+        if wait_for_lock_entry != self.env.now:
+            waiting = self.env.now - wait_for_lock_entry
+            self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, self.geometry)
+            self.log_entry("Waiting in line-up area stop", self.env.now, waiting, self.geometry)
         
-            # Change edge water level
-            self.env.FG.edges[origin, destination]["Water level"] = destination
+        # Vessel inside the lock
+        self.log_entry("Passing lock start", self.env.now, 0, self.geometry)
+        
+        # Close the doors
+        yield self.env.timeout(lock.doors_close)
+
+        # Shift water
+        yield self.env.timeout(lock.operating_time)
+
+        # Open the doors
+        yield self.env.timeout(lock.doors_open)
+        
+        # Vessel outside the lock
+        lock.resource.release(access_lock)
+        passage_time = (lock.doors_close + lock.operating_time + lock.doors_open)
+        self.log_entry("Passing lock start", self.env.now, passage_time, self.geometry)
     
     def pass_waiting_area(self, origin, destination, lock):
         edge = self.env.FG.edges[origin, destination]
