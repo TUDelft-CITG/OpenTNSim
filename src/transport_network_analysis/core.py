@@ -310,7 +310,7 @@ class IsLock(HasResource, Identifiable, Log):
                              node_2: simpy.Resource(self.env, capacity = waiting_area_resources)} 
 
 
-class Movable(SimpyObject, Locatable, Routeable):
+class Movable(Locatable, Routeable, Log):
     """Movable class
 
     Used for object that can move with a fixed speed
@@ -379,7 +379,6 @@ class Movable(SimpyObject, Locatable, Routeable):
         logger.debug('  distance: ' + '%4.2f' % self.distance + ' m')
         logger.debug('  sailing:  ' + '%4.2f' % self.current_speed + ' m/s')
         logger.debug('  duration: ' + '%4.2f' % ((self.distance / self.current_speed) / 3600) + ' hrs')
-
     
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
@@ -410,7 +409,6 @@ class Movable(SimpyObject, Locatable, Routeable):
             yield self.env.timeout(distance / self.current_speed)
             self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest)
         
-
     def pass_lock(self, origin, destination, lock_id):
         """Pass the lock"""
 
@@ -455,6 +453,14 @@ class Movable(SimpyObject, Locatable, Routeable):
 
         access_lock = lock.resource.request(priority = priority)
         yield access_lock
+
+        # Shift water level
+        if from_node != lock.water_level:
+            yield self.env.timeout(lock.doors_close)
+            yield self.env.timeout(lock.operating_time)
+            yield self.env.timeout(lock.doors_open)
+            lock.water_level = origin
+
         lock.line_up_area[from_node].release(access_line_up_area)
 
         if wait_for_lock_entry != self.env.now:
@@ -473,6 +479,7 @@ class Movable(SimpyObject, Locatable, Routeable):
 
         # Open the doors
         yield self.env.timeout(lock.doors_open)
+        lock.water_level = destination
         
         # Vessel outside the lock
         lock.resource.release(access_lock)
