@@ -308,7 +308,41 @@ class IsLock(HasResource, Identifiable, Log):
         waiting_area_resources = 1 if waiting_area else 100
         self.waiting_area = {node_1: simpy.Resource(self.env, capacity = waiting_area_resources), 
                              node_2: simpy.Resource(self.env, capacity = waiting_area_resources)} 
+    
+    def convert_chamber(self, environment, new_level):
+        """ Convert the water level """
 
+        # Close the doors
+        self.log_entry("Lock doors closing start", environment.now, self.water_level, 0)
+        yield environment.timeout(self.doors_close)
+        self.log_entry("Lock doors closing stop", environment.now, self.water_level, 0)
+
+        # Convert the chamber
+        self.log_entry("Lock chamber converting start", environment.now, self.water_level, 0)
+
+        # Water level will shift
+        self.change_water_level(new_level)
+
+        yield environment.timeout(self.operating_time)
+        self.log_entry("Lock chamber converting stop", environment.now, self.water_level, 0)
+        
+        # Open the doors
+        self.log_entry("Lock doors opening start", environment.now, self.water_level, 0)
+        yield environment.timeout(self.doors_open)
+        self.log_entry("Lock doors opening stop", environment.now, self.water_level, 0)
+    
+    def change_water_level(self, side):
+        """ Change water level and priorities in queue """
+
+        self.water_level = side
+
+        for request in self.resource.queue:
+            request.priority = -1 if request.priority == 0 else 0
+
+            if request.priority == -1:
+                self.resource.queue.insert(0, self.resource.queue.pop(self.resource.queue.index(request)))
+            else:
+                self.resource.queue.insert(-1, self.resource.queue.pop(self.resource.queue.index(request)))
 
 class Movable(Locatable, Routeable, Log):
     """Movable class
@@ -416,9 +450,6 @@ class Movable(Locatable, Routeable, Log):
         for lock in locks:
             if lock.id == lock_id:
                 break
-
-        # Direction of the vessel
-        from_node = self.node
         
         # Request access to waiting area
         wait_for_waiting_area = self.env.now
@@ -434,9 +465,9 @@ class Movable(Locatable, Routeable, Log):
         # Request access to line-up area
         wait_for_lineup_area = self.env.now
 
-        access_line_up_area = lock.line_up_area[from_node].request()
+        access_line_up_area = lock.line_up_area[origin].request()
         yield access_line_up_area
-        lock.waiting_area[from_node].release(access_waiting_area)
+        lock.waiting_area[origin].release(access_waiting_area)
 
         if wait_for_lineup_area != self.env.now:
             waiting = self.env.now - wait_for_lineup_area
@@ -445,23 +476,13 @@ class Movable(Locatable, Routeable, Log):
         
         # Request access to lock
         wait_for_lock_entry = self.env.now
-
-        if from_node == lock.water_level:
-            priority = -1
-        else:
-            priority = 0
-
-        access_lock = lock.resource.request(priority = priority)
+        access_lock = lock.resource.request(priority = -1 if origin == lock.water_level else 0)
         yield access_lock
 
         # Shift water level
-        if from_node != lock.water_level:
-            yield self.env.timeout(lock.doors_close)
-            yield self.env.timeout(lock.operating_time)
-            yield self.env.timeout(lock.doors_open)
-            lock.water_level = origin
+        if origin != lock.water_level: yield from lock.convert_chamber(self.env, origin)
 
-        lock.line_up_area[from_node].release(access_line_up_area)
+        lock.line_up_area[origin].release(access_line_up_area)
 
         if wait_for_lock_entry != self.env.now:
             waiting = self.env.now - wait_for_lock_entry
@@ -471,24 +492,18 @@ class Movable(Locatable, Routeable, Log):
         # Vessel inside the lock
         self.log_entry("Passing lock start", self.env.now, 0, self.geometry)
         
-        # Close the doors
-        yield self.env.timeout(lock.doors_close)
-
-        # Shift water
-        yield self.env.timeout(lock.operating_time)
-
-        # Open the doors
-        yield self.env.timeout(lock.doors_open)
-        lock.water_level = destination
+        # Shift the water level
+        yield from lock.convert_chamber(self.env, destination)
         
         # Vessel outside the lock
         lock.resource.release(access_lock)
         passage_time = (lock.doors_close + lock.operating_time + lock.doors_open)
-        self.log_entry("Passing lock start", self.env.now, passage_time, self.geometry)
+        self.log_entry("Passing lock stop", self.env.now, passage_time, nx.get_node_attributes(self.env.FG, "geometry")[destination])
 
     @property
     def current_speed(self):
         return self.v
+
 
 
 class ContainerDependentMovable(Movable, HasContainer):

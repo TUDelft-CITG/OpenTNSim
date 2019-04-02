@@ -47,3 +47,5 @@ MANIFEST
 
 # Per-project virtualenvs
 .venv*/
+*.mp4
+*.kml
