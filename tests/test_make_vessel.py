@@ -22,7 +22,6 @@ def vessel():
     # Make a vessel class out of available mix-ins.
     TransportResource = type('TransportResource', 
                              (core.Identifiable, 
-                              core.Log, 
                               core.ContainerDependentMovable, 
                               core.HasResource, 
                               core.Routeable), 
