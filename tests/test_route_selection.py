@@ -40,7 +40,7 @@ def vessel_database():
 @pytest.fixture()
 def vessel_type():
     vessel = type('Vessel', 
-              (core.Identifiable, core.Log, core.Movable, core.HasContainer,
+              (core.Identifiable, core.Movable, core.HasContainer,
                core.VesselProperties, core.HasResource, core.Routeable), 
               {})
     
