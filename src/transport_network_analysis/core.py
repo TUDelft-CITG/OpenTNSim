@@ -284,6 +284,7 @@ class IsLock(HasResource, Identifiable, Log):
                  doors_open, doors_close, operating_time, waiting_area = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
+        self.wgs84 = pyproj.Geod(ellps='WGS84')
         
         # Properties
         self.lock_length = lock_length
@@ -301,6 +302,22 @@ class IsLock(HasResource, Identifiable, Log):
         self.node_1 = node_1
         self.node_2 = node_2
         self.water_level = random.choice([node_1, node_2])
+
+        # Location lock center
+        x_1, y_1 = float(node_1[1:node_1.find(",")]), float(node_1[node_1.find(",")+2:-1])
+        x_2, y_2 = float(node_2[1:node_2.find(",")]), float(node_2[node_2.find(",")+2:-1])
+        self.center = shapely.geometry.Point((x_1 + x_2) / 2, (y_1 + y_2) / 2)
+
+        # Locations doors
+        distance = self.wgs84.inv(x_1, y_1, shapely.geometry.asShape(self.center).x, shapely.geometry.asShape(self.center).y)[2]
+        self.door_1 = shapely.geometry.Point(((self.lock_length / 2) / distance) * (x_1 - self.center.x) + self.center.x,
+                                             ((self.lock_length / 2) / distance) * (y_1 - self.center.y) + self.center.y)
+
+        distance = self.wgs84.inv(x_2, y_2, shapely.geometry.asShape(self.center).x, shapely.geometry.asShape(self.center).y)[2]
+        self.door_2 = shapely.geometry.Point(((self.lock_length / 2) / distance) * (x_2 - self.center.x) + self.center.x,
+                                             ((self.lock_length / 2) / distance) * (y_2 - self.center.y) + self.center.y)
+
+
 
         # Lay-Out
         self.line_up_area = {node_1: simpy.Resource(self.env, capacity = 1), node_2: simpy.Resource(self.env, capacity = 1)}
@@ -343,6 +360,7 @@ class IsLock(HasResource, Identifiable, Log):
                 self.resource.queue.insert(0, self.resource.queue.pop(self.resource.queue.index(request)))
             else:
                 self.resource.queue.insert(-1, self.resource.queue.pop(self.resource.queue.index(request)))
+
 
 class Movable(Locatable, Routeable, Log):
     """Movable class
@@ -489,16 +507,44 @@ class Movable(Locatable, Routeable, Log):
             self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, self.geometry)
             self.log_entry("Waiting in line-up area stop", self.env.now, waiting, self.geometry)
         
+        # Sailing into the lock
+        self.log_entry("Sailing into lock start", self.env.now, 0, self.geometry)
+        yield self.env.timeout(300)
+        self.geometry = lock.door_1 if origin == lock.node_1 else lock.door_2
+        self.log_entry("Sailing into lock stop", self.env.now, 0, self.geometry)
+
+        # Positioning in the lock
+        self.log_entry("Positioning in the lock start", self.env.now, 0, self.geometry)
+        yield self.env.timeout(300)
+        self.geometry = lock.center
+        self.log_entry("Positioning in the lock stop", self.env.now, 0, self.geometry)
+        
         # Vessel inside the lock
         self.log_entry("Passing lock start", self.env.now, 0, self.geometry)
         
         # Shift the water level
         yield from lock.convert_chamber(self.env, destination)
+
+        # Water level has shifted
+        passage_time = (lock.doors_close + lock.operating_time + lock.doors_open)
+        self.log_entry("Passing lock stop", self.env.now, passage_time, self.geometry)
         
+        # Sailing out of the lock
+        self.log_entry("Sailing out of the lock start", self.env.now, 0, self.geometry)
+        yield self.env.timeout(300)
+        self.geometry = lock.door_1 if destination == lock.node_1 else lock.door_2
+        self.log_entry("Sailing out of lock stop", self.env.now, 0, self.geometry)
+
         # Vessel outside the lock
         lock.resource.release(access_lock)
-        passage_time = (lock.doors_close + lock.operating_time + lock.doors_open)
-        self.log_entry("Passing lock stop", self.env.now, passage_time, nx.get_node_attributes(self.env.FG, "geometry")[destination])
+        self.log_entry("Sailing to node {} start".format(destination), self.env.now, 0, self.geometry)
+        distance = self.wgs84.inv(self.geometry.x, self.geometry.y, 
+                                  nx.get_node_attributes(self.env.FG, "geometry")[destination].x, 
+                                  nx.get_node_attributes(self.env.FG, "geometry")[destination].y)[2]
+        yield self.env.timeout(distance / self.current_speed)
+        self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+        self.log_entry("Sailing to node {} stop".format(destination), self.env.now, 0, self.geometry)
+        
 
     @property
     def current_speed(self):
