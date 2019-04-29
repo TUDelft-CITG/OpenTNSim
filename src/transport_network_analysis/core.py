@@ -424,6 +424,24 @@ class Movable(Locatable, Routeable, Log):
 
         self.distance += distance
         arrival = self.env.now
+
+        # Check for (un)load
+        try:
+            node_type = nx.get_node_attributes(self.env.FG, "object_type")[origin]
+            to_load = []
+
+            if isinstance(node_type, Station) and isinstance(self, Mover):
+                if len(node_type.units) > 0:
+                    for unit in node_type.units:
+                        if unit.route[-1] in nx.dijkstra_path(self.env.FG, origin, self.route[-1]):
+                            to_load.append(unit)
+                            node_type.units.remove(unit)
+                
+                if len(to_load) > 0:
+                    self.load(to_load)
+
+        except:
+            pass
         
         # Act based on resources
         if "Resources" in edge.keys():
@@ -441,8 +459,19 @@ class Movable(Locatable, Routeable, Log):
         else:
             self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
             yield self.env.timeout(distance / self.current_speed)
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest)
+            self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
+            self.geometry = dest
         
+        try:
+            node_type = nx.get_node_attributes(self.env.FG, "object_type")[destination]
+
+            if isinstance(node_type, Station) and isinstance(self, Mover):
+                self.unload()
+        
+        except:
+            pass
+        
+
     def pass_lock(self, origin, destination, lock_id):
         """Pass the lock"""
 
@@ -521,3 +550,52 @@ class ContainerDependentMovable(Movable, HasContainer):
     @property
     def current_speed(self):
         return self.compute_v(self.container.level / self.container.capacity)
+
+class Mover():
+    """ 
+    Mover class 
+
+    Used to move objects from one location to another
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+
+        self.units = []
+    
+    def load(self, units):
+        """ Load self """
+        
+        self.log_entry("Loading start", self.env.now, 0, self.geometry)
+
+        for unit in units:
+            self.units.append(unit)
+            unit.log_entry("Waiting for metro stop", self.env.now, 0, self.geometry)
+            unit.log_entry("In metro start", self.env.now, 0, self.geometry)
+        
+        self.env.timeout(30)
+        self.log_entry("Loading stop", self.env.now, 30, self.geometry)
+
+    
+    def unload(self):
+        """ Unload self """
+
+        self.log_entry("Unloading start", self.env.now, 0, self.geometry)
+
+        for unit in self.units:
+            if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
+                unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
+                self.units.remove(unit)
+        
+        self.env.timeout(30)
+        self.log_entry("Unoading stop", self.env.now, 30, self.geometry)
+
+class Station(HasContainer):
+    """ Station class """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+
+        self.units = []
