@@ -511,13 +511,13 @@ class Movable(Locatable, Routeable, Log):
         self.log_entry("Sailing into lock start", self.env.now, 0, self.geometry)
         yield self.env.timeout(300)
         self.geometry = lock.door_1 if origin == lock.node_1 else lock.door_2
-        self.log_entry("Sailing into lock stop", self.env.now, 0, self.geometry)
+        self.log_entry("Sailing into lock stop", self.env.now, 300, self.geometry)
 
         # Positioning in the lock
         self.log_entry("Positioning in the lock start", self.env.now, 0, self.geometry)
         yield self.env.timeout(300)
         self.geometry = lock.center
-        self.log_entry("Positioning in the lock stop", self.env.now, 0, self.geometry)
+        self.log_entry("Positioning in the lock stop", self.env.now, 300, self.geometry)
         
         # Vessel inside the lock
         self.log_entry("Passing lock start", self.env.now, 0, self.geometry)
@@ -533,7 +533,7 @@ class Movable(Locatable, Routeable, Log):
         self.log_entry("Sailing out of the lock start", self.env.now, 0, self.geometry)
         yield self.env.timeout(300)
         self.geometry = lock.door_1 if destination == lock.node_1 else lock.door_2
-        self.log_entry("Sailing out of lock stop", self.env.now, 0, self.geometry)
+        self.log_entry("Sailing out of lock stop", self.env.now, 300, self.geometry)
 
         # Vessel outside the lock
         lock.resource.release(access_lock)
@@ -543,7 +543,7 @@ class Movable(Locatable, Routeable, Log):
                                   nx.get_node_attributes(self.env.FG, "geometry")[destination].y)[2]
         yield self.env.timeout(distance / self.current_speed)
         self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
-        self.log_entry("Sailing to node {} stop".format(destination), self.env.now, 0, self.geometry)
+        self.log_entry("Sailing to node {} stop".format(destination), self.env.now, distance / self.current_speed, self.geometry)
         
 
     @property
