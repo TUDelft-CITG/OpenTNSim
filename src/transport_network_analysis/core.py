@@ -369,9 +369,6 @@ class Movable(Locatable, Routeable, Log):
         if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
             orig = self.geometry
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
-            
-            print("Origin", orig)
-            print("Destination", dest)
 
             self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
                                             shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
@@ -381,7 +378,7 @@ class Movable(Locatable, Routeable, Log):
 
         # Move over the path and log every step
         for node in enumerate(self.route):
-            self.node = node[1]
+#             self.node = node[1]
 
             origin = self.route[node[0]]
             destination = self.route[node[0] + 1]
