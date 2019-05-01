@@ -377,7 +377,7 @@ class Movable(Locatable, Routeable, Log):
                                             shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
     
             yield self.env.timeout(self.distance / self.current_speed)
-            self.log_entry("Sailing to start", self.env.now, self.distance, dest)
+            self.log_entry("Driving to start", self.env.now, self.distance, dest)
 
         # Move over the path and log every step
         for node in enumerate(self.route):
@@ -411,7 +411,7 @@ class Movable(Locatable, Routeable, Log):
 
         self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
         logger.debug('  distance: ' + '%4.2f' % self.distance + ' m')
-        logger.debug('  sailing:  ' + '%4.2f' % self.current_speed + ' m/s')
+        logger.debug('  driving:  ' + '%4.2f' % self.current_speed + ' m/s')
         logger.debug('  duration: ' + '%4.2f' % ((self.distance / self.current_speed) / 3600) + ' hrs')
     
     def pass_edge(self, origin, destination):
@@ -424,7 +424,7 @@ class Movable(Locatable, Routeable, Log):
 
         self.distance += distance
         arrival = self.env.now
-
+                        
         # Check for (un)load
         try:
             node_type = nx.get_node_attributes(self.env.FG, "object_type")[origin]
@@ -452,14 +452,14 @@ class Movable(Locatable, Routeable, Log):
                     self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
                     self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
 
-                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
-                yield self.env.timeout(distance / self.current_speed)
-                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
+                self.log_entry("Driving from {} to {} start".format(origin, destination), self.env.now, 0, orig)
+                yield self.env.timeout(edge["duration"] * 60)
+                self.log_entry("Driving from {} to {} stop".format(origin, destination), self.env.now, 0, dest)
         
         else:
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
-            yield self.env.timeout(distance / self.current_speed)
-            self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
+            self.log_entry("Driving from {} to {} start".format(origin, destination), self.env.now, 0, orig)
+            yield self.env.timeout(edge["duration"] * 60)
+            self.log_entry("Driving from {} to {} stop".format(origin, destination), self.env.now, 0, dest)
             self.geometry = dest
         
         try:
@@ -467,6 +467,7 @@ class Movable(Locatable, Routeable, Log):
 
             if isinstance(node_type, Station) and isinstance(self, Mover):
                 self.unload()
+                yield self.env.timeout(15)
         
         except:
             pass
@@ -534,7 +535,6 @@ class Movable(Locatable, Routeable, Log):
         return self.v
 
 
-
 class ContainerDependentMovable(Movable, HasContainer):
     """ContainerDependentMovable class
 
@@ -568,28 +568,29 @@ class Mover():
         """ Load self """
         
         self.log_entry("Loading start", self.env.now, 0, self.geometry)
-
+        check_ins = 0
+        
         for unit in units:
+            check_ins += 1
             self.units.append(unit)
             unit.log_entry("Waiting for metro stop", self.env.now, 0, self.geometry)
             unit.log_entry("In metro start", self.env.now, 0, self.geometry)
         
-        self.env.timeout(30)
-        self.log_entry("Loading stop", self.env.now, 30, self.geometry)
-
+        self.log_entry("Loading stop", self.env.now, 0, self.geometry)
     
     def unload(self):
         """ Unload self """
 
         self.log_entry("Unloading start", self.env.now, 0, self.geometry)
-
+        check_outs = 0
+        
         for unit in self.units:
             if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
+                check_outs += 1
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 self.units.remove(unit)
         
-        self.env.timeout(30)
-        self.log_entry("Unoading stop", self.env.now, 30, self.geometry)
+        self.log_entry("Unloading stop", self.env.now, 0, self.geometry)
 
 class Station(HasContainer):
     """ Station class """
