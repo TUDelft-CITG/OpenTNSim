@@ -382,7 +382,7 @@ class Movable(Locatable, Routeable, Log):
 
         # Move over the path and log every step
         for node in enumerate(self.route):
-#             self.node = node[1]
+            self.node = node[1]
 
             origin = self.route[node[0]]
             destination = self.route[node[0] + 1]
@@ -587,9 +587,8 @@ class Mover():
         """ Unload self """
 
         self.log_entry("Unloading start", self.env.now, 0, self.geometry)
-        
-        for unit in self.units:
-            # Add rule when to remove a unit or not > add extra rule for transfers
+        for unit in self.units:            
+            
             if unit.transfers > 0 and nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 unit.log_entry("Start transfer", self.env.now, 0, self.geometry)
