@@ -428,18 +428,18 @@ class Movable(Locatable, Routeable, Log):
                         
         # Check for (un)load
         try:
-            node_type = nx.get_node_attributes(self.env.FG, "object_type")[origin]
-            to_load = []
+        node_type = nx.get_node_attributes(self.env.FG, "object_type")[origin]
+        to_load = []
 
-            if isinstance(node_type, Station) and isinstance(self, Mover):
-                if len(node_type.units) > 0:
-                    for unit in node_type.units:
-                        if unit.route[-1] in nx.dijkstra_path(self.env.FG, origin, self.route[-1]):
-                            to_load.append(unit)
-                            node_type.units.remove(unit)
-                
-                if len(to_load) > 0:
-                    self.load(to_load)
+        if isinstance(node_type, Station) and isinstance(self, Mover):
+            if len(node_type.units) > 0:
+                for unit in node_type.units:
+                    if unit.route[-1] in nx.dijkstra_path(self.env.FG, origin, self.route[-1]):
+                        to_load.append(unit)
+                        node_type.units.remove(unit)
+
+            if len(to_load) > 0:
+                self.load(to_load)
 
         except:
             pass
@@ -570,7 +570,7 @@ class Mover():
         """ Load self """
         
         self.log_entry("Loading start", self.env.now, 0, self.geometry)
-        
+
         for unit in units:
 #             if unit.lines[0] == self.name:
 #                 self.log_entry(unit.lines, self.env.now, 0, self.geometry)
@@ -588,7 +588,7 @@ class Mover():
 
         self.log_entry("Unloading start", self.env.now, 0, self.geometry)
         for unit in self.units:            
-            
+          
             if unit.transfers > 0 and nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 unit.log_entry("Start transfer", self.env.now, 0, self.geometry)
