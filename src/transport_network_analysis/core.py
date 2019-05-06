@@ -588,7 +588,6 @@ class Mover():
 
         self.log_entry("Unloading start", self.env.now, 0, self.geometry)
         for unit in self.units:            
-
 #             if unit.transfers > 0 and nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
 #                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
 #                 unit.log_entry("Start transfer", self.env.now, 0, self.geometry)
@@ -606,7 +605,7 @@ class Mover():
 #                 unit.log_entry("Stop transfer", self.env.now, 0, self.geometry)
 #                 self.units.remove(unit)
 
-            elif nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
+            if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 self.units.remove(unit)
         
