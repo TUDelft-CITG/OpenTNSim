@@ -188,8 +188,6 @@ class VesselProperties:
         edge_attrs = list(edge[2].keys())
         
 
-        # IMPROVE THIS TO CHECK ALL EDGES AND COMBINATIONS OF RESTRICTIONS
-
         if all(item in edge_attrs for item in ["Width", "Height", "Depth"]):
             edges = []
             nodes = []
@@ -433,14 +431,14 @@ class Movable(Locatable, Routeable, Log):
             if isinstance(node_type, Station) and isinstance(self, Mover):
                 if len(node_type.units) > 0:
                     for unit in node_type.units:
-                        if unit.route[-1] in nx.dijkstra_path(self.env.FG, origin, self.route[-1]):
+                        if unit.route[-1] in self.route[self.route.index(origin):]: 
                             to_load.append(unit)
                             node_type.units.remove(unit)
                 
                 if len(to_load) > 0:
                     self.load(to_load)
 
-        except:
+        except:           
             pass
         
         # Act based on resources
@@ -582,16 +580,19 @@ class Mover():
         """ Unload self """
 
         self.log_entry("Unloading start", self.env.now, 0, self.geometry)
-
+        
+        to_remove = []
+        
         for unit in self.units:
-            unit.log_entry("Ik ben er nog", self.env.now, 0, self.geometry)
-
             if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
-                self.units.remove(unit)
-        
+                to_remove.append(unit)
+
+        for unit in to_remove:
+            self.units.remove(unit)
+            
         self.env.timeout(30)
-        self.log_entry("Unoading stop", self.env.now, 30, self.geometry)
+        self.log_entry("Unloading stop", self.env.now, 30, self.geometry)
 
 class Station(HasContainer):
     """ Station class """
