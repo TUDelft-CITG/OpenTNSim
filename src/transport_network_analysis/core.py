@@ -434,7 +434,7 @@ class Movable(Locatable, Routeable, Log):
                 if len(node_type.units) > 0:
                     for unit in node_type.units:
                         if unit.lines[0] == self.name:
-                            if unit.route_info['transfers'] > 0 and unit.route_info['transferstations'][0] in self.route[self.route.index(origin):]:
+                            if unit.transfers > 0 and unit.transferstations[0] in self.route[self.route.index(origin):]:
                                 to_load.append(unit)
 
                             elif unit.route[-1] in self.route[self.route.index(origin):]: 
@@ -598,30 +598,28 @@ class Mover():
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 to_remove.append(unit)
             
-            if unit.transfers > 0:
-                if nx.get_node_attributes(self.env.FG, "geometry")[unit.route_info['transferstations'][0]] == self.geometry:
-                    unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
-                    to_remove.append(unit)
+            elif unit.transfers > 0:
+                if nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
+                    unit.log_entry("In metro stop, start transfer", self.env.now, 0, self.geometry)
+                    to_transfer.append(unit)
                 
         for unit in to_remove:
             self.units.remove(unit)
             
-#         for unit in to_transfer:
-#             # Set unit to the transfernode
-#             transfernode = unit.transferstations[0]
-#             self.env.FG.nodes[transfernode]["object_type"].units.append(unit)
+        for unit in to_transfer:
+            # Set unit to the transfernode
+            transfernode = unit.transferstations[0]
+            self.env.FG.nodes[transfernode]["object_type"].units.append(unit)
+                            
+            # Update remaining route
+            unit.transfers -= 1
+            unit.transferstations.pop(0)
+            unit.lines.pop(0)
             
-#             # Update remaining route
-#             unit.transfers -= 1
-#             unit.transferstations.pop(0)
-
-#             # Remove from transport
-#             unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
-#             self.units.remove(unit)            
-
-#             unit.log_entry("Start transfer", self.env.now, 0, self.geometry)            
-#             yield unit.env.timeout(2 * 60)
-           
+            # Remove from transport
+            unit.log_entry("Stop transfer", self.env.now, 0, self.geometry)
+            self.units.remove(unit)            
+            
         self.env.timeout(30)
         self.log_entry("Unloading stop", self.env.now, 30, self.geometry)
 
