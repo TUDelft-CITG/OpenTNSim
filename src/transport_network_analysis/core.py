@@ -263,11 +263,16 @@ class Routeable:
     """Something with a route (networkx format)
     route: a networkx path"""
 
-    def __init__(self, route, complete_path = None, *args, **kwargs):
+    def __init__(self, route, transfers = None, route_info = None, transferstations = None, duration = None, lines = None, complete_path = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.route = route
         self.complete_path = complete_path
+        self.route_info = route_info
+        self.transfers = transfers
+        self.transferstations = transferstations
+        self.duration = duration
+        self.lines = lines
 
 
 class IsLock(HasResource, Identifiable, Log):
@@ -367,15 +372,12 @@ class Movable(Locatable, Routeable, Log):
         if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
             orig = self.geometry
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
-            
-            print("Origin", orig)
-            print("Destination", dest)
 
             self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
                                             shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
     
             yield self.env.timeout(self.distance / self.current_speed)
-            self.log_entry("Sailing to start", self.env.now, self.distance, dest)
+            self.log_entry("Driving to start", self.env.now, self.distance, dest)
 
         # Move over the path and log every step
         for node in enumerate(self.route):
@@ -431,9 +433,38 @@ class Movable(Locatable, Routeable, Log):
             if isinstance(node_type, Station) and isinstance(self, Mover):
                 if len(node_type.units) > 0:
                     for unit in node_type.units:
-                        if unit.route[-1] in self.route[self.route.index(origin):]: 
+                        
+                        #TRANSFERCODE
+            #             if unit.transfers > 0 and nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
+#                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
+#                 unit.log_entry("Start transfer", self.env.now, 0, self.geometry)
+                
+#                 # Set unit to the transfernode
+#                 transfernode = unit.transferstations[0]
+#                 yield self.env.timeout(2 * 60)
+#                 self.env.FG.nodes[transfernode]["object_type"].units.append(unit)
+                
+#                 # Update remaining route
+#                 unit.transferstations.pop(0)
+#                 unit.transfers -= 1
+                
+#                 # Remove unit from transport
+#                 unit.log_entry("Stop transfer", self.env.now, 0, self.geometry)
+#                 self.units.remove(unit)
+                        
+                        
+                        if unit.route_info['transfers'] > 0 and unit.route_info['transferstations'][0] in self.route[self.route.index(origin):]:
                             to_load.append(unit)
-                            node_type.units.remove(unit)
+                            
+                            # Update remaining transferroutes
+                            unit.transfers -= 1
+                            unit.transferstations.pop(0)
+                            
+                        elif unit.route[-1] in self.route[self.route.index(origin):]: 
+                            to_load.append(unit)
+                
+                for unit in to_load:
+                    node_type.units.remove(unit)
                 
                 if len(to_load) > 0:
                     self.load(to_load)
@@ -451,12 +482,12 @@ class Movable(Locatable, Routeable, Log):
                     self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
 
                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
-                yield self.env.timeout(distance / self.current_speed)
+                yield self.env.timeout(edge["duration"] * 60)
                 self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
         
         else:
             self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
-            yield self.env.timeout(distance / self.current_speed)
+            yield self.env.timeout(edge["duration"] * 60)
             self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
             self.geometry = dest
         
@@ -465,6 +496,8 @@ class Movable(Locatable, Routeable, Log):
 
             if isinstance(node_type, Station) and isinstance(self, Mover):
                 self.unload()
+                yield self.env.timeout(15)
+
         
         except:
             pass
@@ -568,11 +601,15 @@ class Mover():
         self.log_entry("Loading start", self.env.now, 0, self.geometry)
 
         for unit in units:
+            # CHECK THE LINE
+            #             if unit.lines[0] == self.name:
+#                 self.log_entry(unit.lines, self.env.now, 0, self.geometry)
+#                 unit.lines.pop(0)
+#                 self.log_entry(unit.lines, self.env.now, 0, self.geometry)
             self.units.append(unit)
             unit.log_entry("Waiting for metro stop", self.env.now, 0, self.geometry)
             unit.log_entry("In metro start", self.env.now, 0, self.geometry)
         
-        self.env.timeout(30)
         self.log_entry("Loading stop", self.env.now, 30, self.geometry)
 
     
@@ -584,6 +621,24 @@ class Mover():
         to_remove = []
         
         for unit in self.units:
+            #TRANSFERCODE
+            #             if unit.transfers > 0 and nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
+#                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
+#                 unit.log_entry("Start transfer", self.env.now, 0, self.geometry)
+                
+#                 # Set unit to the transfernode
+#                 transfernode = unit.transferstations[0]
+#                 yield self.env.timeout(2 * 60)
+#                 self.env.FG.nodes[transfernode]["object_type"].units.append(unit)
+                
+#                 # Update remaining route
+#                 unit.transferstations.pop(0)
+#                 unit.transfers -= 1
+                
+#                 # Remove unit from transport
+#                 unit.log_entry("Stop transfer", self.env.now, 0, self.geometry)
+#                 self.units.remove(unit)
+
             if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 to_remove.append(unit)
