@@ -433,35 +433,12 @@ class Movable(Locatable, Routeable, Log):
             if isinstance(node_type, Station) and isinstance(self, Mover):
                 if len(node_type.units) > 0:
                     for unit in node_type.units:
-                        
-                        #TRANSFERCODE
-            #             if unit.transfers > 0 and nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
-#                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
-#                 unit.log_entry("Start transfer", self.env.now, 0, self.geometry)
-                
-#                 # Set unit to the transfernode
-#                 transfernode = unit.transferstations[0]
-#                 yield self.env.timeout(2 * 60)
-#                 self.env.FG.nodes[transfernode]["object_type"].units.append(unit)
-                
-#                 # Update remaining route
-#                 unit.transferstations.pop(0)
-#                 unit.transfers -= 1
-                
-#                 # Remove unit from transport
-#                 unit.log_entry("Stop transfer", self.env.now, 0, self.geometry)
-#                 self.units.remove(unit)
-                        
-                        
-                        if unit.route_info['transfers'] > 0 and unit.route_info['transferstations'][0] in self.route[self.route.index(origin):]:
-                            to_load.append(unit)
-                            
-                            # Update remaining transferroutes
-                            unit.transfers -= 1
-                            unit.transferstations.pop(0)
-                            
-                        elif unit.route[-1] in self.route[self.route.index(origin):]: 
-                            to_load.append(unit)
+                        if unit.lines[0] == self.name:
+                            if unit.route_info['transfers'] > 0 and unit.route_info['transferstations'][0] in self.route[self.route.index(origin):]:
+                                to_load.append(unit)
+
+                            elif unit.route[-1] in self.route[self.route.index(origin):]: 
+                                to_load.append(unit)
                 
                 for unit in to_load:
                     node_type.units.remove(unit)
@@ -601,11 +578,6 @@ class Mover():
         self.log_entry("Loading start", self.env.now, 0, self.geometry)
 
         for unit in units:
-            # CHECK THE LINE
-            #             if unit.lines[0] == self.name:
-#                 self.log_entry(unit.lines, self.env.now, 0, self.geometry)
-#                 unit.lines.pop(0)
-#                 self.log_entry(unit.lines, self.env.now, 0, self.geometry)
             self.units.append(unit)
             unit.log_entry("Waiting for metro stop", self.env.now, 0, self.geometry)
             unit.log_entry("In metro start", self.env.now, 0, self.geometry)
@@ -619,33 +591,37 @@ class Mover():
         self.log_entry("Unloading start", self.env.now, 0, self.geometry)
         
         to_remove = []
+        to_transfer = []
         
         for unit in self.units:
-            #TRANSFERCODE
-            #             if unit.transfers > 0 and nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
-#                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
-#                 unit.log_entry("Start transfer", self.env.now, 0, self.geometry)
-                
-#                 # Set unit to the transfernode
-#                 transfernode = unit.transferstations[0]
-#                 yield self.env.timeout(2 * 60)
-#                 self.env.FG.nodes[transfernode]["object_type"].units.append(unit)
-                
-#                 # Update remaining route
-#                 unit.transferstations.pop(0)
-#                 unit.transfers -= 1
-                
-#                 # Remove unit from transport
-#                 unit.log_entry("Stop transfer", self.env.now, 0, self.geometry)
-#                 self.units.remove(unit)
-
             if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 to_remove.append(unit)
-
+            
+            if unit.transfers > 0:
+                if nx.get_node_attributes(self.env.FG, "geometry")[unit.route_info['transferstations'][0]] == self.geometry:
+                    unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
+                    to_remove.append(unit)
+                
         for unit in to_remove:
             self.units.remove(unit)
             
+#         for unit in to_transfer:
+#             # Set unit to the transfernode
+#             transfernode = unit.transferstations[0]
+#             self.env.FG.nodes[transfernode]["object_type"].units.append(unit)
+            
+#             # Update remaining route
+#             unit.transfers -= 1
+#             unit.transferstations.pop(0)
+
+#             # Remove from transport
+#             unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
+#             self.units.remove(unit)            
+
+#             unit.log_entry("Start transfer", self.env.now, 0, self.geometry)            
+#             yield unit.env.timeout(2 * 60)
+           
         self.env.timeout(30)
         self.log_entry("Unloading stop", self.env.now, 30, self.geometry)
 
