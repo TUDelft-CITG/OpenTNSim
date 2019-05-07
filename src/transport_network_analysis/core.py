@@ -584,6 +584,8 @@ class Mover():
         self.log_entry("Unloading start", self.env.now, 0, self.geometry)
 
         for unit in self.units:
+            unit.log_entry("Ik ben er nog", self.env.now, 0, self.geometry)
+
             if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
                 unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
                 self.units.remove(unit)
