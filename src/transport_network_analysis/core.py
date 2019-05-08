@@ -209,7 +209,7 @@ class Movable(Locatable, Routeable, Log):
 
             if isinstance(node_type, Station) and isinstance(self, Mover):
                 self.unload()
-                yield self.env.timeout(15)
+                yield self.env.timeout(30)
 
         
         except:
@@ -258,7 +258,6 @@ class Mover():
             elif unit.transfers > 0:
                 if nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
                     unit.log_entry("In {} stop".format(unit.lines[0]), self.env.now, 0, self.geometry)
-                    
                     unit.log_entry("Start transfer to {}".format(unit.lines[1]), self.env.now, 0, self.geometry)
                     to_transfer.append(unit)
                 
@@ -278,7 +277,6 @@ class Mover():
             # Remove from transport
             self.units.remove(unit)            
             
-        self.env.timeout(30)
         self.log_entry("Unloading stop", self.env.now, 30, self.geometry)
 
 class Station(HasContainer):
