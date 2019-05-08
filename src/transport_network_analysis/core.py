@@ -124,27 +124,18 @@ class Routeable:
     """Something with a route (networkx format)
     route: a networkx path"""
 
-    def __init__(self, route, complete_path = None, *args, **kwargs):
+    def __init__(self, route, transfers = None, route_info = None, transferstations = None, duration = None, lines = None, complete_path = None, class_id = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.route = route
         self.complete_path = complete_path
-        
-class Person:
-    """A person in the public transport network
-    with a route, possible transfers and route 
-    information."""  
-    
-    def __init__(self, route_info, transfers, transferstations, duration, lines, class_id, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
         self.route_info = route_info
         self.transfers = transfers
         self.transferstations = transferstations
         self.duration = duration
         self.lines = lines
         self.class_id = class_id
-    
+
 
 class Movable(Locatable, Routeable, Log):
     """Movable class
@@ -172,7 +163,7 @@ class Movable(Locatable, Routeable, Log):
             origin = self.route[node[0]]
             destination = self.route[node[0] + 1]
             edge = self.env.FG.edges[origin, destination]
-            
+
             yield from self.pass_edge(origin, destination)
 
             if node[0] + 2 == len(self.route):
@@ -206,7 +197,8 @@ class Movable(Locatable, Routeable, Log):
 
         except:           
             pass
-
+        
+        
         self.log_entry("Driving from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
         yield self.env.timeout(edge["duration"] * 60)
         self.log_entry("Driving from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
@@ -222,8 +214,8 @@ class Movable(Locatable, Routeable, Log):
         
         except:
             pass
-
         
+
 class Mover():
     """ 
     Mover class 
@@ -266,7 +258,8 @@ class Mover():
             elif unit.transfers > 0:
                 if nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
                     unit.log_entry("In {} stop".format(unit.lines[0]), self.env.now, 0, self.geometry)
-                    unit.log_entry("Transfer to {}".format(unit.lines[1]), self.env.now, 0, self.geometry)
+                    
+                    unit.log_entry("Start transfer to {}".format(unit.lines[1]), self.env.now, 0, self.geometry)
                     to_transfer.append(unit)
                 
         for unit in to_remove:
