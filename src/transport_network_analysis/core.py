@@ -458,14 +458,14 @@ class Movable(Locatable, Routeable, Log):
                     self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
                     self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
 
-                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
+                self.log_entry("Driving from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
                 yield self.env.timeout(edge["duration"] * 60)
-                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
+                self.log_entry("Driving from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
         
         else:
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
+            self.log_entry("Driving from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
             yield self.env.timeout(edge["duration"] * 60)
-            self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
+            self.log_entry("Driving from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
             self.geometry = dest
         
         try:
@@ -579,8 +579,8 @@ class Mover():
 
         for unit in units:
             self.units.append(unit)
-            unit.log_entry("Waiting for metro stop", self.env.now, 0, self.geometry)
-            unit.log_entry("In metro start", self.env.now, 0, self.geometry)
+            unit.log_entry("Waiting for {} stop".format(unit.lines[0]), self.env.now, 0, self.geometry)
+            unit.log_entry("In {} start".format(unit.lines[0]), self.env.now, 0, self.geometry)
         
         self.log_entry("Loading stop", self.env.now, 30, self.geometry)
 
@@ -595,12 +595,13 @@ class Mover():
         
         for unit in self.units:
             if nx.get_node_attributes(self.env.FG, "geometry")[unit.route[-1]] == self.geometry:
-                unit.log_entry("In metro stop", self.env.now, 0, self.geometry)
+                unit.log_entry("In {} stop".format(unit.lines[0]), self.env.now, 0, self.geometry)
                 to_remove.append(unit)
             
             elif unit.transfers > 0:
                 if nx.get_node_attributes(self.env.FG, "geometry")[unit.transferstations[0]] == self.geometry:
-                    unit.log_entry("In metro stop, start transfer", self.env.now, 0, self.geometry)
+                    unit.log_entry("In {} stop".format(unit.lines[0]), self.env.now, 0, self.geometry)
+                    unit.log_entry("Transfer to {}".format(unit.lines[1]), self.env.now, 0, self.geometry)
                     to_transfer.append(unit)
                 
         for unit in to_remove:
@@ -617,7 +618,6 @@ class Mover():
             unit.lines.pop(0)
             
             # Remove from transport
-            unit.log_entry("Stop transfer", self.env.now, 0, self.geometry)
             self.units.remove(unit)            
             
         self.env.timeout(30)
