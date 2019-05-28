@@ -195,9 +195,9 @@ class Movable(Locatable, Routeable, Log):
             pass
         
         
-        self.log_entry("Driving from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
+        self.log_entry("Driving from node {} to node {} start".format(origin, destination), self.env.now, len(self.units), orig)
         yield self.env.timeout(edge["duration"] * 60)
-        self.log_entry("Driving from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
+        self.log_entry("Driving from node {} to node {} stop".format(origin, destination), self.env.now, len(self.units), dest)
         self.geometry = dest
         
         try:
@@ -226,20 +226,20 @@ class Mover():
     def load(self, units):
         """ Load self """
         
-        self.log_entry("Loading start", self.env.now, 0, self.geometry)
+        self.log_entry("Loading start", self.env.now, len(self.units), self.geometry)
 
         for unit in units:
             self.units.append(unit)
             unit.log_entry("Waiting for {} stop".format(unit.lines[0]), self.env.now, 0, self.geometry)
             unit.log_entry("In {} start".format(unit.lines[0]), self.env.now, 0, self.geometry)
         
-        self.log_entry("Loading stop", self.env.now, 30, self.geometry)
+        self.log_entry("Loading stop", self.env.now, len(self.units), self.geometry)
 
     
     def unload(self):
         """ Unload self """
 
-        self.log_entry("Unloading start", self.env.now, 0, self.geometry)
+        self.log_entry("Unloading start", self.env.now, len(self.units), self.geometry)
         
         to_remove = []
         to_transfer = []
@@ -271,7 +271,7 @@ class Mover():
             # Remove from transport
             self.units.remove(unit)            
             
-        self.log_entry("Unloading stop", self.env.now, 30, self.geometry)
+        self.log_entry("Unloading stop", self.env.now, len(self.units), self.geometry)
 
 class Station(HasContainer):
     """ Station class """
