@@ -205,8 +205,6 @@ class Movable(Locatable, Routeable, Log):
 
             if isinstance(node_type, Station) and isinstance(self, Mover):
                 self.unload()
-                yield self.env.timeout(30)
-
         
         except:
             pass
