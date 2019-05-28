@@ -183,11 +183,7 @@ class Movable(Locatable, Routeable, Log):
                 if len(node_type.units) > 0:
                     for unit in node_type.units:
                         if unit.lines[0] == self.name:
-                            if unit.transfers > 0 and unit.transferstations[0] in self.route[self.route.index(origin):]:
-                                to_load.append(unit)
-
-                            elif unit.route[-1] in self.route[self.route.index(origin):]: 
-                                to_load.append(unit)
+                            to_load.append(unit)
                 
                 for unit in to_load:
                     node_type.units.remove(unit)
