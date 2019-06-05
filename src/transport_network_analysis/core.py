@@ -16,6 +16,8 @@ import networkx as nx
 import pyproj
 import shapely.geometry
 
+import matplotlib.pyplot as plt
+
 logger = logging.getLogger(__name__)
 
 
@@ -168,7 +170,7 @@ class HasEnergy:
     def calculate_energy_consumption(self):
         """Calculation of energy consumption based on total time in system and properties"""
 
-        stationary_phase_indicator = ['Doors closing stop', 'Converting chamber stop', 'Doors opening stop', 'aiting to pass lock stop']
+        stationary_phase_indicator = ['waiting to pass bridge stop','Doors closing stop', 'Converting chamber stop', 'Doors opening stop', 'waiting to pass lock stop', 'Sailing into lock stop', 'Sailing out of lock stop', 'Wld: waiting converting chamber stop', 'Wld: waiting doors opening stop', 'Wld: doors closing stop']
         
         times = self.log['Timestamp']
         messages = self.log['Message']
@@ -207,7 +209,7 @@ class IsLock:
     """
 
     def __init__(self, nodes, neighbour_lock, lock_length, lock_width, 
-                 doors_open, doors_close, operating_time, *args, **kwargs):
+                 doors_open, doors_close, operating_time, lock_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         """Initialization"""
@@ -218,6 +220,19 @@ class IsLock:
         self.doors_open = doors_open
         self.doors_close = doors_close
         self.operating_time = operating_time
+        self.lock_name = lock_name
+
+    def plot_arrivales(self):
+        plothist = []
+        time_delta = (self.log["Timestamp"][-1]-self.log["Timestamp"][0]) / 3600
+        for i in range(len(self.log["Message"])):
+            if "in" in self.log["Message"][i]:
+                plothist.append(self.log["Timestamp"][i] / 3600)
+        plt.figure()
+        plt.ylabel('Vessels arriving at lock')
+        plt.xlabel('time [h]')
+        plt.hist(plothist, bins=int(time_delta))
+        plt.show()
 
 
 class Movable(SimpyObject, Locatable, Routeable):
@@ -236,6 +251,7 @@ class Movable(SimpyObject, Locatable, Routeable):
         self.current_index = 0
         self.path_has_next = True
         self.distance_convered = 0
+        self.sailed_distance = 0
 
 
     def do_switch(self, replace, with_this, destination):
@@ -324,7 +340,7 @@ class Movable(SimpyObject, Locatable, Routeable):
             else:
                 yield from self.pass_edge(origin, destination)
 
-
+        self.sailed_distance += self.distance
 
         # check for sufficient fuel
         if isinstance(self, HasFuel):
@@ -415,19 +431,19 @@ class Movable(SimpyObject, Locatable, Routeable):
                 if water_level != edge["Water level"]:
                     
                     # Doors closing
-                    self.log_entry("Doors closing start", self.env.now, 0, orig)
+                    self.log_entry("Wld: doors closing start", self.env.now, 0, orig)
                     yield self.env.timeout(1 * 60)
-                    self.log_entry("Doors closing stop", self.env.now, 0, orig)
+                    self.log_entry("Wld: doors closing stop", self.env.now, 0, orig)
 
                     # Converting chamber
-                    self.log_entry("Converting chamber start", self.env.now, 0, orig)
+                    self.log_entry("Wld: waiting converting chamber start", self.env.now, 0, orig)
                     yield self.env.timeout(14 * 60)
-                    self.log_entry("Converting chamber stop", self.env.now, 0, orig)
+                    self.log_entry("Wld: waiting converting chamber stop", self.env.now, 0, orig)
 
                     # Doors opening
-                    self.log_entry("Doors opening start", self.env.now, 0, orig)
+                    self.log_entry("Wld: waiting doors opening start", self.env.now, 0, orig)
                     yield self.env.timeout(1 * 60)
-                    self.log_entry("Doors opening start", self.env.now, 0, orig)
+                    self.log_entry("Wld: waiting doors opening stop", self.env.now, 0, orig)
 
                     # Change edge water level
                     self.env.FG.edges[origin, destination]["Water level"] = water_level
