@@ -74,7 +74,7 @@ setup(
     include_package_data=True,
     keywords="OpenTNSim",
     name="opentnsim",
-    packages=find_packages(include=["transport-network-analysis"]),
+    packages=find_packages(include=["src/transport-network-analysis"]),
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
