@@ -20,7 +20,7 @@ import pandas as pd
 import random
 
 # import core from self
-import transport_network_analysis.core as core
+import opentnsim.core as core
 
 logger = logging.getLogger(__name__)
 
