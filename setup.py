@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-    Setup file for hydraulic_infrastructure_realisation.
+    Setup file for OpenTNSim.
     Use setup.cfg to configure your project.
 
     This file was generated with PyScaffold 3.1.
@@ -74,7 +74,7 @@ setup(
     include_package_data=True,
     keywords="OpenTNSim",
     name="opentnsim",
-    packages=find_packages(include=["opentnsim"]),
+    packages=find_packages(include=["transport-network-analysis"]),
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
