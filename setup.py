@@ -65,7 +65,7 @@ setup(
     description="The OpenTNSim package aims to facilitate the analysis of network performance for different network configurations, fleet compositions and traffic rules.",
     entry_points={
         'console_scripts': [
-            'transport_network_analysis=transport_network_analysis.cli:cli',
+            'opentnsim=opentnsim.cli:cli',
         ],
     },
     install_requires=requires,
@@ -74,7 +74,7 @@ setup(
     include_package_data=True,
     keywords="OpenTNSim",
     name="opentnsim",
-    packages=find_packages(include=["transport-network-analysis"]),
+    packages=find_packages(include=["opentnsim"]),
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
