@@ -25,8 +25,8 @@ import datetime
 import random
 
 # tranport network analysis package
-import transport_network_analysis.core as core
-import transport_network_analysis.model as model
+import opentnsim.core as core
+import opentnsim.model as model
 
 
 """

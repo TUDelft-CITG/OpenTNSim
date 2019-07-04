@@ -4,8 +4,8 @@ import pytest
 import numpy as np
 
 # tranport network analysis package
-import transport_network_analysis.core as core
-import transport_network_analysis.graph_module as graph_module
+import opentnsim.core as core
+import opentnsim.graph_module as graph_module
 
 # package(s) related to time
 import datetime, time
