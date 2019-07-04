@@ -1,8 +1,8 @@
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/TUDelft-CITG/Transport-Network-Analysis/blob/master/LICENSE.txt)
+[ ![Documentation](https://img.shields.io/badge/sphinx-documentation-informational.svg)](https://oedm.vanoord.com/proxy/circleci_no_redirect/github/TUDelft-CITG/Transport-Network-Analysis/master/latest/727b95b70301407d3c0af44e1af2039fd9486f6f/tmp/artifacts/docs/index.html)
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](https://github.com/TUDelft-CITG/Transport-Network-Analysis/blob/master/LICENSE.txt)
 
 [![CircleCI](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis.svg?style=svg&circle-token=59b1f167ed771129459d86e822fd2faaae8f4a34)](https://circleci.com/gh/TUDelft-CITG/Transport-Network-Analysis)
-[ ![Coverage](https://oedm.vanoord.com/proxy/circleci_no_redirect/github/TUDelft-CITG/Transport-Network-Analysis/master/latest/727b95b70301407d3c0af44e1af2039fd9486f6f/tmp/artifacts/coverage.svg)](https://oedm.vanoord.com/proxy/circleci_no_redirect/github/TUDelft-CITG/Transport-Network-Analysis/master/latest/727b95b70301407d3c0af44e1af2039fd9486f6f/tmp/artifacts/index.html) 
-[ ![Documentation](https://img.shields.io/badge/sphinx-documentation-brightgreen.svg)](https://oedm.vanoord.com/proxy/circleci_no_redirect/github/TUDelft-CITG/Transport-Network-Analysis/master/latest/727b95b70301407d3c0af44e1af2039fd9486f6f/tmp/artifacts/docs/index.html)
+
 
 ## Transport Network Analysis
 
