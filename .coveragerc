@@ -1,5 +1,5 @@
 [run]
-source = src
+source = opentnsim
 
 [report]
-omit = test*, .eggs*, src/transport_network_analysis/plot.py
+omit = test*, .eggs*, opentnsim/plot.py
