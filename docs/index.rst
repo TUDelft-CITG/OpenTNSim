@@ -7,7 +7,6 @@ Welcome to OpenTNSim documentation! Please check the contents below for informat
 
 .. toctree::
    :maxdepth: 1
-
    :caption: Contents:
 
    readme
