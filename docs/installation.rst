@@ -42,7 +42,7 @@ Or download the `tarball`_:
 .. code-block:: bash
 
     # Use curl to obtain the tarball
-    curl  -OL https://github.com/TUDelft-CITG/OpenCLSim/tarball/master
+    curl  -OL https://github.com/TUDelft-CITG/OpenTNSim/tarball/master
 
 
 Once you have a copy of the source, you can install it with:
