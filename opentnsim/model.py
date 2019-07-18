@@ -20,7 +20,7 @@ import pandas as pd
 import random
 
 # import core from self
-import transport_network_analysis.core as core
+import opentnsim.core as core
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class VesselGenerator:
     A class to generate vessels from a database
     """
 
-    def __init__(self, vessel_type, vessel_database, loaded = None, random_seed = 4):
+    def __init__(self, vessel_type, vessel_database, loaded=None, random_seed=4):
         """ Initialization """
 
         self.vessel_type = vessel_type
@@ -38,12 +38,13 @@ class VesselGenerator:
         self.loaded = loaded
 
         random.seed(random_seed)
-    
-    
-    def generate(self, environment, vessel_name, scenario = None):
+
+    def generate(self, environment, vessel_name, scenario=None):
         """ Generate a vessel """
 
-        vessel_info = self.vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
+        vessel_info = self.vessel_database.sample(
+            n=1, random_state=int(1000 * random.random())
+        )
         vessel_data = {}
 
         vessel_data["env"] = environment
@@ -57,7 +58,7 @@ class VesselGenerator:
                 vessel_data["id"] = vessel_info[key].values[0]
             else:
                 vessel_data[key] = vessel_info[key].values[0]
-        
+
         if self.loaded == True:
             vessel_data["level"] = vessel_data["capacity"]
         elif self.loaded == "Random":
@@ -68,11 +69,18 @@ class VesselGenerator:
 
         vessel_data["route"] = None
         vessel_data["geometry"] = None
-        
+
         return self.vessel_type(**vessel_data)
-    
-    
-    def arrival_process(self, environment, origin, destination, arrival_distribution, scenario, arrival_process):
+
+    def arrival_process(
+        self,
+        environment,
+        origin,
+        destination,
+        arrival_distribution,
+        scenario,
+        arrival_process,
+    ):
         """ 
         Make arrival process
         
@@ -84,67 +92,90 @@ class VesselGenerator:
         # Create an array with inter-arrival times -- average number of seconds between arrivals
         if type(arrival_distribution) == int:
             self.inter_arrival_times = [3600 / arrival_distribution] * 24
-        
+
         elif type(arrival_distribution) == list and len(arrival_distribution) == 24:
             self.inter_arrival_times = [3600 / n for n in arrival_distribution]
-        
+
         elif type(arrival_distribution) == list:
-            raise ValueError("List should contain an average number of vessels per hour for an entire day: 24 entries.")
-        
+            raise ValueError(
+                "List should contain an average number of vessels per hour for an entire day: 24 entries."
+            )
+
         else:
-            raise ValueError("Specify an arrival distribution: type Integer or type List.")
+            raise ValueError(
+                "Specify an arrival distribution: type Integer or type List."
+            )
 
         while True:
 
             # Check simulation time
-            inter_arrival = self.inter_arrival_times[datetime.datetime.fromtimestamp(environment.now).hour]
+            inter_arrival = self.inter_arrival_times[
+                datetime.datetime.fromtimestamp(environment.now).hour
+            ]
 
             # In the case of a Markovian arrival process
             if arrival_process == "Markovian":
 
                 # Make a timestep based on the poisson process
                 yield environment.timeout(random.expovariate(1 / inter_arrival))
-            
+
             elif arrival_process == "Uniform":
 
                 # Make a timestep based on uniform arrivals
                 yield environment.timeout(inter_arrival)
-            
+
             else:
-                raise ValueError("No other arrival processes are yet defined. You can add them to transport_network_analysis/vessel_generator.py.")
+                raise ValueError(
+                    "No other arrival processes are yet defined. You can add them to transport_network_analysis/vessel_generator.py."
+                )
 
             # Create a vessel
             vessel = self.generate(environment, "Vessel", scenario)
-            
+
             # Check if a route is available with vessel properties
-            width, height, draught = vessel.width, vessel.current_height, vessel.current_draught
+            width, height, draught = (
+                vessel.width,
+                vessel.current_height,
+                vessel.current_draught,
+            )
             route = None
 
             for i in environment.routes.index:
-                if (environment.routes["Origin"][i] == origin and \
-                    environment.routes["Destination"][i] == destination and \
-                    environment.routes["Width"][i] == width and \
-                    environment.routes["Height"][i] == height and \
-                    environment.routes["Depth"][i] == draught):
+                if (
+                    environment.routes["Origin"][i] == origin
+                    and environment.routes["Destination"][i] == destination
+                    and environment.routes["Width"][i] == width
+                    and environment.routes["Height"][i] == height
+                    and environment.routes["Depth"][i] == draught
+                ):
                     route = environment.routes["Route"][i]
-            
-            if route: 
+
+            if route:
                 vessel.route = route
-                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[vessel.route[0]]
+                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
+                    vessel.route[0]
+                ]
             else:
-                route = vessel.get_route(origin = origin, destination = destination)
-                environment.routes = environment.routes.append({"Origin": origin, 
-                                                                "Destination": destination, 
-                                                                "Width": width, 
-                                                                "Height": height, 
-                                                                "Depth": draught, 
-                                                                "Route": route}, ignore_index = True)
+                route = vessel.get_route(origin=origin, destination=destination)
+                environment.routes = environment.routes.append(
+                    {
+                        "Origin": origin,
+                        "Destination": destination,
+                        "Width": width,
+                        "Height": height,
+                        "Depth": draught,
+                        "Route": route,
+                    },
+                    ignore_index=True,
+                )
 
                 vessel.route = route
-                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[vessel.route[0]]
-                
+                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
+                    vessel.route[0]
+                ]
+
             environment.vessels.append(vessel)
-            
+
             # Move on path
             environment.process(vessel.move())
 
@@ -154,20 +185,38 @@ class Simulation(core.Identifiable):
     A class to generate vessels from a database
     """
 
-    def __init__(self, simulation_start, graph, scenario = None):
+    def __init__(self, simulation_start, graph, scenario=None):
         """ 
         Initialization 
         
         scenario: scenario with vessels - should be coupled to the database
         """
-        self.environment = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
+        self.environment = simpy.Environment(
+            initial_time=time.mktime(simulation_start.timetuple())
+        )
         self.environment.FG = graph
-        self.environment.routes = pd.DataFrame.from_dict({"Origin": [], "Destination": [], "Width": [], "Height": [], "Depth": [], "Route": []})
+        self.environment.routes = pd.DataFrame.from_dict(
+            {
+                "Origin": [],
+                "Destination": [],
+                "Width": [],
+                "Height": [],
+                "Depth": [],
+                "Route": [],
+            }
+        )
         self.scenario = scenario
 
         self.environment.vessels = []
-    
-    def add_vessels(self, vessel_generator, origin, destination, arrival_distribution = 1, arrival_process = "Markovian"):
+
+    def add_vessels(
+        self,
+        vessel_generator,
+        origin,
+        destination,
+        arrival_distribution=1,
+        arrival_process="Markovian",
+    ):
         """ 
         Make arrival process
         
@@ -176,17 +225,22 @@ class Simulation(core.Identifiable):
         arrival_process:        process of arrivals
         """
 
-        self.environment.process(vessel_generator.arrival_process(self.environment, origin, destination, arrival_distribution, self.scenario, arrival_process))
-    
-    def run(self, duration = 24 * 60 * 60):
+        self.environment.process(
+            vessel_generator.arrival_process(
+                self.environment,
+                origin,
+                destination,
+                arrival_distribution,
+                self.scenario,
+                arrival_process,
+            )
+        )
+
+    def run(self, duration=24 * 60 * 60):
         """ 
         Run the simulation 
         
         duration:               specify the duration of the simulation in seconds
-        """ 
-        
-        self.environment.run(until = self.environment.now + duration)
+        """
 
-    
-
-
+        self.environment.run(until=self.environment.now + duration)

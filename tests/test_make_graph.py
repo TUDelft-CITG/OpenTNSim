@@ -3,8 +3,8 @@
 import pytest
 
 # tranport network analysis package
-import transport_network_analysis.core as core
-import transport_network_analysis.graph_module as graph_module
+import opentnsim.core as core
+import opentnsim.graph_module as graph_module
 
 # import spatial libraries
 import pyproj
@@ -28,9 +28,11 @@ def graph():
     nodes = [node_1, node_2]
 
     for node in nodes:
-        graph.graph.add_node(node["Name"], 
-                            geometry = node["Geometry"], 
-                            Position = (node["Geometry"].x, node["Geometry"].y))
+        graph.graph.add_node(
+            node["Name"],
+            geometry=node["Geometry"],
+            Position=(node["Geometry"].x, node["Geometry"].y),
+        )
 
     edge = [node_1, node_2]
     graph.graph.add_edge(edge[0]["Name"], edge[1]["Name"])
@@ -46,7 +48,7 @@ def test_type(graph):
     # Test if location of the nodes is correct
     node_1 = list(graph.nodes(data=True))[0]
     node_2 = list(graph.nodes(data=True))[1]
-    
+
     assert shapely.geometry.Point(4.4954, 51.905505) == node_1[1]["geometry"]
     assert shapely.geometry.Point(4.4833, 51.910485) == node_2[1]["geometry"]
 

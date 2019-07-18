@@ -25,26 +25,37 @@ import datetime
 import random
 
 # tranport network analysis package
-import transport_network_analysis.core as core
-import transport_network_analysis.model as model
+import opentnsim.core as core
+import opentnsim.model as model
 
 
 """
 Testing the VesselGenerator class and Simulation class of model.py
 """
 
+
 @pytest.fixture()
 def vessel_database():
     return pd.read_csv("tests/vessels/vessels.csv")
 
+
 @pytest.fixture()
 def vessel_type():
-    vessel = type('Vessel', 
-              (core.Identifiable, core.Movable, core.HasContainer,
-               core.VesselProperties, core.HasResource, core.Routeable), 
-              {})
-    
+    vessel = type(
+        "Vessel",
+        (
+            core.Identifiable,
+            core.Movable,
+            core.HasContainer,
+            core.VesselProperties,
+            core.HasResource,
+            core.Routeable,
+        ),
+        {},
+    )
+
     return vessel
+
 
 @pytest.fixture()
 def graph():
@@ -56,13 +67,15 @@ def graph():
     nodes = [node_1, node_2, node_3]
 
     for node in nodes:
-        FG.add_node(node["Name"], 
-                    geometry = node["Geometry"], 
-                    Position = (node["Geometry"].x, node["Geometry"].y))
+        FG.add_node(
+            node["Name"],
+            geometry=node["Geometry"],
+            Position=(node["Geometry"].x, node["Geometry"].y),
+        )
 
     edges = [[node_1, node_2], [node_2, node_3]]
     for edge in edges:
-        FG.add_edge(edge[0]["Name"], edge[1]["Name"], weight = 1)
+        FG.add_edge(edge[0]["Name"], edge[1]["Name"], weight=1)
 
     return FG
 
@@ -70,6 +83,7 @@ def graph():
 """
 Actual testing starts below
 """
+
 
 def test_make_vessel(vessel_database, vessel_type, graph):
 
@@ -84,7 +98,7 @@ def test_make_vessel(vessel_database, vessel_type, graph):
 
     # Make the test vessel
     random.seed(4)
-    vessel_info = vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
+    vessel_info = vessel_database.sample(n=1, random_state=int(1000 * random.random()))
     vessel_data = {}
 
     vessel_data["env"] = env
@@ -104,6 +118,7 @@ def test_make_vessel(vessel_database, vessel_type, graph):
         if key != "container" or key != "resource":
             generated_vessel.__dict__[key] == test_vessel.__dict__[key]
 
+
 def test_inter_arrival_times_markovian(vessel_database, vessel_type, graph):
 
     # Create a vessel generator
@@ -112,20 +127,26 @@ def test_inter_arrival_times_markovian(vessel_database, vessel_type, graph):
     # Create a simulation object
     simulation_start = datetime.datetime(2019, 1, 1)
     sim = model.Simulation(simulation_start, graph)
-    sim.add_vessels(origin = list(graph)[0], destination = list(graph)[-1], vessel_generator = generator)
+    sim.add_vessels(
+        origin=list(graph)[0], destination=list(graph)[-1], vessel_generator=generator
+    )
 
     # Run the simulation
-    sim.run(duration = 100 * 24 * 60 * 60)
+    sim.run(duration=100 * 24 * 60 * 60)
 
     # The default arrival times of vessels is 1 per hour
     inter_arrivals = []
 
     for i, _ in enumerate(sim.environment.vessels):
         if i > 0:
-            inter_arrivals.append(sim.environment.vessels[i].log["Timestamp"][0] - sim.environment.vessels[i - 1].log["Timestamp"][0])    
+            inter_arrivals.append(
+                sim.environment.vessels[i].log["Timestamp"][0]
+                - sim.environment.vessels[i - 1].log["Timestamp"][0]
+            )
 
     # Test if average inter_arrival time is indeed approximately 3600 seconds
-    assert np.isclose(3600, np.mean(inter_arrivals).total_seconds(), rtol = 0.01, atol = 60)
+    assert np.isclose(3600, np.mean(inter_arrivals).total_seconds(), rtol=0.01, atol=60)
+
 
 def test_inter_arrival_times_uniform(vessel_database, vessel_type, graph):
 
@@ -135,17 +156,25 @@ def test_inter_arrival_times_uniform(vessel_database, vessel_type, graph):
     # Create a simulation object
     simulation_start = datetime.datetime(2019, 1, 1)
     sim = model.Simulation(simulation_start, graph)
-    sim.add_vessels(origin = list(graph)[0], destination = list(graph)[-1], vessel_generator = generator, arrival_process = "Uniform")
+    sim.add_vessels(
+        origin=list(graph)[0],
+        destination=list(graph)[-1],
+        vessel_generator=generator,
+        arrival_process="Uniform",
+    )
 
     # Run the simulation
-    sim.run(duration = 100 * 24 * 60 * 60)
+    sim.run(duration=100 * 24 * 60 * 60)
 
     # The default arrival times of vessels is 1 per hour
     inter_arrivals = []
 
     for i, _ in enumerate(sim.environment.vessels):
         if i > 0:
-            inter_arrivals.append(sim.environment.vessels[i].log["Timestamp"][0] - sim.environment.vessels[i - 1].log["Timestamp"][0])    
+            inter_arrivals.append(
+                sim.environment.vessels[i].log["Timestamp"][0]
+                - sim.environment.vessels[i - 1].log["Timestamp"][0]
+            )
 
     # Test if average inter_arrival time is indeed approximately 3600 seconds
-    assert np.isclose(3600, np.mean(inter_arrivals).total_seconds(), rtol = 0.01, atol = 60)
+    assert np.isclose(3600, np.mean(inter_arrivals).total_seconds(), rtol=0.01, atol=60)

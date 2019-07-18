@@ -26,6 +26,7 @@ class SimpyObject:
 
     env: a simpy Environment
     """
+
     def __init__(self, env, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = env
@@ -36,11 +37,15 @@ class HasResource(SimpyObject):
 
     Adds a limited Simpy resource which should be requested before the object is used for processing."""
 
-    def __init__(self, nr_resources=1, priority = False, *args, **kwargs):
+    def __init__(self, nr_resources=1, priority=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
 
-        self.resource = simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
+        self.resource = (
+            simpy.PriorityResource(self.env, capacity=nr_resources)
+            if priority
+            else simpy.Resource(self.env, capacity=nr_resources)
+        )
 
 
 class Identifiable:
@@ -92,11 +97,11 @@ class HasContainer(SimpyObject):
         """Initialization"""
         self.container = simpy.Container(self.env, capacity, init=level)
         self.total_requested = total_requested
-    
+
     @property
     def is_loaded(self):
         return True if self.container.level > 0 else False
-    
+
     @property
     def filling_degree(self):
         return self.container.level / self.container.capacity
@@ -113,10 +118,7 @@ class Log(SimpyObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.log = {"Message": [],
-                    "Timestamp": [],
-                    "Value": [],
-                    "Geometry": []}
+        self.log = {"Message": [], "Timestamp": [], "Value": [], "Geometry": []}
 
     def log_entry(self, log, t, value, geometry_log):
         """Log"""
@@ -127,9 +129,17 @@ class Log(SimpyObject):
 
     def get_log_as_json(self):
         json = []
-        for msg, t, value, geometry_log in zip(self.log["Message"], self.log["Timestamp"], self.log["Value"], self.log["Geometry"]):
-            json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
+        for msg, t, value, geometry_log in zip(
+            self.log["Message"],
+            self.log["Timestamp"],
+            self.log["Value"],
+            self.log["Geometry"],
+        ):
+            json.append(
+                dict(message=msg, time=t, value=value, geometry_log=geometry_log)
+            )
         return json
+
 
 class VesselProperties:
     """
@@ -137,13 +147,21 @@ class VesselProperties:
     Height, width, etc.
     """
 
-    def __init__(self, vessel_type, installed_power,
-                 width, length,
-                 height_empty, height_full, 
-                 draught_empty, draught_full, 
-                 *args, **kwargs):
+    def __init__(
+        self,
+        vessel_type,
+        installed_power,
+        width,
+        length,
+        height_empty,
+        height_full,
+        draught_empty,
+        draught_full,
+        *args,
+        **kwargs
+    ):
         super().__init__(*args, **kwargs)
-        
+
         """Initialization"""
         self.vessel_type = vessel_type
         self.installed_power = installed_power
@@ -161,20 +179,30 @@ class VesselProperties:
     def current_height(self):
         """ Calculate current height based on filling degree """
 
-        return self.filling_degree * (self.height_full - self.height_empty) + self.height_empty
+        return (
+            self.filling_degree * (self.height_full - self.height_empty)
+            + self.height_empty
+        )
 
     @property
     def current_draught(self):
         """ Calculate current draught based on filling degree """
 
-        return self.filling_degree * (self.draught_full - self.draught_empty) + self.draught_empty
-    
-    def get_route(self, origin, destination,
-                  graph = None,
-                  minWidth = None, 
-                  minHeight = None, 
-                  minDepth = None,
-                  randomSeed = 4):
+        return (
+            self.filling_degree * (self.draught_full - self.draught_empty)
+            + self.draught_empty
+        )
+
+    def get_route(
+        self,
+        origin,
+        destination,
+        graph=None,
+        minWidth=None,
+        minHeight=None,
+        minDepth=None,
+        randomSeed=4,
+    ):
         """ Calculate a path based on vessel restrictions """
 
         graph = graph if graph else self.env.FG
@@ -184,9 +212,8 @@ class VesselProperties:
 
         # Check if information on restrictions is added to the edges
         random.seed(randomSeed)
-        edge = random.choice(list(graph.edges(data = True)))
+        edge = random.choice(list(graph.edges(data=True)))
         edge_attrs = list(edge[2].keys())
-        
 
         # IMPROVE THIS TO CHECK ALL EDGES AND COMBINATIONS OF RESTRICTIONS
 
@@ -194,33 +221,41 @@ class VesselProperties:
             edges = []
             nodes = []
 
-            for edge in graph.edges(data = True):
-                if edge[2]["Width"] >= minWidth and edge[2]["Height"] >= minHeight and edge[2]["Depth"] >= minDepth:
+            for edge in graph.edges(data=True):
+                if (
+                    edge[2]["Width"] >= minWidth
+                    and edge[2]["Height"] >= minHeight
+                    and edge[2]["Depth"] >= minDepth
+                ):
                     edges.append(edge)
-                    
+
                     nodes.append(graph.nodes[edge[0]])
                     nodes.append(graph.nodes[edge[1]])
 
             subGraph = graph.__class__()
 
             for node in nodes:
-                subGraph.add_node(node["name"],
-                        name = node["name"],
-                        geometry = node["geometry"], 
-                        position = (node["geometry"].x, node["geometry"].y))
+                subGraph.add_node(
+                    node["name"],
+                    name=node["name"],
+                    geometry=node["geometry"],
+                    position=(node["geometry"].x, node["geometry"].y),
+                )
 
             for edge in edges:
-                subGraph.add_edge(edge[0], edge[1], attr_dict = edge[2])
+                subGraph.add_edge(edge[0], edge[1], attr_dict=edge[2])
 
             try:
                 return nx.dijkstra_path(subGraph, origin, destination)
             except:
-                raise ValueError("No path was found with the given boundary conditions.")
+                raise ValueError(
+                    "No path was found with the given boundary conditions."
+                )
 
         # If not, return shortest path
         else:
             return nx.dijkstra_path(graph, origin, destination)
-            
+
 
 class HasEnergy:
     """
@@ -229,43 +264,48 @@ class HasEnergy:
 
     def __init__(self, emissionfactor, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         """Initialization"""
         self.emissionfactor = emissionfactor
-        self.energy_use = {'total': 0,'stationary': 0}
-        self.co2_footprint = {'total_footprint': 0,'stationary': 0}
-        self.mki_footprint = {'total_footprint': 0,'stationary': 0}
-    
+        self.energy_use = {"total": 0, "stationary": 0}
+        self.co2_footprint = {"total_footprint": 0, "stationary": 0}
+        self.mki_footprint = {"total_footprint": 0, "stationary": 0}
+
     @property
     def power(self):
-        return 2 * (self.current_speed * self.resistance * 10**-3)  #kW
-    
+        return 2 * (self.current_speed * self.resistance * 10 ** -3)  # kW
+
     def calculate_energy_consumption(self):
         """Calculation of energy consumption based on total time in system and properties"""
 
-        stationary_phase_indicator = ['Doors closing stop', 'Converting chamber stop', 'Doors opening stop', 'aiting to pass lock stop']
-        
-        times = self.log['Timestamp']
-        messages = self.log['Message']
-        
-        for i in range(len(times) - 1):
-            delta_t = times[i+1] - times[i]
-            
-            if messages[i + 1] in stationary_phase_indicator:
-                energy_delta =  self.power *  delta_t / 3600 # KJ/3600
+        stationary_phase_indicator = [
+            "Doors closing stop",
+            "Converting chamber stop",
+            "Doors opening stop",
+            "aiting to pass lock stop",
+        ]
 
-                self.energy_use['total_energy'] += energy_delta * 0.15
-                self.energy_use['stationary'] += energy_delta * 0.15
-            
+        times = self.log["Timestamp"]
+        messages = self.log["Message"]
+
+        for i in range(len(times) - 1):
+            delta_t = times[i + 1] - times[i]
+
+            if messages[i + 1] in stationary_phase_indicator:
+                energy_delta = self.power * delta_t / 3600  # KJ/3600
+
+                self.energy_use["total_energy"] += energy_delta * 0.15
+                self.energy_use["stationary"] += energy_delta * 0.15
+
             else:
-                self.energy_use['total_energy'] += self.power * delta_t / 3600
+                self.energy_use["total_energy"] += self.power * delta_t / 3600
 
 
 class Routeable:
     """Something with a route (networkx format)
     route: a networkx path"""
 
-    def __init__(self, route, complete_path = None, *args, **kwargs):
+    def __init__(self, route, complete_path=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.route = route
@@ -280,11 +320,23 @@ class IsLock(HasResource, Identifiable, Log):
     operation in seconds
     """
 
-    def __init__(self, node_1, node_2, lock_length, lock_width, lock_depth,
-                 doors_open, doors_close, operating_time, waiting_area = True, *args, **kwargs):
+    def __init__(
+        self,
+        node_1,
+        node_2,
+        lock_length,
+        lock_width,
+        lock_depth,
+        doors_open,
+        doors_close,
+        operating_time,
+        waiting_area=True,
+        *args,
+        **kwargs
+    ):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        
+
         # Properties
         self.lock_length = lock_length
         self.lock_width = lock_width
@@ -303,12 +355,17 @@ class IsLock(HasResource, Identifiable, Log):
         self.water_level = random.choice([node_1, node_2])
 
         # Lay-Out
-        self.line_up_area = {node_1: simpy.Resource(self.env, capacity = 1), node_2: simpy.Resource(self.env, capacity = 1)}
-        
+        self.line_up_area = {
+            node_1: simpy.Resource(self.env, capacity=1),
+            node_2: simpy.Resource(self.env, capacity=1),
+        }
+
         waiting_area_resources = 1 if waiting_area else 100
-        self.waiting_area = {node_1: simpy.Resource(self.env, capacity = waiting_area_resources), 
-                             node_2: simpy.Resource(self.env, capacity = waiting_area_resources)} 
-    
+        self.waiting_area = {
+            node_1: simpy.Resource(self.env, capacity=waiting_area_resources),
+            node_2: simpy.Resource(self.env, capacity=waiting_area_resources),
+        }
+
     def convert_chamber(self, environment, new_level):
         """ Convert the water level """
 
@@ -318,19 +375,23 @@ class IsLock(HasResource, Identifiable, Log):
         self.log_entry("Lock doors closing stop", environment.now, self.water_level, 0)
 
         # Convert the chamber
-        self.log_entry("Lock chamber converting start", environment.now, self.water_level, 0)
+        self.log_entry(
+            "Lock chamber converting start", environment.now, self.water_level, 0
+        )
 
         # Water level will shift
         self.change_water_level(new_level)
 
         yield environment.timeout(self.operating_time)
-        self.log_entry("Lock chamber converting stop", environment.now, self.water_level, 0)
-        
+        self.log_entry(
+            "Lock chamber converting stop", environment.now, self.water_level, 0
+        )
+
         # Open the doors
         self.log_entry("Lock doors opening start", environment.now, self.water_level, 0)
         yield environment.timeout(self.doors_open)
         self.log_entry("Lock doors opening stop", environment.now, self.water_level, 0)
-    
+
     def change_water_level(self, side):
         """ Change water level and priorities in queue """
 
@@ -340,9 +401,14 @@ class IsLock(HasResource, Identifiable, Log):
             request.priority = -1 if request.priority == 0 else 0
 
             if request.priority == -1:
-                self.resource.queue.insert(0, self.resource.queue.pop(self.resource.queue.index(request)))
+                self.resource.queue.insert(
+                    0, self.resource.queue.pop(self.resource.queue.index(request))
+                )
             else:
-                self.resource.queue.insert(-1, self.resource.queue.pop(self.resource.queue.index(request)))
+                self.resource.queue.insert(
+                    -1, self.resource.queue.pop(self.resource.queue.index(request))
+                )
+
 
 class Movable(Locatable, Routeable, Log):
     """Movable class
@@ -355,7 +421,7 @@ class Movable(Locatable, Routeable, Log):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.v = v
-        self.wgs84 = pyproj.Geod(ellps='WGS84')
+        self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     def move(self):
         """determine distance between origin and destination, and
@@ -366,16 +432,23 @@ class Movable(Locatable, Routeable, Log):
         self.distance = 0
 
         # Check if vessel is at correct location - if note, move to location
-        if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
+        if (
+            self.geometry
+            != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+        ):
             orig = self.geometry
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
-            
+
             print("Origin", orig)
             print("Destination", dest)
 
-            self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
-                                            shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
-    
+            self.distance += self.wgs84.inv(
+                shapely.geometry.asShape(orig).x,
+                shapely.geometry.asShape(orig).y,
+                shapely.geometry.asShape(dest).x,
+                shapely.geometry.asShape(dest).y,
+            )[2]
+
             yield self.env.timeout(self.distance / self.current_speed)
             self.log_entry("Sailing to start", self.env.now, self.distance, dest)
 
@@ -395,14 +468,16 @@ class Movable(Locatable, Routeable, Log):
                     queue = 0
                     queue += len(lock.resource.users)
                     queue += len(lock.line_up_area[self.node].users)
-                    queue += len(lock.waiting_area[self.node].users) + len(lock.waiting_area[self.node].queue)
+                    queue += len(lock.waiting_area[self.node].users) + len(
+                        lock.waiting_area[self.node].queue
+                    )
 
                     queue_length.append(queue)
                     lock_ids.append(lock.id)
-                
+
                 lock_id = lock_ids[queue_length.index(min(queue_length))]
                 yield from self.pass_lock(origin, destination, lock_id)
-            
+
             else:
                 yield from self.pass_edge(origin, destination)
 
@@ -410,39 +485,81 @@ class Movable(Locatable, Routeable, Log):
                 break
 
         self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
-        logger.debug('  distance: ' + '%4.2f' % self.distance + ' m')
-        logger.debug('  sailing:  ' + '%4.2f' % self.current_speed + ' m/s')
-        logger.debug('  duration: ' + '%4.2f' % ((self.distance / self.current_speed) / 3600) + ' hrs')
-    
+        logger.debug("  distance: " + "%4.2f" % self.distance + " m")
+        logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
+        logger.debug(
+            "  duration: "
+            + "%4.2f" % ((self.distance / self.current_speed) / 3600)
+            + " hrs"
+        )
+
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
-        distance = self.wgs84.inv(shapely.geometry.asShape(orig).x, shapely.geometry.asShape(orig).y, 
-                                  shapely.geometry.asShape(dest).x, shapely.geometry.asShape(dest).y)[2]
+        distance = self.wgs84.inv(
+            shapely.geometry.asShape(orig).x,
+            shapely.geometry.asShape(orig).y,
+            shapely.geometry.asShape(dest).x,
+            shapely.geometry.asShape(dest).y,
+        )[2]
 
         self.distance += distance
         arrival = self.env.now
-        
+
         # Act based on resources
         if "Resources" in edge.keys():
-            with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+            with self.env.FG.edges[origin, destination][
+                "Resources"
+            ].request() as request:
                 yield request
 
                 if arrival != self.env.now:
-                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig)
-                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig)  
+                    self.log_entry(
+                        "Waiting to pass edge {} - {} start".format(
+                            origin, destination
+                        ),
+                        arrival,
+                        0,
+                        orig,
+                    )
+                    self.log_entry(
+                        "Waiting to pass edge {} - {} stop".format(origin, destination),
+                        self.env.now,
+                        0,
+                        orig,
+                    )
 
-                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
+                self.log_entry(
+                    "Sailing from node {} to node {} start".format(origin, destination),
+                    self.env.now,
+                    0,
+                    orig,
+                )
                 yield self.env.timeout(distance / self.current_speed)
-                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest)
-        
+                self.log_entry(
+                    "Sailing from node {} to node {} stop".format(origin, destination),
+                    self.env.now,
+                    0,
+                    dest,
+                )
+
         else:
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig)
+            self.log_entry(
+                "Sailing from node {} to node {} start".format(origin, destination),
+                self.env.now,
+                0,
+                orig,
+            )
             yield self.env.timeout(distance / self.current_speed)
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest)
-        
+            self.log_entry(
+                "Sailing from node {} to node {} start".format(origin, destination),
+                self.env.now,
+                0,
+                dest,
+            )
+
     def pass_lock(self, origin, destination, lock_id):
         """Pass the lock"""
 
@@ -450,7 +567,7 @@ class Movable(Locatable, Routeable, Log):
         for lock in locks:
             if lock.id == lock_id:
                 break
-        
+
         # Request access to waiting area
         wait_for_waiting_area = self.env.now
 
@@ -459,8 +576,18 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_waiting_area != self.env.now:
             waiting = self.env.now - wait_for_waiting_area
-            self.log_entry("Waiting to enter waiting area start", wait_for_waiting_area, 0, self.geometry)
-            self.log_entry("Waiting to enter waiting area stop", self.env.now, waiting, self.geometry)
+            self.log_entry(
+                "Waiting to enter waiting area start",
+                wait_for_waiting_area,
+                0,
+                self.geometry,
+            )
+            self.log_entry(
+                "Waiting to enter waiting area stop",
+                self.env.now,
+                waiting,
+                self.geometry,
+            )
 
         # Request access to line-up area
         wait_for_lineup_area = self.env.now
@@ -471,39 +598,54 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_lineup_area != self.env.now:
             waiting = self.env.now - wait_for_lineup_area
-            self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, self.geometry)
-            self.log_entry("Waiting in waiting area stop", self.env.now, waiting, self.geometry)
-        
+            self.log_entry(
+                "Waiting in waiting area start", wait_for_lineup_area, 0, self.geometry
+            )
+            self.log_entry(
+                "Waiting in waiting area stop", self.env.now, waiting, self.geometry
+            )
+
         # Request access to lock
         wait_for_lock_entry = self.env.now
-        access_lock = lock.resource.request(priority = -1 if origin == lock.water_level else 0)
+        access_lock = lock.resource.request(
+            priority=-1 if origin == lock.water_level else 0
+        )
         yield access_lock
 
         # Shift water level
-        if origin != lock.water_level: yield from lock.convert_chamber(self.env, origin)
+        if origin != lock.water_level:
+            yield from lock.convert_chamber(self.env, origin)
 
         lock.line_up_area[origin].release(access_line_up_area)
 
         if wait_for_lock_entry != self.env.now:
             waiting = self.env.now - wait_for_lock_entry
-            self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, self.geometry)
-            self.log_entry("Waiting in line-up area stop", self.env.now, waiting, self.geometry)
-        
+            self.log_entry(
+                "Waiting in line-up area start", wait_for_lock_entry, 0, self.geometry
+            )
+            self.log_entry(
+                "Waiting in line-up area stop", self.env.now, waiting, self.geometry
+            )
+
         # Vessel inside the lock
         self.log_entry("Passing lock start", self.env.now, 0, self.geometry)
-        
+
         # Shift the water level
         yield from lock.convert_chamber(self.env, destination)
-        
+
         # Vessel outside the lock
         lock.resource.release(access_lock)
-        passage_time = (lock.doors_close + lock.operating_time + lock.doors_open)
-        self.log_entry("Passing lock stop", self.env.now, passage_time, nx.get_node_attributes(self.env.FG, "geometry")[destination])
+        passage_time = lock.doors_close + lock.operating_time + lock.doors_open
+        self.log_entry(
+            "Passing lock stop",
+            self.env.now,
+            passage_time,
+            nx.get_node_attributes(self.env.FG, "geometry")[destination],
+        )
 
     @property
     def current_speed(self):
         return self.v
-
 
 
 class ContainerDependentMovable(Movable, HasContainer):
@@ -516,7 +658,7 @@ class ContainerDependentMovable(Movable, HasContainer):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.compute_v = compute_v
-        self.wgs84 = pyproj.Geod(ellps='WGS84')
+        self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     @property
     def current_speed(self):
