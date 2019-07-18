@@ -24,3 +24,6 @@ If you don not have [pip](https://pip.pypa.io) installed, this [Python installat
 
 You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods.
 
+## Examples
+
+The benefit of OpenTNSim is the generic set-up. A number of examples are presented in a seperate [Jupyter Notebook repository](https://github.com/TUDelft-CITG/OpenTNSim-Notebooks). Information on how to use the notebooks is presented in that repository as well.
