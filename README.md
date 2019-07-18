@@ -10,13 +10,17 @@
 
 Documentation can be found: [here](https://opentnsim.readthedocs.io/)
 
-## Description
-
-The Transport Network Analysis package aims to facilitate basic nautical traffic simulations. For routing issues this package primarily makes use of the python package networkx. It furthermore contains a number of generically formulated vessel classes. These classes can easily be used and expanded to enable investigation of: travel times, rough cost estimates, fuel use, emissions, congestions, etc. To simulate how vessels move over the network and sometimes interact with eachother and with the infrastructure the SimPy package is used. A number of basic visualisation routines is included to enable easy inspection of the simulation results.
-
 ## Installation
 
+To install OpenTNSim, run this command in your terminal:
+
 ``` bash
-# Download the package
 pip install opentnsim
 ```
+
+This is the preferred method to install OpenTNSim, as it will always install the most recent stable release.
+
+If you don not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process.
+
+You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods.
+
