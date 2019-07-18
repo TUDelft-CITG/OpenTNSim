@@ -9,12 +9,8 @@ Welcome to OpenTNSim documentation! Please check the contents below for informat
    :maxdepth: 1
    :caption: Contents:
 
-   readme
    installation
-   usage
-   examples
    opentnsim
-   opentnsim-api
    contributing
    authors
    history
