@@ -4,9 +4,11 @@
 [![CircleCI](https://circleci.com/gh/TUDelft-CITG/OpenTNSim.svg?style=svg&circle-token=59b1f167ed771129459d86e822fd2faaae8f4a34)](https://circleci.com/gh/TUDelft-CITG/OpenTNSim)
 
 
-## Transport Network Analysis
+# OpenTNSim
 
-* Documentation can be found: [here](https://opentnsim.readthedocs.io/)
+**Open** source **T**ransport **N**etwork **Sim**ulation -  Analysis of traffic behaviour on networks for different traffic scenarios and network configurations. 
+
+Documentation can be found: [here](https://opentnsim.readthedocs.io/)
 
 ## Description
 
