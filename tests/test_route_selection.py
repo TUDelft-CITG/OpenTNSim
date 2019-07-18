@@ -33,18 +33,29 @@ import opentnsim.model as model
 Testing the VesselGenerator class and Simulation class of model.py
 """
 
+
 @pytest.fixture()
 def vessel_database():
     return pd.read_csv("tests/vessels/vessels.csv")
 
+
 @pytest.fixture()
 def vessel_type():
-    vessel = type('Vessel', 
-              (core.Identifiable, core.Movable, core.HasContainer,
-               core.VesselProperties, core.HasResource, core.Routeable), 
-              {})
-    
+    vessel = type(
+        "Vessel",
+        (
+            core.Identifiable,
+            core.Movable,
+            core.HasContainer,
+            core.VesselProperties,
+            core.HasResource,
+            core.Routeable,
+        ),
+        {},
+    )
+
     return vessel
+
 
 @pytest.fixture()
 def graph():
@@ -57,23 +68,28 @@ def graph():
     nodes = [node_1, node_2, node_3, node_4]
 
     for node in nodes:
-        FG.add_node(node["Name"], 
-                    name = node["Name"],
-                    geometry = node["Geometry"], 
-                    position = (node["Geometry"].x, node["Geometry"].y))
+        FG.add_node(
+            node["Name"],
+            name=node["Name"],
+            geometry=node["Geometry"],
+            position=(node["Geometry"].x, node["Geometry"].y),
+        )
 
     edges = [[node_1, node_2], [node_2, node_3], [node_2, node_4], [node_3, node_4]]
     for edge in edges:
         if edge != [node_2, node_4]:
-            FG.add_edge(edge[0]["Name"], edge[1]["Name"], Width = 25, Height = 25, Depth = 25)
+            FG.add_edge(edge[0]["Name"], edge[1]["Name"], Width=25, Height=25, Depth=25)
         else:
-            FG.add_edge(edge[0]["Name"], edge[1]["Name"], Width = 6.5, Height = 25, Depth = 25)
+            FG.add_edge(
+                edge[0]["Name"], edge[1]["Name"], Width=6.5, Height=25, Depth=25
+            )
     return FG
 
 
 """
 Actual testing starts below
 """
+
 
 def test_route_selection_small(vessel_database, vessel_type, graph):
 
@@ -83,7 +99,7 @@ def test_route_selection_small(vessel_database, vessel_type, graph):
 
     # Make a test vessel with a width < 6.5
     random.seed(4)
-    vessel_info = vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
+    vessel_info = vessel_database.sample(n=1, random_state=int(1000 * random.random()))
 
     # Create a path based on the vessel width
     vessel_width = vessel_info["width"].values[0]
@@ -91,25 +107,29 @@ def test_route_selection_small(vessel_database, vessel_type, graph):
 
     edges = []
     nodes = []
-    for edge in graph.edges(data = True):
+    for edge in graph.edges(data=True):
         if edge[2]["Width"] > vessel_width:
             edges.append(edge)
-            
+
             nodes.append(graph.nodes[edge[0]])
             nodes.append(graph.nodes[edge[1]])
 
     subGraph = graph.__class__()
 
     for node in nodes:
-        subGraph.add_node(node["name"],
-                name = node["name"],
-                geometry = node["geometry"], 
-                position = (node["geometry"].x, node["geometry"].y))
+        subGraph.add_node(
+            node["name"],
+            name=node["name"],
+            geometry=node["geometry"],
+            position=(node["geometry"].x, node["geometry"].y),
+        )
 
     for edge in edges:
-        subGraph.add_edge(edge[0], edge[1], attr_dict = edge[2])
+        subGraph.add_edge(edge[0], edge[1], attr_dict=edge[2])
 
-    path = nx.dijkstra_path(subGraph, subGraph.nodes["Node 1"]["name"], subGraph.nodes["Node 4"]["name"])
+    path = nx.dijkstra_path(
+        subGraph, subGraph.nodes["Node 1"]["name"], subGraph.nodes["Node 4"]["name"]
+    )
 
     assert path == ["Node 1", "Node 2", "Node 4"]
 
@@ -122,7 +142,7 @@ def test_route_selection_large(vessel_database, vessel_type, graph):
 
     # Make a test vessel with a width < 6.5
     random.seed(3)
-    vessel_info = vessel_database.sample(n = 1, random_state = int(1000 * random.random()))
+    vessel_info = vessel_database.sample(n=1, random_state=int(1000 * random.random()))
 
     # Create a path based on the vessel width
     vessel_width = vessel_info["width"].values[0]
@@ -130,27 +150,32 @@ def test_route_selection_large(vessel_database, vessel_type, graph):
 
     edges = []
     nodes = []
-    for edge in graph.edges(data = True):
+    for edge in graph.edges(data=True):
         if edge[2]["Width"] > vessel_width:
             edges.append(edge)
-            
+
             nodes.append(graph.nodes[edge[0]])
             nodes.append(graph.nodes[edge[1]])
 
     subGraph = graph.__class__()
 
     for node in nodes:
-        subGraph.add_node(node["name"],
-                name = node["name"],
-                geometry = node["geometry"], 
-                position = (node["geometry"].x, node["geometry"].y))
+        subGraph.add_node(
+            node["name"],
+            name=node["name"],
+            geometry=node["geometry"],
+            position=(node["geometry"].x, node["geometry"].y),
+        )
 
     for edge in edges:
-        subGraph.add_edge(edge[0], edge[1], attr_dict = edge[2])
+        subGraph.add_edge(edge[0], edge[1], attr_dict=edge[2])
 
-    path = nx.dijkstra_path(subGraph, subGraph.nodes["Node 1"]["name"], subGraph.nodes["Node 4"]["name"])
+    path = nx.dijkstra_path(
+        subGraph, subGraph.nodes["Node 1"]["name"], subGraph.nodes["Node 4"]["name"]
+    )
 
     assert path == ["Node 1", "Node 2", "Node 3", "Node 4"]
+
 
 def test_route_selection_self(vessel_database, vessel_type, graph):
 
@@ -160,10 +185,12 @@ def test_route_selection_self(vessel_database, vessel_type, graph):
     # Create a simulation object
     simulation_start = datetime.datetime(2019, 1, 1)
     sim = model.Simulation(simulation_start, graph)
-    sim.add_vessels(origin = list(graph)[0], destination = list(graph)[-1], vessel_generator = generator)
+    sim.add_vessels(
+        origin=list(graph)[0], destination=list(graph)[-1], vessel_generator=generator
+    )
 
     # Run the simulation
-    sim.run(duration = 24 * 60 * 60)
+    sim.run(duration=24 * 60 * 60)
 
     for vessel in sim.environment.vessels:
         if vessel.width < 6.5:

@@ -39,26 +39,33 @@ def graph():
     nodes = [node_1, node_2, node_3]
 
     for node in nodes:
-        graph.graph.add_node(node["Name"], 
-                            geometry = node["Geometry"], 
-                            Position = (node["Geometry"].x, node["Geometry"].y))
+        graph.graph.add_node(
+            node["Name"],
+            geometry=node["Geometry"],
+            Position=(node["Geometry"].x, node["Geometry"].y),
+        )
 
     edges = [[node_1, node_2], [node_2, node_3]]
     for edge in edges:
-        graph.graph.add_edge(edge[0]["Name"], edge[1]["Name"], weight = 1)
+        graph.graph.add_edge(edge[0]["Name"], edge[1]["Name"], weight=1)
 
     return graph.graph
+
 
 # Make the vessel
 @pytest.fixture()
 def vessel():
     # Make a vessel class out of available mix-ins.
-    TransportResource = type('TransportResource', 
-                             (core.Identifiable, 
-                              core.ContainerDependentMovable, 
-                              core.HasResource, 
-                              core.Routeable), 
-                            {})
+    TransportResource = type(
+        "TransportResource",
+        (
+            core.Identifiable,
+            core.ContainerDependentMovable,
+            core.HasResource,
+            core.Routeable,
+        ),
+        {},
+    )
 
     # ContainerDependentMovable requires a function as input for "compute_v", so we define it as follows
     # No matter what v_empty and v_full will be, the vessel velocity will always be 1 meter per second
@@ -66,12 +73,16 @@ def vessel():
         return lambda x: 1
 
     # Create a dict with all required settings
-    data_vessel = {"env": None,
-                   "name": "Vessel number 1",
-                   "route": None,
-                   "geometry": shapely.geometry.Point(4.49540, 51.905505),  # Vessel starts at point 1
-                   "capacity": 1_000,
-                   "compute_v": compute_v_provider(v_empty=1, v_full=1)}
+    data_vessel = {
+        "env": None,
+        "name": "Vessel number 1",
+        "route": None,
+        "geometry": shapely.geometry.Point(
+            4.49540, 51.905505
+        ),  # Vessel starts at point 1
+        "capacity": 1_000,
+        "compute_v": compute_v_provider(v_empty=1, v_full=1),
+    }
 
     # Create the transport processing resource using the dict as keyword value pairs
     return TransportResource(**data_vessel)
@@ -81,13 +92,13 @@ def vessel():
 def test_simulation_1(graph, vessel):
     # Start simpy environment
     simulation_start = datetime.datetime.now()
-    env = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
+    env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
     env.epoch = time.mktime(simulation_start.timetuple())
 
     # Add graph to environment
     env.FG = graph
 
-    # Find the shortest past between node 1 and node 2 
+    # Find the shortest past between node 1 and node 2
     # There is only one option, passing one edge
     path = networkx.dijkstra_path(graph, "Node 1", "Node 2")
 
@@ -101,16 +112,19 @@ def test_simulation_1(graph, vessel):
             vessel.log_entry("Start sailing", env.now, "", vessel.geometry)
             yield from vessel.move()
             vessel.log_entry("Stop sailing", env.now, "", vessel.geometry)
-            
-            if vessel.geometry == networkx.get_node_attributes(graph, "geometry")[vessel.route[-1]]:
+
+            if (
+                vessel.geometry
+                == networkx.get_node_attributes(graph, "geometry")[vessel.route[-1]]
+            ):
                 break
-    
+
     # Run simulation
     env.process(start(env, vessel))
     env.run()
 
     # If simulation time is equal to the distance the test has passed
-    wgs84 = pyproj.Geod(ellps='WGS84')
+    wgs84 = pyproj.Geod(ellps="WGS84")
     distance = 0
 
     for i, _ in enumerate(path):
@@ -121,19 +135,20 @@ def test_simulation_1(graph, vessel):
         if i == len(path) - 2:
             break
 
-    np.testing.assert_almost_equal(distance, env.now-env.epoch)
-    
+    np.testing.assert_almost_equal(distance, env.now - env.epoch)
+
+
 # Actual testing starts here
 def test_simulation_2(graph, vessel):
     # Start simpy environment
     simulation_start = datetime.datetime.now()
-    env = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
+    env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
     env.epoch = time.mktime(simulation_start.timetuple())
 
     # Add graph to environment
     env.FG = graph
 
-    # Find the shortest past between node 1 and node 2 
+    # Find the shortest past between node 1 and node 2
     # There is only one option, passing one edge
     path = networkx.dijkstra_path(graph, "Node 1", "Node 3")
 
@@ -147,16 +162,19 @@ def test_simulation_2(graph, vessel):
             vessel.log_entry("Start sailing", env.now, "", vessel.geometry)
             yield from vessel.move()
             vessel.log_entry("Stop sailing", env.now, "", vessel.geometry)
-            
-            if vessel.geometry == networkx.get_node_attributes(graph, "geometry")[vessel.route[-1]]:
+
+            if (
+                vessel.geometry
+                == networkx.get_node_attributes(graph, "geometry")[vessel.route[-1]]
+            ):
                 break
-    
+
     # Run simulation
     env.process(start(env, vessel))
     env.run()
 
     # If simulation time is equal to the distance the test has passed
-    wgs84 = pyproj.Geod(ellps='WGS84')
+    wgs84 = pyproj.Geod(ellps="WGS84")
     distance = 0
 
     for i, _ in enumerate(path):
@@ -166,7 +184,7 @@ def test_simulation_2(graph, vessel):
 
         if i == len(path) - 2:
             break
-  
-    np.testing.assert_almost_equal(distance, env.now-env.epoch)
+
+    np.testing.assert_almost_equal(distance, env.now - env.epoch)
 
     # assert distance == env.now-env.epoch

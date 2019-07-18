@@ -14,10 +14,17 @@ jobs:
             docker exec -it transport-network-analysis bash -c "pip install coverage coverage-badge "
       
       - run:
-          name: Run tests
+          name: Run tests - Pytest
           command: |
             docker exec -it transport-network-analysis bash -c "python setup.py test"
             docker cp transport-network-analysis:/Transport-Network-Analysis/htmlcov /tmp/artifacts
+      
+      - run:
+          name: Run tests - Formatting
+          command: |
+            docker exec -it opentnsim bash -c "pip install black"
+            docker exec -it opentnsim bash -c "black --check opentnsim"
+            docker exec -it opentnsim bash -c "black --check tests"
       
       - run:
           name: Build docs
