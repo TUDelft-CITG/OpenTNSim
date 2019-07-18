@@ -6,6 +6,6 @@ try:
     dist_name = 'transport-network-analysis'
     __version__ = get_distribution(dist_name).version
 except DistributionNotFound:
-    __version__ = 'unknown'
+    __version__ = '0.0.1'
 finally:
     del get_distribution, DistributionNotFound

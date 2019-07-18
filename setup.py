@@ -78,7 +78,7 @@ setup(
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
-    url="https://github.com/TUDelft-CITG/Transport-Network-Analysis",
-    version="0.3.0",
+    url="https://github.com/TUDelft-CITG/OpenTNSim",
+    version="0.0.1",
     zip_safe=False,
 )

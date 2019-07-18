@@ -49,3 +49,4 @@ MANIFEST
 .venv*/
 *.mp4
 *.kml
+.vscode/settings.json
