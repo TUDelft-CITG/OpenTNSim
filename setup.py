@@ -79,6 +79,6 @@ setup(
     test_suite="tests",
     tests_require=tests_require,
     url="https://github.com/TUDelft-CITG/OpenTNSim",
-    version="0.0.1",
+    version="1.0.0",
     zip_safe=False,
 )

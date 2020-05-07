@@ -3,7 +3,7 @@
 [![DOI](https://zenodo.org/badge/145843547.svg)](https://zenodo.org/badge/latestdoi/145843547)
 
 [![CircleCI](https://circleci.com/gh/TUDelft-CITG/OpenTNSim.svg?style=svg&circle-token=59b1f167ed771129459d86e822fd2faaae8f4a34)](https://circleci.com/gh/TUDelft-CITG/OpenTNSim)
-
+[![Coverage](https://artifact-getter.herokuapp.com/get_coverage_badge?circle_url=https://circleci.com/gh/TUDelft-CITG/OpenTNSim&circle_token=727b95b70301407d3c0af44e1af2039fd9486f6faoutput=str)](https://artifact-getter.herokuapp.com/get_coverage_report?circle_url=https://circleci.com/gh/TUDelft-CITG/OpenTNSim&circle_token=727b95b70301407d3c0af44e1af2039fd9486f6f)
 
 # OpenTNSim
 
