@@ -85,13 +85,13 @@ def vessel_planning(vessels, activities, colors, web=False):
 
 
 def vessel_kml(
-    env,
-    vessels,
-    fname="vessel_movements.kml",
-    icon="http://maps.google.com/mapfiles/kml/shapes/sailing.png",
-    size=1,
-    scale=1,
-    stepsize=120,
+        env,
+        vessels,
+        fname="vessel_movements.kml",
+        icon="http://maps.google.com/mapfiles/kml/shapes/sailing.png",
+        size=1,
+        scale=1,
+        stepsize=120,
 ):
     """Create a kml visualisation of vessels. Env variable needs to contain 
         epoch to enable conversion of simulation time to real time. Vessels need
@@ -139,7 +139,6 @@ def vessel_kml(
         )
 
         for log_index, value in enumerate(vessel.log["timestamps_t"][:-1]):
-
             begin = datetime.datetime.fromtimestamp(
                 vessel.log["timestamps_t"][log_index]
             )
@@ -183,13 +182,13 @@ def vessel_kml(
 
 
 def site_kml(
-    env,
-    sites,
-    fname="site_development.kml",
-    icon="http://maps.google.com/mapfiles/kml/shapes/square.png",
-    size=1,
-    scale=3,
-    stepsize=120,
+        env,
+        sites,
+        fname="site_development.kml",
+        icon="http://maps.google.com/mapfiles/kml/shapes/square.png",
+        size=1,
+        scale=3,
+        stepsize=120,
 ):
     """Create a kml visualisation of vessels. Env variable needs to contain 
         epoch to enable conversion of simulation time to real time. Vessels need
@@ -207,7 +206,7 @@ def site_kml(
             style.labelstyle.scale = 1
             style.iconstyle.color = "ff00ffff"  # Yellow
             style.iconstyle.scale = scale * (
-                site.log["Value"][log_index] / site.container.capacity
+                    site.log["Value"][log_index] / site.container.capacity
             )
             style.iconstyle.icon.href = icon
 
@@ -233,7 +232,7 @@ def site_kml(
         style.labelstyle.scale = 1
         style.iconstyle.color = "ff00ffff"  # Yellow
         style.iconstyle.scale = scale * (
-            site.log["Value"][log_index + 1] / site.container.capacity
+                site.log["Value"][log_index + 1] / site.container.capacity
         )
         style.iconstyle.icon.href = icon
 
@@ -257,12 +256,12 @@ def site_kml(
 
 
 def graph_kml(
-    env,
-    fname="graph.kml",
-    icon="http://maps.google.com/mapfiles/kml/shapes/donut.png",
-    size=0.5,
-    scale=0.5,
-    width=5,
+        env,
+        fname="graph.kml",
+        icon="http://maps.google.com/mapfiles/kml/shapes/donut.png",
+        size=0.5,
+        scale=0.5,
+        width=5,
 ):
     """Create a kml visualisation of graph. Env variable needs to contain 
         graph."""
@@ -283,8 +282,7 @@ def graph_kml(
     nodes = list(env.FG.nodes)
 
     # each timestep will be represented as a single point
-    for log_index, value in enumerate(list(env.FG.nodes)[0 : -1 - 1]):
-
+    for log_index, value in enumerate(list(env.FG.nodes)[0: -1 - 1]):
         pnt = fol.newpoint(
             name="",
             coords=[
@@ -297,8 +295,7 @@ def graph_kml(
         pnt.style = shared_style
 
     edges = list(env.FG.edges)
-    for log_index, value in enumerate(list(env.FG.edges)[0 : -1 - 1]):
-
+    for log_index, value in enumerate(list(env.FG.edges)[0: -1 - 1]):
         lne = fol.newlinestring(
             name="",
             coords=[
