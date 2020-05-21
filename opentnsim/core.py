@@ -150,7 +150,6 @@ class VesselProperties:
     def __init__(
         self,
         vessel_type,
-        installed_power,
         width,
         length,
         height_empty,
@@ -164,7 +163,6 @@ class VesselProperties:
 
         """Initialization"""
         self.vessel_type = vessel_type
-        self.installed_power = installed_power
 
         self.width = width
         self.length = length
@@ -262,43 +260,46 @@ class HasEnergy:
     Add information on energy use and effects on energy use.
     """
 
-    def __init__(self, emissionfactor, *args, **kwargs):
+    def __init__(self, installed_power, resistance, resistance_empty, emissionfactor, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         """Initialization"""
+        self.installed_power = installed_power
+        self.resistance = resistance
+        self.resistance_empty = resistance_empty
         self.emissionfactor = emissionfactor
-        self.energy_use = {"total": 0, "stationary": 0}
-        self.co2_footprint = {"total_footprint": 0, "stationary": 0}
-        self.mki_footprint = {"total_footprint": 0, "stationary": 0}
-
-    @property
-    def power(self):
-        return 2 * (self.current_speed * self.resistance * 10 ** -3)  # kW
-
-    def calculate_energy_consumption(self):
-        """Calculation of energy consumption based on total time in system and properties"""
-
-        stationary_phase_indicator = [
-            "Doors closing stop",
-            "Converting chamber stop",
-            "Doors opening stop",
-            "aiting to pass lock stop",
-        ]
-
-        times = self.log["Timestamp"]
-        messages = self.log["Message"]
-
-        for i in range(len(times) - 1):
-            delta_t = times[i + 1] - times[i]
-
-            if messages[i + 1] in stationary_phase_indicator:
-                energy_delta = self.power * delta_t / 3600  # KJ/3600
-
-                self.energy_use["total_energy"] += energy_delta * 0.15
-                self.energy_use["stationary"] += energy_delta * 0.15
-
-            else:
-                self.energy_use["total_energy"] += self.power * delta_t / 3600
+    #     self.energy_use = {"total_energy": 0, "stationary": 0}
+    #     self.co2_footprint = {"total_footprint": 0, "stationary": 0}
+    #     self.mki_footprint = {"total_footprint": 0, "stationary": 0}
+    #
+    # @property
+    # def power(self):
+    #     return 2 * (self.vessel.current_speed * self.vessel.resistance * 10 ** -3)  # kW
+    #
+    # def calculate_energy_consumption(self):
+    #     """Calculation of energy consumption based on total time in system and properties"""
+    #
+    #     stationary_phase_indicator = [
+    #         "Doors closing stop",
+    #         "Converting chamber stop",
+    #         "Doors opening stop",
+    #         "Waiting to pass lock stop",
+    #     ]
+    #
+    #     times = self.vessel.log["Timestamp"]
+    #     messages = self.vessel.log["Message"]
+    #
+    #     for i in range(len(times) - 1):
+    #         delta_t = times[i + 1] - times[i]
+    #
+    #         if messages[i + 1] in stationary_phase_indicator:
+    #             energy_delta = self.power * delta_t / 3600  # KJ/3600
+    #
+    #             self.energy_use["total_energy"] += energy_delta * 0.15
+    #             self.energy_use["stationary"] += energy_delta * 0.15
+    #
+    #         else:
+    #             self.energy_use["total_energy"] += self.power * delta_t / 3600
 
 
 class Routeable:
@@ -431,7 +432,7 @@ class Movable(Locatable, Routeable, Log):
         """
         self.distance = 0
 
-        # Check if vessel is at correct location - if note, move to location
+        # Check if vessel is at correct location - if not, move to location
         if (
             self.geometry
             != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
@@ -510,55 +511,21 @@ class Movable(Locatable, Routeable, Log):
 
         # Act based on resources
         if "Resources" in edge.keys():
-            with self.env.FG.edges[origin, destination][
-                "Resources"
-            ].request() as request:
+            with self.env.FG.edges[origin, destination]["Resources"].request() as request:
                 yield request
 
                 if arrival != self.env.now:
-                    self.log_entry(
-                        "Waiting to pass edge {} - {} start".format(
-                            origin, destination
-                        ),
-                        arrival,
-                        0,
-                        orig,
-                    )
-                    self.log_entry(
-                        "Waiting to pass edge {} - {} stop".format(origin, destination),
-                        self.env.now,
-                        0,
-                        orig,
-                    )
+                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig,)
+                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig,)
 
-                self.log_entry(
-                    "Sailing from node {} to node {} start".format(origin, destination),
-                    self.env.now,
-                    0,
-                    orig,
-                )
+                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
                 yield self.env.timeout(distance / self.current_speed)
-                self.log_entry(
-                    "Sailing from node {} to node {} stop".format(origin, destination),
-                    self.env.now,
-                    0,
-                    dest,
-                )
+                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest,)
 
         else:
-            self.log_entry(
-                "Sailing from node {} to node {} start".format(origin, destination),
-                self.env.now,
-                0,
-                orig,
-            )
+            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
             yield self.env.timeout(distance / self.current_speed)
-            self.log_entry(
-                "Sailing from node {} to node {} start".format(origin, destination),
-                self.env.now,
-                0,
-                dest,
-            )
+            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest,)
 
     def pass_lock(self, origin, destination, lock_id):
         """Pass the lock"""
@@ -576,18 +543,8 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_waiting_area != self.env.now:
             waiting = self.env.now - wait_for_waiting_area
-            self.log_entry(
-                "Waiting to enter waiting area start",
-                wait_for_waiting_area,
-                0,
-                self.geometry,
-            )
-            self.log_entry(
-                "Waiting to enter waiting area stop",
-                self.env.now,
-                waiting,
-                self.geometry,
-            )
+            self.log_entry("Waiting to enter waiting area start", wait_for_waiting_area, 0, self.geometry,)
+            self.log_entry("Waiting to enter waiting area stop", self.env.now, waiting, self.geometry,)
 
         # Request access to line-up area
         wait_for_lineup_area = self.env.now
@@ -598,18 +555,12 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_lineup_area != self.env.now:
             waiting = self.env.now - wait_for_lineup_area
-            self.log_entry(
-                "Waiting in waiting area start", wait_for_lineup_area, 0, self.geometry
-            )
-            self.log_entry(
-                "Waiting in waiting area stop", self.env.now, waiting, self.geometry
-            )
+            self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, self.geometry)
+            self.log_entry("Waiting in waiting area stop", self.env.now, waiting, self.geometry)
 
         # Request access to lock
         wait_for_lock_entry = self.env.now
-        access_lock = lock.resource.request(
-            priority=-1 if origin == lock.water_level else 0
-        )
+        access_lock = lock.resource.request(priority=-1 if origin == lock.water_level else 0)
         yield access_lock
 
         # Shift water level
@@ -620,12 +571,8 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_lock_entry != self.env.now:
             waiting = self.env.now - wait_for_lock_entry
-            self.log_entry(
-                "Waiting in line-up area start", wait_for_lock_entry, 0, self.geometry
-            )
-            self.log_entry(
-                "Waiting in line-up area stop", self.env.now, waiting, self.geometry
-            )
+            self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, self.geometry)
+            self.log_entry("Waiting in line-up area stop", self.env.now, waiting, self.geometry)
 
         # Vessel inside the lock
         self.log_entry("Passing lock start", self.env.now, 0, self.geometry)
@@ -636,12 +583,7 @@ class Movable(Locatable, Routeable, Log):
         # Vessel outside the lock
         lock.resource.release(access_lock)
         passage_time = lock.doors_close + lock.operating_time + lock.doors_open
-        self.log_entry(
-            "Passing lock stop",
-            self.env.now,
-            passage_time,
-            nx.get_node_attributes(self.env.FG, "geometry")[destination],
-        )
+        self.log_entry("Passing lock stop", self.env.now, passage_time, nx.get_node_attributes(self.env.FG, "geometry")[destination],)
 
     @property
     def current_speed(self):
