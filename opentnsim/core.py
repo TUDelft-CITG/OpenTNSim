@@ -33,14 +33,13 @@ class SimpyObject:
 
 
 class HasResource(SimpyObject):
-    """HasProcessingLimit class
+    """Something that has a resource limitation, a resource request must be granted before the object can be used.
 
-    Adds a limited Simpy resource which should be requested before the object is used for processing."""
+    nr_resources: nr of requests that can be handled simultaneously"""
 
     def __init__(self, nr_resources=1, priority=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-
         self.resource = (
             simpy.PriorityResource(self.env, capacity=nr_resources)
             if priority
@@ -49,7 +48,7 @@ class HasResource(SimpyObject):
 
 
 class Identifiable:
-    """Something that has a name and id
+    """Mixin class: Something that has a name and id
 
     name: a name
     id: a unique id generated with uuid"""
@@ -63,7 +62,7 @@ class Identifiable:
 
 
 class Locatable:
-    """Something with a geometry (geojson format)
+    """Mixin class: Something with a geometry (geojson format)
 
     geometry: can be a point as well as a polygon"""
 
@@ -86,11 +85,12 @@ class Neighbours:
 
 
 class HasContainer(SimpyObject):
-    """Container class
+    """Mixin class: Something with a storage capacity
 
     capacity: amount the container can hold
     level: amount the container holds initially
-    container: a simpy object that can hold stuff"""
+    container: a simpy object that can hold stuff
+    total_requested: a counter that helps to prevent over requesting"""
 
     def __init__(self, capacity, level=0, total_requested=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -108,7 +108,7 @@ class HasContainer(SimpyObject):
 
 
 class Log(SimpyObject):
-    """Log class
+    """Mixin class: Something that has logging capability
 
     log: log message [format: 'start activity' or 'stop activity']
     t: timestamp
@@ -142,9 +142,17 @@ class Log(SimpyObject):
 
 
 class VesselProperties:
-    """
-    Add information on possible restrictions to the vessels.
-    Height, width, etc.
+    """Mixin class: Something that has vessel properties
+
+    vessel_type: can contain info on vessel type (avv class, cemt_class or other)
+    width: vessel width
+    length: vessel length
+    height_empty: vessel height unloaded
+    height_full: vessel height loaded
+    draught_empty: draught unloaded
+    draught_full: draught loaded
+
+    Add information on possible restrictions to the vessels, i.e. height, width, etc.
     """
 
     def __init__(
@@ -256,8 +264,12 @@ class VesselProperties:
 
 
 class HasEnergy:
-    """
-    Add information on energy use and effects on energy use.
+    """Mixin class: Something that has energy usage.
+
+    installed_power: installed engine power [kW]
+    resistance: Rtot unloaded [N]
+    resistance_empty: Rtot loaded [N]
+    emissionfactor: emission factor [-]
     """
 
     def __init__(self, installed_power, resistance, resistance_empty, emissionfactor, *args, **kwargs):
@@ -268,42 +280,11 @@ class HasEnergy:
         self.resistance = resistance
         self.resistance_empty = resistance_empty
         self.emissionfactor = emissionfactor
-    #     self.energy_use = {"total_energy": 0, "stationary": 0}
-    #     self.co2_footprint = {"total_footprint": 0, "stationary": 0}
-    #     self.mki_footprint = {"total_footprint": 0, "stationary": 0}
-    #
-    # @property
-    # def power(self):
-    #     return 2 * (self.vessel.current_speed * self.vessel.resistance * 10 ** -3)  # kW
-    #
-    # def calculate_energy_consumption(self):
-    #     """Calculation of energy consumption based on total time in system and properties"""
-    #
-    #     stationary_phase_indicator = [
-    #         "Doors closing stop",
-    #         "Converting chamber stop",
-    #         "Doors opening stop",
-    #         "Waiting to pass lock stop",
-    #     ]
-    #
-    #     times = self.vessel.log["Timestamp"]
-    #     messages = self.vessel.log["Message"]
-    #
-    #     for i in range(len(times) - 1):
-    #         delta_t = times[i + 1] - times[i]
-    #
-    #         if messages[i + 1] in stationary_phase_indicator:
-    #             energy_delta = self.power * delta_t / 3600  # KJ/3600
-    #
-    #             self.energy_use["total_energy"] += energy_delta * 0.15
-    #             self.energy_use["stationary"] += energy_delta * 0.15
-    #
-    #         else:
-    #             self.energy_use["total_energy"] += self.power * delta_t / 3600
 
 
 class Routeable:
-    """Something with a route (networkx format)
+    """Mixin class: Something with a route (networkx format)
+
     route: a networkx path"""
 
     def __init__(self, route, complete_path=None, *args, **kwargs):
@@ -314,8 +295,7 @@ class Routeable:
 
 
 class IsLock(HasResource, Identifiable, Log):
-    """
-    Create a lock object
+    """Mixin class: Something has lock object properties
 
     properties in meters
     operation in seconds
@@ -412,9 +392,10 @@ class IsLock(HasResource, Identifiable, Log):
 
 
 class Movable(Locatable, Routeable, Log):
-    """Movable class
+    """Mixin class: Something can move
 
     Used for object that can move with a fixed speed
+
     geometry: point used to track its current location
     v: speed"""
 
