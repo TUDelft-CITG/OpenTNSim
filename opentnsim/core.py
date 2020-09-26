@@ -10,6 +10,7 @@ import uuid
 import simpy
 import random
 import networkx as nx
+import numpy as np
 
 # spatial libraries
 import pyproj
@@ -461,12 +462,14 @@ class Movable(Locatable, Routeable, Log):
                 yield from self.pass_lock(origin, destination, lock_id)
 
             else:
+                # print('I am going to go to the next node {}'.format(destination))
                 yield from self.pass_edge(origin, destination)
 
             if node[0] + 2 == len(self.route):
                 break
 
-        self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+        # self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
         logger.debug(
@@ -480,33 +483,70 @@ class Movable(Locatable, Routeable, Log):
         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
-        distance = self.wgs84.inv(
-            shapely.geometry.asShape(orig).x,
-            shapely.geometry.asShape(orig).y,
-            shapely.geometry.asShape(dest).x,
-            shapely.geometry.asShape(dest).y,
-        )[2]
+        if 'geometry' in edge:
+            edge_route = np.array(edge['geometry'])
 
-        self.distance += distance
-        arrival = self.env.now
+            # check if edge is in the sailing direction, otherwise flip it
+            distance_from_start = self.wgs84.inv(
+                    orig.x,
+                    orig.y,
+                    edge_route[0][0],
+                    edge_route[0][1],
+                )[2]
+            distance_from_stop = self.wgs84.inv(
+                    orig.x,
+                    orig.y,
+                    edge_route[-1][0],
+                    edge_route[-1][1],
+                )[2]
+            if distance_from_start>distance_from_stop:
+                # when the distance from the starting point is greater than from the end point
+                edge_route = np.flipud(np.array(edge['geometry']))
 
-        # Act based on resources
-        if "Resources" in edge.keys():
-            with self.env.FG.edges[origin, destination]["Resources"].request() as request:
-                yield request
+            for index, pt in enumerate(edge_route[:-1]):
+                sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
+                sub_dest = shapely.geometry.Point(edge_route[index+1][0], edge_route[index+1][1])
 
-                if arrival != self.env.now:
-                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig,)
-                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig,)
+                distance = self.wgs84.inv(
+                    shapely.geometry.asShape(sub_orig).x,
+                    shapely.geometry.asShape(sub_orig).y,
+                    shapely.geometry.asShape(sub_dest).x,
+                    shapely.geometry.asShape(sub_dest).y,
+                )[2]
+                self.distance += distance
+                self.log_entry("Sailing from node {} to node {} sub edge {} start".format(origin, destination, index), self.env.now, 0, sub_orig,)
+                yield self.env.timeout(distance / self.current_speed)
+                self.log_entry("Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index), self.env.now, 0, sub_dest,)
+            self.geometry = dest
+            # print('   My new origin is {}'.format(destination))
+        else:
+            distance = self.wgs84.inv(
+                shapely.geometry.asShape(orig).x,
+                shapely.geometry.asShape(orig).y,
+                shapely.geometry.asShape(dest).x,
+                shapely.geometry.asShape(dest).y,
+            )[2]
 
+            self.distance += distance
+            arrival = self.env.now
+
+            # Act based on resources
+            if "Resources" in edge.keys():
+                with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+                    yield request
+
+                    if arrival != self.env.now:
+                        self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig,)
+                        self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig,)
+
+                    self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
+                    yield self.env.timeout(distance / self.current_speed)
+                    self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest,)
+
+            else:
                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
                 yield self.env.timeout(distance / self.current_speed)
                 self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest,)
-
-        else:
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
-            yield self.env.timeout(distance / self.current_speed)
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, dest,)
 
     def pass_lock(self, origin, destination, lock_id):
         """Pass the lock"""
