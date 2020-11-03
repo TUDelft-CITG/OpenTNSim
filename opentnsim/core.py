@@ -16,23 +16,15 @@ import pyproj
 import shapely.geometry
 
 # additional packages
+
+import openclsim.core
+
 import datetime, time
 
 logger = logging.getLogger(__name__)
 
 
-class SimpyObject:
-    """General object which can be extended by any class requiring a simpy environment
-
-    env: a simpy Environment
-    """
-
-    def __init__(self, env, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.env = env
-
-
-class HasResource(SimpyObject):
+class HasResource(openclsim.core.SimpyObject):
     """HasProcessingLimit class
 
     Adds a limited Simpy resource which should be requested before the object is used for processing."""
@@ -46,20 +38,6 @@ class HasResource(SimpyObject):
             if priority
             else simpy.Resource(self.env, capacity=nr_resources)
         )
-
-
-class Identifiable:
-    """Something that has a name and id
-
-    name: a name
-    id: a unique id generated with uuid"""
-
-    def __init__(self, name, id=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.name = name
-        # generate some id, in this case based on m
-        self.id = id if id else str(uuid.uuid1())
 
 
 class Locatable:
@@ -76,16 +54,16 @@ class Locatable:
 
 class Neighbours:
     """Can be added to a locatable object (list)
-    
+
     travel_to: list of locatables to which can be travelled"""
 
-    def ___init(self, travel_to, *args, **kwargs):
+    def ___init__(self, travel_to, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.neighbours = travel_to
 
 
-class HasContainer(SimpyObject):
+class HasContainer(openclsim.core.SimpyObject):
     """Container class
 
     capacity: amount the container can hold
@@ -107,7 +85,7 @@ class HasContainer(SimpyObject):
         return self.container.level / self.container.capacity
 
 
-class Log(SimpyObject):
+class Log(openclsim.core.SimpyObject):
     """Log class
 
     log: log message [format: 'start activity' or 'stop activity']
@@ -139,6 +117,14 @@ class Log(SimpyObject):
                 dict(message=msg, time=t, value=value, geometry_log=geometry_log)
             )
         return json
+
+
+class ExtraMetadata:
+    """store all leftover keyword arguments as metadata property (use as last mixin)"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        # store all other properties as metadata
+        self.metadata = kwargs
 
 
 class VesselProperties:
@@ -312,7 +298,7 @@ class Routeable:
         self.complete_path = complete_path
 
 
-class IsLock(HasResource, Identifiable, Log):
+class IsLock(HasResource, openclsim.core.Identifiable, Log):
     """
     Create a lock object
 
@@ -426,7 +412,7 @@ class Movable(Locatable, Routeable, Log):
     def move(self):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
-        
+
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
         self.distance = 0
@@ -442,6 +428,7 @@ class Movable(Locatable, Routeable, Log):
             print("Origin", orig)
             print("Destination", dest)
 
+            # TODO: now it is not sailing using the network.
             self.distance += self.wgs84.inv(
                 shapely.geometry.asShape(orig).x,
                 shapely.geometry.asShape(orig).y,
@@ -479,6 +466,7 @@ class Movable(Locatable, Routeable, Log):
                 yield from self.pass_lock(origin, destination, lock_id)
 
             else:
+                yield from self.pass_edge_resources(origin, destination)
                 yield from self.pass_edge(origin, destination)
 
             if node[0] + 2 == len(self.route):
@@ -495,26 +483,58 @@ class Movable(Locatable, Routeable, Log):
 
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
-        orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
-        dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+        # compute distance from spherical distance between origin and destination geometry
+        orig = self.env.FG.nodes[origin]["geometry"]
+        dest = self.env.FG.nodes[destination]["geometry"]
 
-        distance = self.wgs84.inv(
-            shapely.geometry.asShape(orig).x,
-            shapely.geometry.asShape(orig).y,
-            shapely.geometry.asShape(dest).x,
-            shapely.geometry.asShape(dest).y,
-        )[2]
+        if 'length' in edge:
+            distance = edge['length']
+        else:
+
+            # TODO: this is the "as the crow fly distance", derive distance from edge geometry
+            distance = self.wgs84.inv(
+                shapely.geometry.asShape(orig).x,
+                shapely.geometry.asShape(orig).y,
+                shapely.geometry.asShape(dest).x,
+                shapely.geometry.asShape(dest).y,
+            )[2]
 
         self.distance += distance
         arrival = self.env.now
 
-        # Act based on resources
-        if "Resources" in edge.keys():
+
+        # now start sailing
+        self.log_entry(
+            "Sailing from node {} to node {} start".format(origin, destination),
+            self.env.now,
+            0,
+            orig,
+        )
+        yield self.env.timeout(distance / self.current_speed)
+        self.log_entry(
+            "Sailing from node {} to node {} stop".format(origin, destination),
+            self.env.now,
+            0,
+            dest,
+        )
+
+    def pass_edge_resources(self, origin, destination):
+        # If the edge has resources that we need to wait for
+        # wait for the resources to become available
+        edge = self.env.FG.edges[origin, destination]
+        # if there is no resource on the edge, we're done
+        if not "Resources" in edge.keys():
+            # we spent 0 seconds waiting
+            yield self.env.timeout(0)
+        else:
+
             with self.env.FG.edges[origin, destination][
                 "Resources"
             ].request() as request:
+                # wait for the resource to become available
                 yield request
 
+                # if the edge was not immediately available log the waiting time
                 if arrival != self.env.now:
                     self.log_entry(
                         "Waiting to pass edge {} - {} start".format(
@@ -531,34 +551,6 @@ class Movable(Locatable, Routeable, Log):
                         orig,
                     )
 
-                self.log_entry(
-                    "Sailing from node {} to node {} start".format(origin, destination),
-                    self.env.now,
-                    0,
-                    orig,
-                )
-                yield self.env.timeout(distance / self.current_speed)
-                self.log_entry(
-                    "Sailing from node {} to node {} stop".format(origin, destination),
-                    self.env.now,
-                    0,
-                    dest,
-                )
-
-        else:
-            self.log_entry(
-                "Sailing from node {} to node {} start".format(origin, destination),
-                self.env.now,
-                0,
-                orig,
-            )
-            yield self.env.timeout(distance / self.current_speed)
-            self.log_entry(
-                "Sailing from node {} to node {} start".format(origin, destination),
-                self.env.now,
-                0,
-                dest,
-            )
 
     def pass_lock(self, origin, destination, lock_id):
         """Pass the lock"""
