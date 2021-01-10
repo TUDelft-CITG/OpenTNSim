@@ -596,7 +596,7 @@ class Movable(Locatable, Routeable, Log):
             self.log_entry("Waiting in line-up area stop", self.env.now, waiting, self.geometry)
 
         # Vessel inside the lock
-        self.log_entry("Passing lock start", self.env.now, 0, self.geometry)
+        self.log_entry("Passing lock start", self.env.now, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
 
         # Shift the water level
         yield from lock.convert_chamber(self.env, destination)
