@@ -439,8 +439,9 @@ class Movable(Locatable, Routeable, Log):
         for node in enumerate(self.route):
             self.node = node[1]
 
-            origin = self.route[node[0]]
-            destination = self.route[node[0] + 1]
+            if node[0] + 2 <= len(self.route):
+                origin = self.route[node[0]]
+                destination = self.route[node[0] + 1]
             edge = self.env.FG.edges[origin, destination]
 
             if "Lock" in edge.keys():
@@ -564,8 +565,8 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_waiting_area != self.env.now:
             waiting = self.env.now - wait_for_waiting_area
-            self.log_entry("Waiting to enter waiting area start", wait_for_waiting_area, 0, self.geometry,)
-            self.log_entry("Waiting to enter waiting area stop", self.env.now, waiting, self.geometry,)
+            self.log_entry("Waiting to enter waiting area start", wait_for_waiting_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin],)
+            self.log_entry("Waiting to enter waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[destination],)
 
         # Request access to line-up area
         wait_for_lineup_area = self.env.now
@@ -576,8 +577,8 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_lineup_area != self.env.now:
             waiting = self.env.now - wait_for_lineup_area
-            self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, self.geometry)
-            self.log_entry("Waiting in waiting area stop", self.env.now, waiting, self.geometry)
+            self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+            self.log_entry("Waiting in waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[destination])
 
         # Request access to lock
         wait_for_lock_entry = self.env.now
@@ -592,8 +593,8 @@ class Movable(Locatable, Routeable, Log):
 
         if wait_for_lock_entry != self.env.now:
             waiting = self.env.now - wait_for_lock_entry
-            self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, self.geometry)
-            self.log_entry("Waiting in line-up area stop", self.env.now, waiting, self.geometry)
+            self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+            self.log_entry("Waiting in line-up area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[destination])
 
         # Vessel inside the lock
         self.log_entry("Passing lock start", self.env.now, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
