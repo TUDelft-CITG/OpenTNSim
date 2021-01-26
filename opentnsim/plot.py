@@ -109,7 +109,9 @@ def vessel_kml(
     shared_style.iconstyle.icon.href = icon
 
     # each timestep will be represented as a single point
+    # todo: create a tmpvessel to log info. Do not attach it to the original vessel log!
     for vessel in vessels:
+        tmp_vessel = {"Geometry - x": [], "Geometry - y": [], "timestamps_t": [], "timestamps_x": []}
         geom_x = []
         geom_y = []
 
@@ -117,8 +119,8 @@ def vessel_kml(
             geom_x.append(geom.x)
             geom_y.append(geom.y)
 
-        vessel.log["Geometry - x"] = geom_x
-        vessel.log["Geometry - y"] = geom_y
+        tmp_vessel["Geometry - x"] = geom_x
+        tmp_vessel["Geometry - y"] = geom_y
 
         time_stamp_min = min(vessel.log["Timestamp"]).timestamp()
         time_stamp_max = max(vessel.log["Timestamp"]).timestamp()
@@ -130,28 +132,28 @@ def vessel_kml(
         for t in vessel.log["Timestamp"]:
             times.append(t.timestamp())
 
-        vessel.log["timestamps_t"] = timestamps_t
-        vessel.log["timestamps_x"] = np.interp(
-            timestamps_t, times, vessel.log["Geometry - x"]
+        tmp_vessel["timestamps_t"] = timestamps_t
+        tmp_vessel["timestamps_x"] = np.interp(
+            timestamps_t, times, tmp_vessel["Geometry - x"]
         )
-        vessel.log["timestamps_y"] = np.interp(
-            timestamps_t, times, vessel.log["Geometry - y"]
+        tmp_vessel["timestamps_y"] = np.interp(
+            timestamps_t, times, tmp_vessel["Geometry - y"]
         )
 
-        for log_index, value in enumerate(vessel.log["timestamps_t"][:-1]):
+        for log_index, value in enumerate(tmp_vessel["timestamps_t"][:-1]):
             begin = datetime.datetime.fromtimestamp(
-                vessel.log["timestamps_t"][log_index]
+                tmp_vessel["timestamps_t"][log_index]
             )
             end = datetime.datetime.fromtimestamp(
-                vessel.log["timestamps_t"][log_index + 1]
+                tmp_vessel["timestamps_t"][log_index + 1]
             )
 
             pnt = fol.newpoint(
                 name=vessel.name,
                 coords=[
                     (
-                        vessel.log["timestamps_x"][log_index],
-                        vessel.log["timestamps_y"][log_index],
+                        tmp_vessel["timestamps_x"][log_index],
+                        tmp_vessel["timestamps_y"][log_index],
                     )
                 ],
             )
@@ -161,7 +163,7 @@ def vessel_kml(
 
         # include last point as well
         begin = datetime.datetime.fromtimestamp(
-            vessel.log["timestamps_t"][log_index + 1]
+            tmp_vessel["timestamps_t"][log_index + 1]
         )
         # end = datetime.datetime.fromtimestamp(vessel.log["timestamps_t"][log_index + 1])
 
@@ -169,8 +171,8 @@ def vessel_kml(
             name=vessel.name,
             coords=[
                 (
-                    vessel.log["timestamps_x"][log_index + 1],
-                    vessel.log["timestamps_y"][log_index + 1],
+                    tmp_vessel["timestamps_x"][log_index + 1],
+                    tmp_vessel["timestamps_y"][log_index + 1],
                 )
             ],
         )
