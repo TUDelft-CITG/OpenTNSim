@@ -19,6 +19,9 @@ import shapely.geometry
 
 import openclsim.core
 
+# Also import this here you only have to import OpenTNSim
+from openclsim.core import Identifiable
+
 import datetime, time
 
 logger = logging.getLogger(__name__)
