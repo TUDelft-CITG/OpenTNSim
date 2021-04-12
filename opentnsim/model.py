@@ -131,50 +131,11 @@ class VesselGenerator:
 
             # Create a vessel
             vessel = self.generate(environment, "Vessel", scenario)
-
-            # Check if a route is available with vessel properties
-            width, height, draught = (
-                vessel.width,
-                vessel.current_height,
-                vessel.current_draught,
-            )
-            route = None
-
-            for i in environment.routes.index:
-                if (
-                    environment.routes["Origin"][i] == origin
-                    and environment.routes["Destination"][i] == destination
-                    and environment.routes["Width"][i] == width
-                    and environment.routes["Height"][i] == height
-                    and environment.routes["Depth"][i] == draught
-                ):
-                    route = environment.routes["Route"][i]
-
-            if route:
-                vessel.route = route
-                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
-                    vessel.route[0]
-                ]
-            else:
-                route = vessel.get_route(origin=origin, destination=destination)
-                environment.routes = environment.routes.append(
-                    {
-                        "Origin": origin,
-                        "Destination": destination,
-                        "Width": width,
-                        "Height": height,
-                        "Depth": draught,
-                        "Route": route,
-                    },
-                    ignore_index=True,
-                )
-
-                vessel.route = route
-                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
-                    vessel.route[0]
-                ]
-
-            environment.vessels.append(vessel)
+            vessel.env = environment
+            vessel.route = nx.dijkstra_path(environment.FG, origin, destination)
+            vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
+                vessel.route[0]
+            ]
 
             # Move on path
             environment.process(vessel.move())

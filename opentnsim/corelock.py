@@ -28,8 +28,6 @@ class SimpyObject:
     """
 
     def __init__(self, env, *args, **kwargs):
-        if args or kwargs:
-            logger.error(f'unexpected argument: {args} {kwargs}')
         super().__init__(*args, **kwargs)
         self.env = env
 
@@ -286,6 +284,55 @@ class Routeable:
         self.route = route
         self.complete_path = complete_path
 
+class IsLockWaitingArea(HasResource, Identifiable, Log):
+    """Mixin class: Something has lock object properties
+    properties in meters
+    operation in seconds
+    """
+
+    def __init__(
+        self,
+        node,
+        *args,
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        
+        waiting_area_resources = 100
+        self.waiting_area = {
+            node: simpy.Resource(self.env, capacity=waiting_area_resources),
+        }
+        
+        departure_resources = 1
+        self.departure = {
+            node: simpy.Resource(self.env, capacity=departure_resources),
+        }
+        
+class IsLockLineUpArea(HasResource, Identifiable, Log):
+    """Mixin class: Something has lock object properties
+    properties in meters
+    operation in seconds
+    """
+
+    def __init__(
+        self,
+        node,
+        *args,
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        
+        # Lay-Out
+        self.line_up_area = {
+            node: simpy.Resource(self.env, capacity=1),
+        }
+        
+        departure_resources = 1
+        self.departure = {
+            node: simpy.Resource(self.env, capacity=departure_resources),
+        }
 
 class IsLock(HasResource, Identifiable, Log):
     """Mixin class: Something has lock object properties
@@ -297,6 +344,7 @@ class IsLock(HasResource, Identifiable, Log):
         self,
         node_1,
         node_2,
+        node_3,
         lock_length,
         lock_width,
         lock_depth,
@@ -321,27 +369,14 @@ class IsLock(HasResource, Identifiable, Log):
         self.operating_time = operating_time
 
         # Water level
-        assert node_1 != node_2
+        assert node_1 != node_3
 
         self.node_1 = node_1
-        self.node_2 = node_2
-        self.water_level = random.choice([node_1, node_2])
-
-        # Lay-Out
-        self.line_up_area = {
-            node_1: simpy.Resource(self.env, capacity=1),
-            node_2: simpy.Resource(self.env, capacity=1),
-        }
-
-        waiting_area_resources = 1 if waiting_area else 100
-        self.waiting_area = {
-            node_1: simpy.Resource(self.env, capacity=waiting_area_resources),
-            node_2: simpy.Resource(self.env, capacity=waiting_area_resources),
-        }
+        self.node_3 = node_3
+        self.water_level = random.choice([node_1, node_3])
 
     def convert_chamber(self, environment, new_level):
         """ Convert the water level """
-
         # Close the doors
         self.log_entry("Lock doors closing start", environment.now, self.water_level, 0)
         yield environment.timeout(self.doors_close)
@@ -351,10 +386,10 @@ class IsLock(HasResource, Identifiable, Log):
         self.log_entry(
             "Lock chamber converting start", environment.now, self.water_level, 0
         )
-
+        
         # Water level will shift
         self.change_water_level(new_level)
-
+        
         yield environment.timeout(self.operating_time)
         self.log_entry(
             "Lock chamber converting stop", environment.now, self.water_level, 0
@@ -402,7 +437,7 @@ class Movable(Locatable, Routeable, Log):
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
         self.distance = 0
-
+        speed = self.v
         # Check if vessel is at correct location - if not, move to location
         if (
             self.geometry
@@ -423,7 +458,8 @@ class Movable(Locatable, Routeable, Log):
 
             yield self.env.timeout(self.distance / self.current_speed)
             self.log_entry("Sailing to start", self.env.now, self.distance, dest)
-
+            
+            
         # Move over the path and log every step
         for node in enumerate(self.route):
             self.node = node[1]
@@ -431,26 +467,91 @@ class Movable(Locatable, Routeable, Log):
             if node[0] + 2 <= len(self.route):
                 origin = self.route[node[0]]
                 destination = self.route[node[0] + 1]
-            edge = self.env.FG.edges[origin, destination]
+                
+            
+            if "Waiting area" in self.env.FG.nodes[destination].keys():
+                locks = self.env.FG.nodes[destination]["Waiting area"]
+                for lock in locks:
+                    lock 
+                    loc = self.route.index(destination)
+                    for r in self.route[loc:]:
+                        if 'Line-up area' in self.env.FG.nodes[r].keys():                  
+                            wait_for_waiting_area = self.env.now
+                            access_waiting_area = lock.waiting_area[destination].request()
+                            yield access_waiting_area 
+                    
+                            if wait_for_waiting_area != self.env.now:
+                                waiting = self.env.now - wait_for_waiting_area
+                                self.log_entry("Waiting to enter waiting area start", wait_for_waiting_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin],)
+                                self.log_entry("Waiting to enter waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin],)
+                            break
+                        
+            if "Waiting area" in self.env.FG.nodes[origin].keys():   
+                locks = self.env.FG.nodes[origin]["Waiting area"]
+                self.v = speed
+                for lock in locks:
+                    lock_name = lock.name
+                    loc = self.route.index(origin)
+                    for r in self.route[loc:]:
+                        if 'Line-up area' in self.env.FG.nodes[r].keys():
+                            locks = self.env.FG.nodes[r]["Line-up area"]
+                            for lock2 in locks:
+                                if lock2.name == lock_name:   
+                                    self.v = 0.5*speed
+                                    wait_for_lineup_area = self.env.now
+                                    lock.waiting_area[origin].release(access_waiting_area)
+                                    access_lineup_area = lock2.line_up_area[r].request()
+                                    yield access_lineup_area  
+                        
+                                    if wait_for_lineup_area != self.env.now:
+                                        waiting = self.env.now - wait_for_lineup_area
+                                        self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+                                        self.log_entry("Waiting in waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin])  
+                            break
+                                
+            if "Line-up area" in self.env.FG.nodes[origin].keys():
+                locks = self.env.FG.nodes[origin]["Line-up area"]
+                for lock in locks:
+                    lock_name = lock.name
+                    loc = self.route.index(origin)
+                    for r in self.route[loc:]:
+                        if 'Lock' in self.env.FG.nodes[r].keys():
+                            locks = self.env.FG.nodes[r]["Lock"]
+                            for lock2 in locks:
+                                if lock2.name == lock_name:
+                                    self.v = 0.25*speed
+                                    wait_for_lock_entry = self.env.now
+                                    if lock2.resource.users != []:
+                                        yield self.env.timeout(lock2.doors_close)     
+                                        yield self.env.timeout(lock2.operating_time) 
+                                    
+                                    access_lock = lock2.resource.request(priority=-1 if self.route[self.route.index(r)-1] == lock2.water_level else 0)
+                                    yield access_lock
+                                
+                                    if self.route[self.route.index(r)-1] != lock2.water_level:
+                                        yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
+                                    
+                                    if wait_for_lock_entry != self.env.now:
+                                        waiting = self.env.now - wait_for_lock_entry
+                                        self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+                                        self.log_entry("Waiting in line-up area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin])  
+                                      
+                                    lock.line_up_area[origin].release(access_lineup_area)
+                            break
+                        
+            if "Lock" in self.env.FG.nodes[origin].keys():
+                locks = self.env.FG.nodes[origin]["Lock"]
+                for lock in locks:
 
-            if "Lock" in edge.keys():
-                queue_length = []
-                lock_ids = []
-
-                for lock in edge["Lock"]:
-                    queue = 0
-                    queue += len(lock.resource.users)
-                    queue += len(lock.line_up_area[self.node].users)
-                    queue += len(lock.waiting_area[self.node].users) + len(
-                        lock.waiting_area[self.node].queue
-                    )
-
-                    queue_length.append(queue)
-                    lock_ids.append(lock.id)
-
-                lock_id = lock_ids[queue_length.index(min(queue_length))]
-                yield from self.pass_lock(origin, destination, lock_id)
-
+                    self.log_entry("Passing lock start", self.env.now, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+                    yield from lock.convert_chamber(self.env, destination)
+        
+                    lock.resource.release(access_lock)
+                    passage_time = lock.doors_close + lock.operating_time + lock.doors_open
+                    self.log_entry("Passing lock stop", self.env.now, passage_time, nx.get_node_attributes(self.env.FG, "geometry")[origin],)
+                    yield from self.pass_edge(origin, destination)
+                    self.v = 0.25*speed
+                    
             else:
                 # print('I am going to go to the next node {}'.format(destination))
                 yield from self.pass_edge(origin, destination)
@@ -537,65 +638,7 @@ class Movable(Locatable, Routeable, Log):
                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
                 yield self.env.timeout(distance / self.current_speed)
                 self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest,)
-
-    def pass_lock(self, origin, destination, lock_id):
-        """Pass the lock"""
-
-        locks = self.env.FG.edges[origin, destination]["Lock"]
-        for lock in locks:
-            if lock.id == lock_id:
-                break
-
-        # Request access to waiting area
-        wait_for_waiting_area = self.env.now
-
-        access_waiting_area = lock.waiting_area[origin].request()
-        yield access_waiting_area
-
-        if wait_for_waiting_area != self.env.now:
-            waiting = self.env.now - wait_for_waiting_area
-            self.log_entry("Waiting to enter waiting area start", wait_for_waiting_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin],)
-            self.log_entry("Waiting to enter waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[destination],)
-
-        # Request access to line-up area
-        wait_for_lineup_area = self.env.now
-
-        access_line_up_area = lock.line_up_area[origin].request()
-        yield access_line_up_area
-        lock.waiting_area[origin].release(access_waiting_area)
-
-        if wait_for_lineup_area != self.env.now:
-            waiting = self.env.now - wait_for_lineup_area
-            self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
-            self.log_entry("Waiting in waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[destination])
-
-        # Request access to lock
-        wait_for_lock_entry = self.env.now
-        access_lock = lock.resource.request(priority=-1 if origin == lock.water_level else 0)
-        yield access_lock
-
-        # Shift water level
-        if origin != lock.water_level:
-            yield from lock.convert_chamber(self.env, origin)
-
-        lock.line_up_area[origin].release(access_line_up_area)
-
-        if wait_for_lock_entry != self.env.now:
-            waiting = self.env.now - wait_for_lock_entry
-            self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
-            self.log_entry("Waiting in line-up area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[destination])
-
-        # Vessel inside the lock
-        self.log_entry("Passing lock start", self.env.now, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
-
-        # Shift the water level
-        yield from lock.convert_chamber(self.env, destination)
-
-        # Vessel outside the lock
-        lock.resource.release(access_lock)
-        passage_time = lock.doors_close + lock.operating_time + lock.doors_open
-        self.log_entry("Passing lock stop", self.env.now, passage_time, nx.get_node_attributes(self.env.FG, "geometry")[destination],)
-
+      
     @property
     def current_speed(self):
         return self.v
