@@ -509,6 +509,7 @@ class Movable(Locatable, Routeable, Log):
                                         yield access_departure_waiting_area
                             
                                         if wait_for_lineup_area != self.env.now:
+                                            self.v = 0.25*speed
                                             waiting = self.env.now - wait_for_lineup_area
                                             self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
                                             self.log_entry("Waiting in waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin])  
