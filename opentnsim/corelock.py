@@ -306,7 +306,7 @@ class IsLockWaitingArea(HasResource, Identifiable, Log):
         
         departure_resources = 1
         self.departure = {
-            node: simpy.Resource(self.env, capacity=departure_resources),
+            node: simpy.PriorityResource(self.env, capacity=departure_resources),
         }
         
 class IsLockLineUpArea(HasResource, Identifiable, Log):
@@ -488,56 +488,91 @@ class Movable(Locatable, Routeable, Log):
                         
             if "Waiting area" in self.env.FG.nodes[origin].keys():   
                 locks = self.env.FG.nodes[origin]["Waiting area"]
-                self.v = speed
                 for lock in locks:
-                    lock_name = lock.name
-                    loc = self.route.index(origin)
-                    for r in self.route[loc:]:
-                        if 'Line-up area' in self.env.FG.nodes[r].keys():
-                            locks = self.env.FG.nodes[r]["Line-up area"]
-                            for lock2 in locks:
-                                if lock2.name == lock_name:   
-                                    self.v = 0.5*speed
-                                    wait_for_lineup_area = self.env.now
-                                    lock.waiting_area[origin].release(access_waiting_area)
-                                    access_lineup_area = lock2.line_up_area[r].request()
-                                    yield access_lineup_area  
-                        
-                                    if wait_for_lineup_area != self.env.now:
-                                        waiting = self.env.now - wait_for_lineup_area
-                                        self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
-                                        self.log_entry("Waiting in waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin])  
-                            break
+                    if 'departure_area' in locals():
+                        self.v = speed
+                        lock.departure[origin].release(departure_area)
+                    else:
+                        lock_name = lock.name
+                        loc = self.route.index(origin)
+                        for r in self.route[loc:]:
+                            if 'Line-up area' in self.env.FG.nodes[r].keys():
+                                locks = self.env.FG.nodes[r]["Line-up area"]
+                                for lock2 in locks:
+                                    if lock2.name == lock_name:   
+                                        self.v = 0.5*speed
+                                        wait_for_lineup_area = self.env.now
+                                        lock.waiting_area[origin].release(access_waiting_area)
+                                        access_lineup_area = lock2.line_up_area[r].request()
+                                        yield access_lineup_area
+                                        access_departure_waiting_area = lock.departure[origin].request()
+                                        yield access_departure_waiting_area
+                            
+                                        if wait_for_lineup_area != self.env.now:
+                                            waiting = self.env.now - wait_for_lineup_area
+                                            self.log_entry("Waiting in waiting area start", wait_for_lineup_area, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+                                            self.log_entry("Waiting in waiting area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin])  
+                            
+                                lock.departure[origin].release(access_departure_waiting_area) 
+                                break
                                 
-            if "Line-up area" in self.env.FG.nodes[origin].keys():
+            if "Line-up area" in self.env.FG.nodes[origin].keys():   
                 locks = self.env.FG.nodes[origin]["Line-up area"]
                 for lock in locks:
-                    lock_name = lock.name
-                    loc = self.route.index(origin)
-                    for r in self.route[loc:]:
-                        if 'Lock' in self.env.FG.nodes[r].keys():
-                            locks = self.env.FG.nodes[r]["Lock"]
-                            for lock2 in locks:
-                                if lock2.name == lock_name:
-                                    self.v = 0.25*speed
-                                    wait_for_lock_entry = self.env.now
-                                    if lock2.resource.users != []:
-                                        yield self.env.timeout(lock2.doors_close)     
-                                        yield self.env.timeout(lock2.operating_time) 
-                                    
-                                    access_lock = lock2.resource.request(priority=-1 if self.route[self.route.index(r)-1] == lock2.water_level else 0)
-                                    yield access_lock
-                                
-                                    if self.route[self.route.index(r)-1] != lock2.water_level:
-                                        yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
-                                    
-                                    if wait_for_lock_entry != self.env.now:
-                                        waiting = self.env.now - wait_for_lock_entry
-                                        self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
-                                        self.log_entry("Waiting in line-up area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin])  
-                                      
-                                    lock.line_up_area[origin].release(access_lineup_area)
-                            break
+                    if 'departure_lock' in locals():
+                        self.v = 0.5*speed
+                        lock.departure[origin].release(departure_lock)
+                    else:
+                        lock_name = lock.name
+                        loc = self.route.index(origin)
+                        for r in self.route[loc:]:
+                            if 'Lock' in self.env.FG.nodes[r].keys():
+                                locks = self.env.FG.nodes[r]["Lock"]
+                                for lock2 in locks:
+                                    if lock2.name == lock_name:
+                                        self.v = 0.25*speed
+                                        wait_for_lock_entry = self.env.now
+                                        if lock2.resource.users != []:
+                                            yield self.env.timeout(lock2.doors_close)     
+                                            yield self.env.timeout(lock2.operating_time) 
+                                               
+                                        access_lock = lock2.resource.request(priority=-1 if self.route[self.route.index(r)-1] == lock2.water_level else 0)
+                                        yield access_lock
+                                        access_departure_lineup_area = lock.departure[origin].request()
+                                        yield access_departure_lineup_area
+                                        
+                                        
+                                        if self.route[self.route.index(r)-1] != lock2.water_level:
+                                            yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
+                                        
+                                        for r2 in self.route[(loc+1):]:
+                                            if 'Line-up area' in self.env.FG.nodes[r2].keys():
+                                                locks = self.env.FG.nodes[r2]["Line-up area"]
+                                                for lock3 in locks:
+                                                    if lock3.name == lock_name:
+                                                        departure_lock = lock3.departure[r2].request()
+                                                        yield departure_lock
+                                                    break
+                                                
+                                        for r3 in self.route[(loc+1):]:
+                                            if 'Waiting area' in self.env.FG.nodes[r3].keys():
+                                                locks = self.env.FG.nodes[r3]["Waiting area"]
+                                                for lock4 in locks:
+                                                    if lock4.name == lock_name:
+                                                        self.log_entry("Requesting departure", self.env.now, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+                                                        departure_area = lock4.departure[r3].request()
+                                                        yield departure_area
+                                                    break
+                                        
+                                        if wait_for_lock_entry != self.env.now:
+                                            waiting = self.env.now - wait_for_lock_entry
+                                            self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, nx.get_node_attributes(self.env.FG, "geometry")[origin])
+                                            self.log_entry("Waiting in line-up area stop", self.env.now, waiting, nx.get_node_attributes(self.env.FG, "geometry")[origin])  
+                                        
+                                        lock.line_up_area[origin].release(access_lineup_area)
+                                        lock.departure[origin].release(access_departure_lineup_area)                                    
+                                                       
+                                break
                         
             if "Lock" in self.env.FG.nodes[origin].keys():
                 locks = self.env.FG.nodes[origin]["Lock"]
