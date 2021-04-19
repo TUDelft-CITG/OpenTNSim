@@ -494,18 +494,18 @@ class Movable(Locatable, Routeable, Log):
                         loc = self.route.index(origin)
                         for r in self.route[loc:]:
                             if 'Line-up area' in self.env.FG.nodes[r].keys():
-                                locks = self.env.FG.nodes[r]["Line-up area"]
+                                locks2 = self.env.FG.nodes[r]["Line-up area"]
                                 break
                         
                         for r2 in self.route[loc:]:
                             if 'Lock' in self.env.FG.nodes[r2].keys():
-                                locks2 = self.env.FG.nodes[r2]["Lock"]
+                                locks3 = self.env.FG.nodes[r2]["Lock"]
                                 break
                         
                         self.lock_name = []
-                        for lock3 in locks2:
+                        for lock3 in locks3:
                             if lock3.water_level == self.route[self.route.index(r2)-1]:
-                                for lock2 in locks:
+                                for lock2 in locks2:
                                     if lock2.name == lock3.name:
                                         if lock2.lock_queue_length == 0:
                                             self.lock_name = lock3.name
@@ -513,16 +513,16 @@ class Movable(Locatable, Routeable, Log):
                         
                         lock_queue_length = [];
                         if self.lock_name == []:
-                            for lock2 in locks:
+                            for lock2 in locks2:
                                 lock_queue_length.append(lock2.lock_queue_length)
        
-                            self.lock_name = locks[lock_queue_length.index(min(lock_queue_length))].name
+                            self.lock_name = locks2[lock_queue_length.index(min(lock_queue_length))].name
                             
-                        for lock2 in locks:
+                        for lock2 in locks2:
                             if lock2.name == self.lock_name:
                                 lock2.lock_queue_length += 1
                         
-                        for lock2 in locks:
+                        for lock2 in locks2:
                             if lock2.name == self.lock_name:                         
                                 self.v = 0.5*speed
                                 break
