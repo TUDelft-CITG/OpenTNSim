@@ -521,6 +521,23 @@ class Movable(Locatable, Routeable, Log):
             dest,
         )
 
+    # Jetty: bezet/niet bezet: Resource(capacity=n_jetties)
+    # Quay: length: Container(level=length)
+
+    # Opties:
+    # Cranes: cranes = Resource(capacity=n_cranes)
+    # Quay: length: slotx50m: Resource(capacity=n_slots)
+
+    # Anchorage; Resource(capacity=n_spots)
+
+    # Steps:
+    # Check for space (count) if full move to Antwerp
+    # Request anchorage
+    # Move to anchorage:
+    # Request quay
+    # Move to quay
+
+
     def pass_edge_resources(self, origin, destination):
         # If the edge has resources that we need to wait for
         # wait for the resources to become available
