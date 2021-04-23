@@ -119,8 +119,8 @@ def load_example_locations(graph, anchorage_size=30):
             "capacity": anchorage_size,
         },
         {
-            "n": "8868117",
-            "e": ("13174615", "8868117"),
+            "n": "8863061",
+            "e": ("8863061", "13174263"),
             "berth_type": None,
             "type": "Origin",
             "name": "Origin",
@@ -164,20 +164,6 @@ def plot_locations(graph, locations, center, zoom):
         center=center,
         zoom=zoom,
     )
-    locations_data = ipyleaflet.GeoData(
-        geo_dataframe=locations[columns],
-        style={
-            "color": "#ccf",
-            "opacity": 3,
-            "weight": 4,
-            "dashArray": "2",
-            "fillOpacity": 0.6,
-        },
-        hover_style={"color": "yellow"},
-        name="Terminals",
-    )
-
-    map.add_layer(locations_data)
 
     for terminal, color in zip(
         ["Container1", "Container2", "Bulk", "Liquid"], matplotlib.cm.Set1.colors
@@ -201,6 +187,22 @@ def plot_locations(graph, locations, center, zoom):
             pulse_color=matplotlib.colors.rgb2hex(color) + "88",
         )
         map.add_layer(ant_path)
+
+    # highlight
+    locations_data = ipyleaflet.GeoData(
+        geo_dataframe=locations[columns],
+        style={
+            "color": "#ccf",
+            "opacity": 3,
+            "weight": 4,
+            "dashArray": "2",
+            "fillOpacity": 0.6,
+        },
+        hover_style={"color": "yellow"},
+        name="Terminals",
+    )
+
+    map.add_layer(locations_data)
 
     for i, row in locations.iterrows():
         marker = ipyleaflet.Marker(
@@ -368,7 +370,7 @@ def move(env, graph, vessel):
 def run(env, sample, graph):
     for i, row in sample.iterrows():
         yield env.timeout(row["vessel"].metadata["IAT"])
-        env.process(opentnsim.fis.move(env, graph, row["vessel"]))
+        env.process(opentnsim.example.move(env, graph, row["vessel"]))
 
 
 def locations_plot(results):
@@ -417,7 +419,9 @@ def locations_plot(results):
     ax.hlines(0, *ax.get_xlim(), "g")
     ax.set_xlim(xlim)
 
-    title = f'OpenTNSim results, $n_{{ships}}$ {results["n_ships"]}, arrival rate {results["arrival_rate"]}, duration: {results["duration"]}'
+    inter_arrival_period = (1 / results['arrival_rate']) / 3600
+
+    title = f'OpenTNSim results, $n_{{ships}}$ {results["n_ships"]}, arrival rate {results["arrival_rate"]}, inter arrival period: {inter_arrival_period:.2}h, duration: {results["duration"]}'
     fig.suptitle(title, fontsize=16)
 
     return fig, ax
@@ -431,10 +435,10 @@ def simulate(locations, vessels, graph, arrival_rate, n_ships, seed=42):
     # Add the locations to the graph and create Berth and Anchorage objects.
     # Location now has an extra property Berth
     # Edges can now have an extra attribute Berth or Anchorage
-    locations, graph = opentnsim.fis.add_locations_and_graph_to_env(
+    locations, graph = opentnsim.example.add_locations_and_graph_to_env(
         env, locations, graph
     )
-    sample = opentnsim.fis.vessel_sample(
+    sample = opentnsim.example.vessel_sample(
         vessels,
         locations=locations,
         graph=graph,
@@ -444,7 +448,7 @@ def simulate(locations, vessels, graph, arrival_rate, n_ships, seed=42):
         env=env,
     )
     # wait for arrival and move across the network
-    env.process(opentnsim.fis.run(env, sample=sample, graph=graph))
+    env.process(opentnsim.example.run(env, sample=sample, graph=graph))
     # run the simulation
     env.run()
 
