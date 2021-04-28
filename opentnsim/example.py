@@ -383,7 +383,7 @@ def locations_plot(results):
     berth = locations.loc["Anchorage"].Berth
     log = pd.DataFrame(berth.log)
     log["count"] = log["Value"].apply(lambda x: x["count"])
-    ax.plot(log["Timestamp"], log["count"])
+    ax.step(log["Timestamp"], log["count"])
     ax.set_title(f'Anchorage, {results["moved_out"]} ships not handled')
     ax.set_ylabel("Spots in use")
 
@@ -398,7 +398,7 @@ def locations_plot(results):
         berth = row["Berth"]
         log = pd.DataFrame(berth.log)
         log["level"] = log["Value"].apply(lambda x: x["level"])
-        ax.plot(log["Timestamp"], log["level"])
+        ax.step(log["Timestamp"], log["level"])
         ax.set_title(name)
         ax.set_ylabel("Length available")
         xlim = ax.get_xlim()
@@ -410,7 +410,7 @@ def locations_plot(results):
     berth = locations.loc["Liquid"].Berth
     log = pd.DataFrame(berth.log)
     log["count"] = log["Value"].apply(lambda x: x["count"])
-    ax.plot(log["Timestamp"], log["count"])
+    ax.step(log["Timestamp"], log["count"])
     ax.set_title("Liquid")
     ax.set_ylabel("Spots in use")
 
