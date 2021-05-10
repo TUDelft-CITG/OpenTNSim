@@ -406,6 +406,8 @@ class IsLock(HasResource, HasLength, HasLockDoors, Identifiable, Log):
         grav_acc,
         opening_area,
         opening_depth,
+        simulation_start,
+        operating_time,
         *args,
         **kwargs
     ):
@@ -416,11 +418,17 @@ class IsLock(HasResource, HasLength, HasLockDoors, Identifiable, Log):
         self.lock_length = lock_length
         self.lock_width = lock_width
         self.lock_depth = lock_depth
+        self.wlev_dif = wlev_dif
+        self.disch_coeff = disch_coeff
+        self.grav_acc = grav_acc
+        self.opening_area = opening_area
+        self.opening_depth = opening_depth
+        self.simulation_start = simulation_start.timestamp()
+        self.operating_time = operating_time
         
         # Operating
         self.doors_open = doors_open
         self.doors_close = doors_close
-        self.operating_time = (2*lock_width*lock_length*abs(wlev_dif))/(disch_coeff*opening_area*math.sqrt(2*grav_acc*opening_depth))
 
         # Water level
         assert node_1 != node_3
@@ -431,13 +439,18 @@ class IsLock(HasResource, HasLength, HasLockDoors, Identifiable, Log):
 
         super().__init__(length = lock_length, remaining_length = lock_length, node_1 = node_1, node_3 = node_3, *args, **kwargs)
 
+    def operation_time(self, environment):
+        operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif[1][np.abs(self.wlev_dif[0]-(environment.now-self.simulation_start)).argmin()]))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+        return operating_time
+
     def convert_chamber(self, environment, new_level):
         """ Convert the water level """
+        
         # Close the doors
         self.log_entry("Lock doors closing start", environment.now, self.water_level, 0)
         yield environment.timeout(self.doors_close)
         self.log_entry("Lock doors closing stop", environment.now, self.water_level, 0)
-
+        
         # Convert the chamber
         self.log_entry(
             "Lock chamber converting start", environment.now, self.water_level, 0
@@ -445,8 +458,7 @@ class IsLock(HasResource, HasLength, HasLockDoors, Identifiable, Log):
         
         # Water level will shift
         self.change_water_level(new_level)
-        
-        yield environment.timeout(self.operating_time)
+        yield environment.timeout(self.operation_time(environment))
         self.log_entry(
             "Lock chamber converting stop", environment.now, self.water_level, 0
         )
@@ -973,7 +985,7 @@ class Movable(Locatable, Routeable, Log):
                                         if lock2.line_up_area[r].users == []:
                                             yield from lock.convert_chamber(self.env, destination)
                                         else:                                          
-                                            yield self.env.timeout(lock.doors_close + lock.operating_time + lock.doors_open) 
+                                            yield self.env.timeout(lock.doors_close + lock.operation_time(self.env) + lock.doors_open) 
                         
                         passage_time = lock.doors_close + lock.operating_time + lock.doors_open                   
                         waiting_for_lock_departure = self.env.now
