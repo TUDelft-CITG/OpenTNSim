@@ -1,0 +1,10 @@
+ed = pb * t
+ec = ed / n_e = pb * t / n_e
+
+tank_leeg = etot - pb * t / n_e
+
+sailing_time = etot * n_e / pb
+
+sailing distance = sailing_time * v_s
+
+sailing distance = etot * n_e / pb * v_s
