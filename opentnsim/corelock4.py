@@ -560,6 +560,7 @@ class Movable(Locatable, Routeable, Log):
                                 if 'Lock' in self.env.FG.nodes[r2].keys():
                                     locks3 = self.env.FG.nodes[r2]["Lock"]
                                     break
+                            print(self.id,self.env.now,'wa')
                             self.lock_name = []
                             for lock3 in locks3:
                                 if lock3.water_level == self.route[self.route.index(r2)-1]:
@@ -619,8 +620,7 @@ class Movable(Locatable, Routeable, Log):
                                     
                             else:
                                 yield access_lineup_length
-                            
-                            access_lineup_area = lock2.line_up_area[r].request() 
+
                             access_lineup_pos_length = lock2.pos_length.get(self.length)
                             self.lineup_dist = lock2.pos_length.level + 0.5*self.length 
                             
@@ -632,18 +632,21 @@ class Movable(Locatable, Routeable, Log):
                                                                                          self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].y,
                                                                                          fwd_azimuth,self.lineup_dist)
                             
-                            lock2.line_up_area[r].users[-1].length = self.length
-                            lock2.line_up_area[r].users[-1].id = self.id
-                            lock2.line_up_area[r].users[-1].lineup_pos_lat = self.lineup_pos_lat
-                            lock2.line_up_area[r].users[-1].lineup_pos_lon = self.lineup_pos_lon
-                            lock2.line_up_area[r].users[-1].n = len(lock2.line_up_area[r].users)-1
-                            lock2.line_up_area[r].users[-1].v = 0.25*speed
-                            yield access_lineup_area
                             yield access_lineup_pos_length  
                             enter_lineup_length = lock2.enter_line_up_area[r].request() 
                             yield enter_lineup_length 
                             lock2.enter_line_up_area[r].users[0].id = self.id
-
+                            
+                            access_lineup_area = lock2.line_up_area[r].request() 
+                            lock2.line_up_area[r].users[-1].length = self.length
+                            lock2.line_up_area[r].users[-1].id = self.id
+                            lock2.line_up_area[r].users[-1].lineup_pos_lat = self.lineup_pos_lat
+                            lock2.line_up_area[r].users[-1].lineup_pos_lon = self.lineup_pos_lon
+                            lock2.line_up_area[r].users[-1].n = len(lock2.line_up_area[r].users)
+                            lock2.line_up_area[r].users[-1].v = 0.25*speed
+                            lock2.line_up_area[r].users[-1].wait_for_next_cycle = False
+                            yield access_lineup_area
+                            
                             if wait_for_lineup_area != self.env.now:
                                 self.v = 0.25*speed
                                 waiting = self.env.now - wait_for_lineup_area
@@ -663,15 +666,19 @@ class Movable(Locatable, Routeable, Log):
                                 locks = self.env.FG.nodes[r]["Lock"]
                                 for lock2 in locks:
                                     for q in range(len(lock.line_up_area[destination].users)):
-                                        if lock.line_up_area[destination].users[q].id == self.id:
-                                            if len(lock.line_up_area[destination].users) == lock.line_up_area[destination].users[q].n:
+                                        if lock.line_up_area[destination].users[q].id == self.id:      
+                                            if lock.line_up_area[destination].users[q].n != len(lock.line_up_area[destination].users):
                                                 for q2 in range(len(lock2.resource.users)):
-                                                    self.lineup_dist += lock2.resource.users[q2].length 
+                                                    if q2 == lock.line_up_area[destination].users[q].n - len(lock.line_up_area[destination].users):
+                                                        break
+                                                    else:
+                                                        self.lineup_dist += lock2.resource.users[q2].length 
                                                 [self.lineup_pos_lat,self.lineup_pos_lon,_] = self.wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].x,
                                                                                                              self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].y,
                                                                                                              fwd_azimuth,self.lineup_dist)
                                                 lock.line_up_area[destination].users[q].lineup_pos_lat = self.lineup_pos_lat
                                                 lock.line_up_area[destination].users[q].lineup_pos_lon = self.lineup_pos_lon
+                                break
                     
             if "Line-up area" in self.env.FG.nodes[origin].keys():
                 locks = self.env.FG.nodes[origin]["Line-up area"]
@@ -709,10 +716,21 @@ class Movable(Locatable, Routeable, Log):
                                         if self.route[self.route.index(r)-1] == lock2.node_1:
                                             if len(lock2.doors_2[lock2.node_3].users) != 0:
                                                 if lock2.doors_2[lock2.node_3].users[0].priority == -1:
-                                                    if self.length > lock2.length.level or (lock.line_up_area[origin].users != [] and lock3.pass_line_up_area[r2].queue != [] and lock3.pass_line_up_area[r2].queue[-1].priority == 0):
+                                                    if self.length > lock2.resource.users[-1].lock_dist or (lock.line_up_area[origin].users != [] and lock3.pass_line_up_area[r2].queue != [] and lock3.pass_line_up_area[r2].queue[-1].priority == 0):
                                                         wait_for_next_cycle = lock3.pass_line_up_area[r2].request()
                                                         yield wait_for_next_cycle
                                                         lock3.pass_line_up_area[r2].release(wait_for_next_cycle)
+                                                    
+                                                    if lock.converting_while_in_line_up_area[origin].users != []:
+                                                        waiting_during_converting = lock.converting_while_in_line_up_area[origin].request(priority = -1)
+                                                        yield waiting_during_converting
+                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)
+                                                    
+                                                    elif (len(lock2.doors_1[lock2.node_1].users) == 0 or (len(lock2.doors_1[lock2.node_1].users) != 0 and lock2.doors_1[lock2.node_1].users[0].priority != -1)) and self.route[self.route.index(r)-1] != lock2.water_level:
+                                                        waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
+                                                        yield waiting_during_converting
+                                                        yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
+                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)    
                                                     
                                                     access_lock_door1 = lock2.doors_1[lock2.node_1].request()
                                                     yield access_lock_door1
@@ -729,7 +747,7 @@ class Movable(Locatable, Routeable, Log):
 
                                                 else:
                                                     if lock3.converting_while_in_line_up_area[r2].users != []: 
-                                                        waiting_during_converting = lock3.converting_while_in_line_up_area[r2].request(priority = -1)
+                                                        waiting_during_converting = lock3.converting_while_in_line_up_area[r2].request()
                                                         yield waiting_during_converting
                                                         lock3.converting_while_in_line_up_area[r2].release(waiting_during_converting)
                                                         
@@ -754,25 +772,41 @@ class Movable(Locatable, Routeable, Log):
                                                     lock2.doors_2[lock2.node_3].release(lock2.doors_2[lock2.node_3].users[0])
                                                     yield access_lock_door2
                                                     lock2.doors_2[lock2.node_3].users[0].id = self.id
-                                                else:
+                                                    
+                                                elif lock2.doors_2[lock2.node_3].users != [] and lock2.doors_2[lock2.node_3].users[0].priority == 0:
                                                     access_lock_door2 = lock2.doors_2[lock2.node_3].request(priority = -1)
                                                     yield access_lock_door2
                                                     lock2.doors_2[lock2.node_3].users[0].id = self.id 
-                                                
-                                                if self.route[self.route.index(r)-1] != lock2.water_level:
-                                                    waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
-                                                    yield waiting_during_converting
-                                                    yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
-                                                    lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)                                          
-                                         
-                                        
+                                                    
+                                                else:
+                                                    if self.route[self.route.index(r)-1] != lock2.water_level:
+                                                        waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
+                                                        yield waiting_during_converting
+                                                        yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
+                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)           
+                                                    
+                                                    access_lock_door2 = lock2.doors_2[lock2.node_3].request(priority = -1)
+                                                    yield access_lock_door2
+                                                    lock2.doors_2[lock2.node_3].users[0].id = self.id 
+                                                  
                                         elif self.route[self.route.index(r)-1] == lock2.node_3:
                                             if len(lock2.doors_1[lock2.node_1].users) != 0:
                                                 if lock2.doors_1[lock2.node_1].users[0].priority == -1:
-                                                    if self.length > lock2.length.level or (lock.line_up_area[origin].users != [] and lock3.pass_line_up_area[r2].queue != [] and lock3.pass_line_up_area[r2].queue[-1].priority == 0): 
+                                                    if self.length > lock2.resource.users[-1].lock_dist or (lock.line_up_area[origin].users != [] and lock3.pass_line_up_area[r2].queue != [] and lock3.pass_line_up_area[r2].queue[-1].priority == 0):
                                                         wait_for_next_cycle = lock3.pass_line_up_area[r2].request()
                                                         yield wait_for_next_cycle
                                                         lock3.pass_line_up_area[r2].release(wait_for_next_cycle)
+                                                        
+                                                    if lock.converting_while_in_line_up_area[origin].users != []: 
+                                                        waiting_during_converting = lock.converting_while_in_line_up_area[origin].request(priority = -1)
+                                                        yield waiting_during_converting
+                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)
+                                                    
+                                                    elif (len(lock2.doors_2[lock2.node_3].users) == 0 or (len(lock2.doors_2[lock2.node_3].users) != 0 and lock2.doors_2[lock2.node_3].users[0].priority != -1)) and self.route[self.route.index(r)-1] != lock2.water_level:
+                                                        waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
+                                                        yield waiting_during_converting
+                                                        yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
+                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)
                                                      
                                                     access_lock_door2 = lock2.doors_2[lock2.node_3].request()
                                                     yield access_lock_door2
@@ -789,11 +823,11 @@ class Movable(Locatable, Routeable, Log):
                                                         lock2.doors_1[lock2.node_1].users[0].id = self.id
                                                         
                                                 else:
-                                                    if lock3.converting_while_in_line_up_area[r2].users != []: 
-                                                        waiting_during_converting = lock3.converting_while_in_line_up_area[r2].request(priority = -1)
+                                                    if lock3.converting_while_in_line_up_area[r2].users != []:
+                                                        waiting_during_converting = lock3.converting_while_in_line_up_area[r2].request()
                                                         yield waiting_during_converting
                                                         lock3.converting_while_in_line_up_area[r2].release(waiting_during_converting)
-                                                        
+                                                    
                                                     access_lock_door2 = lock2.doors_2[lock2.node_3].request()
                                                     yield access_lock_door2
                                                     
@@ -816,38 +850,45 @@ class Movable(Locatable, Routeable, Log):
                                                     lock2.doors_1[lock2.node_1].release(lock2.doors_1[lock2.node_1].users[0])
                                                     yield access_lock_door1
                                                     lock2.doors_1[lock2.node_1].users[0].id = self.id
-                                                else:
-                                                    yield self.env.timeout(0.01)
+                                                elif lock2.doors_1[lock2.node_1].users != [] and lock2.doors_1[lock2.node_1].users[0].priority == 0:
                                                     access_lock_door1 = lock2.doors_1[lock2.node_1].request(priority = -1)
                                                     yield access_lock_door1
-                                                    lock2.doors_1[lock2.node_1].users[0].id = self.id
-                                                
-                                                
-                                                if self.route[self.route.index(r)-1] != lock2.water_level:
-                                                    waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
-                                                    yield waiting_during_converting
-                                                    yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
-                                                    lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)  
-                                        
+                                                    lock2.doors_1[lock2.node_1].users[0].id = self.id    
+                                                else:
+                                                    if self.route[self.route.index(r)-1] != lock2.water_level:
+                                                        waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
+                                                        yield waiting_during_converting
+                                                        yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1])
+                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)  
+                                                        
+                                                    access_lock_door1 = lock2.doors_1[lock2.node_1].request(priority = -1)
+                                                    yield access_lock_door1
+                                                    lock2.doors_1[lock2.node_1].users[0].id = self.id    
+                                                         
                                         access_lock_length = lock2.length.get(self.length)
                                         yield access_lock_length
                                         
                                         access_lock = lock2.resource.request()
                                         yield access_lock
-                                        lock2.resource.users[-1].id = self.id
-                                        lock2.resource.users[-1].length = self.length
-                                        lock2.resource.users[-1].v = self.v
-                                        lock2.resource.users[-1].lineup_pos_lat = self.lineup_pos_lat
-                                        lock2.resource.users[-1].lineup_pos_lon = self.lineup_pos_lon
                                         
                                         access_lock_pos_length = lock2.pos_length.get(self.length)
                                         self.lock_dist = lock2.pos_length.level + 0.5*self.length 
                                         yield access_lock_pos_length
                                         
+                                        lock2.resource.users[-1].id = self.id
+                                        lock2.resource.users[-1].length = self.length
+                                        lock2.resource.users[-1].lock_dist = self.lock_dist
+                                        if self.route[self.route.index(r)-1] == lock2.node_1:
+                                            lock2.resource.users[-1].dir = 1.0
+                                        else:
+                                            lock2.resource.users[-1].dir = 2.0
+                                        
                                         if wait_for_lock_entry != self.env.now:
                                             waiting = self.env.now - wait_for_lock_entry
                                             self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, orig)
                                             self.log_entry("Waiting in line-up area stop", self.env.now, waiting, orig)  
+                                        
+                                        lock.line_up_area[origin].release(access_lineup_area)
                                         
                                         self.wgs84 = pyproj.Geod(ellps="WGS84")
                                         [doors_origin_lat, doors_origin_lon, doors_destination_lat, doors_destination_lon] = [self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].y, 
@@ -857,9 +898,6 @@ class Movable(Locatable, Routeable, Log):
                                                                                                  self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].y,
                                                                                                  fwd_azimuth,self.lock_dist)
                                         
-                                        lock2.resource.users[-1].lock_pos_lat = self.lock_pos_lat
-                                        lock2.resource.users[-1].lock_pos_lon = self.lock_pos_lon
-                                        
                                         departure_lineup_pos_length = lock.pos_length.put(self.length)      
                                         yield departure_lineup_pos_length
                                         
@@ -868,7 +906,7 @@ class Movable(Locatable, Routeable, Log):
                                                 locks = self.env.FG.nodes[r4]["Line-up area"]
                                                 for lock4 in locks:
                                                     if lock4.name == self.lock_name:
-                                                        lock4.lock_queue_length -= 1             
+                                                        lock4.lock_queue_length -= 1
                                 break
                             
                             elif 'Waiting area' in self.env.FG.nodes[r].keys():
@@ -884,6 +922,7 @@ class Movable(Locatable, Routeable, Log):
                                                         
                                                 lock.pass_line_up_area[origin].release(departure_lock)
                                                 lock2.resource.release(access_lock)
+                                                print(self.id,self.env.now,'leaving lock')
                                                 departure_lock_length = lock2.length.put(self.length)
                                                 departure_lock_pos_length = lock2.pos_length.put(self.length)
                                                 yield departure_lock_length
@@ -898,19 +937,16 @@ class Movable(Locatable, Routeable, Log):
                             lock.doors_1[lock.node_1].release(access_lock_door1)
                         elif self.route[self.route.index(origin)-1] == lock.node_3:
                             lock.doors_2[lock.node_3].release(access_lock_door2)
-                           
+                        print(self.id,self.env.now,'in lock')
                         orig = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
                         loc = self.route.index(origin)
-                        for r4 in reversed(self.route[:(loc-1)]):
-                            if "Waiting area" in self.env.FG.nodes[r4].keys():
-                                loc3 = self.route.index(r4)
                                 
-                        for r5 in reversed(self.route[loc:]):
-                            if "Line-up area" in self.env.FG.nodes[r5].keys():
-                                locks = self.env.FG.nodes[r5]["Line-up area"]
+                        for r2 in reversed(self.route[loc:]):
+                            if "Line-up area" in self.env.FG.nodes[r2].keys():
+                                locks = self.env.FG.nodes[r2]["Line-up area"]
                                 for lock3 in locks:
                                     if lock3.name == self.lock_name:
-                                        departure_lock = lock3.pass_line_up_area[r5].request(priority = -1)  
+                                        departure_lock = lock3.pass_line_up_area[r2].request(priority = -1)  
                                         break
                                 break
                                     
@@ -919,73 +955,24 @@ class Movable(Locatable, Routeable, Log):
                                 locks = self.env.FG.nodes[r]["Line-up area"]
                                 for lock2 in locks:
                                     if lock2.name == self.lock_name:
-                                        loc2 = self.route.index(r)
                                         for q2 in range(0,len(lock.resource.users)):
-                                            if lock.resource.users[q2] == self.id:
+                                            if lock.resource.users[q2].id == self.id:
                                                 break
                                         yield self.env.timeout(0.01*q2) #solves rounding errors of order 0.001s
-                                        lock2.line_up_area[r].release(access_lineup_area)
                                         departure_lineup_length = lock2.length.put(self.length)
                                         yield departure_lineup_length
+                                        start_time_in_lock = self.env.now
                                         self.log_entry("Passing lock start", self.env.now, 0, orig)
                                         
+                                        for q in range(len(lock2.line_up_area[r].users)):
+                                            wait_for_lined_up_vessels = lock2.enter_line_up_area[r].request() 
+                                            yield wait_for_lined_up_vessels 
+                                            lock2.enter_line_up_area[r].release(wait_for_lined_up_vessels) 
                                         
-                                        for q in range(0+q2,len(lock2.line_up_area[r].users)+q2):
-                                            total_length_vessels_in_lock = 0
-                                            for q3 in range(0,len(lock.resource.users)):
-                                                total_length_vessels_in_lock += lock.resource.users[q3].length
-                                            
-                                            if lock2.line_up_area[r].users[q-q2].length > lock.length.capacity - total_length_vessels_in_lock:
-                                                break
-                                                
-                                            distance_to_lock2 = 0
-                                            for r3 in self.route[(loc2+1):]:
-                                                if r3 == self.route[loc2+1]:
-                                                    _,_,distance = self.wgs84.inv(lock.resource.users[q].lineup_pos_lat, 
-                                                                                  lock.resource.users[q].lineup_pos_lon, 
-                                                                                  self.env.FG.nodes[r3]['geometry'].x, 
-                                                                                  self.env.FG.nodes[r3]['geometry'].y)
-                                                elif r3 == self.route[loc]:
-                                                    _,_,distance = self.wgs84.inv(lock.resource.users[q].lock_pos_lat, 
-                                                                                  lock.resource.users[q].lock_pos_lon,
-                                                                                  self.env.FG.nodes[self.route[self.route.index(r3)-1]]['geometry'].x, 
-                                                                                  self.env.FG.nodes[self.route[self.route.index(r3)-1]]['geometry'].y)
-                                                    distance_to_lock2 += distance
-                                                    break    
-                                                else:
-                                                    _,_,distance = self.wgs84.inv(self.env.FG.nodes[self.route[self.route.index(r3)-1]]['geometry'].x, 
-                                                                                  self.env.FG.nodes[self.route[self.route.index(r3)-1]]['geometry'].y,
-                                                                                  self.env.FG.nodes[r3]['geometry'].x, 
-                                                                                  self.env.FG.nodes[r3]['geometry'].y)
-                                                distance_to_lock2 += distance
-                                            
-                                            waiting_time_in_lock2 = distance_to_lock2/self.v
-                                            waiting_time_in_lock = 0
-                                            
-                                            distance_to_lock = 0;
-                                            for r2 in self.route[loc3:]:
-                                                if r2 == self.route[loc-1]:
-                                                    break
-                                                else:
-                                                    _,_,distance = self.wgs84.inv(self.env.FG.nodes[self.route[self.route.index(r2)+1]]['geometry'].x, 
-                                                                                  self.env.FG.nodes[self.route[self.route.index(r2)+1]]['geometry'].y,
-                                                                                  self.env.FG.nodes[r2]['geometry'].x, 
-                                                                                  self.env.FG.nodes[r2]['geometry'].y)
-                                                distance_to_lock += distance
-                                            
-                                            
-                                            distance_in_lock = lock.length.capacity-total_length_vessels_in_lock-0.5*lock2.line_up_area[r].users[q-q2].length
-                                            waiting_time_in_lock += distance_to_lock/lock2.line_up_area[r].users[q-q2].v+distance_in_lock/lock.resource.users[q].v
-                                            
-                                            if lock2.enter_line_up_area[r].users != [] and lock2.line_up_area[r].users[q-q2].id == lock2.enter_line_up_area[r].users[0].id:
-                                                yield self.env.timeout(waiting_time_in_lock-waiting_time_in_lock2)
-                                            else:
-                                                yield self.env.timeout(waiting_time_in_lock2)
-                                        
-                                        if lock2.line_up_area[r].users == []:
+                                        if lock.resource.users[0].id == self.id:
                                             yield from lock.convert_chamber(self.env, destination)
                                         else:                                          
-                                            yield self.env.timeout(lock.doors_close + lock.operation_time(self.env) + lock.doors_open) 
+                                            yield self.env.timeout(lock.doors_close + lock.operation_time(self.env) + lock.doors_open)
                         
                         passage_time = lock.doors_close + lock.operating_time + lock.doors_open                   
                         waiting_for_lock_departure = self.env.now
@@ -997,13 +984,12 @@ class Movable(Locatable, Routeable, Log):
                         else:
                             exit_waiting_time = 0   
                                     
-                        self.log_entry("Passing lock stop", self.env.now, passage_time+exit_waiting_time, orig,)
-                        [self.lineup_pos_lat,self.lineup_pos_lon] = [self.env.FG.nodes[self.route[self.route.index(r5)]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r5)]]['geometry'].y]
+                        self.log_entry("Passing lock stop", self.env.now, self.env.now-start_time_in_lock, orig,)
+                        [self.lineup_pos_lat,self.lineup_pos_lon] = [self.env.FG.nodes[self.route[self.route.index(r2)]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r2)]]['geometry'].y]
                         yield from self.pass_edge(origin, destination)
                         self.v = speed
                     
             else:
-                # print('I am going to go to the next node {}'.format(destination))  
                 yield from self.pass_edge(origin, destination)
 
             if node[0] + 2 == len(self.route):
