@@ -36,10 +36,7 @@ class SimpyObject:
 
 class HasResource(SimpyObject):
     """Something that has a resource limitation, a resource request must be granted before the object can be used.
-<<<<<<< HEAD
-=======
 
->>>>>>> master
     nr_resources: nr of requests that can be handled simultaneously"""
 
     def __init__(self, nr_resources=1, priority=False, *args, **kwargs):
