@@ -440,7 +440,12 @@ class IsLock(HasResource, HasLength, HasLockDoors, Identifiable, Log):
         super().__init__(length = lock_length, remaining_length = lock_length, node_1 = node_1, node_3 = node_3, *args, **kwargs)
 
     def operation_time(self, environment):
-        operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif[1][np.abs(self.wlev_dif[0]-(environment.now-self.simulation_start)).argmin()]))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+        if type(self.wlev_dif) == list:
+            operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif[1][np.abs(self.wlev_dif[0]-(environment.now-self.simulation_start)).argmin()]))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+        
+        elif type(self.wlev_dif) == float or type(self.wlev_dif) == int:
+            operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+        
         return operating_time
 
     def convert_chamber(self, environment, new_level, number_of_vessels):
@@ -807,11 +812,11 @@ class Movable(Locatable, Routeable, Log):
                                         if lock.line_up_area[destination].users[q].id == self.id:  
                                             if self.route[self.route.index(r)-1] == lock2.node_1: 
                                                 if lock2.doors_2[lock2.node_3].users != [] and lock2.doors_2[lock2.node_3].users[0].priority == -1:
-                                                    if q == 0 and lock.line_up_area[destination].users[q].n != len(lock.line_up_area[destination].users)-len(lock2.resource.users): 
-                                                        self.lineup_dist = lock.length.capacity - 0.5*self.length      
+                                                    if q <= 1 and lock.line_up_area[destination].users[q].n != lock.line_up_area[destination].users[q].n-len(lock2.resource.users):
+                                                        self.lineup_dist = lock.length.capacity - 0.5*self.length 
                                             elif self.route[self.route.index(r)-1] == lock2.node_3: 
                                                 if lock2.doors_1[lock2.node_1].users != [] and lock2.doors_1[lock2.node_1].users[0].priority == -1:
-                                                    if q == 0 and lock.line_up_area[destination].users[q].n != len(lock.line_up_area[destination].users)-len(lock2.resource.users): 
+                                                    if q <= 1 and lock.line_up_area[destination].users[q].n != lock.line_up_area[destination].users[q].n-len(lock2.resource.users): 
                                                         self.lineup_dist = lock.length.capacity - 0.5*self.length
                                             [self.lineup_pos_lat,self.lineup_pos_lon,_] = self.wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].x,
                                                                                                          self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].y,
@@ -857,7 +862,11 @@ class Movable(Locatable, Routeable, Log):
                                         if self.route[self.route.index(r)-1] == lock2.node_1:
                                             if len(lock2.doors_2[lock2.node_3].users) != 0:
                                                 if lock2.doors_2[lock2.node_3].users[0].priority == -1:
-                                                    if self.length > lock2.resource.users[-1].lock_dist or lock2.resource.users[-1].converting == True:
+                                                    if self.length > (lock2.resource.users[-1].lock_dist-0.5*lock2.resource.users[-1].length) or lock2.resource.users[-1].converting == True:
+                                                        access_lock_door2 = lock2.doors_2[lock2.node_3].request(priority = -1)
+                                                        yield access_lock_door2
+                                                        lock2.doors_2[lock2.node_3].release(access_lock_door2)
+                                                        
                                                         wait_for_next_cycle = lock3.pass_line_up_area[r2].request()
                                                         yield wait_for_next_cycle
                                                         lock3.pass_line_up_area[r2].release(wait_for_next_cycle)
@@ -930,15 +939,17 @@ class Movable(Locatable, Routeable, Log):
                                                     
                                                     elif (len(lock2.doors_1[lock2.node_1].users) == 0 or (len(lock2.doors_1[lock2.node_1].users) != 0 and lock2.doors_1[lock2.node_1].users[0].priority != -1)) and self.route[self.route.index(r)-1] != lock2.water_level:
                                                         access_lock_door1 = lock2.doors_1[lock2.node_1].request()
-                                                        yield access_lock_door1
                                                         waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
                                                         yield waiting_during_converting
                                                         yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1], 0)
                                                         lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)  
                                                     
-                                                    else:
+                                                    elif len(lock2.doors_1[lock2.node_1].users) != 0 and lock2.doors_1[lock2.node_1].users[0].priority == -1:
                                                         access_lock_door1 = lock2.doors_1[lock2.node_1].request()
                                                         yield access_lock_door1
+                                                    
+                                                    else:
+                                                        access_lock_door1 = lock2.doors_1[lock2.node_1].request()
                                                     
                                                     if lock2.doors_2[lock2.node_3].users != [] and lock2.doors_2[lock2.node_3].users[0].priority == -1:
                                                         access_lock_door2 = lock2.doors_2[lock2.node_3].request(priority = -1)
@@ -953,7 +964,11 @@ class Movable(Locatable, Routeable, Log):
                                         elif self.route[self.route.index(r)-1] == lock2.node_3:
                                             if len(lock2.doors_1[lock2.node_1].users) != 0:
                                                 if lock2.doors_1[lock2.node_1].users[0].priority == -1:
-                                                    if self.length > lock2.resource.users[-1].lock_dist or lock2.resource.users[-1].converting == True:
+                                                    if self.length > (lock2.resource.users[-1].lock_dist-0.5*lock2.resource.users[-1].length) or lock2.resource.users[-1].converting == True:
+                                                        access_lock_door1 = lock2.doors_1[lock2.node_1].request(priority = -1)
+                                                        yield access_lock_door1
+                                                        lock2.doors_1[lock2.node_1].release(access_lock_door1)
+                                                        
                                                         wait_for_next_cycle = lock3.pass_line_up_area[r2].request()
                                                         yield wait_for_next_cycle
                                                         lock3.pass_line_up_area[r2].release(wait_for_next_cycle)
@@ -1026,15 +1041,17 @@ class Movable(Locatable, Routeable, Log):
                                                         
                                                     elif (len(lock2.doors_2[lock2.node_3].users) == 0 or (len(lock2.doors_2[lock2.node_3].users) != 0 and lock2.doors_2[lock2.node_3].users[0].priority != -1)) and self.route[self.route.index(r)-1] != lock2.water_level:
                                                         access_lock_door2 = lock2.doors_2[lock2.node_3].request()
-                                                        yield access_lock_door2
                                                         waiting_during_converting = lock.converting_while_in_line_up_area[origin].request()
                                                         yield waiting_during_converting
                                                         yield from lock2.convert_chamber(self.env, self.route[self.route.index(r)-1], 0)
-                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)  
+                                                        lock.converting_while_in_line_up_area[origin].release(waiting_during_converting)
                                                         
-                                                    else:
+                                                    elif len(lock2.doors_2[lock2.node_3].users) != 0 and lock2.doors_2[lock2.node_3].users[0].priority == -1:
                                                         access_lock_door2 = lock2.doors_2[lock2.node_3].request()
                                                         yield access_lock_door2
+                                                    
+                                                    else:
+                                                        access_lock_door2 = lock2.doors_2[lock2.node_3].request()
                                                         
                                                     if lock2.doors_1[lock2.node_1].users != [] and lock2.doors_1[lock2.node_1].users[0].priority == -1:
                                                         access_lock_door1 = lock2.doors_1[lock2.node_1].request(priority = -1)
@@ -1047,10 +1064,7 @@ class Movable(Locatable, Routeable, Log):
                                                         lock2.doors_1[lock2.node_1].users[0].id = self.id 
                                                          
                                         access_lock_length = lock2.length.get(self.length)
-                                        yield access_lock_length
-                                        
                                         access_lock = lock2.resource.request()
-                                        yield access_lock
                                         
                                         access_lock_pos_length = lock2.pos_length.get(self.length)
                                         self.lock_dist = lock2.pos_length.level + 0.5*self.length 
