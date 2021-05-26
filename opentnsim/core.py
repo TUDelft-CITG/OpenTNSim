@@ -286,6 +286,7 @@ class ConsumesEnergy:
     P_installed: installed engine power [kW]
     L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
     C_b: block coefficient ('fullness') [-]
+    current_year: current year
     nu: kinematic viscosity [m^2/s]
     rho: density of the surrounding water [kg/m^3]
     g: gravitational accelleration [m/s^2]
@@ -304,6 +305,8 @@ class ConsumesEnergy:
             P_installed,
             L_w,
             C_b,
+            current_year, # current_year
+            c_year,
             nu=1 * 10 ** (-6),  # kinematic viscosity
             rho=1000,
             g=9.81,
@@ -323,6 +326,7 @@ class ConsumesEnergy:
         self.P_installed = P_installed
         self.L_w = L_w
         self.C_b = C_b
+        self.year = current_year
         self.nu = nu
         self.rho = rho
         self.g = g
@@ -333,7 +337,10 @@ class ConsumesEnergy:
         self.eta_g = eta_g
         self.c_stern = c_stern
         self.one_k2 = one_k2
-        self.c_year = self.calculate_engine_age()  # The construction year of the engine is now generated once, instead of for each time step
+        if c_year:
+            self.c_year= c_year
+        else:
+            self.c_year = self.calculate_engine_age()  
 
     # The engine age and construction year of the engine is computed with the function below.
     # The construction year of the engine is used in the emission functions (1) emission_factors_general and (2) correction_factors
@@ -343,28 +350,25 @@ class ConsumesEnergy:
         shape factor 'k', and scale factor 'lmb', which are determined by the weight class L_w"""
 
         # Determining which shape and scale factor to use, based on the weight class L_w = L1, L2 or L3
+        assert self.L_w in [1,2,3],'Invalid value L_w, should be 1,2 or 3'
         if self.L_w == 1:  # Weight class L1
             self.k = 1.3
             self.lmb = 20.5
-        if self.L_w == 2:  # Weight class L2
+        elif self.L_w == 2:  # Weight class L2
             self.k = 1.12
             self.lmb = 18.5
-        if self.L_w == 3:  # Weight class L3
+        elif self.L_w == 3:  # Weight class L3
             self.k = 1.26
             self.lmb = 18.6
 
         # The age of the engine
         self.age = int(np.random.weibull(self.k) * self.lmb)
 
-        # Current year (TO DO: fix hardcoded year)
-        # self.year = datetime.date.year
-        self.year = 2021
-
         # Construction year of the engine
         self.c_year = self.year - self.age
 
         print('The construction year of the engine is', self.c_year)
-        return self.c_year
+        return c_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
