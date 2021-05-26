@@ -1145,19 +1145,19 @@ class Movable(Locatable, Routeable, Log):
 
                             if self.route[self.route.index(r2)-1] == lock3.node_1:
                                 if lock3.doors_2[lock3.node_3].users != [] and lock3.doors_2[lock3.node_3].users[0].priority == -1:
-                                    if self.length < lock2.length.level + lock3.length.level:
-                                        access_lineup_length = lock2.length.get(self.length)
-                                    elif self.length < lock2.length.level:
+                                    if self.L < lock2.length.level + lock3.length.level:
+                                        access_lineup_length = lock2.length.get(self.L)
+                                    elif self.L < lock2.length.level:
                                         if lock2.length.level == lock2.length.capacity:
-                                            access_lineup_length = lock2.length.get(self.length)
+                                            access_lineup_length = lock2.length.get(self.L)
                                         elif lock2.line_up_area[r].users != [] and lock3.length.level < lock2.line_up_area[r].users[0].length:
-                                            access_lineup_length = lock2.length.get(self.length)
+                                            access_lineup_length = lock2.length.get(self.L)
                                         else:
                                             if lock2.length.get_queue == []:
                                                 access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
-                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                             else:
                                                 total_length_waiting_vessels = 0
                                                 for q in reversed(range(len(lock2.length.get_queue))):
@@ -1166,21 +1166,21 @@ class Movable(Locatable, Routeable, Log):
                                                 for q2 in range(q,len(lock2.length.get_queue)):
                                                     total_length_waiting_vessels += lock2.length.get_queue[q2].length
 
-                                                if self.length > lock2.length.capacity - total_length_waiting_vessels:
+                                                if self.L > lock2.length.capacity - total_length_waiting_vessels:
                                                     access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                                    lock2.length.get_queue[-1].length = self.length
+                                                    lock2.length.get_queue[-1].length = self.L
                                                     yield access_lineup_length
-                                                    correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                    correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                                 else:
-                                                    access_lineup_length = lock2.length.get(self.length)
-                                                    lock2.length.get_queue[-1].length = self.length
+                                                    access_lineup_length = lock2.length.get(self.L)
+                                                    lock2.length.get_queue[-1].length = self.L
                                                     yield access_lineup_length
                                     else:
                                         if lock2.length.get_queue == []:
                                             access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                            lock2.length.get_queue[-1].length = self.length
+                                            lock2.length.get_queue[-1].length = self.L
                                             yield access_lineup_length
-                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                         else:
                                             total_length_waiting_vessels = 0
                                             for q in reversed(range(len(lock2.length.get_queue))):
@@ -1189,27 +1189,27 @@ class Movable(Locatable, Routeable, Log):
                                             for q2 in range(q,len(lock2.length.get_queue)):
                                                 total_length_waiting_vessels += lock2.length.get_queue[q2].length
 
-                                            if self.length > lock2.length.capacity - total_length_waiting_vessels:
+                                            if self.L > lock2.length.capacity - total_length_waiting_vessels:
                                                 access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
-                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                             else:
-                                                access_lineup_length = lock2.length.get(self.length)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                access_lineup_length = lock2.length.get(self.L)
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
 
                                 else:
                                     if lock2.length.level == lock2.length.capacity:
-                                        access_lineup_length = lock2.length.get(self.length)
-                                    elif lock2.line_up_area[r].users != [] and self.length < lock2.line_up_area[r].users[-1].lineup_dist-0.5*lock2.line_up_area[r].users[-1].length:
-                                        access_lineup_length = lock2.length.get(self.length)
+                                        access_lineup_length = lock2.length.get(self.L)
+                                    elif lock2.line_up_area[r].users != [] and self.L < lock2.line_up_area[r].users[-1].lineup_dist-0.5*lock2.line_up_area[r].users[-1].length:
+                                        access_lineup_length = lock2.length.get(self.L)
                                     else:
                                         if lock2.length.get_queue == []:
                                             access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                            lock2.length.get_queue[-1].length = self.length
+                                            lock2.length.get_queue[-1].length = self.L
                                             yield access_lineup_length
-                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                         else:
                                             total_length_waiting_vessels = 0
                                             for q in reversed(range(len(lock2.length.get_queue))):
@@ -1218,30 +1218,30 @@ class Movable(Locatable, Routeable, Log):
                                             for q2 in range(q,len(lock2.length.get_queue)):
                                                 total_length_waiting_vessels += lock2.length.get_queue[q2].length
 
-                                            if self.length > lock2.length.capacity - total_length_waiting_vessels:
+                                            if self.L > lock2.length.capacity - total_length_waiting_vessels:
                                                 access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
-                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                             else:
-                                                access_lineup_length = lock2.length.get(self.length)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                access_lineup_length = lock2.length.get(self.L)
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
 
                             elif self.route[self.route.index(r2)-1] == lock3.node_3:
                                 if lock3.doors_1[lock3.node_1].users != [] and lock3.doors_1[lock3.node_1].users[0].priority == -1:
-                                    if self.length < lock2.length.level + lock3.length.level:
-                                        access_lineup_length = lock2.length.get(self.length)
-                                    elif self.length < lock2.length.level:
+                                    if self.L < lock2.length.level + lock3.length.level:
+                                        access_lineup_length = lock2.length.get(self.L)
+                                    elif self.L < lock2.length.level:
                                         if lock2.length.level == lock2.length.capacity:
-                                            access_lineup_length = lock2.length.get(self.length)
+                                            access_lineup_length = lock2.length.get(self.L)
                                         elif lock2.line_up_area[r].users != [] and lock3.length.level < lock2.line_up_area[r].users[0].length:
-                                            access_lineup_length = lock2.length.get(self.length)
+                                            access_lineup_length = lock2.length.get(self.L)
                                         else:
                                             if lock2.length.get_queue == []:
                                                 access_lineup_length = lock2.length.get(lock2.length.capacity)
                                                 yield access_lineup_length
-                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                                 yield correct_lineup_length
                                             else:
                                                 total_length_waiting_vessels = 0
@@ -1251,21 +1251,21 @@ class Movable(Locatable, Routeable, Log):
                                                 for q2 in range(q,len(lock2.length.get_queue)):
                                                     total_length_waiting_vessels += lock2.length.get_queue[q2].length
 
-                                                if self.length > lock2.length.capacity - total_length_waiting_vessels:
+                                                if self.L > lock2.length.capacity - total_length_waiting_vessels:
                                                     access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                                    lock2.length.get_queue[-1].length = self.length
+                                                    lock2.length.get_queue[-1].length = self.L
                                                     yield access_lineup_length
-                                                    correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                    correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                                 else:
-                                                    access_lineup_length = lock2.length.get(self.length)
-                                                    lock2.length.get_queue[-1].length = self.length
+                                                    access_lineup_length = lock2.length.get(self.L)
+                                                    lock2.length.get_queue[-1].length = self.L
                                                     yield access_lineup_length
                                     else:
                                         if lock2.length.get_queue == []:
                                             access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                            lock2.length.get_queue[-1].length = self.length
+                                            lock2.length.get_queue[-1].length = self.L
                                             yield access_lineup_length
-                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                         else:
                                             total_length_waiting_vessels = 0
                                             for q in reversed(range(len(lock2.length.get_queue))):
@@ -1274,26 +1274,26 @@ class Movable(Locatable, Routeable, Log):
                                             for q2 in range(q,len(lock2.length.get_queue)):
                                                 total_length_waiting_vessels += lock2.length.get_queue[q2].length
 
-                                            if self.length > lock2.length.capacity - total_length_waiting_vessels:
+                                            if self.L > lock2.length.capacity - total_length_waiting_vessels:
                                                 access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
-                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                             else:
-                                                access_lineup_length = lock2.length.get(self.length)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                access_lineup_length = lock2.length.get(self.L)
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
                                 else:
                                     if lock2.length.level == lock2.length.capacity:
-                                        access_lineup_length = lock2.length.get(self.length)
-                                    elif lock2.line_up_area[r].users != [] and self.length < lock2.line_up_area[r].users[-1].lineup_dist-0.5*lock2.line_up_area[r].users[-1].length:
-                                        access_lineup_length = lock2.length.get(self.length)
+                                        access_lineup_length = lock2.length.get(self.L)
+                                    elif lock2.line_up_area[r].users != [] and self.L < lock2.line_up_area[r].users[-1].lineup_dist-0.5*lock2.line_up_area[r].users[-1].length:
+                                        access_lineup_length = lock2.length.get(self.L)
                                     else:
                                         if lock2.length.get_queue == []:
                                             access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                            lock2.length.get_queue[-1].length = self.length
+                                            lock2.length.get_queue[-1].length = self.L
                                             yield access_lineup_length
-                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                            correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                         else:
                                             total_length_waiting_vessels = 0
                                             for q in reversed(range(len(lock2.length.get_queue))):
@@ -1302,20 +1302,20 @@ class Movable(Locatable, Routeable, Log):
                                             for q2 in range(q,len(lock2.length.get_queue)):
                                                 total_length_waiting_vessels += lock2.length.get_queue[q2].length
 
-                                            if self.length > lock2.length.capacity - total_length_waiting_vessels:
+                                            if self.L > lock2.length.capacity - total_length_waiting_vessels:
                                                 access_lineup_length = lock2.length.get(lock2.length.capacity)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
-                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.length)
+                                                correct_lineup_length = lock2.length.put(lock2.length.capacity-self.L)
                                             else:
-                                                access_lineup_length = lock2.length.get(self.length)
-                                                lock2.length.get_queue[-1].length = self.length
+                                                access_lineup_length = lock2.length.get(self.L)
+                                                lock2.length.get_queue[-1].length = self.L
                                                 yield access_lineup_length
 
                             if len(lock2.line_up_area[r].users) != 0:
-                                self.lineup_dist = lock2.line_up_area[r].users[-1].lineup_dist - 0.5*lock2.line_up_area[r].users[-1].length - 0.5*self.length
+                                self.lineup_dist = lock2.line_up_area[r].users[-1].lineup_dist - 0.5*lock2.line_up_area[r].users[-1].length - 0.5*self.L
                             else:
-                                self.lineup_dist = lock2.length.capacity - 0.5*self.length
+                                self.lineup_dist = lock2.length.capacity - 0.5*self.L
 
                             self.wgs84 = pyproj.Geod(ellps="WGS84")
                             [lineup_area_start_lat, lineup_area_start_lon, lineup_area_stop_lat, lineup_area_stop_lon] = [self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].y,
@@ -1326,7 +1326,7 @@ class Movable(Locatable, Routeable, Log):
                                                                                          fwd_azimuth,self.lineup_dist)
 
                             access_lineup_area = lock2.line_up_area[r].request()
-                            lock2.line_up_area[r].users[-1].length = self.length
+                            lock2.line_up_area[r].users[-1].length = self.L
                             lock2.line_up_area[r].users[-1].id = self.id
                             lock2.line_up_area[r].users[-1].lineup_pos_lat = self.lineup_pos_lat
                             lock2.line_up_area[r].users[-1].lineup_pos_lon = self.lineup_pos_lon
@@ -1362,11 +1362,11 @@ class Movable(Locatable, Routeable, Log):
                                             if self.route[self.route.index(r)-1] == lock2.node_1:
                                                 if lock2.doors_2[lock2.node_3].users != [] and lock2.doors_2[lock2.node_3].users[0].priority == -1:
                                                     if q <= 1 and lock.line_up_area[destination].users[q].n != lock.line_up_area[destination].users[q].n-len(lock2.resource.users):
-                                                        self.lineup_dist = lock.length.capacity - 0.5*self.length
+                                                        self.lineup_dist = lock.length.capacity - 0.5*self.L
                                             elif self.route[self.route.index(r)-1] == lock2.node_3:
                                                 if lock2.doors_1[lock2.node_1].users != [] and lock2.doors_1[lock2.node_1].users[0].priority == -1:
                                                     if q <= 1 and lock.line_up_area[destination].users[q].n != lock.line_up_area[destination].users[q].n-len(lock2.resource.users):
-                                                        self.lineup_dist = lock.length.capacity - 0.5*self.length
+                                                        self.lineup_dist = lock.length.capacity - 0.5*self.L
                                             [self.lineup_pos_lat,self.lineup_pos_lon,_] = self.wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].x,
                                                                                                          self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].y,
                                                                                                          fwd_azimuth,self.lineup_dist)
@@ -1411,7 +1411,7 @@ class Movable(Locatable, Routeable, Log):
                                         if self.route[self.route.index(r)-1] == lock2.node_1:
                                             if len(lock2.doors_2[lock2.node_3].users) != 0:
                                                 if lock2.doors_2[lock2.node_3].users[0].priority == -1:
-                                                    if self.length > (lock2.resource.users[-1].lock_dist-0.5*lock2.resource.users[-1].length) or lock2.resource.users[-1].converting == True:
+                                                    if self.L > (lock2.resource.users[-1].lock_dist-0.5*lock2.resource.users[-1].length) or lock2.resource.users[-1].converting == True:
                                                         access_lock_door2 = lock2.doors_2[lock2.node_3].request(priority = -1)
                                                         yield access_lock_door2
                                                         lock2.doors_2[lock2.node_3].release(access_lock_door2)
@@ -1513,7 +1513,7 @@ class Movable(Locatable, Routeable, Log):
                                         elif self.route[self.route.index(r)-1] == lock2.node_3:
                                             if len(lock2.doors_1[lock2.node_1].users) != 0:
                                                 if lock2.doors_1[lock2.node_1].users[0].priority == -1:
-                                                    if self.length > (lock2.resource.users[-1].lock_dist-0.5*lock2.resource.users[-1].length) or lock2.resource.users[-1].converting == True:
+                                                    if self.L > (lock2.resource.users[-1].lock_dist-0.5*lock2.resource.users[-1].length) or lock2.resource.users[-1].converting == True:
                                                         access_lock_door1 = lock2.doors_1[lock2.node_1].request(priority = -1)
                                                         yield access_lock_door1
                                                         lock2.doors_1[lock2.node_1].release(access_lock_door1)
@@ -1612,15 +1612,15 @@ class Movable(Locatable, Routeable, Log):
                                                         yield access_lock_door1
                                                         lock2.doors_1[lock2.node_1].users[0].id = self.id
 
-                                        access_lock_length = lock2.length.get(self.length)
+                                        access_lock_length = lock2.length.get(self.L)
                                         access_lock = lock2.resource.request()
 
-                                        access_lock_pos_length = lock2.pos_length.get(self.length)
-                                        self.lock_dist = lock2.pos_length.level + 0.5*self.length
+                                        access_lock_pos_length = lock2.pos_length.get(self.L)
+                                        self.lock_dist = lock2.pos_length.level + 0.5*self.L
                                         yield access_lock_pos_length
 
                                         lock2.resource.users[-1].id = self.id
-                                        lock2.resource.users[-1].length = self.length
+                                        lock2.resource.users[-1].length = self.L
                                         lock2.resource.users[-1].lock_dist = self.lock_dist
                                         lock2.resource.users[-1].converting = False
                                         if self.route[self.route.index(r)-1] == lock2.node_1:
@@ -1662,8 +1662,8 @@ class Movable(Locatable, Routeable, Log):
 
                                                 lock.pass_line_up_area[origin].release(departure_lock)
                                                 lock2.resource.release(access_lock)
-                                                departure_lock_length = lock2.length.put(self.length)
-                                                departure_lock_pos_length = lock2.pos_length.put(self.length)
+                                                departure_lock_length = lock2.length.put(self.L)
+                                                departure_lock_pos_length = lock2.pos_length.put(self.L)
                                                 yield departure_lock_length
                                                 yield departure_lock_pos_length
                                         break
@@ -1677,7 +1677,7 @@ class Movable(Locatable, Routeable, Log):
                             if 'Lock' in self.env.FG.nodes[r].keys():
                                 locks = self.env.FG.nodes[r]["Lock"]
                                 lock.line_up_area[self.route[node[0]-1]].release(access_lineup_area)
-                                departure_lineup_length = lock.length.put(self.length)
+                                departure_lineup_length = lock.length.put(self.L)
                                 yield departure_lineup_length
 
             if "Lock" in self.env.FG.nodes[origin].keys():
