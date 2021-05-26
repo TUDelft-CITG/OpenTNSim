@@ -30,7 +30,7 @@ class VesselGenerator:
     A class to generate vessels from a database
     """
 
-    def __init__(self, vessel_type, vessel_database, loaded=None, random_seed=4):
+    def __init__(self, vessel_type, vessel_database, loaded=None, random_seed=3):
         """ Initialization """
 
         self.vessel_type = vessel_type
@@ -90,7 +90,7 @@ class VesselGenerator:
         """
 
         # Create an array with inter-arrival times -- average number of seconds between arrivals
-        if type(arrival_distribution) == int:
+        if type(arrival_distribution) == int or type(arrival_distribution) == float:
             self.inter_arrival_times = [3600 / arrival_distribution] * 24
 
         elif type(arrival_distribution) == list and len(arrival_distribution) == 24:
@@ -131,51 +131,13 @@ class VesselGenerator:
 
             # Create a vessel
             vessel = self.generate(environment, "Vessel", scenario)
-
-            # Check if a route is available with vessel properties
-            width, height, draught = (
-                vessel.width,
-                vessel.current_height,
-                vessel.current_draught,
-            )
-            route = None
-
-            for i in environment.routes.index:
-                if (
-                    environment.routes["Origin"][i] == origin
-                    and environment.routes["Destination"][i] == destination
-                    and environment.routes["Width"][i] == width
-                    and environment.routes["Height"][i] == height
-                    and environment.routes["Depth"][i] == draught
-                ):
-                    route = environment.routes["Route"][i]
-
-            if route:
-                vessel.route = route
-                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
-                    vessel.route[0]
-                ]
-            else:
-                route = vessel.get_route(origin=origin, destination=destination)
-                environment.routes = environment.routes.append(
-                    {
-                        "Origin": origin,
-                        "Destination": destination,
-                        "Width": width,
-                        "Height": height,
-                        "Depth": draught,
-                        "Route": route,
-                    },
-                    ignore_index=True,
-                )
-
-                vessel.route = route
-                vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
-                    vessel.route[0]
-                ]
-
+            vessel.env = environment
+            vessel.route = nx.dijkstra_path(environment.FG, origin, destination)
+            vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
+                vessel.route[0]
+            ]
+            
             environment.vessels.append(vessel)
-
             # Move on path
             environment.process(vessel.move())
 
@@ -211,9 +173,10 @@ class Simulation(core.Identifiable):
 
     def add_vessels(
         self,
-        vessel_generator,
         origin,
         destination,
+        vessel = None,
+        vessel_generator = None,
         arrival_distribution=1,
         arrival_process="Markovian",
     ):
@@ -224,17 +187,22 @@ class Simulation(core.Identifiable):
         arrival_distribution:   specify the distribution from which vessels are generated, int or list
         arrival_process:        process of arrivals
         """
-
-        self.environment.process(
-            vessel_generator.arrival_process(
-                self.environment,
-                origin,
-                destination,
-                arrival_distribution,
-                self.scenario,
-                arrival_process,
+        
+        if vessel_generator == None:
+            self.environment.vessels.append(vessel)
+            self.environment.process(vessel.move())
+            
+        else:
+            self.environment.process(
+                vessel_generator.arrival_process(
+                    self.environment,
+                    origin,
+                    destination,
+                    arrival_distribution,
+                    self.scenario,
+                    arrival_process,
+                )
             )
-        )
 
     def run(self, duration=24 * 60 * 60):
         """ 
