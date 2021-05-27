@@ -152,6 +152,68 @@ class Log(SimpyObject):
         return json
 
 
+# class VesselProperties:
+#     """Mixin class: Something that has vessel properties
+#     This mixin is updated to better accommodate the ConsumesEnergy mixin
+
+#     type: can contain info on vessel type (avv class, cemt_class or other)
+#     B: vessel width
+#     L: vessel length
+#     H_e: vessel height unloaded
+#     H_f: vessel height loaded
+#     T_e: draught unloaded
+#     T_f: draught loaded
+
+#     Add information on possible restrictions to the vessels, i.e. height, width, etc.
+#     """
+
+#     def __init__(
+#             self,
+#             type,
+#             B,
+#             L,
+#             H_e,
+#             H_f,
+#             T_e,
+#             T_f,
+#             *args,
+#             **kwargs
+#     ):
+#         super().__init__(*args, **kwargs)
+
+#         """Initialization"""
+#         self.type = type
+
+#         self.B = B
+#         self.L = L
+
+#         self.H_e = H_e
+#         self.H_f = H_e
+
+#         self.T_e = T_e
+#         self.T_f = T_f
+
+#     @property
+#     def H(self):
+#         """ Calculate current height based on filling degree """
+
+#         return (
+#                 self.filling_degree * (self.H_f - self.H_e)
+#                 + self.H_e
+#         )
+
+#     @property
+#     def T(self):
+#         """ Calculate current draught based on filling degree
+
+#         Here we should implement the rules from Van Dorsser et al
+#         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
+#         """
+
+#         return (
+#                 self.filling_degree * (self.T_f - self.T_e)
+#                 + self.T_e
+#         )
 class VesselProperties:
     """Mixin class: Something that has vessel properties
     This mixin is updated to better accommodate the ConsumesEnergy mixin
@@ -159,11 +221,10 @@ class VesselProperties:
     type: can contain info on vessel type (avv class, cemt_class or other)
     B: vessel width
     L: vessel length
+    ukc: under keel clearance
+    vesl_type:vessel types,should be "Container","Dry","Barge" or "Tanker"'
     H_e: vessel height unloaded
     H_f: vessel height loaded
-    T_e: draught unloaded
-    T_f: draught loaded
-
     Add information on possible restrictions to the vessels, i.e. height, width, etc.
     """
 
@@ -172,10 +233,10 @@ class VesselProperties:
             type,
             B,
             L,
+            ukc,
+            vesl_type,
             H_e,
             H_f,
-            T_e,
-            T_f,
             *args,
             **kwargs
     ):
@@ -186,12 +247,10 @@ class VesselProperties:
 
         self.B = B
         self.L = L
-
+        self.ukc = ukc
+        self.vesl_type = vesl_type
         self.H_e = H_e
         self.H_f = H_e
-
-        self.T_e = T_e
-        self.T_f = T_f
 
     @property
     def H(self):
@@ -204,16 +263,136 @@ class VesselProperties:
 
     @property
     def T(self):
-        """ Calculate current draught based on filling degree
-
-        Here we should implement the rules from Van Dorsser et al
+        """ Calculate actual draft based on Van Dorsser et al
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
         """
+#Design draft T_design
 
-        return (
-                self.filling_degree * (self.T_f - self.T_e)
-                + self.T_e
-        )
+        Tdesign_coefs = dict({"intercept":0,
+                         "c1": 1.7244153371,
+                         "c2": 2.2767179246,
+                         "c3": 1.3365379898,
+                         "c4": -5.9459308905,
+                         "c5": 6.2902305560*10**-2,
+                         "c6": 7.7398861528*10**-5,
+                         "c7": 9.0052384439*10**-3,
+                         "c8": 2.8438560877
+                         })
+
+        assert self.vesl_type in ["Container","Dry","Barge","Tanker"],'Invalid value vesl_type, should be "Container","Dry","Barge" or "Tanker"'
+        if self.vesl_type == "Container":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [1,0,0,0]
+
+        elif self.vesl_type == "Dry":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,1,0,0]
+
+        elif self.vesl_type == "Barge":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,1,0]
+
+        elif self.vesl_type == "Tanker":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,0,1]
+
+        T_design = Tdesign_coefs['intercept'] + (dum_container * Tdesign_coefs['c1']) + (
+        dum_dry * Tdesign_coefs['c2']) + (dum_barge * Tdesign_coefs['c3']) + (dum_tanker * Tdesign_coefs['c4']) +(
+         Tdesign_coefs['c5'] * dum_container * self.L**0.4 * self.B**0.6) +(
+        Tdesign_coefs['c6'] * dum_dry * self.L**0.7 * self.B**2.6)+(        
+         Tdesign_coefs['c7'] * dum_barge * self.L**0.3 * self.B**1.8) +(
+        Tdesign_coefs['c8'] * dum_tanker * self.L**0.1 * self.B**0.3)
+
+        #Empty draft T_empty
+
+        Tempty_coefs = dict({"intercept": 7.5740820927*10**-2,
+                    "c1": 1.1615080992*10**-1,
+                    "c2": 1.6865973494*10**-2,
+                    "c3": -2.7490565381*10**-2,
+                    "c4": -5.1501240744*10**-5,
+                    "c5": 1.0257551153*10**-1,
+                    "c6": 2.4299435211*10**-1,
+                    "c7": -2.1354295627*10**-1,
+                    })
+
+
+        if self.vesl_type == "Container":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [1,0,0,0]
+
+        elif self.vesl_type == "Dry":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,1,0,0]
+
+        elif self.vesl_type == "Barge":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,1,0]
+
+        elif self.vesl_type == "Tanker":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,0,1]
+
+            
+        T_empty = Tempty_coefs['intercept']  + (Tempty_coefs['c1'] * self.B) + (
+        Tempty_coefs['c2'] * ((self.L * T_design) / self.B)) + (
+        Tempty_coefs['c3'] * (np.sqrt(self.L * self.B)))  + (Tempty_coefs['c4'] * (self.L * self.B * T_design)) +  (
+        Tempty_coefs['c5'] * dum_container) + (Tempty_coefs['c5'] * dum_dry)   + (     
+        Tempty_coefs['c6'] * dum_tanker) + (Tempty_coefs['c7'] * dum_barge)
+
+        #Actual draft T_actual
+
+        if (T_design <= (h -self.ukc)):
+
+            T_actual = T_design
+
+        elif T_empty > (h -self.ukc):
+
+            T_actual =  (f"No trip possible. Available depth smaller than empty draft: {depth - T_empty} m")
+
+        elif (T_design > (h -self.ukc)):
+
+            T_actual = h - self.ukc
+        print('The actual draft is', T_actual, 'm')
+        return T_actual 
+    @property
+    def actual_max_payload(self):
+     #Capacity indexes
+
+        CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
+
+                "c1": -7.8577991460 * 10**1,
+                "c2": -7.0671612519 * 10**0,
+                "c3": 2.7744056480 * 10**1,
+                "c4": 7.5588609922 * 10**-1,
+                "c5": 3.6591813315 * 10**1
+                })
+
+
+        Capindex_1 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)  +  (
+        CI_coefs["c3"] * T_actual) + (CI_coefs["c4"] * T_actual**2)   + ( CI_coefs["c5"] * (T_empty * T_actual))
+        
+        Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
+        CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
+     
+
+        #DWT design capacity
+        capacity_coefs = dict({"intercept": -1.6687441313*10**1,
+             "c1": 9.7404521380*10**-1,
+             "c2": -1.1068568208,
+             })
+
+        DWT = capacity_coefs['intercept'] + (capacity_coefs['c1'] * self.L * self.B * T_design) + (
+         capacity_coefs['c2'] * self.L * self.B * T_empty)
+
+        
+        BC = (DWT/ Capindex_2) * 100
+        AC = BC * (Capindex_1/100)
+
+        lf = AC/DWT    #load factor
+        actual_max_load=lf *DWT
+        print('The actual_max_load is', actual_max_payload, 'ton')
+        return actual_max_payload
+        
 
     def get_route(
             self,
