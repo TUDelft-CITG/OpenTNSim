@@ -221,8 +221,6 @@ class VesselProperties:
     type: can contain info on vessel type (avv class, cemt_class or other)
     B: vessel width
     L: vessel length
-    ukc: under keel clearance
-    vesl_type:vessel types,should be "Container","Dry","Barge" or "Tanker"'
     H_e: vessel height unloaded
     H_f: vessel height loaded
     Add information on possible restrictions to the vessels, i.e. height, width, etc.
@@ -233,8 +231,6 @@ class VesselProperties:
             type,
             B,
             L,
-            ukc,
-            vesl_type,
             H_e,
             H_f,
             *args,
@@ -247,8 +243,6 @@ class VesselProperties:
 
         self.B = B
         self.L = L
-        self.ukc = ukc
-        self.vesl_type = vesl_type
         self.H_e = H_e
         self.H_f = H_e
 
@@ -261,11 +255,11 @@ class VesselProperties:
                 + self.H_e
         )
 
-    def calculate_actual_T_and_payload(self, h_min, ukc=.3):
+    def calculate_actual_T_and_payload(self, h_min, ukc=.3,vesl_type="Dry"):
         """ Calculate actual draft based on Van Dorsser et al
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
         """
-        #Design draft T_design
+        #Design draft T_design, refer to Table 5
 
         Tdesign_coefs = dict({"intercept":0,
                          "c1": 1.7244153371,
@@ -278,20 +272,20 @@ class VesselProperties:
                          "c8": 2.8438560877
                          })
 
-        assert self.vesl_type in ["Container","Dry","Barge","Tanker"],'Invalid value vesl_type, should be "Container","Dry","Barge" or "Tanker"'
-        if self.vesl_type == "Container":
+        assert vesl_type in ["Container","Dry","Barge","Tanker"],'Invalid value vesl_type, should be "Container","Dry","Barge" or "Tanker"'
+        if vesl_type == "Container":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [1,0,0,0]
 
-        elif self.vesl_type == "Dry":
+        elif vesl_type == "Dry":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,1,0,0]
 
-        elif self.vesl_type == "Barge":
+        elif vesl_type == "Barge":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,1,0]
 
-        elif self.vesl_type == "Tanker":
+        elif vesl_type == "Tanker":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,0,1]
 
@@ -304,7 +298,7 @@ class VesselProperties:
                                                 (Tdesign_coefs['c7'] * dum_barge * self.L**0.3 * self.B**1.8) +\
                                                 (Tdesign_coefs['c8'] * dum_tanker * self.L**0.1 * self.B**0.3)
 
-        #Empty draft T_empty
+        #Empty draft T_empty, refer to Table 4
         Tempty_coefs = dict({"intercept": 7.5740820927*10**-2,
                     "c1": 1.1615080992*10**-1,
                     "c2": 1.6865973494*10**-2,
@@ -316,19 +310,19 @@ class VesselProperties:
                     })
 
 
-        if self.vesl_type == "Container":
+        if vesl_type == "Container":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [1,0,0,0]
 
-        elif self.vesl_type == "Dry":
+        elif vesl_type == "Dry":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,1,0,0]
 
-        elif self.vesl_type == "Barge":
+        elif vesl_type == "Barge":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,1,0]
 
-        elif self.vesl_type == "Tanker":
+        elif vesl_type == "Tanker":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,0,1]
 
@@ -337,7 +331,7 @@ class VesselProperties:
                                                (Tempty_coefs['c2'] * ((self.L * T_design) / self.B)) + \
                                                (Tempty_coefs['c3'] * (np.sqrt(self.L * self.B)))  + \
                                                (Tempty_coefs['c4'] * (self.L * self.B * T_design)) +  \
-                                               (Tempty_coefs['c5'] * dum_container) + \
+                                               (Tempty_coefs['c5'] * dum_container) + \       # dum_container and dum_dry use the same "c5"
                                                (Tempty_coefs['c5'] * dum_dry)   + \
                                                (Tempty_coefs['c6'] * dum_tanker) + \
                                                (Tempty_coefs['c7'] * dum_barge)
@@ -354,7 +348,7 @@ class VesselProperties:
 
         print('The actual draft is', T_actual, 'm')
 
-        #Capacity indexes
+        #Capacity indexes, refer to Table 3 and eq 2 
         CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
 
                 "c1": -7.8577991460 * 10**1,
@@ -370,7 +364,7 @@ class VesselProperties:
         Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
         CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
      
-        #DWT design capacity
+        #DWT design capacity, refer to Table 6 and eq 3
         capacity_coefs = dict({"intercept": -1.6687441313*10**1,
              "c1": 9.7404521380*10**-1,
              "c2": -1.1068568208,
@@ -389,7 +383,7 @@ class VesselProperties:
 
         # set vessel properties
         self.T = T_actual
-        self.ukc = ukc
+      
         # self.container.level = actual_max_payload
 
         return T_actual, actual_max_payload
@@ -409,8 +403,8 @@ class VesselProperties:
 
         graph = graph if graph else self.env.FG
         minWidth = minWidth if minWidth else 1.1 * self.B
-        minHeight = minWidth if minHeight else 1.1 * self.H
-        minDepth = minWidth if minDepth else 1.1 * self.T
+        minHeight = minHeight if minHeight else 1.1 * self.H
+        minDepth = minDepth if minDepth else 1.1 * self.T
 
         # Check if information on restrictions is added to the edges
         random.seed(randomSeed)
