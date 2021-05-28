@@ -261,7 +261,7 @@ class VesselProperties:
                 + self.H_e
         )
 
-    def calculate_T(self, h_min, ukc=.3):
+    def calculate_actual_T_and_payload(self, h_min, ukc=.3):
         """ Calculate actual draft based on Van Dorsser et al
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
         """
@@ -343,7 +343,6 @@ class VesselProperties:
                                                (Tempty_coefs['c7'] * dum_barge)
 
         #Actual draft T_actual
-        # Todo: the value of h is unknown here. Consider providing it as input?
         if (T_design <= (h_min - ukc)):
             T_actual = T_design
 
@@ -355,16 +354,7 @@ class VesselProperties:
 
         print('The actual draft is', T_actual, 'm')
 
-        self.T = T_actual
-        self.ukc = ukc
-        # todo: probably we would want to adjust both the T and the container level right?
-
-        return T_actual
-
-    @property
-    def actual_max_payload(self):
-     #Capacity indexes
-
+        #Capacity indexes
         CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
 
                 "c1": -7.8577991460 * 10**1,
@@ -374,14 +364,12 @@ class VesselProperties:
                 "c5": 3.6591813315 * 10**1
                 })
 
-
         Capindex_1 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)  +  (
         CI_coefs["c3"] * T_actual) + (CI_coefs["c4"] * T_actual**2)   + ( CI_coefs["c5"] * (T_empty * T_actual))
         
         Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
         CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
      
-
         #DWT design capacity
         capacity_coefs = dict({"intercept": -1.6687441313*10**1,
              "c1": 9.7404521380*10**-1,
@@ -396,9 +384,15 @@ class VesselProperties:
         AC = BC * (Capindex_1/100)
 
         lf = AC/DWT    #load factor
-        actual_max_load=lf *DWT
+        actual_max_payload = lf * DWT
         print('The actual_max_load is', actual_max_payload, 'ton')
-        return actual_max_payload
+
+        # set vessel properties
+        self.T = T_actual
+        self.ukc = ukc
+        # self.container.level = actual_max_payload
+
+        return T_actual, actual_max_payload
         
 
     def get_route(
