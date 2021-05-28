@@ -231,6 +231,8 @@ class VesselProperties:
             type,
             B,
             L,
+            T_e,
+            T_f,
             H_e,
             H_f,
             *args,
@@ -243,8 +245,10 @@ class VesselProperties:
 
         self.B = B
         self.L = L
+        self.T_e = T_e
+        self.T_f = T_f
         self.H_e = H_e
-        self.H_f = H_e
+        self.H_f = H_f
 
     @property
     def H(self):
@@ -326,12 +330,12 @@ class VesselProperties:
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,0,1]
 
-            
+        # dum_container and dum_dry use the same "c5"   
         T_empty = Tempty_coefs['intercept']  + (Tempty_coefs['c1'] * self.B) + \
                                                (Tempty_coefs['c2'] * ((self.L * T_design) / self.B)) + \
                                                (Tempty_coefs['c3'] * (np.sqrt(self.L * self.B)))  + \
                                                (Tempty_coefs['c4'] * (self.L * self.B * T_design)) +  \
-                                               (Tempty_coefs['c5'] * dum_container) + \       # dum_container and dum_dry use the same "c5"
+                                               (Tempty_coefs['c5'] * dum_container) + \
                                                (Tempty_coefs['c5'] * dum_dry)   + \
                                                (Tempty_coefs['c6'] * dum_tanker) + \
                                                (Tempty_coefs['c7'] * dum_barge)
