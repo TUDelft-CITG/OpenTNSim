@@ -75,6 +75,7 @@ class EnergyCalculation:
         
         
         # log messages that are related to locking
+        # todo: check if this still works with Floors new locking module
         stationary_phase_indicator = [
             "Waiting to enter waiting area stop",
             "Waiting in waiting area stop",

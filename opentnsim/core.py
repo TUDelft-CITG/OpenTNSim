@@ -261,8 +261,7 @@ class VesselProperties:
                 + self.H_e
         )
 
-    @property
-    def T(self):
+    def calculate_T(self, h_min, ukc=.3):
         """ Calculate actual draft based on Van Dorsser et al
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
         """
@@ -345,17 +344,22 @@ class VesselProperties:
 
         #Actual draft T_actual
         # Todo: the value of h is unknown here. Consider providing it as input?
-        if (T_design <= (h -self.ukc)):
+        if (T_design <= (h_min - ukc)):
             T_actual = T_design
 
-        elif T_empty > (h -self.ukc):
+        elif T_empty > (h_min - ukc):
             T_actual =  (f"No trip possible. Available depth smaller than empty draft: {depth - T_empty} m")
 
-        elif (T_design > (h -self.ukc)):
-            T_actual = h - self.ukc
+        elif (T_design > (h_min - ukc)):
+            T_actual = h_min -  ukc
 
         print('The actual draft is', T_actual, 'm')
-        return T_actual 
+
+        self.T = T_actual
+        self.ukc = ukc
+        # todo: probably we would want to adjust both the T and the container level right?
+
+        return T_actual
 
     @property
     def actual_max_payload(self):
