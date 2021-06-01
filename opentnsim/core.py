@@ -234,7 +234,7 @@ class VesselProperties:
             T_e,
             T_f,
             H_e,
-            H_f,
+            H_f,           
             *args,
             **kwargs
     ):
@@ -242,13 +242,13 @@ class VesselProperties:
 
         """Initialization"""
         self.type = type
-
         self.B = B
         self.L = L
         self.T_e = T_e
         self.T_f = T_f
         self.H_e = H_e
         self.H_f = H_f
+        
 
     @property
     def H(self):
@@ -462,6 +462,7 @@ class ConsumesEnergy:
     """Mixin class: Something that consumes energy.
 
     P_installed: installed engine power [kW]
+    P_given:P_given= total required power when P_tot<=P_installed;P_given=P_installed when P_tot>P_installed.
     L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
     C_b: block coefficient ('fullness') [-]
     current_year: current year
@@ -481,6 +482,7 @@ class ConsumesEnergy:
     def __init__(
             self,
             P_installed,
+            P_given,  # the actual power the engine can give
             L_w,
             C_b,
             current_year, # current_year
@@ -502,6 +504,7 @@ class ConsumesEnergy:
 
         """Initialization"""
         self.P_installed = P_installed
+        self.P_given=P_given
         self.L_w = L_w
         self.C_b = C_b
         self.year = current_year
@@ -519,6 +522,7 @@ class ConsumesEnergy:
             self.c_year= c_year
         else:
             self.c_year = self.calculate_engine_age()  
+     
 
     # The engine age and construction year of the engine is computed with the function below.
     # The construction year of the engine is used in the emission functions (1) emission_factors_general and (2) correction_factors
@@ -851,12 +855,15 @@ class ConsumesEnergy:
 
         # Partial engine load (P_partial): needed in the 'Emission calculations'
         if self.P_tot > self.P_installed:
+            self.P_given=self.P_installed
             self.P_partial = 1
         else:
+            self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
 
         print('The total power required is', self.P_tot, 'kW')
-        print('The partial load is', self.P_partial, 'kW')
+        print('The actual total power given is', self.P_given, 'kW')
+        print('The partial load is', self.P_partial)
 
     def emission_factors_general(self):
         """General emission factors:
