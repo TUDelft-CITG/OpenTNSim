@@ -879,47 +879,58 @@ class ConsumesEnergy:
             self.EM_CO2 = 756
             self.EM_PM10 = 0.6
             self.EM_NOX = 10.8
+            self.general_fuel=235
         if 1975 <= self.c_year <= 1979:
             self.EM_CO2 = 730
             self.EM_PM10 = 0.6
             self.EM_NOX = 10.6
+            self.general_fuel=230
         if 1980 <= self.c_year <= 1984:
             self.EM_CO2 = 714
             self.EM_PM10 = 0.6
             self.EM_NOX = 10.4
+            self.general_fuel=225
         if 1985 <= self.c_year <= 1989:
             self.EM_CO2 = 698
             self.EM_PM10 = 0.5
             self.EM_NOX = 10.1
+            self.general_fuel=220
         if 1990 <= self.c_year <= 1994:
             self.EM_CO2 = 698
             self.EM_PM10 = 0.4
             self.EM_NOX = 10.1
+            self.general_fuel=220
         if 1995 <= self.c_year <= 2002:
             self.EM_CO2 = 650
             self.EM_PM10 = 0.3
             self.EM_NOX = 9.4
+            self.general_fuel=205
         if 2003 <= self.c_year <= 2007:
             self.EM_CO2 = 635
             self.EM_PM10 = 0.3
             self.EM_NOX = 9.2
+            self.general_fuel=200
         if 2008 <= self.c_year <= 2019:
             self.EM_CO2 = 635
             self.EM_PM10 = 0.2
             self.EM_NOX = 7
+            self.general_fuel=200
         if self.c_year > 2019:
             if self.L_w == 1:
                 self.EM_CO2 = 650
                 self.EM_PM10 = 0.1
                 self.EM_NOX = 2.9
+                self.general_fuel=205
             else:
                 self.EM_CO2 = 603
                 self.EM_PM10 = 0.015
                 self.EM_NOX = 2.4
+                self.general_fuel=190
 
         print('The general emission factor of CO2 is', self.EM_CO2, 'g/kWh')
         print('The general emission factor of PM10 is', self.EM_PM10, 'g/kWh')
         print('The general emission factor CO2 is', self.EM_NOX, 'g/kWh')
+        print('The general fuel consumption factor is', self.general_fuel, 'g/kWh')
 
     def correction_factors(self):
         """Correction factors:
@@ -939,6 +950,7 @@ class ConsumesEnergy:
             if self.P_partial <= self.corf.iloc[0, 0]:
                 self.corf_CO2 = self.corf.iloc[0, 5]
                 self.corf_PM10 = self.corf.iloc[0, 6]
+                self.corf_fuel = self.corf_CO2 # CO2 emission is generated from fuel consumption, so these two correction factor are equal 
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.c_year < 2008:
@@ -964,6 +976,7 @@ class ConsumesEnergy:
                 self.corf_PM10 = ((self.P_partial - self.corf.iloc[i, 0]) * (
                             self.corf.iloc[i + 1, 6] - self.corf.iloc[i, 6])) / (
                                              self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[i, 6]
+                self.corf_fuel = self.corf_CO2# CO2 emission is generated from fuel consumption, so these two correction factor are equal
 
                 if self.c_year < 2008:
                     self.corf_NOX = ((self.P_partial - self.corf.iloc[i, 0]) * (
@@ -989,6 +1002,7 @@ class ConsumesEnergy:
             elif self.P_partial >= self.corf.iloc[19, 0]:
                 self.corf_CO2 = self.corf.iloc[19, 5]
                 self.corf_PM10 = self.corf.iloc[19, 6]
+                self.corf_fuel = self.corf_CO2# CO2 emission is generated from fuel consumption, so these two correction factor are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.c_year < 2008:
@@ -1006,6 +1020,7 @@ class ConsumesEnergy:
         print('Correction factor of CO2 is', self.corf_CO2)
         print('Correction factor of PM10 is', self.corf_PM10)
         print('Correction factor of NOX is', self.corf_NOX)
+        print('Correction factor of fuel consumption is', self.corf_fuel)
 
     def calculate_emission_factors_total(self):
         """Total emission factors:
@@ -1024,10 +1039,12 @@ class ConsumesEnergy:
         self.Emf_CO2 = self.EM_CO2 * self.corf_CO2
         self.Emf_PM10 = self.EM_PM10 * self.corf_PM10
         self.Emf_NOX = self.EM_NOX * self.corf_NOX
+        self.fuel_consumption = self.general_fuel * self.corf_fuel
 
         print('The total emission factor of CO2 is', self.Emf_CO2, 'g/kWh')
         print('The total emission factor of PM10 is', self.Emf_PM10, 'g/kWh')
         print('The total emission factor CO2 is', self.Emf_NOX, 'g/kWh')
+        print('The total fuel consumption factor is', self.fuel_consumption, 'g/kWh')
 
 
 class Routeable:

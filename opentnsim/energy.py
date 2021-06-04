@@ -31,6 +31,7 @@ class EnergyCalculation:
                            "edge_start": [],
                            "edge_stop": [],
                            "total_energy": [], 
+                           "total_fuel_consumption": [],
                            "total_emission_CO2": [],
                            "total_emission_PM10": [], 
                            "total_emission_NOX": [], 
@@ -132,12 +133,14 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.Emf_CO2 * energy_delta # in g
                     emission_delta_PM10 = self.vessel.Emf_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.Emf_NOX * energy_delta # in g
+                    emission_delta_fuel=self.vessel.fuel_consumption* energy_delta/1000 # in kg
                     
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(energy_delta)
                     self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
                     self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
                     self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
+                    self.energy_use["total_fuel_consumption"].append(emission_delta_fuel)
                     
                     if not np.isnan(h):
                         self.energy_use["water depth"].append(h)
@@ -152,12 +155,14 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.Emf_CO2 * energy_delta #Energy consumed per time step delta_t in the stationary phase # in g
                     emission_delta_PM10 = self.vessel.Emf_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.Emf_NOX * energy_delta # in g
+                    emission_delta_fuel=self.vessel.fuel_consumption* energy_delta/1000 # in kg
     
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(0)
                     self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
                     self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
                     self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
+                    self.energy_use["total_fuel_consumption"].append(emission_delta_fuel)
                     self.energy_use["water depth"].append(h)
                     #self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
 
