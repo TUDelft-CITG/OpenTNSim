@@ -223,6 +223,7 @@ class VesselProperties:
     L: vessel length
     H_e: vessel height unloaded
     H_f: vessel height loaded
+    T:actual draft
     Add information on possible restrictions to the vessels, i.e. height, width, etc.
     """
 
@@ -234,7 +235,8 @@ class VesselProperties:
             T_e,
             T_f,
             H_e,
-            H_f,           
+            H_f,
+            T,
             *args,
             **kwargs
     ):
@@ -248,6 +250,11 @@ class VesselProperties:
         self.T_f = T_f
         self.H_e = H_e
         self.H_f = H_f
+        if T:
+            self.T= T
+        else:
+            self.T = calculate_actual_T_and_payload() 
+        
         
 
     @property
