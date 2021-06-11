@@ -236,7 +236,6 @@ class VesselProperties:
             T_f,
             H_e,
             H_f,
-            T,
             *args,
             **kwargs
     ):
@@ -250,10 +249,10 @@ class VesselProperties:
         self.T_f = T_f
         self.H_e = H_e
         self.H_f = H_f
-        if T:
-            self.T= T
-        else:
-            self.T = calculate_actual_T_and_payload() 
+#         if T:
+#             self.T= T
+#         else:
+#             self.T = calculate_actual_T_and_payload() 
         
         
 
@@ -368,10 +367,10 @@ class VesselProperties:
                 "c4": 7.5588609922 * 10**-1,
                 "c5": 3.6591813315 * 10**1
                 })
-
+        # Capindex_1 related to actual draft (especially used for shallow water)
         Capindex_1 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)  +  (
         CI_coefs["c3"] * T_actual) + (CI_coefs["c4"] * T_actual**2)   + ( CI_coefs["c5"] * (T_empty * T_actual))
-        
+        # Capindex_2 related to design draft
         Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
         CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
      
@@ -381,16 +380,21 @@ class VesselProperties:
              "c2": -1.1068568208,
              })
 
-        DWT = capacity_coefs['intercept'] + (capacity_coefs['c1'] * self.L * self.B * T_design) + (
-         capacity_coefs['c2'] * self.L * self.B * T_empty)
-
+        DWT_design = capacity_coefs['intercept'] + (capacity_coefs['c1'] * self.L * self.B * T_design) + (
+         capacity_coefs['c2'] * self.L * self.B * T_empty) # designed DWT 
+        DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
         
-        BC = (DWT/ Capindex_2) * 100
-        AC = BC * (Capindex_1/100)
-
-        lf = AC/DWT    #load factor
-        actual_max_payload = lf * DWT
-        print('The actual_max_load is', actual_max_payload, 'ton')
+       
+        if T_actual < T_design:
+            consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT 
+                              # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
+        else: 
+            consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT 
+                              # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
+        
+        fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
+        actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
+        print('The actual_max_payload is', actual_max_payload, 'ton')
 
         # set vessel properties
         self.T = T_actual
