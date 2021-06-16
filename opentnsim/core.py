@@ -897,7 +897,7 @@ class IsLockLineUpArea(HasResource, HasLength, Identifiable, Log):
         self.enter_line_up_area = { #used to regulate one by one entering of line-up area, so capacity must be 1
             node: simpy.PriorityResource(self.env, capacity=1),
         }
-
+        
         self.line_up_area = { #line-up area itself, infinite capacity, as this is regulated by the HasLength, so capacity = inf
             node: simpy.PriorityResource(self.env, capacity=100),
         }
