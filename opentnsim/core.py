@@ -265,7 +265,7 @@ class VesselProperties:
                 + self.H_e
         )
 
-    def calculate_actual_T_and_payload(self, h_min, ukc=.3,vesl_type="Dry"):
+    def calculate_actual_T_and_payload(self, h_min, ukc=.3,vesl_type="Dry_DH"):
         """ Calculate actual draft based on Van Dorsser et al
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
         """
@@ -282,15 +282,16 @@ class VesselProperties:
                          "c8": 2.8438560877
                          })
 
-        assert vesl_type in ["Container","Dry","Barge","Tanker"],'Invalid value vesl_type, should be "Container","Dry","Barge" or "Tanker"'
+        assert vesl_type in ["Container","Dry_SH","Dry_DH","Barge","Tanker"],'Invalid value vesl_type, should be "Container","Dry_SH","Dry_DH","Barge" or "Tanker"'
         if vesl_type == "Container":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [1,0,0,0]
-
-        elif vesl_type == "Dry":
+        elif vesl_type == "Dry_SH":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,1,0,0]
-
+        elif vesl_type == "Dry_DH":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,1,0,0]
         elif vesl_type == "Barge":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,1,0]
@@ -323,11 +324,12 @@ class VesselProperties:
         if vesl_type == "Container":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [1,0,0,0]
-
-        elif vesl_type == "Dry":
+        elif vesl_type == "Dry_SH":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,0,0]
+        elif vesl_type == "Dry_DH":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,1,0,0]
-
         elif vesl_type == "Barge":
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,1,0]
@@ -351,7 +353,7 @@ class VesselProperties:
             T_actual = T_design
 
         elif T_empty > (h_min - ukc):
-            T_actual =  (f"No trip possible. Available depth smaller than empty draft: {depth - T_empty} m")
+            T_actual =  (f"No trip possible. Available depth smaller than empty draft: {h_min - T_empty} m")
 
         elif (T_design > (h_min - ukc)):
             T_actual = h_min -  ukc
