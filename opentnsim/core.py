@@ -1030,7 +1030,7 @@ class IsLock(HasResource, HasLength, Identifiable, Log):
 
 class PassLock():
     """ Mixin class: a collection of functions which are used to pass a lock complex consisting of a waiting area, line-up areas, and lock chambers"""
-    
+    @staticmethod
     def approach_waiting_area(vessel,node_waiting_area):
         """ Processes vessels which are approaching a waiting area of a lock complex: 
                 if the waiting area is full, vessels will be waiting outside the waiting area for a spot, otherwise if the vessel
@@ -1207,6 +1207,7 @@ class PassLock():
                                 
                     #Requesting procedure for access to line-up area
                     #- If the vessels fits in the line-up area right away
+                    
                     if vessel.L < lineup_area.length.level:
                         yield from request_access_lock_cycle()
                         
@@ -1281,6 +1282,9 @@ class PassLock():
                 #Request of entering the line-up area to assure that vessels will enter the line-up area one-by-one                                                                            
                 vessel.enter_lineup_length = lineup_area.enter_line_up_area[node_lineup_area].request()
                 yield vessel.enter_lineup_length
+                
+                #Speed reduction in the approach to the line-up area
+                vessel.v = 0.5*vessel.v
                     
                 #Calculates and reports the total waiting time in the waiting area
                 if wait_for_lineup_area != vessel.env.now: 
@@ -1316,6 +1320,7 @@ class PassLock():
             if lineup_area.name != vessel.lock_name:
                 continue
             
+            
             #Identifies the index of the node of the waiting area within the route of the vessel
             index_node_lineup_area = vessel.route.index(node_lineup_area)
             
@@ -1342,7 +1347,7 @@ class PassLock():
                                     - lineup_dist: the initial position of the vessel in the line-up area as the distance from the origin of the jetty in [m]
                                     - q: an integer number which represents the assigned position of the vessel in the line-up area, only the vessel which is
                                          the new first in line (q=0) will be processed"""
-                            
+                                         
                             if q == 0 and lineup_area.line_up_area[node_lineup_area].users[q].n != (lineup_area.line_up_area[node_lineup_area].users[q].n-len(lock.resource.users)):
                                 lineup_dist = lock.length.capacity - 0.5*vessel.L
                             return lineup_dist
@@ -1395,7 +1400,9 @@ class PassLock():
                                 lineup_area.line_up_area[node_lineup_area].users[q].lineup_dist = vessel.lineup_dist
                                 break
                         break
-                break
+                    break
+                else:
+                    continue
             break
             
     def leave_lineup_area(vessel,node_lineup_area):
@@ -1551,16 +1558,6 @@ class PassLock():
                             
                             yield from secure_lock_cycle(priority = 0)
                             door2.release(vessel.access_lock_door2)
-
-                        def wait_for_next_cycle():
-                            """ Vessels will wait for the next lock cycle by requesting to pass the line-up area on the opposite side of the lock
-                                    chamber without priority. A timeout is yielded untill all vessels in the lock have passed this area.
-                                
-                                No input required. """
-                                
-                            vessel.wait_for_vessels_to_pass = opposing_lineup_area.pass_line_up_area[node_opposing_lineup_area].request()
-                            yield vessel.wait_for_vessels_to_pass
-                            opposing_lineup_area.pass_line_up_area[node_opposing_lineup_area].release(vessel.wait_for_vessels_to_pass)
                         
                         #Determines current moment within the lock cycle
                         lock_door_2_user_priority = 0
@@ -1573,7 +1570,7 @@ class PassLock():
                             
                             #If vessel does not fit in next lock cycle
                             if lock.resource.users != [] and (vessel.L > (lock.resource.users[-1].lock_dist-0.5*lock.resource.users[-1].length) or lock.resource.users[-1].converting):
-                                yield from wait_for_next_cycle()
+                                yield from wait_for_next_lockage()
                                 
                             #Determines whether an empty conversion is needed or already requested by another vessel going the same way
                             if lineup_area.converting_while_in_line_up_area[node_lineup_area].users != []:
@@ -1636,10 +1633,13 @@ class PassLock():
                     if direction:
                         yield from access_lock_chamber(vessel,lineup_area,node_lineup_area,lock,node_lock,opposing_lineup_area,node_opposing_lineup_area,
                                                        lock.doors_1[lock.node_1],lock.doors_2[lock.node_3])
-                        
                     if not direction:
                         yield from access_lock_chamber(vessel,lineup_area,node_lineup_area,lock,node_lock,opposing_lineup_area,node_opposing_lineup_area,
                                                        lock.doors_2[lock.node_3],lock.doors_1[lock.node_1])
+                    
+                    #Releases the vessel's formal request to access the line-up area and releases its occupied length of the line-up area
+                    lineup_area.line_up_area[node_lineup_area].release(vessel.access_lineup_area)
+                    lineup_area.length.put(vessel.L)
                     
                     #Calculates and reports the total waiting time in the line-up area
                     if wait_for_lock_entry != vessel.env.now:
@@ -1661,37 +1661,6 @@ class PassLock():
                                                                                    vessel.env.FG.nodes[vessel.route[vessel.route.index(node_lock)-1]]['geometry'].y,
                                                                                    fwd_azimuth,vessel.lock_dist)
                     break
-                break
-            break
-     
-    def left_lineup_area(vessel,node_lineup_area):
-        """ Processes vessels which have left the line-up area of the lock complex and are approaching the lock chamber: 
-                releases their requests of the line-up area
-                
-            Input:
-                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-                - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network """
-                
-        #Imports the properties of the line-up area the vessel was assigned to 
-        lineup_areas = vessel.env.FG.nodes[node_lineup_area]["Line-up area"]
-        for lineup_area in lineup_areas:
-            if lineup_area.name != vessel.lock_name:
-                continue
-            
-            #Identifies the index of the node of the line-up area within the route of the vessel
-            index_node_lineup_area = vessel.route.index(node_lineup_area)
-            
-            #Checks whether the line-up area is the first encountered line-up area of the lock complex
-            for node_lock in vessel.route[index_node_lineup_area:]:
-                if 'Lock' not in vessel.env.FG.nodes[node_lock].keys():
-                    continue
-                
-                if vessel.env.FG.nodes[node_lock]["Lock"][0].name.split('_')[0] != vessel.lock_name.split('_')[0]:
-                    continue
-               
-                #Releases the vessel's formal request to access the line-up area and releases its occupied length of the line-up area
-                lineup_area.line_up_area[node_lineup_area].release(vessel.access_lineup_area)
-                lineup_area.length.put(vessel.L)
                 break
             break
         
@@ -1907,14 +1876,9 @@ class Movable(Locatable, Routeable, Log):
             if node[0] + 2 <= len(self.route):
                 origin = self.route[node[0]]
                 destination = self.route[node[0] + 1]
-
-            #if "Terminal" in self.env.FG.nodes[destination].keys():
-            #    for event in pass_terminal(self,origin,destination):
-            #        yield event
             
             #PassLock
             if "Waiting area" in self.env.FG.nodes[destination].keys():         #if waiting area is located at next node 
-                print(self.id,self.env.now,'hello world')
                 yield from PassLock.approach_waiting_area(self, destination)
                 
             if "Waiting area" in self.env.FG.nodes[origin].keys():              #if vessel is in waiting area 
@@ -1938,9 +1902,6 @@ class Movable(Locatable, Routeable, Log):
                         elif 'Waiting area' in self.env.FG.nodes[node_lock].keys(): #if vessel is leaving the lock complex
                             yield from PassLock.leave_opposite_lineup_area(self,origin)
                             break
-
-            if "Line-up area" in self.env.FG.nodes[self.route[node[0]-1]].keys(): #if line-up in previous node
-                PassLock.left_lineup_area(self,self.route[node[0]-1])
 
             if "Lock" in self.env.FG.nodes[origin].keys(): #if vessel in lock
                 yield from PassLock.leave_lock(self,origin)

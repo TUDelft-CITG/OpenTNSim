@@ -191,7 +191,7 @@ def test_basic_simulation():
                                    lock_cycle_start[1], decimal=0, err_msg='', verbose=True)
 
     np.testing.assert_almost_equal((lock_1.doors_open+lock_1.doors_close+2*lock_1.lock_width*lock_1.lock_length*wlev_dif[1][0]/(lock_1.disch_coeff*lock_1.opening_area*math.sqrt(2*lock_1.grav_acc*lock_1.opening_depth)))+
-                                   550/4+(500+300-0.5*155)/2+500+0.5*155+300-0.5*155,
+                                   550/4+(500+300-0.5*155)/2+(500+300-0.5*155),
                                    waiting_in_lineup_start[1], decimal=0, err_msg='', verbose=True)
 
     np.testing.assert_almost_equal(550/4,
@@ -202,9 +202,9 @@ def test_basic_simulation():
                                    lock_cycle_duration[1], decimal=0, err_msg='', verbose=True)
 
     np.testing.assert_almost_equal(2*(lock_1.doors_open+lock_1.doors_close+2*lock_1.lock_width*lock_1.lock_length*wlev_dif[1][0]/(lock_1.disch_coeff*lock_1.opening_area*math.sqrt(2*lock_1.grav_acc*lock_1.opening_depth)))+
-                                   0.5*155+500/4+300/4,
+                                   (155+500/4+300/4),
                                    waiting_in_lineup_duration[1], decimal=0, err_msg='', verbose=True)
 
     np.testing.assert_almost_equal(lock_1.doors_open+lock_1.doors_close+2*lock_1.lock_width*lock_1.lock_length*wlev_dif[1][0]/(lock_1.disch_coeff*lock_1.opening_area*math.sqrt(2*lock_1.grav_acc*lock_1.opening_depth))+
-                                   (300-0.5*155)/2+500/2+0.5*155,
+                                   (300-0.5*155)/2+500/2,
                                    waiting_in_waiting_duration[1], decimal=0, err_msg='', verbose=True)

@@ -190,7 +190,7 @@ def test_basic_simulation():
                                    550/4+(500+(300-0.5*135))/2+(0.5*135+500+(300-0.5*135))+1.5*135+500+(300-1.5*135),
                                    lock_cycle_start[1], decimal=0, err_msg='', verbose=True)
 
-    np.testing.assert_almost_equal(500/2+(300-0.5*135)/2+550/4+(500+300-0.5*135)/1,
+    np.testing.assert_almost_equal(500/2+(300-0.5*135)/2+550/4+(500+300-1.5*135)/1,
                                    waiting_in_lineup_start[1], decimal=0, err_msg='', verbose=True)
 
     np.testing.assert_almost_equal(550/4,
@@ -201,8 +201,8 @@ def test_basic_simulation():
                                    800/4+0.5*135,
                                    lock_cycle_duration[1], decimal=0, err_msg='', verbose=True)
 
-    np.testing.assert_almost_equal(lock_1.doors_open+lock_1.doors_close+2*lock_1.lock_width*lock_1.lock_length*wlev_dif[1][0]/(lock_1.disch_coeff*lock_1.opening_area*math.sqrt(2*lock_1.grav_acc*lock_1.opening_depth))-
-                                   (500+(300-0.5*135))+500+(1.5*135)+(300-1.5*135),
+    np.testing.assert_almost_equal((lock_1.doors_open+lock_1.doors_close+2*lock_1.lock_width*lock_1.lock_length*wlev_dif[1][0]/(lock_1.disch_coeff*lock_1.opening_area*math.sqrt(2*lock_1.grav_acc*lock_1.opening_depth))+
+                                   550/4+500/2+(300-0.5*135)/2+0.5*135+500+300-0.5*135) - (500/2+(300-0.5*135)/2+550/4+(500+300-1.5*135)/1),
                                    waiting_in_lineup_duration[1], decimal=0, err_msg='', verbose=True)
 
     np.testing.assert_almost_equal(500/2+(300-0.5*135)/2,
