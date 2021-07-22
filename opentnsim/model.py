@@ -75,6 +75,7 @@ class VesselGenerator:
     def arrival_process(
         self,
         environment,
+        simulation_start,
         origin,
         destination,
         arrival_distribution,
@@ -139,7 +140,7 @@ class VesselGenerator:
             
             environment.vessels.append(vessel)
             # Move on path
-            environment.process(vessel.move())
+            environment.process(vessel.move(simulation_start))
 
 
 class Simulation(core.Identifiable):
@@ -173,6 +174,7 @@ class Simulation(core.Identifiable):
 
     def add_vessels(
         self,
+        simulation_start,
         origin,
         destination,
         vessel = None,
@@ -190,12 +192,13 @@ class Simulation(core.Identifiable):
         
         if vessel_generator == None:
             self.environment.vessels.append(vessel)
-            self.environment.process(vessel.move())
+            self.environment.process(vessel.move(simulation_start))
             
         else:
             self.environment.process(
                 vessel_generator.arrival_process(
                     self.environment,
+                    simulation_start,
                     origin,
                     destination,
                     arrival_distribution,
