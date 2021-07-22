@@ -569,16 +569,15 @@ class PassLock():
 
                             elif len(door2.users) == 0 and len(door1.users) == 0 and vessel.route[vessel.route.index(node_lock)-1] != lock.water_level:
                                 yield from request_empty_lock_conversion()
-                            
-                            #Request to enter the lock
+
+                            # Request to start the lock cycle
                             yield from request_approach_lock_chamber()
-                            
-                            #Request to start the lock cycle
+
                             if door2.users != [] and door2.users[0].priority == -1:
-                                yield from secure_lock_cycle(hold_request = True)
+                                yield from secure_lock_cycle(hold_request=True)
                             else:
-                                yield from secure_lock_cycle(timeout_required = False)
-                        
+                                yield from secure_lock_cycle(timeout_required=False)
+
                         #- If there is a lock cycle being prepared or going on to the direction of the vessel or if the lock chamber is empty
                         else:
                             
@@ -606,15 +605,14 @@ class PassLock():
                             #- Else, if the lock chamber is occupied
                             else:
                                 #Request to start the lock cycle
+                                yield from request_approach_lock_chamber()
+                                door1.release(vessel.access_lock_door1)
+                                yield from request_approach_lock_chamber()
+
                                 if door2.users != [] and door2.users[0].priority == -1:
-                                    yield from request_approach_lock_chamber()
-                                    yield from secure_lock_cycle(hold_request = True)
+                                    yield from secure_lock_cycle(hold_request=True)
                                 else:
-                                    yield from request_approach_lock_chamber()
-                                    if door2.users != [] and door2.users[0].priority == -1:
-                                        yield from secure_lock_cycle(hold_request = True)
-                                    else:
-                                        yield from secure_lock_cycle(timeout_required=False)
+                                    yield from secure_lock_cycle(timeout_required=False)
 
 
                         #Formal request access to lock chamber and calculate position within the lock chamber
@@ -697,7 +695,6 @@ class PassLock():
                         continue
                     break
                 break
-            print(vessel.id,index_node_lock,node_opposing_lineup_area)
 
             #Request access to pass the next line-up area after the lock chamber has levelled, so that vessels will leave the lock chamber one-by-one
             vessel.departure_lock = opposing_lineup_area.pass_line_up_area[node_opposing_lineup_area].request(priority = -1)    
