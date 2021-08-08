@@ -1055,6 +1055,8 @@ class Movable(Locatable, Routeable, Log):
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
         self.distance = 0
+        
+        # Create a list of constant speed over route if not given by user
         speed = self.v
 
         # Check if vessel is at correct location - if not, move to location
@@ -1080,6 +1082,10 @@ class Movable(Locatable, Routeable, Log):
 
 
         # Move over the path and log every step
+        # Use the associated speed on the route 
+        
+        # for i, (f, b) in enumerate(zip(foo, bar)):
+        
         for node in enumerate(self.route):
             self.node = node[1]
 
@@ -1087,6 +1093,7 @@ class Movable(Locatable, Routeable, Log):
                 origin = self.route[node[0]]
                 destination = self.route[node[0] + 1]
 
+            # IF LOCK - BEGIN
 
             if "Waiting area" in self.env.FG.nodes[destination].keys():
                 locks = self.env.FG.nodes[destination]["Waiting area"]
@@ -1746,6 +1753,8 @@ class Movable(Locatable, Routeable, Log):
                         yield from self.pass_edge(origin, destination)
                         self.v = speed
 
+            # IF LOCK - END
+
             else:
                 # print('I am going to go to the next node {}'.format(destination))
                 yield from self.pass_edge(origin, destination)
@@ -1847,7 +1856,10 @@ class Movable(Locatable, Routeable, Log):
 
     @property
     def current_speed(self):
-        return self.v
+        if isinstance(self.v, list):
+            return self.v[self.inode]
+        else:
+            return self.v
 
 
 class ContainerDependentMovable(Movable, HasContainer):
@@ -1863,4 +1875,10 @@ class ContainerDependentMovable(Movable, HasContainer):
 
     @property
     def current_speed(self):
-        return self.compute_v(self.container.level / self.container.capacity)
+        v_computed = self.compute_v(self.container.level / self.container.capacity)
+
+        # if v_computed is a list, get the speed corresponding to the edge it's crossing
+        if isinstance(v_computed, list):
+            return v_computed[self.inode]
+        else:
+            return v_computed
