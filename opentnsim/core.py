@@ -444,11 +444,6 @@ class NetworkProperties:
                 network.edges[edge[1]]['Info']['Current velocity'][0].append(network.nodes[edge[1][0]]['Info']['Current velocity'][0][t])
                 network.edges[edge[1]]['Info']['Current velocity'][1][0].append(network.nodes[edge[1][0]]['Info']['Current velocity'][1][t])
                 network.edges[edge[1]]['Info']['Current velocity'][1][1].append(network.nodes[edge[1][1]]['Info']['Current velocity'][1][t])
-            for t in range(len(network.nodes[edge[1][0]]['Info']['Current direction'][0])):
-                network.edges[edge[1]]['Info']['Current direction'][0].append(network.nodes[edge[1][0]]['Info']['Current direction'][0][t])
-                network.edges[edge[1]]['Info']['Current direction'][1][0].append(network.nodes[edge[1][0]]['Info']['Current direction'][1][t])
-                network.edges[edge[1]]['Info']['Current direction'][1][1].append(network.nodes[edge[1][1]]['Info']['Current direction'][1][t])
-
 
     def calculate_available_sail_in_times(vessel):
         available_sail_in_times = []
