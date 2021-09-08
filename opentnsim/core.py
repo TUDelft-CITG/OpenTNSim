@@ -333,7 +333,7 @@ class IsJunction(Identifiable,HasType, Log):
                     self.access1.append({edge[1][0]: simpy.PriorityResource(self.env, capacity=1),})
                     self.access2.append({edge[1][1]: simpy.PriorityResource(self.env, capacity=1),})
 
-            self.section.append({edge[1][1]: simpy.PriorityResource(self.env, capacity=100),})
+            self.section.append({edge[1][1]: simpy.PriorityResource(self.env, capacity=10000),})
 
 class IsTerminal(HasType, HasLength, Identifiable, Log):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
@@ -445,21 +445,119 @@ class NetworkProperties:
                 network.edges[edge[1]]['Info']['Current velocity'][1][0].append(network.nodes[edge[1][0]]['Info']['Current velocity'][1][t])
                 network.edges[edge[1]]['Info']['Current velocity'][1][1].append(network.nodes[edge[1][1]]['Info']['Current velocity'][1][t])
 
-    def calculate_available_sail_in_times(vessel):
+    def calculate_available_sail_in_times(vessel,vertical_tidal_window,horizontal_tidal_window):
         available_sail_in_times = []
         vessel.waiting_time_start = vessel.env.now
         vessel.max_waiting_time = vessel.waiting_time_start + 24 * 60 * 60
-        [new_t,min_wdep] = NetworkProperties.minimum_water_per_edge_as_experienced_by_vessel(vessel)
 
-        def times_tidal_window(vessel,new_t,min_wdep):
-            times_tidal_window = []
+        def times_vertical_tidal_window(vessel):
+            times_vertical_tidal_window = []
             water_depth_required = vessel.T_f + vessel.ukc
-            root_interp_water_level_at_edge = NetworkProperties.waiting_time_for_vertical_tidal_window(vessel)[1]
+            [new_t, min_wdep] = NetworkProperties.minimum_water_per_edge_as_experienced_by_vessel(vessel)
+            root_interp_water_level_at_edge = sc.interpolate.CubicSpline(new_t,min_wdep)
             for root in root_interp_water_level_at_edge.roots():
                 if root > np.min(new_t) and root < np.max(new_t) and min_wdep[[i for i, x in enumerate(list(new_t > root)) if x][0]] > water_depth_required:
-                    times_tidal_window.append([root, 'Stop'])
+                    times_vertical_tidal_window.append([root, 'Stop'])
                 elif root > np.min(new_t) and root < np.max(new_t) and min_wdep[[i for i, x in enumerate(list(new_t > root)) if x][0]] < water_depth_required:
-                    times_tidal_window.append([root, 'Start'])
+                    times_vertical_tidal_window.append([root, 'Start'])
+            return times_vertical_tidal_window
+
+        def times_horizontal_tidal_window(vessel):
+            network = vessel.env.FG
+            current_time = vessel.env.now
+            route = vessel.route
+            waiting_time = 0
+            time_edge_is_navigable = 0
+            max_cross_current_velocity = 2
+            times_horizontal_tidal_windows = []
+
+            for nodes in enumerate(route):
+                if nodes[0] == 0:
+                    continue
+                elif nodes[1] == route[-1]:
+                    continue
+                [cross_current,root_interp_cross_current_orig,new_t, cor_cross_current] = NetworkProperties.cross_current_calculator(vessel,max_cross_current_velocity,nodes[0])
+
+                if max_cross_current_velocity < cross_current:
+                    times_edge_is_navigable = root_interp_cross_current_orig.roots()
+                    times_horizontal_tidal_window = []
+                    for root in root_interp_cross_current_orig.roots():
+                        if root > np.min(new_t) and root < np.max(new_t) and cor_cross_current[[i for i, x in enumerate(list(new_t > root)) if x][0]] < 0:
+                            times_horizontal_tidal_window.append([root, 'Stop'])
+                        elif root > np.min(new_t) and root < np.max(new_t) and cor_cross_current[[i for i, x in enumerate(list(new_t > root)) if x][0]] > 0:
+                            times_horizontal_tidal_window.append([root, 'Start'])
+
+                    times_horizontal_tidal_windows.append(times_horizontal_tidal_window)
+
+            return times_horizontal_tidal_windows
+
+        def times_tidal_window(vessel,vertical_tidal_window,horizontal_tidal_window):
+            list_of_times_vertical_tidal_window = []
+            list_of_times_horizontal_tidal_windows = []
+
+            if vertical_tidal_window:
+                list_of_times_vertical_tidal_window = times_vertical_tidal_window(vessel)
+            if horizontal_tidal_window:
+                list_of_times_horizontal_tidal_windows = times_horizontal_tidal_window(vessel)
+            list_indexes = list(np.arange(0, len(list_of_times_horizontal_tidal_windows) + 1))
+            times_tidal_window = []
+            list_of_list_indexes = []
+
+            for time in list_of_times_vertical_tidal_window:
+                times_tidal_window.append(time)
+                list_of_list_indexes.append(0)
+            for index in range(len(list_indexes)-1):
+                for time in list_of_times_horizontal_tidal_windows[index]:
+                    times_tidal_window.append(time)
+                    list_of_list_indexes.append(index+1)
+                for time in list_of_times_horizontal_tidal_windows[index]:
+                    times_tidal_window.append(time)
+                    list_of_list_indexes.append(index+1)
+
+            list_of_list_indexes = [x for _, x in sorted(zip(times_tidal_window, list_of_list_indexes))]
+            times_tidal_window.sort()
+
+            indexes_to_be_removed = []
+            for list_index in list_indexes:
+                for time1 in range(len(times_tidal_window)):
+                    if times_tidal_window[time1][1] == 'Start' and list_of_list_indexes[time1] == list_index:
+                        for time2 in range(len(times_tidal_window)):
+                            if time2 > time1 and times_tidal_window[time2][1] == 'Stop' and list_of_list_indexes[time2] == list_index:
+                                indexes = np.arange(time1 + 1, time2, 1)
+                                for index in indexes:
+                                    indexes_to_be_removed.append(index)
+                                break
+
+            for list_index in list_indexes:
+                for time1 in range(len(times_tidal_window)):
+                    if times_tidal_window[time1][1] == 'Stop' and list_of_list_indexes[time1] == list_index:
+                        for time2 in range(len(times_tidal_window)):
+                            if time2 < time1 and times_tidal_window[time2][1] == 'Start' and list_of_list_indexes[time2] == list_index:
+                                break
+                        if time2 > time1:
+                            indexes = np.arange(0, time1, 1)
+                            for index in indexes:
+                                indexes_to_be_removed.append(index)
+
+            indexes_to_be_removed.sort()
+            indexes_to_be_removed = list(dict.fromkeys(indexes_to_be_removed))
+
+            for remove_index in list(reversed(indexes_to_be_removed)):
+                times_tidal_window.pop(remove_index)
+                list_of_list_indexes.pop(remove_index)
+
+            indexes_to_be_removed = []
+            for time in range(len(times_tidal_window)):
+                if time == 0:
+                    continue
+                elif times_tidal_window[time][1] == 'Stop' and times_tidal_window[time - 1][1] == 'Stop':
+                    indexes_to_be_removed.append(time - 1)
+                elif times_tidal_window[time][1] == 'Start' and times_tidal_window[time - 1][1] == 'Start':
+                    indexes_to_be_removed.append(time)
+
+            for remove_index in list(reversed(indexes_to_be_removed)):
+                times_tidal_window.pop(remove_index)
+                list_of_list_indexes.pop(remove_index)
 
             return times_tidal_window
 
@@ -473,10 +571,12 @@ class NetworkProperties:
                 max_waiting_time_in_anchorage = times_tidal_window[time - 1][0]
             return max_waiting_time_in_anchorage
 
-        times_tidal_window = times_tidal_window(vessel,new_t,min_wdep)
+        times_tidal_window = times_tidal_window(vessel,vertical_tidal_window,horizontal_tidal_window)
         for time in range(len(times_tidal_window)):
             if times_tidal_window[time][0] < max_waiting_time_in_anchorage(vessel, times_tidal_window):
                 available_sail_in_times.append(times_tidal_window[time])
+            else:
+                vessel.return_to_sea = True
 
         available_sail_in_times.insert(0, [vessel.waiting_time_start, 'Start'])
         available_sail_in_times.append([max_waiting_time_in_anchorage(vessel, times_tidal_window), 'Stop'])
@@ -501,126 +601,114 @@ class NetworkProperties:
                                                                     network.nodes[route[nodes[0]]]['geometry'].y)[2]
 
             t_wlev = network.edges[route[nodes[0] - 1], route[nodes[0]]]['Info']['Water level'][0]
+
             sailing_time_to_next_node = distance_to_next_node / vessel.v
             wlev_node1 = network.edges[route[0], route[1]]['Info']['Water level'][1][0]
             depth1 = network.edges[route[0], route[1]]['Info']['Depth'][0]
             wlev_node2 = network.edges[route[nodes[0] - 1], route[nodes[0]]]['Info']['Water level'][1][1]
             depth2 = network.edges[route[nodes[0] - 1], route[nodes[0]]]['Info']['Depth'][0]
+
             if np.max([np.max(wlev_node1) + depth1, np.max(wlev_node2) + depth2]) > max_wdep:
-                max_wdep = np.max([np.max(wlev_node1)+depth1, np.max(wlev_node2)+depth2])
+                max_wdep = np.max([np.max(wlev_node1) + depth1, np.max(wlev_node2) + depth2])
+
             interp_wdep_node1 = sc.interpolate.CubicSpline(t_wlev, [y + depth1 for y in wlev_node1])
             eta_next_node = [t - sailing_time_to_next_node for t in t_wlev]
             interp_wdep_node2 = sc.interpolate.CubicSpline(eta_next_node, [y + depth2 for y in wlev_node2])
+
             if eta_next_node[-1] - vessel.env.now >= 3000:
-                new_t[nodes[0] - 1] = np.arange(vessel.env.now, eta_next_node[-1], 300)  # vessel.env.now
+                new_t[nodes[0] - 1] = np.arange(vessel.env.now, eta_next_node[-1], 300)
             elif eta_next_node[-1] > vessel.env.now:
-                new_t[nodes[0] - 1] = np.linspace(vessel.env.now, eta_next_node[-1], 10)  # vessel.env.now
+                new_t[nodes[0] - 1] = np.linspace(vessel.env.now, eta_next_node[-1], 10)
             elif eta_next_node[-1] < vessel.env.now:
-                new_t[nodes[0] - 1] = np.linspace(eta_next_node[-1],vessel.env.now, 10)  # vessel.env.now
+                new_t[nodes[0] - 1] = np.linspace(eta_next_node[-1], vessel.env.now, 10)
             else:
-                new_t[nodes[0] - 1] = np.arange(eta_next_node[-1],vessel.env.now, 300)  # vessel.env.now
+                new_t[nodes[0] - 1] = np.arange(eta_next_node[-1], vessel.env.now, 300)
+
             for t in new_t[nodes[0] - 1]:
                 min_wdep[nodes[0] - 1].append(np.min([interp_wdep_node1(t), interp_wdep_node2(t)]))
 
-        time_minimum_water_depth = []
         minimum_water_depth = []
-        for t in range(len(new_t[nodes[0] - 1])):
+        time_minimum_water_depth = new_t[nodes[0] - 1]
+
+        for t in range(len(time_minimum_water_depth)):
             min_water_depth = max_wdep
             for edge in range(len(new_t)):
                 if min_wdep[edge][t] < min_water_depth:
                     min_water_depth = min_wdep[edge][t]
-            time_minimum_water_depth.append(new_t[edge][t])
             minimum_water_depth.append(min_water_depth)
 
         return time_minimum_water_depth, minimum_water_depth
 
-    def waiting_time_for_vertical_tidal_window(vessel,delay = 0):
+    def cross_current_calculator(vessel,max_cross_current_velocity,node_index):
         network = vessel.env.FG
-        current_time = vessel.env.now + delay
-        route = vessel.route
-        waiting_time = 0
-        time_edge_is_navigable = 0
-        time_minimum_water_depth, minimum_water_depth = NetworkProperties.minimum_water_per_edge_as_experienced_by_vessel(vessel)
-        water_depth_required = vessel.T_f + vessel.ukc
-        interp_water_level_at_edge = sc.interpolate.CubicSpline(time_minimum_water_depth, minimum_water_depth)
-        corrected_water_level = [y - water_depth_required for y in minimum_water_depth]
-        root_interp_water_level_at_edge = sc.interpolate.CubicSpline(time_minimum_water_depth,corrected_water_level)
-        water_depth_at_edge = interp_water_level_at_edge(current_time)
-        if water_depth_required > water_depth_at_edge:
-            times_edge_is_navigable = root_interp_water_level_at_edge.roots()
-            for t2 in times_edge_is_navigable:
-                if t2 >= current_time:
-                    time_edge_is_navigable = t2 - current_time
-                    break
+        node = vessel.route[node_index]
+        time_current_velocity_node = network.nodes[vessel.route[node_index]]['Info']['Current velocity'][0]
+        current_velocity_node = network.nodes[vessel.route[node_index]]['Info']['Current velocity'][1]
+        time_current_direction_node = network.nodes[vessel.route[node_index]]['Info']['Current direction'][0]
+        current_direction_node = network.nodes[vessel.route[node_index]]['Info']['Current direction'][1]
 
-        if time_edge_is_navigable > waiting_time:
-            waiting_time = time_edge_is_navigable
+        origin_lat = vessel.env.FG.nodes[vessel.route[node_index - 1]]['geometry'].x
+        origin_lon = vessel.env.FG.nodes[vessel.route[node_index - 1]]['geometry'].y
+        node_lat = vessel.env.FG.nodes[vessel.route[node_index]]['geometry'].x
+        node_lon = vessel.env.FG.nodes[vessel.route[node_index]]['geometry'].y
+        destination_lat = vessel.env.FG.nodes[vessel.route[node_index + 1]]['geometry'].x
+        destination_lon = vessel.env.FG.nodes[vessel.route[node_index + 1]]['geometry'].y
 
-        return [waiting_time,root_interp_water_level_at_edge]
+        course, _, _ = pyproj.Geod(ellps="WGS84").inv(origin_lat, origin_lon, node_lat, node_lon)
+        if course < 0:
+            course = 360 + course
+        heading, _, _ = pyproj.Geod(ellps="WGS84").inv(node_lat, node_lon, destination_lat, destination_lon)
+        if heading < 0:
+            heading = 360 + heading
 
-    def waiting_time_for_horizontal_tidal_window(vessel,delay=0):
-        network = vessel.env.FG
-        current_time = vessel.env.now + delay
-        route = vessel.route
-        waiting_time = 0
-        time_edge_is_navigable = 0
-        max_cross_current_velocity = 0.5
-        for nodes in enumerate(route):
-            if nodes[0] == 0:
+        distance_to_node = 0
+        for n in range(len(vessel.route)):
+            if n == 0:
                 continue
-            elif nodes[1] == route[-1]:
-                continue
+            elif vessel.route[n] == node:
+                break
+            distance_to_node += pyproj.Geod(ellps='WGS84').inv(network.nodes[vessel.route[n - 1]]['geometry'].x,
+                                                               network.nodes[vessel.route[n - 1]]['geometry'].y,
+                                                               network.nodes[vessel.route[n]]['geometry'].x,
+                                                               network.nodes[vessel.route[n]]['geometry'].y)[2]
 
-            time_current_velocity_origin = network.nodes[vessel.route[nodes[0]]]['Info']['Current velocity'][0]
-            current_velocity_origin = network.nodes[vessel.route[nodes[0]]]['Info']['Current velocity'][1]
-            time_current_direction_origin = network.nodes[vessel.route[nodes[0]]]['Info']['Current direction'][0]
-            current_direction_origin = network.nodes[vessel.route[nodes[0]]]['Info']['Current direction'][1]
+        sailing_time = distance_to_node / vessel.v
+        interp_current_velocity_orig = sc.interpolate.CubicSpline(time_current_velocity_node, current_velocity_node)
+        interp_current_direction_orig = sc.interpolate.interp1d(time_current_direction_node, current_direction_node)
+        corrected_cross_current = [y - max_cross_current_velocity for y in abs(interp_current_velocity_orig(time_current_velocity_node) * np.sin((interp_current_direction_orig(time_current_velocity_node) - course) / 180 * math.pi) -
+                                                                               interp_current_velocity_orig(time_current_velocity_node) * np.sin((interp_current_direction_orig(time_current_velocity_node) - heading) / 180 * math.pi))]
 
-            origin_lat = vessel.env.FG.nodes[vessel.route[nodes[0] - 1]]['geometry'].x
-            origin_lon = vessel.env.FG.nodes[vessel.route[nodes[0] - 1]]['geometry'].y
-            node_lat = vessel.env.FG.nodes[vessel.route[nodes[0]]]['geometry'].x
-            node_lon = vessel.env.FG.nodes[vessel.route[nodes[0]]]['geometry'].y
-            destination_lat = vessel.env.FG.nodes[vessel.route[nodes[0] + 1]]['geometry'].x
-            destination_lon = vessel.env.FG.nodes[vessel.route[nodes[0] + 1]]['geometry'].y
+        time_corrected_cross_current = [t - sailing_time for t in time_current_velocity_node]
+        interpolated_corrected_cross_current_signal = sc.interpolate.CubicSpline(time_corrected_cross_current,corrected_cross_current)
 
-            course, _, _ = pyproj.Geod(ellps="WGS84").inv(origin_lat, origin_lon, node_lat, node_lon)
-            if course < 0:
-                course = 360 + course
-            heading, _, _ = pyproj.Geod(ellps="WGS84").inv(node_lat, node_lon, destination_lat, destination_lon)
-            if heading < 0:
-                heading = 360 + heading
+        new_t = [t - sailing_time for t in time_current_velocity_node]
 
-            distance_to_node = 0
-            for n in range(len(route)):
-                if n == 0:
-                    continue
-                elif route[n] == nodes[1]:
-                    break
-                distance_to_node += pyproj.Geod(ellps='WGS84').inv(network.nodes[route[n - 1]]['geometry'].x,
-                                                                   network.nodes[route[n - 1]]['geometry'].y,
-                                                                   network.nodes[route[n]]['geometry'].x,
-                                                                   network.nodes[route[n]]['geometry'].y)[2]
+        if vessel.env.now+sailing_time < time_current_velocity_node[-1]:
+            actual_cross_current = abs(interp_current_velocity_orig(vessel.env.now+sailing_time) * np.sin((interp_current_direction_orig(vessel.env.now+sailing_time) - course) / 180 * math.pi) -
+                                       interp_current_velocity_orig(vessel.env.now+sailing_time) * np.sin((interp_current_direction_orig(vessel.env.now+sailing_time) - heading) / 180 * math.pi))
+        else:
+            actual_cross_current = 0
 
-            sailing_time = distance_to_node / vessel.v
-            interp_current_velocity_orig = sc.interpolate.CubicSpline(time_current_velocity_origin,current_velocity_origin)
-            interp_current_direction_orig = sc.interpolate.interp1d(time_current_direction_origin,current_direction_origin)
-            corrected_cross_current = [y - max_cross_current_velocity for y in abs(interp_current_velocity_orig(time_current_velocity_origin) * np.sin((interp_current_direction_orig(time_current_velocity_origin) - course) / 180 * math.pi) -
-                                                                                   interp_current_velocity_orig(time_current_velocity_origin) * np.sin((interp_current_direction_orig(time_current_velocity_origin) - heading) / 180 * math.pi))]
-            time_corrected_cross_current = [t - sailing_time for t in time_current_velocity_origin]
-            root_interp_cross_current_orig = sc.interpolate.CubicSpline(time_corrected_cross_current,corrected_cross_current)
+        return [actual_cross_current, interpolated_corrected_cross_current_signal, new_t, corrected_cross_current]
 
-            cross_current = abs(interp_current_velocity_orig(current_time) * np.sin((interp_current_direction_orig(current_time) - course) / 180 * math.pi) -
-                                interp_current_velocity_orig(current_time) * np.sin((interp_current_direction_orig(current_time) - heading) / 180 * math.pi))
+    def waiting_time_for_tidal_window(vessel,vertical_tidal_window,horizontal_tidal_window = True):
+        waiting_time_vertical_tidal_window = 0
+        waiting_time_horizontal_tidal_window = 0
 
-            if max_cross_current_velocity < cross_current:
-                times_edge_is_navigable = root_interp_cross_current_orig.roots()
-                times_vert_tidal_window = []
-                for root in root_interp_cross_current_orig.roots():
-                    if root > np.min(time_corrected_cross_current) and root < np.max(time_corrected_cross_current) and corrected_cross_current[[i for i, x in enumerate(list(time_corrected_cross_current > root)) if x][0]] < 0:
-                        times_vert_tidal_window.append([root, 'Stop'])
-                    elif root > np.min(time_corrected_cross_current) and root < np.max(time_corrected_cross_current) and corrected_cross_current[[i for i, x in enumerate(list(time_corrected_cross_current > root)) if x][0]] > 0:
-                        times_vert_tidal_window.append([root, 'Start'])
-
+        def waiting_time_for_vertical_tidal_window(vessel):
+            network = vessel.env.FG
+            current_time = vessel.env.now
+            route = vessel.route
+            waiting_time = 0
+            time_edge_is_navigable = 0
+            time_minimum_water_depth, minimum_water_depth = NetworkProperties.minimum_water_per_edge_as_experienced_by_vessel(vessel)
+            water_depth_required = vessel.T_f + vessel.ukc
+            interp_water_level_at_edge = sc.interpolate.CubicSpline(time_minimum_water_depth, minimum_water_depth)
+            corrected_water_level = [y - water_depth_required for y in minimum_water_depth]
+            root_interp_water_level_at_edge = sc.interpolate.CubicSpline(time_minimum_water_depth,corrected_water_level)
+            water_depth_at_edge = interp_water_level_at_edge(current_time)
+            if water_depth_required > water_depth_at_edge:
+                times_edge_is_navigable = root_interp_water_level_at_edge.roots()
                 for t2 in times_edge_is_navigable:
                     if t2 >= current_time:
                         time_edge_is_navigable = t2 - current_time
@@ -629,7 +717,44 @@ class NetworkProperties:
             if time_edge_is_navigable > waiting_time:
                 waiting_time = time_edge_is_navigable
 
-        return [waiting_time, root_interp_cross_current_orig]
+            return waiting_time
+
+        def waiting_time_for_horizontal_tidal_window(vessel):
+            network = vessel.env.FG
+            current_time = vessel.env.now
+            route = vessel.route
+            waiting_time = 0
+            time_edge_is_navigable = 0
+            max_cross_current_velocity = 2
+
+            for nodes in enumerate(route):
+                if nodes[0] == 0:
+                    continue
+                elif nodes[1] == route[-1]:
+                    continue
+
+                [cross_current,root_interp_cross_current_orig,_,_] = NetworkProperties.cross_current_calculator(vessel,max_cross_current_velocity,nodes[0])
+
+                if max_cross_current_velocity < cross_current:
+                    times_edge_is_navigable = root_interp_cross_current_orig.roots()
+                    for t2 in times_edge_is_navigable:
+                        if t2 >= current_time:
+                            time_edge_is_navigable = t2 - current_time
+                            break
+
+                if time_edge_is_navigable > waiting_time:
+                    waiting_time = time_edge_is_navigable
+
+            return waiting_time
+
+        if vertical_tidal_window:
+            waiting_time_vertical_tidal_window = waiting_time_for_vertical_tidal_window(vessel)
+        #if horizontal_tidal_window:
+        #    waiting_time_horizontal_tidal_window = waiting_time_for_horizontal_tidal_window(vessel)
+
+        waiting_time = np.max([waiting_time_vertical_tidal_window,waiting_time_horizontal_tidal_window])
+
+        return waiting_time
 
 class Routeable:
     """Mixin class: Something with a route (networkx format)
@@ -901,6 +1026,7 @@ class PassTerminal():
     def move_to_anchorage(vessel,node):
         network = vessel.env.FG
         vessel.waiting_in_anchorage = True
+        vessel.return_to_sea = False
         nodes_of_anchorages = []
         capacity_of_anchorages = []
         users_of_anchorages = []
@@ -925,19 +1051,32 @@ class PassTerminal():
         sorted_nodes_anchorages = [nodes for (distances,nodes) in sorted(zip(sailing_distances_from_anchorages, nodes_of_anchorages))]
         sorted_users_of_anchorages = [nodes for (distances,nodes) in sorted(zip(sailing_distances_from_anchorages, users_of_anchorages))]
         sorted_capacity_of_anchorages = [nodes for (distances,nodes) in sorted(zip(sailing_distances_from_anchorages, capacity_of_anchorages))]
-        for node_anchorage in enumerate(sorted_nodes_anchorages):
-            if sorted_users_of_anchorages[node_anchorage[0]] < sorted_capacity_of_anchorages[node_anchorage[0]]:
-                node_anchorage = node_anchorage[1]
+
+        for node_anchorage_area in enumerate(sorted_nodes_anchorages):
+            if sorted_users_of_anchorages[node_anchorage_area[0]] < sorted_capacity_of_anchorages[node_anchorage_area[0]]:
+                node_anchorage = node_anchorage_area[1]
                 break
+
+        if node_anchorage != node_anchorage_area[1]:
+            print(node_anchorage,node_anchorage_area[1])
+            vessel.return_to_sea = True
+
         anchorage = network.nodes[node_anchorage]['Anchorage'][0]
         vessel.route_after_anchorage = []
-        vessel.true_origin = vessel.route[0]
-        current_time = vessel.env.now
-        vessel.route_after_anchorage = nx.dijkstra_path(vessel.env.FG, node_anchorage, vessel.route[-1])
-        yield from Movable.pass_edge(vessel,vessel.route[node], vessel.route[node+1])
-        vessel.route = nx.dijkstra_path(vessel.env.FG, vessel.route[node+1], node_anchorage)
-        vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[node]]
-        vessel.env.process(vessel.move())
+        if not vessel.return_to_sea:
+            vessel.true_origin = vessel.route[0]
+            current_time = vessel.env.now
+            vessel.route_after_anchorage = nx.dijkstra_path(vessel.env.FG, node_anchorage, vessel.route[-1])
+            yield from Movable.pass_edge(vessel,vessel.route[node], vessel.route[node+1])
+            vessel.route = nx.dijkstra_path(vessel.env.FG, vessel.route[node+1], node_anchorage)
+            vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[node]]
+            vessel.env.process(vessel.move())
+        else:
+            yield from Movable.pass_edge(vessel, vessel.route[node], vessel.route[node + 1])
+            vessel.route = nx.dijkstra_path(vessel.env.FG, vessel.route[node + 1], vessel.route[node])
+            vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[node]]
+            vessel.env.process(vessel.move())
+
         return
 
     def pass_anchorage(vessel,node):
@@ -971,7 +1110,9 @@ class PassTerminal():
                 terminal.release(vessel.waiting_time_in_anchorage)
                 yield vessel.access_terminal
 
-            vessel.available_sail_in_times = NetworkProperties.calculate_available_sail_in_times(vessel)
+            vessel.route = vessel.route_after_anchorage
+            vessel.available_sail_in_times = NetworkProperties.calculate_available_sail_in_times(vessel,True,False)
+
             for t in range(len(vessel.available_sail_in_times)):
                 if vessel.available_sail_in_times[t][1] == 'Start':
                     continue
@@ -1082,16 +1223,14 @@ class PassTerminal():
                 if nodes[1] == vessel.route[node]:
                     continue
 
-                required_water_depth = vessel.T_f
+                required_water_depth = vessel.T_f + vessel.ukc
                 minimum_water_depth = (np.min(vessel.env.FG.edges[vessel.route[node + nodes[0] - 1],
                                                                   vessel.route[node + nodes[0]]]['Info']['Water level'][1]) +
                                        vessel.env.FG.edges[vessel.route[node + nodes[0] - 1],
                                                            vessel.route[node + nodes[0]]]['Info']['Depth'][0])
+                vessel.waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel,required_water_depth > minimum_water_depth)
                 if required_water_depth > minimum_water_depth:
-                    vessel.waiting_time = NetworkProperties.waiting_time_for_vertical_tidal_window(vessel)[0]
                     break
-                else:
-                    vessel.waiting_time = NetworkProperties.waiting_time_for_horizontal_tidal_window(vessel)[0]
 
         if terminal.type == 'jetty':
             minimum_waiting_time = []
@@ -1230,16 +1369,14 @@ class PassTerminal():
                                           vessel.env.FG.edges[vessel.route[nodes[0] - 1],
                                                               vessel.route[nodes[0]]]['Info']['Depth'][0])
 
-            if required_water_depth > minimum_water_depth:
-                vessel.waiting_time = NetworkProperties.waiting_time_for_vertical_tidal_window(vessel)[0]
-                if vessel.waiting_time:
+            vessel.waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel,required_water_depth > minimum_water_depth)
+            if vessel.waiting_time:
+                vessel.log_entry("Waiting for tidal window start", vessel.env.now, 0,
+                                 shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
+                yield vessel.env.timeout(vessel.waiting_time)
 
-                    vessel.log_entry("Waiting for tidal window start", vessel.env.now, 0,
-                                     shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
-                    yield vessel.env.timeout(vessel.waiting_time)
-
-                    vessel.log_entry("Waiting for tidal window stop", vessel.env.now, vessel.waiting_time,
-                                     shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
+                vessel.log_entry("Waiting for tidal window stop", vessel.env.now, vessel.waiting_time,
+                                 shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
                 break
 
         # Deberthing
