@@ -212,7 +212,6 @@ class VesselProperties:
 
         self.T_e = T_e
         self.T_f = T_f
-        self.ukc = 0.5 #0.1*self.T_f
 
     @property
     def H(self):
@@ -420,7 +419,7 @@ class NetworkProperties:
                     network.nodes[node[1]]['Info']['Water level'][0].append(eta[1][node[0]][0][t])
                     network.nodes[node[1]]['Info']['Water level'][1].append(eta[1][node[0]][1][t])
             if (vmag[0][node[0]].x,vmag[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
-                for t in range(len(eta[1][node[0]][0])):
+                for t in range(len(vmag[1][node[0]][0])):
                     network.nodes[node[1]]['Info']['Current velocity'][0].append(vmag[1][node[0]][0][t])
                     network.nodes[node[1]]['Info']['Current velocity'][1].append(vmag[1][node[0]][1][t])
             if (vdir[0][node[0]].x,vdir[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
@@ -448,11 +447,11 @@ class NetworkProperties:
     def calculate_available_sail_in_times(vessel,vertical_tidal_window,horizontal_tidal_window):
         available_sail_in_times = []
         vessel.waiting_time_start = vessel.env.now
-        vessel.max_waiting_time = vessel.waiting_time_start + 24 * 60 * 60
+        vessel.max_waiting_time = vessel.waiting_time_start + vessel.metadata['max_waiting_time']
 
         def times_vertical_tidal_window(vessel):
             times_vertical_tidal_window = []
-            water_depth_required = vessel.T_f + vessel.ukc
+            water_depth_required = vessel.T_f + vessel.metadata['ukc']
             [new_t, min_wdep] = NetworkProperties.minimum_water_per_edge_as_experienced_by_vessel(vessel)
             root_interp_water_level_at_edge = sc.interpolate.CubicSpline(new_t,min_wdep)
             for root in root_interp_water_level_at_edge.roots():
@@ -476,7 +475,7 @@ class NetworkProperties:
                     continue
                 elif nodes[1] == route[-1]:
                     continue
-                [cross_current,root_interp_cross_current_orig,new_t, cor_cross_current] = NetworkProperties.cross_current_calculator(vessel,max_cross_current_velocity,nodes[0])
+                [cross_current,root_interp_cross_current_orig,new_t, cor_cross_current,_] = NetworkProperties.cross_current_calculator(vessel,max_cross_current_velocity,nodes[0])
 
                 if max_cross_current_velocity < cross_current:
                     times_edge_is_navigable = root_interp_cross_current_orig.roots()
@@ -675,8 +674,9 @@ class NetworkProperties:
         sailing_time = distance_to_node / vessel.v
         interp_current_velocity_orig = sc.interpolate.CubicSpline(time_current_velocity_node, current_velocity_node)
         interp_current_direction_orig = sc.interpolate.interp1d(time_current_direction_node, current_direction_node)
-        corrected_cross_current = [y - max_cross_current_velocity for y in abs(interp_current_velocity_orig(time_current_velocity_node) * np.sin((interp_current_direction_orig(time_current_velocity_node) - course) / 180 * math.pi) -
-                                                                               interp_current_velocity_orig(time_current_velocity_node) * np.sin((interp_current_direction_orig(time_current_velocity_node) - heading) / 180 * math.pi))]
+        cross_current = abs(interp_current_velocity_orig(time_current_velocity_node) * np.sin((interp_current_direction_orig(time_current_velocity_node) - course) / 180 * math.pi) -
+                            interp_current_velocity_orig(time_current_velocity_node) * np.sin((interp_current_direction_orig(time_current_velocity_node) - heading) / 180 * math.pi))
+        corrected_cross_current = [y - max_cross_current_velocity for y in cross_current]
 
         time_corrected_cross_current = [t - sailing_time for t in time_current_velocity_node]
         interpolated_corrected_cross_current_signal = sc.interpolate.CubicSpline(time_corrected_cross_current,corrected_cross_current)
@@ -689,11 +689,13 @@ class NetworkProperties:
         else:
             actual_cross_current = 0
 
-        return [actual_cross_current, interpolated_corrected_cross_current_signal, new_t, corrected_cross_current]
+        return [actual_cross_current, interpolated_corrected_cross_current_signal, new_t, corrected_cross_current,cross_current]
 
     def waiting_time_for_tidal_window(vessel,vertical_tidal_window,horizontal_tidal_window = True):
         waiting_time_vertical_tidal_window = 0
         waiting_time_horizontal_tidal_window = 0
+        vessel.waiting_time_start = vessel.env.now
+        vessel.max_waiting_time = vessel.waiting_time_start + vessel.metadata['max_waiting_time']
 
         def waiting_time_for_vertical_tidal_window(vessel):
             network = vessel.env.FG
@@ -702,7 +704,7 @@ class NetworkProperties:
             waiting_time = 0
             time_edge_is_navigable = 0
             time_minimum_water_depth, minimum_water_depth = NetworkProperties.minimum_water_per_edge_as_experienced_by_vessel(vessel)
-            water_depth_required = vessel.T_f + vessel.ukc
+            water_depth_required = vessel.T_f + vessel.metadata['ukc']
             interp_water_level_at_edge = sc.interpolate.CubicSpline(time_minimum_water_depth, minimum_water_depth)
             corrected_water_level = [y - water_depth_required for y in minimum_water_depth]
             root_interp_water_level_at_edge = sc.interpolate.CubicSpline(time_minimum_water_depth,corrected_water_level)
@@ -716,6 +718,9 @@ class NetworkProperties:
 
             if time_edge_is_navigable > waiting_time:
                 waiting_time = time_edge_is_navigable
+
+            if water_depth_required > np.max(minimum_water_depth):
+                waiting_time = vessel.max_waiting_time
 
             return waiting_time
 
@@ -733,7 +738,7 @@ class NetworkProperties:
                 elif nodes[1] == route[-1]:
                     continue
 
-                [cross_current,root_interp_cross_current_orig,_,_] = NetworkProperties.cross_current_calculator(vessel,max_cross_current_velocity,nodes[0])
+                [cross_current,root_interp_cross_current_orig,_,_,cross_current_signal] = NetworkProperties.cross_current_calculator(vessel,max_cross_current_velocity,nodes[0])
 
                 if max_cross_current_velocity < cross_current:
                     times_edge_is_navigable = root_interp_cross_current_orig.roots()
@@ -744,6 +749,9 @@ class NetworkProperties:
 
                 if time_edge_is_navigable > waiting_time:
                     waiting_time = time_edge_is_navigable
+
+                if max_cross_current_velocity > np.min(cross_current_signal):
+                    waiting_time = vessel.max_waiting_time
 
             return waiting_time
 
@@ -969,11 +977,11 @@ class PassSection():
                             for section in enumerate(junction.section):
                                 if node not in list(section[1].keys()):
                                     continue
-                                junction.access2[section[0]][node].release(vessel.request_access_entrance_section)
-                                junction.access1[section[0]][origin].release(vessel.request_access_exit_section)
+                                junction.access2[0][node].release(vessel.request_access_entrance_section) #section[0]
+                                junction.access1[0][origin].release(vessel.request_access_exit_section) #section[0]
                         else:
-                            junction.access1[section[0]][node].release(vessel.request_access_entrance_section)
-                            junction.access2[section[0]][origin].release(vessel.request_access_exit_section)
+                            junction.access1[0][node].release(vessel.request_access_entrance_section) #section[0]
+                            junction.access2[0][origin].release(vessel.request_access_exit_section) #section[0]
                         break
                 break
         return
@@ -999,25 +1007,25 @@ class PassSection():
 
                     if junction.type[section[0]] == 'one-way_traffic':
                         if 'access1' not in dir(junction):
-                            junction = vessel.env.FG.nodes[destination]['Junction'][0]
+                            junction = vessel.env.FG.nodes[node]['Junction'][0]
                             for section in enumerate(junction.section):
                                 if origin not in list(section[1].keys()):
                                     continue
 
-                                vessel.request_access_entrance_section = junction.access2[section[0]][origin].request()
-                                junction.access2[section[0]][origin].users[-1].id = vessel.id
+                                vessel.request_access_entrance_section = junction.access2[0][origin].request() #section[0]
+                                junction.access2[0][origin].users[-1].id = vessel.id #section[0]
                                 #yield vessel.request_access_entrance_section
-                                vessel.request_access_exit_section = junction.access1[section[0]][node].request()
+                                vessel.request_access_exit_section = junction.access1[0][node].request() #section[0]
                                 #yield vessel.request_access_exit_section
-                                junction.access1[section[0]][node].users[-1].id = vessel.id
+                                junction.access1[0][node].users[-1].id = vessel.id #section[0]
 
                         else:
-                            vessel.request_access_entrance_section = junction.access1[section[0]][origin].request()
-                            junction.access1[section[0]][origin].users[-1].id = vessel.id
+                            vessel.request_access_entrance_section = junction.access1[0][origin].request() #section[0]
+                            junction.access1[0][origin].users[-1].id = vessel.id #section[0]
                             #yield vessel.request_access_entrance_section
-                            vessel.request_access_exit_section = junction.access2[section[0]][node].request()
+                            vessel.request_access_exit_section = junction.access2[0][node].request() #section[0]
                             #yield vessel.request_access_exit_section
-                            junction.access2[section[0]][node].users[-1].id = vessel.id
+                            junction.access2[0][node].users[-1].id = vessel.id #section[0]
                         break
                 break
         return
@@ -1058,7 +1066,6 @@ class PassTerminal():
                 break
 
         if node_anchorage != node_anchorage_area[1]:
-            print(node_anchorage,node_anchorage_area[1])
             vessel.return_to_sea = True
 
         anchorage = network.nodes[node_anchorage]['Anchorage'][0]
@@ -1113,6 +1120,7 @@ class PassTerminal():
             vessel.route = vessel.route_after_anchorage
             vessel.available_sail_in_times = NetworkProperties.calculate_available_sail_in_times(vessel,True,False)
 
+            #if not vessel.return_to_sea:
             for t in range(len(vessel.available_sail_in_times)):
                 if vessel.available_sail_in_times[t][1] == 'Start':
                     continue
@@ -1142,6 +1150,7 @@ class PassTerminal():
         elif vessel.waiting_time:
             yield vessel.env.timeout(vessel.waiting_time)
 
+        #if not vessel.return_to_sea:
         vessel.log_entry("Waiting in anchorage stop", vessel.env.now, vessel.env.now-current_time,
                          nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], )
         vessel.route = vessel.route_after_anchorage
@@ -1154,6 +1163,8 @@ class PassTerminal():
 
         anchorage.log_entry("Vessel departure", vessel.env.now, len(anchorage.anchorage_area[node].users),
                             nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], )
+        # else:
+        #    pass
 
     def pick_minimum_length(vessel, terminal):
         available_quay_lengths = [0]
@@ -1223,7 +1234,7 @@ class PassTerminal():
                 if nodes[1] == vessel.route[node]:
                     continue
 
-                required_water_depth = vessel.T_f + vessel.ukc
+                required_water_depth = vessel.T_f + vessel.metadata['ukc']
                 minimum_water_depth = (np.min(vessel.env.FG.edges[vessel.route[node + nodes[0] - 1],
                                                                   vessel.route[node + nodes[0]]]['Info']['Water level'][1]) +
                                        vessel.env.FG.edges[vessel.route[node + nodes[0] - 1],
@@ -1327,28 +1338,28 @@ class PassTerminal():
         vessel.log_entry("Berthing start", vessel.env.now, 0,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
         yield vessel.env.timeout(30 * 60)
-        vessel.log_entry("Berthing stop", vessel.env.now, 30 * 60,
+        vessel.log_entry("Berthing stop", vessel.env.now, vessel.metadata['t_b']*60,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
 
-        for section in enumerate(vessel.env.FG.nodes[edge[0]]['Junction'][0].section):
+        for section in enumerate(vessel.env.FG.nodes[edge[1]]['Junction'][0].section):
             if list(section[1].keys())[0] == edge[1]:
                 break
 
-        if 'Junction' in vessel.env.FG.nodes[edge[0]].keys():
+        if 'Junction' in vessel.env.FG.nodes[edge[1]].keys():
             PassSection.release_access_previous_section(vessel, edge[1])
 
         # Unloading
         vessel.log_entry("Unloading start", vessel.env.now, 0,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
         yield vessel.env.timeout(4 * 3600)
-        vessel.log_entry("Unloading stop", vessel.env.now, 4 * 3600,
+        vessel.log_entry("Unloading stop", vessel.env.now, vessel.metadata['t_l']*60/2,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
 
         # Loading
         vessel.log_entry("Loading start", vessel.env.now, 0,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
         yield vessel.env.timeout(4 * 3600)
-        vessel.log_entry("Loading stop", vessel.env.now, 4 * 3600,
+        vessel.log_entry("Loading stop", vessel.env.now, vessel.metadata['t_l']*60/2,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
 
         # New Route
@@ -1380,11 +1391,11 @@ class PassTerminal():
                 break
 
         # Deberthing
-        for section in enumerate(vessel.env.FG.nodes[edge[0]]['Junction'][0].section):
+        for section in enumerate(vessel.env.FG.nodes[edge[1]]['Junction'][0].section):
             if list(section[1].keys())[0] == edge[1]:
                 break
 
-        if 'Junction' in vessel.env.FG.nodes[edge[0]].keys():
+        if 'Junction' in vessel.env.FG.nodes[edge[1]].keys():
             yield from PassSection.request_access_next_section(vessel, edge[1], edge[0])
 
         if 'Turning Basin' in vessel.env.FG.nodes[edge[0]].keys():
@@ -1395,7 +1406,7 @@ class PassTerminal():
         vessel.log_entry("Deberthing start", vessel.env.now, 0,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
         yield vessel.env.timeout(10 * 60)
-        vessel.log_entry("Deberthing stop", vessel.env.now, 10 * 60,
+        vessel.log_entry("Deberthing stop", vessel.env.now, vessel.metadata['t_b']*60,
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
 
         yield from Movable.pass_edge(vessel, edge[1], edge[0])
