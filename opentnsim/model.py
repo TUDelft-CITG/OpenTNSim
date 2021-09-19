@@ -36,7 +36,6 @@ class VesselGenerator:
         self.vessel_type = vessel_type
         self.vessel_database = vessel_database
         self.loaded = loaded
-
         random.seed(random_seed)
 
     def generate(self, environment, vessel_name, scenario=None):
@@ -66,10 +65,9 @@ class VesselGenerator:
                 vessel_data["level"] = vessel_data["capacity"]
             else:
                 vessel_data["level"] = 0
-
         vessel_data["route"] = None
         vessel_data["geometry"] = None
-
+        self.vessel_type(**vessel_data)
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
@@ -137,7 +135,6 @@ class VesselGenerator:
             vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
                 vessel.route[0]
             ]
-            
             environment.vessels.append(vessel)
             # Move on path
             environment.process(vessel.move())
