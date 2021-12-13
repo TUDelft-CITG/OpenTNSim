@@ -9,3 +9,5 @@ ADD . /OpenTNSim
 
 # Install the application
 RUN pip install -e .
+# and the testing dependencies
+RUN pip install -e .[testing]
