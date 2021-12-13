@@ -47,7 +47,8 @@ tests_require = [
     "pytest",
     "pytest-cov",
     "pytest-timeout",
-    "pytest-datadir"
+    "pytest-datadir",
+    "nbmake"
 ]
 
 with open("README.md", "r") as des:
