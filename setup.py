@@ -51,7 +51,8 @@ tests_require = [
     "nbmake",
     # extra dpendencies used by nontebooks
     "pyyaml",
-    "openpyxl"
+    "openpyxl",
+    "folium"
 ]
 
 with open("README.md", "r") as des:
