@@ -50,7 +50,7 @@ tests_require = [
     "pytest-datadir",
     "nbmake",
     # extra dpendencies used by nontebooks
-    "yaml",
+    "pyyaml",
     "openpyxl"
 ]
 
