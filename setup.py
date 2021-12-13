@@ -36,7 +36,7 @@ requires = [
     "Flask>=1.0",
     "Flask-cors",
     "sphinx_rtd_theme",
-    "Dill",
+    "Dill"
 ]
 
 setup_requirements = [
@@ -48,7 +48,10 @@ tests_require = [
     "pytest-cov",
     "pytest-timeout",
     "pytest-datadir",
-    "nbmake"
+    "nbmake",
+    # extra dpendencies used by nontebooks
+    "yaml",
+    "openpyxl"
 ]
 
 with open("README.md", "r") as des:

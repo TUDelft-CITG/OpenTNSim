@@ -2,7 +2,7 @@
 FROM continuumio/miniconda3
 
 # Install conda stuff first
-RUN conda install nomkl pyproj
+RUN conda install nomkl pyproj gdal
 
 WORKDIR /OpenTNSim
 ADD . /OpenTNSim
