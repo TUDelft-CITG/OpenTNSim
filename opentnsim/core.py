@@ -4,6 +4,7 @@
 import json
 import logging
 import uuid
+import pathlib
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -22,6 +23,9 @@ import shapely.geometry
 import datetime, time
 
 logger = logging.getLogger(__name__)
+
+data_dir = pathlib.Path(__file__).parent.parent / 'data'
+correctionfactors_path = data_dir / 'Correctionfactors.csv'
 
 
 class SimpyObject:
@@ -249,8 +253,12 @@ class VesselProperties:
         self.T_f = T_f
         self.H_e = H_e
         self.H_f = H_f
-        # TODO: check if this is always the correct implementation
-        self.T, payload = self.calculate_actual_T_and_payload(self.H_e)
+        # TODO: this needs to be passed in or defined
+#         if T:
+#             self.T= T
+#         else:
+#             self.T = calculate_actual_T_and_payload()
+
 
 
     @property
@@ -560,7 +568,7 @@ class ConsumesEnergy:
         self.c_year = self.year - self.age
 
         print('The construction year of the engine is', self.c_year)
-        return self.c_year
+        return c_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
@@ -953,9 +961,8 @@ class ConsumesEnergy:
         self.calculate_total_power_required()  # You need the P_partial values
 
         # Import the correction factors table
-        # TODO: don't read data from a random place...
-        # Replace by package data
-        self.corf = pd.read_excel(r'Correctionfactors.xlsx')
+        # TODO: use package data, not an arbitrary location
+        self.corf = pd.read_csv(correctionfactors_path)
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
