@@ -953,6 +953,8 @@ class ConsumesEnergy:
         self.calculate_total_power_required()  # You need the P_partial values
 
         # Import the correction factors table
+        # TODO: don't read data from a random place...
+        # Replace by package data
         self.corf = pd.read_excel(r'Correctionfactors.xlsx')
 
         for i in range(20):
