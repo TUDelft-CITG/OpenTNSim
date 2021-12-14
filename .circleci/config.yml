@@ -22,7 +22,7 @@ jobs:
       - run:
           name: Test notebooks
           command: |
-            docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup"
+            docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup ./notebooks/students"
 
       - run:
           name: Build docs
