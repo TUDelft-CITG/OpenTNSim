@@ -24,6 +24,7 @@ import datetime, time
 
 logger = logging.getLogger(__name__)
 
+# Can't get this  to work with pkg_resourcs
 data_dir = pathlib.Path(__file__).parent.parent / 'data'
 correctionfactors_path = data_dir / 'Correctionfactors.csv'
 
