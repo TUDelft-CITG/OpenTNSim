@@ -52,7 +52,8 @@ tests_require = [
     # extra dpendencies used by nontebooks
     "pyyaml",
     "openpyxl",
-    "folium"
+    "folium",
+    "colorcet"
 ]
 
 with open("README.md", "r") as des:
