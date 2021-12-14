@@ -77,10 +77,6 @@ def test_basic_simulation():
                        "v": 4,
                        "type": 'CEMT - Va',
                        "B": 10,
-                       "H_e": 7.10,
-                       "H_f": 5.40,
-                       "T_e": 1.8,
-                       "T_f": 3.5,
                        "L": 155.0}
 
     env.FG = FG
