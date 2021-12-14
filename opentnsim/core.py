@@ -24,9 +24,6 @@ import datetime, time
 
 logger = logging.getLogger(__name__)
 
-# Can't get this  to work with pkg_resourcs
-data_dir = pathlib.Path(__file__).parent.parent / 'data'
-correctionfactors_path = data_dir / 'Correctionfactors.csv'
 
 
 class SimpyObject:
@@ -963,7 +960,7 @@ class ConsumesEnergy:
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
-        self.corf = pd.read_csv(correctionfactors_path)
+        self.corf = opentnsim.energy.correction_factors()
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
