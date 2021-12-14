@@ -5,6 +5,8 @@ import json
 import logging
 import uuid
 import pathlib
+import datetime
+import time
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -20,7 +22,8 @@ import pyproj
 import shapely.geometry
 
 # additional packages
-import datetime, time
+
+import opentnsim.energy
 
 logger = logging.getLogger(__name__)
 
@@ -223,9 +226,8 @@ class VesselProperties:
     type: can contain info on vessel type (avv class, cemt_class or other)
     B: vessel width
     L: vessel length
-    H_e: vessel height unloaded
-    H_f: vessel height loaded
-    T:actual draft
+    h_min: vessel minimum water depth
+    T: actual draft
     Add information on possible restrictions to the vessels, i.e. height, width, etc.
     """
 
@@ -234,10 +236,7 @@ class VesselProperties:
             type,
             B,
             L,
-            T_e,
-            T_f,
-            H_e,
-            H_f,
+            T=None,
             *args,
             **kwargs
     ):
@@ -247,16 +246,35 @@ class VesselProperties:
         self.type = type
         self.B = B
         self.L = L
-        self.T_e = T_e
-        self.T_f = T_f
-        self.H_e = H_e
-        self.H_f = H_f
-        # TODO: this needs to be passed in or defined
-#         if T:
-#             self.T= T
-#         else:
-#             self.T = calculate_actual_T_and_payload()
+        self._T = T
 
+    @property
+    def T(self):
+        """Compute the actual draft """
+        if self._T is not None:
+            # if we were passed a T value, use tha one
+            T = self._T
+        else:
+            # if no T was provided during initialization,  compute it using the route
+            assert self.route, 'To compute actual draft we need a route with information on the GeneralDepth'
+            T, payload = self.calculate_actual_T_and_payload(self.h_min)
+        return T
+
+    @property
+    def h_min(self):
+        self.route
+        depths = []
+        # loop over all node pairs (e: edge numbers)
+        for e in zip(self.route[:-1], self.route[1:]):
+            # get the properties
+            edge = self.env.FG.get_edge_data(e[0], e[1])
+            # lookup the depth
+            depth = edge['Info']['GeneralDepth']
+            # remember
+            depths.append(depth)
+        # find the minimum
+        h_min = np.min(depths)
+        return h_min
 
 
     @property
@@ -400,11 +418,6 @@ class VesselProperties:
         fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
         actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
         print('The actual_max_payload is', actual_max_payload, 'ton')
-
-        # set vessel properties
-        self.T = T_actual
-
-        # self.container.level = actual_max_payload
 
         return T_actual, actual_max_payload
 
