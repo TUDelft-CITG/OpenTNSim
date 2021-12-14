@@ -29,6 +29,9 @@ import networkx as nx
 
 # Creating the test objects
 
+def test_correction_factors():
+    corf = opentnsim.energy.correction_factors()
+    assert corf.shape[0] > 10, "Correction factors are not available"
 
 
 # Actual testing starts here
