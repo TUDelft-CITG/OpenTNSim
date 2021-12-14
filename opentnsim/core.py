@@ -953,7 +953,7 @@ class ConsumesEnergy:
         self.calculate_total_power_required()  # You need the P_partial values
 
         # Import the correction factors table
-        self.corf = pd.read_excel(r'correctionfactors.xlsx')
+        self.corf = pd.read_excel(r'Correctionfactors.xlsx')
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
