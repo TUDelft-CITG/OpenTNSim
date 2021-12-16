@@ -9,7 +9,7 @@ def correction_factors():
     # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent / 'data'
     correctionfactors_path = data_dir / 'Correctionfactors.csv'
-    df = pd.read_csv(correctionfactors_path)
+    df = pd.read_csv(correctionfactors_path, comment='#')
     return df
 
 
