@@ -53,7 +53,10 @@ tests_require = [
     "pyyaml",
     "openpyxl",
     "folium",
-    "colorcet"
+    "colorcet",
+    "notebook",
+    "jupyter",
+    "gdal"
 ]
 
 with open("README.md", "r") as des:
