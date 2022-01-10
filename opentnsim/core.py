@@ -579,7 +579,7 @@ class ConsumesEnergy:
         self.c_year = self.year - self.age
 
         print('The construction year of the engine is', self.c_year)
-        return c_year
+        return self.c_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
@@ -2021,7 +2021,7 @@ class Movable(Locatable, Routeable, Log):
             dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
 
         if 'geometry' in edge:
-            edge_route = np.array(edge['geometry'])
+            edge_route = np.array(edge['geometry'].coords)
 
             # check if edge is in the sailing direction, otherwise flip it
             distance_from_start = self.wgs84.inv(
@@ -2038,7 +2038,7 @@ class Movable(Locatable, Routeable, Log):
                 )[2]
             if distance_from_start>distance_from_stop:
                 # when the distance from the starting point is greater than from the end point
-                edge_route = np.flipud(np.array(edge['geometry']))
+                edge_route = np.flipud(np.array(edge['geometry'].coords))
 
             for index, pt in enumerate(edge_route[:-1]):
                 sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
@@ -2058,10 +2058,10 @@ class Movable(Locatable, Routeable, Log):
             # print('   My new origin is {}'.format(destination))
         else:
             distance = self.wgs84.inv(
-                shapely.geometry.asShape(orig).x,
-                shapely.geometry.asShape(orig).y,
-                shapely.geometry.asShape(dest).x,
-                shapely.geometry.asShape(dest).y,
+                shapely.geometry.shape(orig).x,
+                shapely.geometry.shape(orig).y,
+                shapely.geometry.shape(dest).x,
+                shapely.geometry.shape(dest).y,
             )[2]
 
             self.distance += distance
@@ -2104,3 +2104,11 @@ class ContainerDependentMovable(Movable, HasContainer):
     @property
     def current_speed(self):
         return self.compute_v(self.container.level / self.container.capacity)
+
+
+class ExtraMetadata:
+    """store all leftover keyword arguments as metadata property (use as last mixin)"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        # store all other properties as metadata
+        self.metadata = kwargs
