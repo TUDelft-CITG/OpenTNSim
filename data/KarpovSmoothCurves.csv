@@ -1,3 +1,13 @@
+# The data (a**) are used for calculate accelerated velocity at the
+# ship bottom due to shallow water effect based on Karpov method
+# described by van Terwisga (1989). The data points (a**) are picked
+# up from the original hand drawing figure. The estimation of a**
+# based on the Froude number ( Fn ) for different water depth and
+# vessel draught ratios ( h0 / Ts ). Detailed information can be found
+# from Segers (2021)
+# https://repository.tudelft.nl/islandora/object/uuid%3Aa260bc48-c6ce-4f7c-b14a-e681d2e528e3
+# Fn: Froude Number [-]
+# h/T: Water depth (h) to Vessel Draught (t) ratio [-]
 Fn,h/T= 1.5,h/T= 2,h/T= 2.5,h/T= 3,h/T= 3.5,h/T= 4,h/T= 5,h/T= 6,h/T= 7,h/T= 8,h/T= 9,h/T= 10
 0.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0
 0.1,0.99,1.0,0.999,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0
