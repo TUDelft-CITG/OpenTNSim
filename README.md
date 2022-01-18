@@ -12,7 +12,7 @@
 Documentation can be found: [here](https://opentnsim.readthedocs.io/)
 
 ## Installation
-
+ 
 To install OpenTNSim, run this command in your terminal:
 
 ``` bash
