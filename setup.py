@@ -36,7 +36,7 @@ requires = [
     "Flask>=1.0",
     "Flask-cors",
     "sphinx_rtd_theme",
-    "Dill",
+    "Dill"
 ]
 
 setup_requirements = [
@@ -44,10 +44,19 @@ setup_requirements = [
 ]
 
 tests_require = [
-    "pytest",
+    "pytest<7",
     "pytest-cov",
     "pytest-timeout",
-    "pytest-datadir"
+    "pytest-datadir",
+    "nbmake",
+    # extra dpendencies used by nontebooks
+    "pyyaml",
+    "openpyxl",
+    "folium",
+    "colorcet",
+    "notebook",
+    "jupyter",
+    "gdal"
 ]
 
 with open("README.md", "r") as des:
@@ -78,6 +87,9 @@ setup(
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
+    extras_require={
+        'testing': tests_require
+    },
     url="https://github.com/TUDelft-CITG/OpenTNSim",
     version="1.0.0",
     zip_safe=False,
