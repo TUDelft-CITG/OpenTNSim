@@ -2049,10 +2049,10 @@ class Movable(Locatable, Routeable, Log):
             v = self.current_speed
 
             # This is the case if we are sailing on power
-            if getattr(self, 'P_tot_given') is not None:
+            if getattr(self, 'P_tot_given', None) is not None:
                 edge = self.env.FG.edges[origin, destination]
-                power2v = getattr(self, 'power2v')
-                v = power2v(self, edge)
+                # use power2v on self so that you can override it from outside
+                v = self.power2v(self, edge)
                 # use computed power
                 value = self.P_given
 
