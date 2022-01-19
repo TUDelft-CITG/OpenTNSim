@@ -4,6 +4,9 @@
 import json
 import logging
 import uuid
+import pathlib
+import datetime
+import time
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -19,9 +22,11 @@ import pyproj
 import shapely.geometry
 
 # additional packages
-import datetime, time
+
+import opentnsim.energy
 
 logger = logging.getLogger(__name__)
+
 
 
 class SimpyObject:
@@ -152,6 +157,68 @@ class Log(SimpyObject):
         return json
 
 
+# class VesselProperties:
+#     """Mixin class: Something that has vessel properties
+#     This mixin is updated to better accommodate the ConsumesEnergy mixin
+
+#     type: can contain info on vessel type (avv class, cemt_class or other)
+#     B: vessel width
+#     L: vessel length
+#     H_e: vessel height unloaded
+#     H_f: vessel height loaded
+#     T_e: draught unloaded
+#     T_f: draught loaded
+
+#     Add information on possible restrictions to the vessels, i.e. height, width, etc.
+#     """
+
+#     def __init__(
+#             self,
+#             type,
+#             B,
+#             L,
+#             H_e,
+#             H_f,
+#             T_e,
+#             T_f,
+#             *args,
+#             **kwargs
+#     ):
+#         super().__init__(*args, **kwargs)
+
+#         """Initialization"""
+#         self.type = type
+
+#         self.B = B
+#         self.L = L
+
+#         self.H_e = H_e
+#         self.H_f = H_e
+
+#         self.T_e = T_e
+#         self.T_f = T_f
+
+#     @property
+#     def H(self):
+#         """ Calculate current height based on filling degree """
+
+#         return (
+#                 self.filling_degree * (self.H_f - self.H_e)
+#                 + self.H_e
+#         )
+
+#     @property
+#     def T(self):
+#         """ Calculate current draught based on filling degree
+
+#         Here we should implement the rules from Van Dorsser et al
+#         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
+#         """
+
+#         return (
+#                 self.filling_degree * (self.T_f - self.T_e)
+#                 + self.T_e
+#         )
 class VesselProperties:
     """Mixin class: Something that has vessel properties
     This mixin is updated to better accommodate the ConsumesEnergy mixin
@@ -159,11 +226,8 @@ class VesselProperties:
     type: can contain info on vessel type (avv class, cemt_class or other)
     B: vessel width
     L: vessel length
-    H_e: vessel height unloaded
-    H_f: vessel height loaded
-    T_e: draught unloaded
-    T_f: draught loaded
-
+    h_min: vessel minimum water depth
+    T: actual draft
     Add information on possible restrictions to the vessels, i.e. height, width, etc.
     """
 
@@ -172,10 +236,7 @@ class VesselProperties:
             type,
             B,
             L,
-            H_e,
-            H_f,
-            T_e,
-            T_f,
+            T=None,
             *args,
             **kwargs
     ):
@@ -183,15 +244,38 @@ class VesselProperties:
 
         """Initialization"""
         self.type = type
-
         self.B = B
         self.L = L
+        self._T = T
 
-        self.H_e = H_e
-        self.H_f = H_e
+    @property
+    def T(self):
+        """Compute the actual draft """
+        if self._T is not None:
+            # if we were passed a T value, use tha one
+            T = self._T
+        else:
+            # if no T was provided during initialization,  compute it using the route
+            assert self.route, 'To compute actual draft we need a route with information on the GeneralDepth'
+            T, payload = self.calculate_actual_T_and_payload(self.h_min)
+        return T
 
-        self.T_e = T_e
-        self.T_f = T_f
+    @property
+    def h_min(self):
+        self.route
+        depths = []
+        # loop over all node pairs (e: edge numbers)
+        for e in zip(self.route[:-1], self.route[1:]):
+            # get the properties
+            edge = self.env.FG.get_edge_data(e[0], e[1])
+            # lookup the depth
+            depth = edge['Info']['GeneralDepth']
+            # remember
+            depths.append(depth)
+        # find the minimum
+        h_min = np.min(depths)
+        return h_min
+
 
     @property
     def H(self):
@@ -202,18 +286,141 @@ class VesselProperties:
                 + self.H_e
         )
 
-    @property
-    def T(self):
-        """ Calculate current draught based on filling degree
-
-        Here we should implement the rules from Van Dorsser et al
+    def calculate_actual_T_and_payload(self, h_min, ukc=.3,vesl_type="Dry_DH"):
+        """ Calculate actual draft based on Van Dorsser et al
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
         """
+        #Design draft T_design, refer to Table 5
 
-        return (
-                self.filling_degree * (self.T_f - self.T_e)
-                + self.T_e
-        )
+        Tdesign_coefs = dict({"intercept":0,
+                         "c1": 1.7244153371,
+                         "c2": 2.2767179246,
+                         "c3": 1.3365379898,
+                         "c4": -5.9459308905,
+                         "c5": 6.2902305560*10**-2,
+                         "c6": 7.7398861528*10**-5,
+                         "c7": 9.0052384439*10**-3,
+                         "c8": 2.8438560877
+                         })
+
+        assert vesl_type in ["Container","Dry_SH","Dry_DH","Barge","Tanker"],'Invalid value vesl_type, should be "Container","Dry_SH","Dry_DH","Barge" or "Tanker"'
+        if vesl_type == "Container":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [1,0,0,0]
+        elif vesl_type == "Dry_SH":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,1,0,0]
+        elif vesl_type == "Dry_DH":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,1,0,0]
+        elif vesl_type == "Barge":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,1,0]
+
+        elif vesl_type == "Tanker":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,0,1]
+
+        T_design = Tdesign_coefs['intercept'] + (dum_container * Tdesign_coefs['c1']) + \
+                                                (dum_dry * Tdesign_coefs['c2']) + \
+                                                (dum_barge * Tdesign_coefs['c3']) +\
+                                                (dum_tanker * Tdesign_coefs['c4']) +\
+                                                (Tdesign_coefs['c5'] * dum_container * self.L**0.4 * self.B**0.6) +\
+                                                (Tdesign_coefs['c6'] * dum_dry * self.L**0.7 * self.B**2.6)+\
+                                                (Tdesign_coefs['c7'] * dum_barge * self.L**0.3 * self.B**1.8) +\
+                                                (Tdesign_coefs['c8'] * dum_tanker * self.L**0.1 * self.B**0.3)
+
+        #Empty draft T_empty, refer to Table 4
+        Tempty_coefs = dict({"intercept": 7.5740820927*10**-2,
+                    "c1": 1.1615080992*10**-1,
+                    "c2": 1.6865973494*10**-2,
+                    "c3": -2.7490565381*10**-2,
+                    "c4": -5.1501240744*10**-5,
+                    "c5": 1.0257551153*10**-1,
+                    "c6": 2.4299435211*10**-1,
+                    "c7": -2.1354295627*10**-1,
+                    })
+
+
+        if vesl_type == "Container":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [1,0,0,0]
+        elif vesl_type == "Dry_SH":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,0,0]
+        elif vesl_type == "Dry_DH":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,1,0,0]
+        elif vesl_type == "Barge":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,1,0]
+
+        elif vesl_type == "Tanker":
+            [dum_container, dum_dry,
+            dum_barge, dum_tanker] = [0,0,0,1]
+
+        # dum_container and dum_dry use the same "c5"
+        T_empty = Tempty_coefs['intercept']  + (Tempty_coefs['c1'] * self.B) + \
+                                               (Tempty_coefs['c2'] * ((self.L * T_design) / self.B)) + \
+                                               (Tempty_coefs['c3'] * (np.sqrt(self.L * self.B)))  + \
+                                               (Tempty_coefs['c4'] * (self.L * self.B * T_design)) +  \
+                                               (Tempty_coefs['c5'] * dum_container) + \
+                                               (Tempty_coefs['c5'] * dum_dry)   + \
+                                               (Tempty_coefs['c6'] * dum_tanker) + \
+                                               (Tempty_coefs['c7'] * dum_barge)
+
+        #Actual draft T_actual
+        if (T_design <= (h_min - ukc)):
+            T_actual = T_design
+
+        elif T_empty > (h_min - ukc):
+            T_actual =  (f"No trip possible. Available depth smaller than empty draft: {h_min - T_empty} m")
+
+        elif (T_design > (h_min - ukc)):
+            T_actual = h_min -  ukc
+
+        print('The actual draft is', T_actual, 'm')
+
+        #Capacity indexes, refer to Table 3 and eq 2
+        CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
+
+                "c1": -7.8577991460 * 10**1,
+                "c2": -7.0671612519 * 10**0,
+                "c3": 2.7744056480 * 10**1,
+                "c4": 7.5588609922 * 10**-1,
+                "c5": 3.6591813315 * 10**1
+                })
+        # Capindex_1 related to actual draft (especially used for shallow water)
+        Capindex_1 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)  +  (
+        CI_coefs["c3"] * T_actual) + (CI_coefs["c4"] * T_actual**2)   + ( CI_coefs["c5"] * (T_empty * T_actual))
+        # Capindex_2 related to design draft
+        Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
+        CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
+
+        #DWT design capacity, refer to Table 6 and eq 3
+        capacity_coefs = dict({"intercept": -1.6687441313*10**1,
+             "c1": 9.7404521380*10**-1,
+             "c2": -1.1068568208,
+             })
+
+        DWT_design = capacity_coefs['intercept'] + (capacity_coefs['c1'] * self.L * self.B * T_design) + (
+         capacity_coefs['c2'] * self.L * self.B * T_empty) # designed DWT
+        DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
+
+
+        if T_actual < T_design:
+            consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
+                              # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
+        else:
+            consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
+                              # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
+
+        fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
+        actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
+        print('The actual_max_payload is', actual_max_payload, 'ton')
+
+        return T_actual, actual_max_payload
+
 
     def get_route(
             self,
@@ -229,8 +436,8 @@ class VesselProperties:
 
         graph = graph if graph else self.env.FG
         minWidth = minWidth if minWidth else 1.1 * self.B
-        minHeight = minWidth if minHeight else 1.1 * self.H
-        minDepth = minWidth if minDepth else 1.1 * self.T
+        minHeight = minHeight if minHeight else 1.1 * self.H
+        minDepth = minDepth if minDepth else 1.1 * self.T
 
         # Check if information on restrictions is added to the edges
         random.seed(randomSeed)
@@ -284,8 +491,10 @@ class ConsumesEnergy:
     """Mixin class: Something that consumes energy.
 
     P_installed: installed engine power [kW]
+    P_given:P_given= total required power when P_tot<=P_installed;P_given=P_installed when P_tot>P_installed.
     L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
     C_b: block coefficient ('fullness') [-]
+    current_year: current year
     nu: kinematic viscosity [m^2/s]
     rho: density of the surrounding water [kg/m^3]
     g: gravitational accelleration [m/s^2]
@@ -302,8 +511,11 @@ class ConsumesEnergy:
     def __init__(
             self,
             P_installed,
+            P_given,  # the actual power the engine can give
             L_w,
             C_b,
+            current_year, # current_year
+            c_year,
             nu=1 * 10 ** (-6),  # kinematic viscosity
             rho=1000,
             g=9.81,
@@ -321,8 +533,10 @@ class ConsumesEnergy:
 
         """Initialization"""
         self.P_installed = P_installed
+        self.P_given=P_given
         self.L_w = L_w
         self.C_b = C_b
+        self.year = current_year
         self.nu = nu
         self.rho = rho
         self.g = g
@@ -333,7 +547,11 @@ class ConsumesEnergy:
         self.eta_g = eta_g
         self.c_stern = c_stern
         self.one_k2 = one_k2
-        self.c_year = self.calculate_engine_age()  # The construction year of the engine is now generated once, instead of for each time step
+        if c_year:
+            self.c_year= c_year
+        else:
+            self.c_year = self.calculate_engine_age()
+
 
     # The engine age and construction year of the engine is computed with the function below.
     # The construction year of the engine is used in the emission functions (1) emission_factors_general and (2) correction_factors
@@ -343,22 +561,19 @@ class ConsumesEnergy:
         shape factor 'k', and scale factor 'lmb', which are determined by the weight class L_w"""
 
         # Determining which shape and scale factor to use, based on the weight class L_w = L1, L2 or L3
+        assert self.L_w in [1,2,3],'Invalid value L_w, should be 1,2 or 3'
         if self.L_w == 1:  # Weight class L1
             self.k = 1.3
             self.lmb = 20.5
-        if self.L_w == 2:  # Weight class L2
+        elif self.L_w == 2:  # Weight class L2
             self.k = 1.12
             self.lmb = 18.5
-        if self.L_w == 3:  # Weight class L3
+        elif self.L_w == 3:  # Weight class L3
             self.k = 1.26
             self.lmb = 18.6
 
         # The age of the engine
         self.age = int(np.random.weibull(self.k) * self.lmb)
-
-        # Current year (TO DO: fix hardcoded year)
-        # self.year = datetime.date.year
-        self.year = 2021
 
         # Construction year of the engine
         self.c_year = self.year - self.age
@@ -669,12 +884,15 @@ class ConsumesEnergy:
 
         # Partial engine load (P_partial): needed in the 'Emission calculations'
         if self.P_tot > self.P_installed:
+            self.P_given=self.P_installed
             self.P_partial = 1
         else:
+            self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
 
         print('The total power required is', self.P_tot, 'kW')
-        print('The partial load is', self.P_partial, 'kW')
+        print('The actual total power given is', self.P_given, 'kW')
+        print('The partial load is', self.P_partial)
 
     def emission_factors_general(self):
         """General emission factors:
@@ -690,47 +908,58 @@ class ConsumesEnergy:
             self.EM_CO2 = 756
             self.EM_PM10 = 0.6
             self.EM_NOX = 10.8
+            self.general_fuel=235
         if 1975 <= self.c_year <= 1979:
             self.EM_CO2 = 730
             self.EM_PM10 = 0.6
             self.EM_NOX = 10.6
+            self.general_fuel=230
         if 1980 <= self.c_year <= 1984:
             self.EM_CO2 = 714
             self.EM_PM10 = 0.6
             self.EM_NOX = 10.4
+            self.general_fuel=225
         if 1985 <= self.c_year <= 1989:
             self.EM_CO2 = 698
             self.EM_PM10 = 0.5
             self.EM_NOX = 10.1
+            self.general_fuel=220
         if 1990 <= self.c_year <= 1994:
             self.EM_CO2 = 698
             self.EM_PM10 = 0.4
             self.EM_NOX = 10.1
+            self.general_fuel=220
         if 1995 <= self.c_year <= 2002:
             self.EM_CO2 = 650
             self.EM_PM10 = 0.3
             self.EM_NOX = 9.4
+            self.general_fuel=205
         if 2003 <= self.c_year <= 2007:
             self.EM_CO2 = 635
             self.EM_PM10 = 0.3
             self.EM_NOX = 9.2
+            self.general_fuel=200
         if 2008 <= self.c_year <= 2019:
             self.EM_CO2 = 635
             self.EM_PM10 = 0.2
             self.EM_NOX = 7
+            self.general_fuel=200
         if self.c_year > 2019:
             if self.L_w == 1:
                 self.EM_CO2 = 650
                 self.EM_PM10 = 0.1
                 self.EM_NOX = 2.9
+                self.general_fuel=205
             else:
                 self.EM_CO2 = 603
                 self.EM_PM10 = 0.015
                 self.EM_NOX = 2.4
+                self.general_fuel=190
 
         print('The general emission factor of CO2 is', self.EM_CO2, 'g/kWh')
         print('The general emission factor of PM10 is', self.EM_PM10, 'g/kWh')
         print('The general emission factor CO2 is', self.EM_NOX, 'g/kWh')
+        print('The general fuel consumption factor is', self.general_fuel, 'g/kWh')
 
     def correction_factors(self):
         """Correction factors:
@@ -743,13 +972,15 @@ class ConsumesEnergy:
         self.calculate_total_power_required()  # You need the P_partial values
 
         # Import the correction factors table
-        self.corf = pd.read_excel(r'correctionfactors.xlsx')
+        # TODO: use package data, not an arbitrary location
+        self.corf = opentnsim.energy.correction_factors()
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
             if self.P_partial <= self.corf.iloc[0, 0]:
                 self.corf_CO2 = self.corf.iloc[0, 5]
                 self.corf_PM10 = self.corf.iloc[0, 6]
+                self.corf_fuel = self.corf_CO2 # CO2 emission is generated from fuel consumption, so these two correction factor are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.c_year < 2008:
@@ -775,6 +1006,7 @@ class ConsumesEnergy:
                 self.corf_PM10 = ((self.P_partial - self.corf.iloc[i, 0]) * (
                             self.corf.iloc[i + 1, 6] - self.corf.iloc[i, 6])) / (
                                              self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[i, 6]
+                self.corf_fuel = self.corf_CO2# CO2 emission is generated from fuel consumption, so these two correction factor are equal
 
                 if self.c_year < 2008:
                     self.corf_NOX = ((self.P_partial - self.corf.iloc[i, 0]) * (
@@ -800,6 +1032,7 @@ class ConsumesEnergy:
             elif self.P_partial >= self.corf.iloc[19, 0]:
                 self.corf_CO2 = self.corf.iloc[19, 5]
                 self.corf_PM10 = self.corf.iloc[19, 6]
+                self.corf_fuel = self.corf_CO2# CO2 emission is generated from fuel consumption, so these two correction factor are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.c_year < 2008:
@@ -817,6 +1050,7 @@ class ConsumesEnergy:
         print('Correction factor of CO2 is', self.corf_CO2)
         print('Correction factor of PM10 is', self.corf_PM10)
         print('Correction factor of NOX is', self.corf_NOX)
+        print('Correction factor of fuel consumption is', self.corf_fuel)
 
     def calculate_emission_factors_total(self):
         """Total emission factors:
@@ -835,10 +1069,12 @@ class ConsumesEnergy:
         self.Emf_CO2 = self.EM_CO2 * self.corf_CO2
         self.Emf_PM10 = self.EM_PM10 * self.corf_PM10
         self.Emf_NOX = self.EM_NOX * self.corf_NOX
+        self.fuel_consumption = self.general_fuel * self.corf_fuel
 
         print('The total emission factor of CO2 is', self.Emf_CO2, 'g/kWh')
         print('The total emission factor of PM10 is', self.Emf_PM10, 'g/kWh')
         print('The total emission factor CO2 is', self.Emf_NOX, 'g/kWh')
+        print('The total fuel consumption factor is', self.fuel_consumption, 'g/kWh')
 
 
 class Routeable:
@@ -1047,6 +1283,7 @@ class Movable(Locatable, Routeable, Log):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.v = v
+        self.edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     def move(self):
@@ -1768,6 +2005,9 @@ class Movable(Locatable, Routeable, Log):
         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
+        for edge_function in self.edge_functions:
+            edge_function(orig, dest, edge)
+
         if "Lock" in self.env.FG.nodes[origin].keys():
             orig = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
 
@@ -1781,7 +2021,7 @@ class Movable(Locatable, Routeable, Log):
             dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
 
         if 'geometry' in edge:
-            edge_route = np.array(edge['geometry'])
+            edge_route = np.array(edge['geometry'].coords)
 
             # check if edge is in the sailing direction, otherwise flip it
             distance_from_start = self.wgs84.inv(
@@ -1798,7 +2038,7 @@ class Movable(Locatable, Routeable, Log):
                 )[2]
             if distance_from_start>distance_from_stop:
                 # when the distance from the starting point is greater than from the end point
-                edge_route = np.flipud(np.array(edge['geometry']))
+                edge_route = np.flipud(np.array(edge['geometry'].coords))
 
             for index, pt in enumerate(edge_route[:-1]):
                 sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
@@ -1818,10 +2058,10 @@ class Movable(Locatable, Routeable, Log):
             # print('   My new origin is {}'.format(destination))
         else:
             distance = self.wgs84.inv(
-                shapely.geometry.asShape(orig).x,
-                shapely.geometry.asShape(orig).y,
-                shapely.geometry.asShape(dest).x,
-                shapely.geometry.asShape(dest).y,
+                shapely.geometry.shape(orig).x,
+                shapely.geometry.shape(orig).y,
+                shapely.geometry.shape(dest).x,
+                shapely.geometry.shape(dest).y,
             )[2]
 
             self.distance += distance
@@ -1864,3 +2104,11 @@ class ContainerDependentMovable(Movable, HasContainer):
     @property
     def current_speed(self):
         return self.compute_v(self.container.level / self.container.capacity)
+
+
+class ExtraMetadata:
+    """store all leftover keyword arguments as metadata property (use as last mixin)"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        # store all other properties as metadata
+        self.metadata = kwargs
