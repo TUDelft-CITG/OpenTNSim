@@ -467,11 +467,11 @@ class ConsumesEnergy:
     def __init__(
             self,
             P_installed,
-            P_tot_given,  # the actual power engine setting
             L_w,
             C_b,
             current_year, # current_year
             c_year,
+            P_tot_given=None,  # the actual power engine setting
             nu=1 * 10 ** (-6),  # kinematic viscosity
             rho=1000,
             g=9.81,
