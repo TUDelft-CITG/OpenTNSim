@@ -1,8 +1,13 @@
 import pathlib
+import logging
+import functools
 
 import pyproj
 import numpy as np
 import pandas as pd
+import scipy.optimize
+
+logger = logging.getLogger(__name__)
 
 def correction_factors():
     """read correction factor from package directory"""
@@ -32,6 +37,38 @@ def find_closest_node(G, point):
     distance_node = np.min(distance)
 
     return name_node, distance_node
+
+
+def power2v(vessel, edge, bounds=(0, 10)):
+    """Compute vessel velocity given an edge and power (P_tot_given)
+    bounds is the limits where to look for a solution for the velocity [m/s]
+    returns velocity [m/s]
+    """
+    # bounds > 10 gave an issue...
+    # TODO: check what the origin of this is.
+    def seek_v_given_power(v, vessel, edge):
+        """function to optimize"""
+        logger.debug(f'optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}')
+        # water depth from the edge
+        h = edge['Info']['GeneralDepth']
+        # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
+        vessel.calculate_total_resistance(V_0=v, h=h)
+        vessel.calculate_total_power_required()
+        diff = vessel.P_given - vessel.P_tot_given
+        return diff ** 2
+
+    # fill in some of the parameters that we already know
+    fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
+    # lookup a minimum
+    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+
+    # check if we found a minimum
+    if not fit.success:
+        raise ValueError(fit)
+    logger.debug(f"fit: {fit}")
+    return fit.x
+
+
 
 class EnergyCalculation:
     """

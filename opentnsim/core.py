@@ -24,6 +24,7 @@ import shapely.geometry
 # additional packages
 
 import opentnsim.energy
+import opentnsim.graph_module
 
 logger = logging.getLogger(__name__)
 
@@ -157,68 +158,6 @@ class Log(SimpyObject):
         return json
 
 
-# class VesselProperties:
-#     """Mixin class: Something that has vessel properties
-#     This mixin is updated to better accommodate the ConsumesEnergy mixin
-
-#     type: can contain info on vessel type (avv class, cemt_class or other)
-#     B: vessel width
-#     L: vessel length
-#     H_e: vessel height unloaded
-#     H_f: vessel height loaded
-#     T_e: draught unloaded
-#     T_f: draught loaded
-
-#     Add information on possible restrictions to the vessels, i.e. height, width, etc.
-#     """
-
-#     def __init__(
-#             self,
-#             type,
-#             B,
-#             L,
-#             H_e,
-#             H_f,
-#             T_e,
-#             T_f,
-#             *args,
-#             **kwargs
-#     ):
-#         super().__init__(*args, **kwargs)
-
-#         """Initialization"""
-#         self.type = type
-
-#         self.B = B
-#         self.L = L
-
-#         self.H_e = H_e
-#         self.H_f = H_e
-
-#         self.T_e = T_e
-#         self.T_f = T_f
-
-#     @property
-#     def H(self):
-#         """ Calculate current height based on filling degree """
-
-#         return (
-#                 self.filling_degree * (self.H_f - self.H_e)
-#                 + self.H_e
-#         )
-
-#     @property
-#     def T(self):
-#         """ Calculate current draught based on filling degree
-
-#         Here we should implement the rules from Van Dorsser et al
-#         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
-#         """
-
-#         return (
-#                 self.filling_degree * (self.T_f - self.T_e)
-#                 + self.T_e
-#         )
 class VesselProperties:
     """Mixin class: Something that has vessel properties
     This mixin is updated to better accommodate the ConsumesEnergy mixin
@@ -226,9 +165,16 @@ class VesselProperties:
     type: can contain info on vessel type (avv class, cemt_class or other)
     B: vessel width
     L: vessel length
-    h_min: vessel minimum water depth
+
+    h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property ['Info']['GeneralDepth']
     T: actual draft
-    Add information on possible restrictions to the vessels, i.e. height, width, etc.
+
+    Alternatively you can specify draught based on filling degree
+    H_e: vessel height unloaded
+    H_f: vessel height loaded
+    T_e: draught unloaded
+    T_f: draught loaded
+
     """
 
     def __init__(
@@ -236,7 +182,12 @@ class VesselProperties:
             type,
             B,
             L,
+            h_min=None,
             T=None,
+            H_e=None,
+            H_f=None,
+            T_e=None,
+            T_f=None,
             *args,
             **kwargs
     ):
@@ -246,7 +197,14 @@ class VesselProperties:
         self.type = type
         self.B = B
         self.L = L
+        # hidden because these can also computed on the fly
         self._T = T
+        self._h_min = h_min
+        # alternative  options
+        self.H_e = H_e
+        self.H_f = H_f
+        self.T_e = T_e
+        self.T_f = T_f
 
     @property
     def T(self):
@@ -254,26 +212,24 @@ class VesselProperties:
         if self._T is not None:
             # if we were passed a T value, use tha one
             T = self._T
+        elif self.T_f is not None and self.T_e is not None:
+            # base draught on filling degree
+            T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
         else:
             # if no T was provided during initialization,  compute it using the route
             assert self.route, 'To compute actual draft we need a route with information on the GeneralDepth'
+            # Calculate current draught based on filling degree
+            # rules from Van Dorsser et al
+            # https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
             T, payload = self.calculate_actual_T_and_payload(self.h_min)
         return T
 
     @property
     def h_min(self):
-        self.route
-        depths = []
-        # loop over all node pairs (e: edge numbers)
-        for e in zip(self.route[:-1], self.route[1:]):
-            # get the properties
-            edge = self.env.FG.get_edge_data(e[0], e[1])
-            # lookup the depth
-            depth = edge['Info']['GeneralDepth']
-            # remember
-            depths.append(depth)
-        # find the minimum
-        h_min = np.min(depths)
+        if self._h_min is not None:
+            h_min = self._h_min
+        else:
+            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
         return h_min
 
 
@@ -379,7 +335,7 @@ class VesselProperties:
         elif (T_design > (h_min - ukc)):
             T_actual = h_min -  ukc
 
-        print('The actual draft is', T_actual, 'm')
+        logger.debug(f'The actual draft is {T_actual} m')
 
         #Capacity indexes, refer to Table 3 and eq 2
         CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
@@ -417,7 +373,7 @@ class VesselProperties:
 
         fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
         actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
-        print('The actual_max_payload is', actual_max_payload, 'ton')
+        logger.debug('The actual_max_payload is {actual_max_payload} ton')
 
         return T_actual, actual_max_payload
 
@@ -491,15 +447,15 @@ class ConsumesEnergy:
     """Mixin class: Something that consumes energy.
 
     P_installed: installed engine power [kW]
-    P_given:P_given= total required power when P_tot<=P_installed;P_given=P_installed when P_tot>P_installed.
+    P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
     L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
     C_b: block coefficient ('fullness') [-]
     current_year: current year
     nu: kinematic viscosity [m^2/s]
     rho: density of the surrounding water [kg/m^3]
     g: gravitational accelleration [m/s^2]
-    x: number of propellors [-]
-    eta_0: open water efficiency of propellor [-]
+    x: number of propellers [-]
+    eta_0: open water efficiency of propeller [-]
     eta_r: relative rotative efficiency [-]
     eta_t: transmission efficiency [-]
     eta_g: gearing efficiency [-]
@@ -511,15 +467,15 @@ class ConsumesEnergy:
     def __init__(
             self,
             P_installed,
-            P_given,  # the actual power the engine can give
             L_w,
             C_b,
             current_year, # current_year
             c_year,
+            P_tot_given=None,  # the actual power engine setting
             nu=1 * 10 ** (-6),  # kinematic viscosity
             rho=1000,
             g=9.81,
-            x=2,  # number of propellors
+            x=2,  # number of propellers
             eta_0=0.6,
             eta_r=1.00,
             eta_t=0.98,
@@ -533,7 +489,7 @@ class ConsumesEnergy:
 
         """Initialization"""
         self.P_installed = P_installed
-        self.P_given=P_given
+        self.P_tot_given=P_tot_given
         self.L_w = L_w
         self.C_b = C_b
         self.year = current_year
@@ -547,10 +503,25 @@ class ConsumesEnergy:
         self.eta_g = eta_g
         self.c_stern = c_stern
         self.one_k2 = one_k2
+
+        # plugin function that computes velocity based on power
+        self.power2v = opentnsim.energy.power2v
+
         if c_year:
             self.c_year= c_year
         else:
             self.c_year = self.calculate_engine_age()
+
+        # check assumption that we don't use more power than we have
+        # TODO: add test
+        if self.P_tot_given is not None and self.P_installed is not None:
+            if P_tot_given > P_installed:
+                self.P_tot_given = self.P_installed
+
+
+        # # TODO: check assumption when combining move with energy
+        # if self.P_tot_given is not None and self.v is not None:
+        #     raise ValueError("please specify v or P_tot_given, but not both")
 
 
     # The engine age and construction year of the engine is computed with the function below.
@@ -578,7 +549,7 @@ class ConsumesEnergy:
         # Construction year of the engine
         self.c_year = self.year - self.age
 
-        print('The construction year of the engine is', self.c_year)
+        logger.debug(f'The construction year of the engine is {self.c_year}')
         return self.c_year
 
     def calculate_properties(self):
@@ -871,6 +842,7 @@ class ConsumesEnergy:
         else:
             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
+        # TODO: consider making a hull efficiency table for a range of v's for faster runtimes
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
         # Delivered Horse Power (DHP)
@@ -884,15 +856,15 @@ class ConsumesEnergy:
 
         # Partial engine load (P_partial): needed in the 'Emission calculations'
         if self.P_tot > self.P_installed:
-            self.P_given=self.P_installed
+            self.P_given = self.P_installed
             self.P_partial = 1
         else:
             self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
 
-        print('The total power required is', self.P_tot, 'kW')
-        print('The actual total power given is', self.P_given, 'kW')
-        print('The partial load is', self.P_partial)
+        logger.debug(f'The total power required is {self.P_tot} kW')
+        logger.debug(f'The actual total power given is {self.P_given} kW')
+        logger.debug(f'The partial load is {self.P_partial}')
 
     def emission_factors_general(self):
         """General emission factors:
@@ -956,10 +928,10 @@ class ConsumesEnergy:
                 self.EM_NOX = 2.4
                 self.general_fuel=190
 
-        print('The general emission factor of CO2 is', self.EM_CO2, 'g/kWh')
-        print('The general emission factor of PM10 is', self.EM_PM10, 'g/kWh')
-        print('The general emission factor CO2 is', self.EM_NOX, 'g/kWh')
-        print('The general fuel consumption factor is', self.general_fuel, 'g/kWh')
+        logger.debug(f'The general emission factor of CO2 is {self.EM_CO2} g/kWh')
+        logger.debug(f'The general emission factor of PM10 is {self.EM_PM10} g/kWh')
+        logger.debug(f'The general emission factor CO2 is {self.EM_NOX} g/kWh')
+        logger.debug(f'The general fuel consumption factor is {self.general_fuel} g/kWh')
 
     def correction_factors(self):
         """Correction factors:
@@ -1047,10 +1019,10 @@ class ConsumesEnergy:
                         self.corf_NOX = self.corf.iloc[
                             19, 4]  # Stage V:IWP/IWA-v/c-4 class (vessels with P >300 kw: assumed to be weight class L2-L3)
 
-        print('Correction factor of CO2 is', self.corf_CO2)
-        print('Correction factor of PM10 is', self.corf_PM10)
-        print('Correction factor of NOX is', self.corf_NOX)
-        print('Correction factor of fuel consumption is', self.corf_fuel)
+        logger.debug(f'Correction factor of CO2 is {self.corf_CO2}')
+        logger.debug(f'Correction factor of PM10 is {self.corf_PM10}')
+        logger.debug(f'Correction factor of NOX is {self.corf_NOX}')
+        logger.debug(f'Correction factor of fuel consumption is {self.corf_fuel}')
 
     def calculate_emission_factors_total(self):
         """Total emission factors:
@@ -1071,10 +1043,11 @@ class ConsumesEnergy:
         self.Emf_NOX = self.EM_NOX * self.corf_NOX
         self.fuel_consumption = self.general_fuel * self.corf_fuel
 
-        print('The total emission factor of CO2 is', self.Emf_CO2, 'g/kWh')
-        print('The total emission factor of PM10 is', self.Emf_PM10, 'g/kWh')
-        print('The total emission factor CO2 is', self.Emf_NOX, 'g/kWh')
-        print('The total fuel consumption factor is', self.fuel_consumption, 'g/kWh')
+        logger.debug(f'The total emission factor of CO2 is {self.Emf_CO2} g/kWh')
+        logger.debug(f'The total emission factor of PM10 is {self.Emf_PM10} g/kWh')
+        logger.debug(f'The total emission factor CO2 is {self.Emf_NOX} g/kWh')
+        logger.debug(f'The total fuel consumption factor is {self.fuel_consumption} g/kWh')
+
 
 
 class Routeable:
@@ -1302,8 +1275,8 @@ class Movable(Locatable, Routeable, Log):
             orig = self.geometry
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
 
-            print("Origin", orig)
-            print("Destination", dest)
+            logger.debug("Origin: {orig}")
+            logger.debug("Destination: {dest}")
 
             self.distance += self.wgs84.inv(
                 shapely.geometry.asShape(orig).x,
@@ -1993,12 +1966,15 @@ class Movable(Locatable, Routeable, Log):
         # self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
-        logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
-        logger.debug(
-            "  duration: "
-            + "%4.2f" % ((self.distance / self.current_speed) / 3600)
-            + " hrs"
-        )
+        if self.current_speed is not None:
+            logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
+            logger.debug(
+                "  duration: "
+                + "%4.2f" % ((self.distance / self.current_speed) / 3600)
+                + " hrs"
+            )
+        else:
+            logger.debug("  current_speed:  not set")
 
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
@@ -2065,25 +2041,39 @@ class Movable(Locatable, Routeable, Log):
             )[2]
 
             self.distance += distance
+
+            value = 0
+
+            # remember when we arrived at the edge
             arrival = self.env.now
 
-            # Act based on resources
+            v = self.current_speed
+
+            # This is the case if we are sailing on power
+            if getattr(self, 'P_tot_given', None) is not None:
+                edge = self.env.FG.edges[origin, destination]
+                # use power2v on self so that you can override it from outside
+                v = self.power2v(self, edge)
+                # use computed power
+                value = self.P_given
+
+            # determine time to pass edge
+            timeout = distance / v
+
+
+            # Wait for edge resources to become available
             if "Resources" in edge.keys():
                 with self.env.FG.edges[origin, destination]["Resources"].request() as request:
                     yield request
-
+                    # we had to wait, log it
                     if arrival != self.env.now:
-                        self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, 0, orig,)
-                        self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, 0, orig,)
+                        self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, value, orig,)
+                        self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, value, orig,)
 
-                    self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
-                    yield self.env.timeout(distance / self.current_speed)
-                    self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest,)
-
-            else:
-                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
-                yield self.env.timeout(distance / self.current_speed)
-                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, 0, dest,)
+            # default velocity based on current speed.
+            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, value, orig,)
+            yield self.env.timeout(timeout)
+            self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, value, dest,)
 
     @property
     def current_speed(self):
