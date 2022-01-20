@@ -40,7 +40,7 @@ def find_closest_node(G, point):
 
 
 def power2v(vessel, edge, bounds=(0, 10)):
-    """compute vessel velocity given an edge and power (P_tot_given)
+    """Compute vessel velocity given an edge and power (P_tot_given)
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
     """
