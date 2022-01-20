@@ -76,7 +76,7 @@ def graph(nodes):
 
     for edge in path:
         # add depth to Info.GeneralDepth
-        FG.add_edge(edge[0].name, edge[1].name, weight=1, Info = {"GeneralDepth": 6})
+        FG.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": 6})
 
     return FG
 
@@ -105,6 +105,7 @@ def vessel():
 
     vessel = TransportResource(**data_vessel)
     return vessel
+
 
 @pytest.fixture
 def energy_vessel():
@@ -224,15 +225,10 @@ def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
     vessel = energy_vessel
 
     # set the middle edge to a different waterdepth
-    middle_edges = [
-        (nodes[1].name, nodes[2].name),
-        (nodes[2].name, nodes[1].name)
-    ]
+    middle_edges = [(nodes[1].name, nodes[2].name), (nodes[2].name, nodes[1].name)]
     for e in middle_edges:
         edge = FG.edges[e]
-        edge['Info']['GeneralDepth'] = 4
-
-
+        edge["Info"]["GeneralDepth"] = 4
 
     path = nx.dijkstra_path(FG, nodes[0].name, nodes[3].name)
 
@@ -257,8 +253,7 @@ def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
     env.process(vessel.move())
     env.run()
 
-
     df = pd.DataFrame.from_dict(vessel.log)
-    dt_1 = df.loc[2]['Timestamp'] - df.loc[0]['Timestamp']
-    dt_2 = df.loc[4]['Timestamp'] - df.loc[2]['Timestamp']
+    dt_1 = df.loc[2]["Timestamp"] - df.loc[0]["Timestamp"]
+    dt_2 = df.loc[4]["Timestamp"] - df.loc[2]["Timestamp"]
     assert dt_2 > dt_1, f"second edge {dt_2} should take longer than first edge {dt_1}"
