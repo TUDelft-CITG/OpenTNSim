@@ -229,7 +229,7 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph_module.get_minimum_depth(self.route, self.env.FG)
+            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
         return h_min
 
 
@@ -842,6 +842,7 @@ class ConsumesEnergy:
         else:
             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
+        # TODO: consider making a hull efficiency table for a range of v's for faster runtimes
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
         # Delivered Horse Power (DHP)

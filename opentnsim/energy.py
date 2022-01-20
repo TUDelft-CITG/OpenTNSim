@@ -40,7 +40,10 @@ def find_closest_node(G, point):
 
 
 def power2v(vessel, edge, bounds=(0, 10)):
-    """compute vessel velocity given an edge and power (P_tot_given)"""
+    """compute vessel velocity given an edge and power (P_tot_given)
+    bounds is the limits where to look for a solution for the velocity [m/s]
+    returns velocity [m/s]
+    """
     # bounds > 10 gave an issue...
     # TODO: check what the origin of this is.
     def seek_v_given_power(v, vessel, edge):
@@ -48,6 +51,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
         logger.debug(f'optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}')
         # water depth from the edge
         h = edge['Info']['GeneralDepth']
+        # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(V_0=v, h=h)
         vessel.calculate_total_power_required()
         diff = vessel.P_given - vessel.P_tot_given
