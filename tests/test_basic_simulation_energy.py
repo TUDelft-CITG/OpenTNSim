@@ -1,5 +1,8 @@
 # Importing libraries
 
+# Used for mathematical functions
+import math
+
 # package(s) related to time, space and id
 import datetime, time
 import platform
@@ -21,11 +24,10 @@ import matplotlib.pyplot as plt
 # OpenTNSim
 import opentnsim
 
-# Used for mathematical functions
-import math
-
 # Used for making the graph to visualize our problem
 import networkx as nx
+
+import pytest
 
 # Creating the test objects
 
@@ -33,12 +35,8 @@ def test_correction_factors():
     corf = opentnsim.energy.correction_factors()
     assert corf.shape[0] > 10, "Correction factors are not available"
 
-
-# Actual testing starts here
-def test_basic_simulation():
-    # 1. create graph
-    FG = nx.DiGraph()
-
+@pytest.fixture
+def nodes():
     Node = type('Site', (opentnsim.core.Identifiable, opentnsim.core.Locatable), {})
 
     data_node_1 = {"name": "Node 1",
@@ -56,28 +54,41 @@ def test_basic_simulation():
     node_4 = Node(**data_node_4)
 
     nodes = [node_1, node_2, node_3, node_4]
+    return nodes
+
+
+@pytest.fixture
+def graph(nodes):
+    """create a graph with 3 edges"""
+    FG = nx.DiGraph()
+
 
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
         FG.add_node(node.name, geometry=node.geometry)
 
-    path = [[node_1, node_2],  # From node 1 to node 2
-            [node_2, node_3],  # From node 2 to node 3
-            [node_3, node_4],  # From node 3 to node 4
-            [node_4, node_3],  # From node 4 to node 3
-            [node_3, node_2],  # From node 3 to node 2
-            [node_2, node_1]]  # From node 2 to node 1
+    path = [
+        [nodes[0], nodes[1]],  # From node 1 to node 2
+        [nodes[1], nodes[2]],  # From node 2 to node 3
+        [nodes[2], nodes[3]],  # From node 3 to node 4
+        [nodes[3], nodes[2]],  # From node 4 to node 3
+        [nodes[2], nodes[1]],  # From node 3 to node 2
+        [nodes[1], nodes[0]] # From node 2 to node 1
+    ]
 
     for edge in path:
         FG.add_edge(edge[0].name, edge[1].name, weight=1)
+    return FG
 
-    # 2. Create vessel
-    # Make your preferred class out of available mix-ins.
+@pytest.fixture
+def vessel():
+        # Make your preferred class out of available mix-ins.
     TransportResource = type('Vessel',
                              (opentnsim.core.Identifiable,
                               opentnsim.core.Movable,
-                              opentnsim.core.Routeable), {})
+                              opentnsim.core.Routeable,
+                              ), {})
 
     # Create a dict with all important settings
     data_vessel = {"env": None,
@@ -87,8 +98,16 @@ def test_basic_simulation():
                    "v": 4}  # constant speed of the vessel
 
     vessel = TransportResource(**data_vessel)
+    return vessel
 
-    # 3. Define path
+# Actual testing starts here
+def test_basic_simulation(graph, vessel, nodes):
+    """test a basic simulation on the graph"""
+    FG = graph
+
+    node_1 = nodes[0]
+    node_4 = nodes[3]
+
     path = nx.dijkstra_path(FG, node_1.name, node_4.name)
 
     # 4. Run simulation
