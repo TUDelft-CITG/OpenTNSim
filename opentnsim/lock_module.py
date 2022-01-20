@@ -404,7 +404,6 @@ class PassLock():
             Input:
                 - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
                 - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network """
-        
         #Imports the properties of the line-up area the vessel is assigned to
         lineup_areas = vessel.env.FG.nodes[node_lineup_area]["Line-up area"]
         for lineup_area in lineup_areas:
@@ -489,7 +488,7 @@ class PassLock():
                             yield vessel.waiting_during_converting
                             opposing_lineup_area.converting_while_in_line_up_area[node_opposing_lineup_area].release(vessel.waiting_during_converting)
                     
-                        def request_approach_lock_chamber(timeout_required = True):
+                        def request_approach_lock_chamber(timeout_required = True,priority=0):
                             """ Vessel will request if it can enter the lock by requesting access to the first set of lock doors. This
                                     request always has priority = 0, as vessels can only pass these doors when the doors are open (not 
                                     claimed by a priority = -1 request). The capacity of the doors equals one, to prevent ships from 
@@ -499,7 +498,7 @@ class PassLock():
                                 Input:
                                     - timeout_required: a boolean which defines whether the requesting vessel receives a timeout. """
                                 
-                            vessel.access_lock_door1 = door1.request()
+                            vessel.access_lock_door1 = door1.request(priority=priority)
                             if timeout_required:
                                 yield vessel.access_lock_door1
                             
@@ -605,9 +604,12 @@ class PassLock():
                             #- Else, if the lock chamber is occupied
                             else:
                                 #Request to start the lock cycle
-                                yield from request_approach_lock_chamber()
-                                door1.release(vessel.access_lock_door1)
-                                yield from request_approach_lock_chamber()
+                                #yield from request_approach_lock_chamber()
+                                #door1.release(vessel.access_lock_door1)
+                                if not lock.resource.users[-1].converting:
+                                    yield from request_approach_lock_chamber()
+                                else:
+                                    yield from request_approach_lock_chamber(priority=-1)
 
                                 if door2.users != [] and door2.users[0].priority == -1:
                                     yield from secure_lock_cycle(hold_request=True)
@@ -810,7 +812,7 @@ class PassLock():
                     if direction and lock.doors_2[lock.node_3].users[0].id == vessel.id:
                         lock.doors_2[lock.node_3].release(vessel.access_lock_door2)
                     if not direction and lock.doors_1[lock.node_1].users[0].id == vessel.id:
-                        lock.doors_1[lock.node_1].release(vessel.access_lock_door2)                   
+                        lock.doors_1[lock.node_1].release(vessel.access_lock_door2)
         
                     #Releases the vessel's request to enter the second line-up area
                     opposing_lineup_area = lineup_area

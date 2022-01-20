@@ -14,6 +14,7 @@ import numpy as np
 import math
 import bisect
 import scipy as sc
+import pandas as pd
 import matplotlib.pyplot as plt
 import time as timepy
 
@@ -414,7 +415,7 @@ class NetworkProperties:
     ):
         super().__init__(*args, **kwargs)
 
-    def append_data_to_nodes(network,W,D,ukc_p,ukc_s,fwa,eta,vmag,vdir):
+    def append_data_to_nodes(network,W,D,MBL,eta,vmag,vdir):
         def fixed2bearing(east_velocity, north_velocity, principal_direction):
             """
             Function to calculate the velocity components in a reference frame parallel to the principal direction of the
@@ -455,7 +456,6 @@ class NetworkProperties:
             mean_wlev = np.mean(wlev)
             deltat = t[1] - t[0]
             intp = sc.interpolate.CubicSpline(t, [w - mean_wlev for w in wlev])
-
             roots = []
             for root in intp.roots():
                 if root < network.nodes[node]['Info']['Water level'][0][0] or root > network.nodes[node]['Info']['Water level'][0][-1]:
@@ -479,7 +479,7 @@ class NetworkProperties:
                 index_range_min = bisect.bisect_right(t, prev_root)
                 if t[index_range_min] - prev_root < deltat / 2: index_range_min = index_range_min - 1
                 index_range_max = bisect.bisect_right(t, root[1])
-                if t[index_range_max] - root[1] < deltat / 2: index_range_max = index_range_max - 1
+                if index_range_max == len(t) or t[index_range_max] - root[1] < deltat / 2: index_range_max = index_range_max - 1
                 max_index.append(np.argmax(wlev[index_range_min:index_range_max]) + index_range_min)
                 max_t.append(t[max_index[-1]])
                 max_wlev.append(wlev[max_index[-1]])
@@ -499,21 +499,14 @@ class NetworkProperties:
             return mwlev[round(len(max_wlev) * 0.01)]
 
         for node in enumerate(network.nodes):
-            network.nodes[node[1]]['Info'] = {'Tidal periods': [],'Horizontal tidal restriction': {}, 'Width': [], 'Depth': [], 'H_99%': [],  'ukc_p': [],'ukc_s': [], 'FWA': [],'Water level': [[],[]],  'Current velocity': [[],[]], 'Current direction': [[],[]], 'Cross-current': {}, 'Longitudinal current': {}}
+            network.nodes[node[1]]['Info'] = {'Tidal periods': [],'Horizontal tidal restriction': {},'Vertical tidal restriction': {}, 'Width': [], 'Depth': [], 'MBL': [], 'H_99%': [], 'Water level': [[],[]],  'Current velocity': [[],[]], 'Current direction': [[],[]], 'Cross-current': {}, 'Longitudinal current': {}}
             network.nodes[node[1]]['Info']['Horizontal tidal restriction']['Presence'] = False
-            network.nodes[node[1]]['Info']['Horizontal tidal restriction']['Type'] = [[],[]]
-            network.nodes[node[1]]['Info']['Horizontal tidal restriction']['Data'] = {}
-            network.nodes[node[1]]['Info']['Horizontal tidal restriction']['Specification'] = [[],[],[]]
+            if (MBL[0][node[0]].x,MBL[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
+                network.nodes[node[1]]['Info']['MBL'].append(MBL[1][node[0]])
             if (W[0][node[0]].x,W[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
                 network.nodes[node[1]]['Info']['Width'].append(W[1][node[0]])
             if (D[0][node[0]].x,D[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
                 network.nodes[node[1]]['Info']['Depth'].append(D[1][node[0]])
-            if (ukc_p[0][node[0]].x,D[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
-                network.nodes[node[1]]['Info']['ukc_p'].append(ukc_p[1][node[0]])
-            if (ukc_s[0][node[0]].x,D[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
-                network.nodes[node[1]]['Info']['ukc_s'].append(ukc_s[1][node[0]])
-            if (fwa[0][node[0]].x,D[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
-                network.nodes[node[1]]['Info']['FWA'].append(fwa[1][node[0]])
             if (eta[0][node[0]].x,eta[0][node[0]].y) == (network.nodes[node[1]]['geometry'].x,network.nodes[node[1]]['geometry'].y):
                 for t in range(len(eta[1][node[0]][0])):
                     network.nodes[node[1]]['Info']['Water level'][0].append(eta[1][node[0]][0][t])
@@ -542,11 +535,14 @@ class NetworkProperties:
             interp = sc.interpolate.CubicSpline(t_vel, vel_prim)
             roots = interp.roots()
             times_tidal_periods = []
+            prev_root = 0
             for root in interp.roots():
-                if root > t_vel[0] and root < t_vel[-1] and vel_prim[bisect.bisect_right(t_vel, root)] > 0:
+                if root > t_vel[0] and root < t_vel[-1] and vel_prim[bisect.bisect_right(t_vel, root)] > 0 and root - prev_root > 0.25 * 12.5 * 60 * 60:
                     times_tidal_periods.append([root, 'Flood Start'])
-                elif root > t_vel[0] and root < t_vel[-1] and vel_prim[bisect.bisect_right(t_vel, root)] < 0:
+                    prev_root = root
+                elif root > t_vel[0] and root < t_vel[-1] and vel_prim[bisect.bisect_right(t_vel, root)] < 0 and root - prev_root > 0.25 * 12.5 * 60 * 60:
                     times_tidal_periods.append([root, 'Ebb Start'])
+                    prev_root = root
             network.nodes[node[1]]['Info']['Tidal periods'] = times_tidal_periods
 
         NetworkProperties.append_info_to_edges(network)
@@ -562,11 +558,45 @@ class NetworkProperties:
             else:
                 network.edges[edge[1]]['Info']['Depth'].append(np.min([network.nodes[edge[1][0]]['Info']['Depth'][0],network.nodes[edge[1][1]]['Info']['Depth'][0]]))
 
-    def ukc_calculator_along_route(vessel,route):
-        ukcs = []
-        for node in route:
-            ukcs.append(vessel.env.FG.nodes[node]['Info']['ukc_s'][0]+vessel.env.FG.nodes[node]['Info']['ukc_p'][0] * vessel.T_f)
-        return ukcs
+    def ukc_fwa_calculator_along_route(vessel,node):
+        no_tidal_window = True
+        boolean = True
+        types = vessel.env.FG.nodes[node]['Info']['Vertical tidal restriction']['Type']
+        specifications = vessel.env.FG.nodes[node]['Info']['Vertical tidal restriction']['Specification']
+        for restriction_class in enumerate(specifications[0]):
+            if vessel.bound != specifications[2][restriction_class[0]]:
+                continue
+            for restriction_type in enumerate(restriction_class[1]):
+                if not boolean and restriction_type[0] == len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0] - 1] == 'and':
+                    continue
+                if not boolean and restriction_type[0] != len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0]] == 'and':
+                    continue
+                if not boolean and restriction_type[0] != len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0]] == 'or':
+                    boolean = True
+                    continue
+                if restriction_type[1].find('Length') != -1: value = getattr(vessel, 'L')
+                if restriction_type[1].find('Draught') != -1: value = getattr(vessel, 'T_f')
+                if restriction_type[1].find('Width') != -1: value = getattr(vessel, 'B')
+                df = pd.DataFrame({'Value': [value], 'Restriction': [specifications[1][restriction_class[0]][restriction_type[0]]]})
+                boolean = df.eval('Value' + specifications[3][restriction_class[0]][restriction_type[0]] + 'Restriction')[0]
+                if not boolean and restriction_type[0] != len(restriction_class[1]) - 1:
+                    continue
+                if boolean and restriction_type[0] != len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0]] == 'or':
+                    no_tidal_window = False
+                    break
+                elif boolean and restriction_type[0] == len(restriction_class[1]) - 1:
+                    no_tidal_window = False
+                    break
+            if boolean == True:
+                break
+            else:
+                boolean = True
+
+        ukc_s = types[0][restriction_class[0]][0]
+        ukc_p = types[1][restriction_class[0]][0]
+        fwa = types[2][restriction_class[0]][0]
+
+        return ukc_s,ukc_p,fwa
 
     def fwa_calculator_along_route(vessel,route):
         fwas = []
@@ -611,33 +641,99 @@ class NetworkProperties:
                     network.nodes[node1]['Info']['Longitudinal current'][node2][0].append(time_current[t])
                     network.nodes[node1]['Info']['Longitudinal current'][node2][1].append(abs(current_velocity[t] * np.cos((current_direction[t] - course) / 180 * math.pi)))
 
-    def append_horizontal_tidal_restriction_to_network(network,node,typ,typ_data,specification,specification_type,condition,data,nodes):
+    def append_vertical_tidal_restriction_to_network(network,node,vertical_tidal_window_input):
+        network.nodes[node]['Info']['Vertical tidal restriction']['Type'] = [[], [], []]
+        network.nodes[node]['Info']['Vertical tidal restriction']['Specification'] = [[], [], [], [], []]
+
+        for input_data in vertical_tidal_window_input:
+            ukc_p = []
+            ukc_s = []
+            fwa = []
+            for info in input_data.window_specifications.ukc_p:
+                ukc_p.append(input_data.window_specifications.ukc_p[info])
+            for info in input_data.window_specifications.ukc_s:
+                ukc_s.append(input_data.window_specifications.ukc_s[info])
+            for info in input_data.window_specifications.fwa:
+                fwa.append(input_data.window_specifications.fwa[info])
+
+            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][0].append(ukc_p)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][1].append(ukc_s)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][2].append(fwa)
+
+            vessel_characteristics_type = []
+            vessel_characteristics_spec = []
+            vessel_characteristics_value = []
+            vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
+            for info in vessel_characteristics:
+                vessel_characteristics_type.append(info)
+                vessel_characteristics_spec.append(vessel_characteristics[info][0])
+                vessel_characteristics_value.append(vessel_characteristics[info][1])
+
+            vessel_method_list = []
+            sign_list = input_data.vessel_specifications.vessel_method.split()
+            for sign in sign_list:
+                if sign[0] != '(' and sign[-1] != ')' and sign != 'x':
+                    vessel_method_list.append(sign)
+
+            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][0].append(vessel_characteristics_type)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][1].append(vessel_characteristics_value)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][4].append(vessel_method_list)
+
+    def append_horizontal_tidal_restriction_to_network(network,node,horizontal_tidal_window_input):
         network.nodes[node]['Info']['Horizontal tidal restriction']['Presence'] = True
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][0] = typ
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][1] = typ_data
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][0] = specification_type
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][1] = specification
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][2] = condition
-        for c in enumerate(condition):
-            for t in typ[c[0]]:
-                if t == 'Point-based':
-                    if type(data[c[0]]) == str:
-                        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = network.nodes[data[c[0]]]['Info']['Cross-current']
-                    else:
-                        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = {}
-                        for node2 in enumerate(nodes[c[0]]):
-                            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][node2[1]] = [[], []]
-                            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][node2[1]][0] = data[c[0]][node2[0]][0]
-                            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][node2[1]][1] = data[c[0]][node2[0]][1]
-                elif t == 'Critical cross-current':
-                    if type(data[c[0]]) == str:
-                        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = network.nodes[data[c[0]]]['Info']['Cross-current']
-                    else:
-                        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = {}
-                        for node2 in enumerate(nodes[c[0]]):
-                            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][node2[1]] = [[], []]
-                            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][node2[1]][0] = data[c[0]][node2[0]][0]
-                            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][node2[1]][1] = data[c[0]][node2[0]][1]
+        network.nodes[node]['Info']['Horizontal tidal restriction']['Type'] = [[], [], []]
+        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = {}
+        network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'] = [[], [], [], [], [], []]
+
+        for input_data in enumerate(horizontal_tidal_window_input):
+            current_velocity_value = []
+            current_velocity_range = []
+            for info in input_data[1].window_specifications.current_velocity_values:
+                current_velocity_value.append(input_data[1].window_specifications.current_velocity_values[info])
+            if input_data[1].window_specifications.current_velocity_ranges == dict:
+                current_velocity_range = []
+            else:
+                for info in input_data[1].window_specifications.current_velocity_ranges:
+                    current_velocity_range.append(input_data[1].window_specifications.current_velocity_ranges[info])
+
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][0].append(input_data[1].window_specifications.window_method)
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][1].append(current_velocity_value)
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][2].append(current_velocity_range)
+
+            vessel_characteristics_type = []
+            vessel_characteristics_spec = []
+            vessel_characteristics_value = []
+            vessel_characteristics = input_data[1].vessel_specifications.characteristic_dicts()
+            for info in vessel_characteristics:
+                vessel_characteristics_type.append(info)
+                vessel_characteristics_spec.append(vessel_characteristics[info][0])
+                vessel_characteristics_value.append(vessel_characteristics[info][1])
+
+            vessel_method_list = []
+            sign_list = input_data[1].vessel_specifications.vessel_method.split()
+            for sign in sign_list:
+                if sign[0] != '(' and sign[-1] != ')' and sign != 'x':
+                    vessel_method_list.append(sign)
+
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][0].append(vessel_characteristics_type)
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][1].append(vessel_characteristics_value)
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][2].append(input_data[1].vessel_specifications.vessel_direction)
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][4].append(vessel_method_list)
+            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][5].append([input_data[1].condition['Origin'], input_data[1].condition['Destination']])
+
+            if type(input_data[1].data[1]) == str:
+                if input_data[1].data[1] == 'Current velocity':
+                    for n in network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][5][input_data[0]]:
+                        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][n] = network.nodes[input_data[1].data[0]]['Info'][input_data[1].data[1]]
+                else:
+                    network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = network.nodes[input_data[1].data[0]]['Info'][input_data[1].data[1]]
+            else:
+                for n in nodes:
+                    network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][n][0] = input_data[1].data[node][0]
+                    network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][n][1] = input_data[1].data[node][1]
 
     def calculate_available_sail_in_times(vessel,vertical_tidal_window,horizontal_tidal_window,route,out=False,plot=False,sailing_time_correction=True):
         vessel.waiting_time_start = vessel.env.now
@@ -658,10 +754,10 @@ class NetworkProperties:
             else:
                 for root in root_interp_water_level_at_edge.roots():
                     if root > new_t[0] and root < new_t[-1] and min_wdep[bisect.bisect_right(new_t,root)] > water_depth_required:
-                        if times_vertical_tidal_window == [] or (times_vertical_tidal_window != [] and times_vertical_tidal_window[-1][1] != 'Stop'):
+                        if (times_vertical_tidal_window == [] or (times_vertical_tidal_window != [] and times_vertical_tidal_window[-1][1] != 'Stop')) and min_wdep[bisect.bisect_right(new_t,root)-1] < water_depth_required:
                             times_vertical_tidal_window.append([root, 'Stop'])
                     elif root > new_t[0] and root < new_t[-1] and min_wdep[bisect.bisect_right(new_t,root)] < water_depth_required:
-                        if times_vertical_tidal_window == [] or (times_vertical_tidal_window != [] and times_vertical_tidal_window[-1][1] != 'Start'):
+                        if (times_vertical_tidal_window == [] or (times_vertical_tidal_window != [] and times_vertical_tidal_window[-1][1] != 'Start')) and min_wdep[bisect.bisect_right(new_t,root)-1] > water_depth_required:
                             times_vertical_tidal_window.append([root, 'Start'])
 
                 if times_vertical_tidal_window != []:
@@ -669,6 +765,10 @@ class NetworkProperties:
                             times_vertical_tidal_window.insert(0,[vessel.waiting_time_start, 'Stop'])
                     if times_vertical_tidal_window[0][1] == 'Stop' and times_vertical_tidal_window[0][0] > vessel.waiting_time_start:
                             times_vertical_tidal_window.insert(0,[vessel.waiting_time_start, 'Start'])
+
+            if times_vertical_tidal_window == []:
+                times_vertical_tidal_window.append([vessel.waiting_time_start, 'Stop'])
+                times_vertical_tidal_window.append([np.max(new_t), 'Start'])
 
             dot1 = []
             if plot:
@@ -855,6 +955,7 @@ class NetworkProperties:
 
         t0 = timepy.time()
         available_sail_in_times,tmin,dot1,dot2 = times_tidal_window(vessel,vertical_tidal_window,horizontal_tidal_window,route,sailing_time_correction,plot=plot)
+
         t1 = timepy.time()
         #print('tidal window', t1 - t0)
         dot3 = []
@@ -884,9 +985,8 @@ class NetworkProperties:
         distance_to_next_node = 0
         wdep_nodes = []
         t_min_wdep = network.nodes[route[0]]['Info']['Water level'][0]
-        wdep_nodes.append([y+network.nodes[route[0]]['Info']['Depth'][0] for y in network.nodes[route[0]]['Info']['Water level'][1]])
-        ukcs = NetworkProperties.ukc_calculator_along_route(vessel,route)
-        fwas = NetworkProperties.fwa_calculator_along_route(vessel,route)
+        wdep_nodes.append([y+network.nodes[route[0]]['Info']['MBL'][0] for y in network.nodes[route[0]]['Info']['Water level'][1]])
+
         for nodes in enumerate(route):
             if sailing_time_correction:
                 if nodes[1] == route[0]:
@@ -899,9 +999,10 @@ class NetworkProperties:
             sailing_time_to_next_node = distance_to_next_node / vessel.v
             t_wlev = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Water level'][0]]
             wlev = network.nodes[route[nodes[0]]]['Info']['Water level'][1]
-            depth = network.nodes[route[nodes[0]]]['Info']['Depth'][0]
+            depth = network.nodes[route[nodes[0]]]['Info']['MBL'][0]
 
-            interp_wdep = sc.interpolate.CubicSpline(t_wlev, [y + depth-ukcs[nodes[0]]-fwas[nodes[0]] for y in wlev])
+            ukc_s, ukc_p, fwa = NetworkProperties.ukc_fwa_calculator_along_route(vessel, nodes[1])
+            interp_wdep = sc.interpolate.CubicSpline(t_wlev, [y + depth-ukc_s-(ukc_p+fwa)*vessel.T_f for y in wlev])
             wdep = interp_wdep(t_min_wdep)
             wdep_nodes.append(wdep)
             if plot:
@@ -930,67 +1031,56 @@ class NetworkProperties:
             if network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Presence'] != True:
                 continue
 
-            for bound in enumerate(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][2]):
-                if vessel.bound == bound[1]:
-                    j = bound[0]
+            no_tidal_window = True
+            boolean = True
+            types = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type']
+            specifications = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification']
+            for restriction_class in enumerate(specifications[0]):
+                restriction_on_route = False
+                for n1 in vessel.route[:nodes[0]]:
+                    if n1 == network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Specification'][5][restriction_class[0]][0]:
+                        for n2 in vessel.route[nodes[0]:]:
+                            if n2 == network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Specification'][5][restriction_class[0]][1]:
+                                restriction_on_route = True
+                                break
+                        break
+
+                if not restriction_on_route:
+                    continue
+                if vessel.bound != specifications[2][restriction_class[0]]:
+                    continue
+                for restriction_type in enumerate(restriction_class[1]):
+                    if not boolean and restriction_type[0] == len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0] - 1] == 'and':
+                        continue
+                    if not boolean and restriction_type[0] != len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0]] == 'and':
+                        continue
+                    if not boolean and restriction_type[0] != len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0]] == 'or':
+                        boolean = True
+                        continue
+                    if restriction_type[1].find('Length') != -1: value = getattr(vessel, 'L')
+                    if restriction_type[1].find('Draught') != -1: value = getattr(vessel, 'T_f')
+                    if restriction_type[1].find('Width') != -1: value = getattr(vessel, 'B')
+                    df = pd.DataFrame({'Value': [value],'Restriction': [specifications[1][restriction_class[0]][restriction_type[0]]]})
+                    boolean = df.eval('Value' + specifications[3][restriction_class[0]][restriction_type[0]] + 'Restriction')[0]
+                    if not boolean and restriction_type[0] != len(restriction_class[1]) - 1:
+                        continue
+                    if boolean and restriction_type[0] != len(restriction_class[1]) - 1 and specifications[-1][restriction_class[0]][restriction_type[0]] == 'or':
+                        no_tidal_window = False
+                        break
+                    elif boolean and restriction_type[0] == len(restriction_class[1]) - 1:
+                        no_tidal_window = False
+                        break
+                if boolean == True:
                     break
+                else:
+                    boolean = True
 
-            for spec in enumerate(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][j][1]):
-                if network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][0][j][spec[0]] == 'T':
-                    if vessel.T_f <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]]:
-                        i = spec[0]-1
-                        break
-                    else:
-                        i = len(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][j][1])-1
-                        continue
-                elif network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][0][j][spec[0]] == 'L':
-                    if vessel.L <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]]:
-                        i = spec[0]-1
-                        break
-                    else:
-                        i = len(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][j][1])-1
-                        continue
-                elif network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][0][j][spec[0]] == 'L&T':
-                    if (vessel.L <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][0] and
-                        vessel.T_f <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][1]):
-                        i = spec[0]-1
-                        break
-                    else:
-                        i = len(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][j][1])-1
-                        continue
-                elif network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][0][j][spec[0]] == 'L&B':
-                    if (vessel.L <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][0] and
-                        vessel.B <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][1]):
-                        i = spec[0]-1
-                        break
-                    else:
-                        i = len(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][j][1])-1
-                        continue
-                elif network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][0][j][spec[0]] == 'L&T&type':
-                    if (vessel.L <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][0] and
-                        vessel.T <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][1] and
-                        vessel.type == network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][2]):
-                        i = spec[0]-1
-                        break
-                    else:
-                        i = len(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][j][1])-1
-                        continue
-                elif network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][0][j][spec[0]] == 'L&T&ukc':
-                    if (vessel.L <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][0] and
-                        vessel.T <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][1] and
-                        vessel.ukc <= network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][1][j][spec[0]][2]):
-                        i = spec[0]-1
-                        break
-                    else:
-                        i = len(network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification'][j][1])-1
-                        continue
-
-            if i == -1:
+            if no_tidal_window:
                 continue
 
-            if network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][0][j][i] == 'Critical cross-current':
-                crit_ccur_flood_old = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][1][j][i][0]
-                crit_ccur_ebb_old = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][1][j][i][1]
+            elif types[0][restriction_class[0]] == 'Critical cross-current':
+                crit_ccur_flood_old = types[1][restriction_class[0]][0]
+                crit_ccur_ebb_old = types[1][restriction_class[0]][1]
 
                 if crit_ccur_flood_old != -1:
                     crit_ccur_flood = crit_ccur_flood_old - vessel.metadata['max_cross_current']
@@ -1000,37 +1090,28 @@ class NetworkProperties:
                     crit_ccur_ebb = crit_ccur_ebb_old - vessel.metadata['max_cross_current']
                 else:
                     crit_ccur_ebb = 10
-
                 ccur = []
                 crit_ccur = []
                 t_ccur = []
+
                 if nodes[1] != route[0]:
-                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] - 1]][0]]
-                    cur = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] - 1]][1]
+                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][0]]
+                    cur = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][1]
                     interp_ccur = sc.interpolate.CubicSpline(t_ccur, cur)
                     times_tidal_periods = [z[0]-sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods, y+sailing_time_to_next_node)] if y+sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
                     ccur.append([y - crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else y - crit_ccur_ebb for x, y in enumerate(interp_ccur(t_max_ccur))])
-                    crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] - 1]][1])])
+                    crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][1])])
                 if nodes[1] != route[-1]:
-                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] + 1]][0]]
-                    cur = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] + 1]][1]
+                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][0]]
+                    cur = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][1]
                     interp_ccur = sc.interpolate.CubicSpline(t_ccur, cur)
                     times_tidal_periods = [z[0]-sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods, y+sailing_time_to_next_node)] if y+sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
                     ccur.append([y - crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else y - crit_ccur_ebb for x, y in enumerate(interp_ccur(t_max_ccur))])
-                    crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] + 1]][1])])
-                if t_ccur == []:
-                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data']['Node 16'][0]]
-                    cur = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data']['Node 16'][1]
-                    interp_ccur = sc.interpolate.CubicSpline(t_ccur, cur)
-                    times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                    tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                    t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <=times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                    ccur.append([y - crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else y - crit_ccur_ebb for x, y in enumerate(interp_ccur(t_max_ccur))])
-                    crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data']['Node 16'][1])])
+                    crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][1])])
 
                 mccur = [max(idx) for idx in zip(*ccur)]
                 critcur = [crit_ccur[np.argmax(val)][idx] for idx,val in enumerate(zip(*ccur))]
@@ -1041,42 +1122,37 @@ class NetworkProperties:
                     ax2.plot(t_max_ccur, [y + critcur[x] for x, y in enumerate(mccur)], color='lightcoral', alpha=0.4)
                     ax2.plot(t_max_ccur, [y if y != 10 else None for y in critcur], color='lightcoral', linestyle='--', alpha=0.4)
 
-            elif network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][0][j][i] == 'Point-based':
+            elif types[0][restriction_class[0]] == 'Point-based':
                 horizontal_tidal_window = []
                 crit_vel_horizontal_tidal_window = []
-                crit_ccur_flood_old = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][1][j][i][0]
-                crit_ccur_ebb_old = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][1][j][i][1]
+                crit_ccur_flood_old = types[1][restriction_class[0]][0]
+                crit_ccur_ebb_old = types[1][restriction_class[0]][1]
                 if type(crit_ccur_flood_old) != str:
                     crit_ccur_flood = crit_ccur_flood_old - vessel.metadata['max_cross_current']
                 if type(crit_ccur_ebb_old) != str:
                     crit_ccur_ebb = crit_ccur_ebb_old - vessel.metadata['max_cross_current']
                 ccur = []
                 t_ccur = []
+
                 if nodes[1] != route[0]:
-                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] - 1]][0]]
+                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][0]]
                     times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                    ccur.append(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] - 1]][1])
+                    ccur.append(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][1])
                 if nodes[1] != route[-1]:
-                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] + 1]][0]]
+                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][0]]
                     times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
                     t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <=times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                    ccur.append(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][route[nodes[0] + 1]][1])
-                if t_ccur == []:
-                    t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data']['Node 16'][0]]
-                    times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                    tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                    t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <=times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                    ccur.append(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data']['Node 16'][1])
+                    ccur.append(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][1])
 
                 mccur = [max(idx) for idx in zip(*ccur)]
                 interp_ccur = sc.interpolate.CubicSpline(t_ccur, mccur)
                 mccur = interp_ccur(t_max_ccur)
                 previous_time = t_ccur[0]
-                p_flood = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][1][j][i][2][0]
-                p_ebb = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type'][1][j][i][2][1]
+                p_flood = types[2][restriction_class[0]][0]
+                p_ebb = types[2][restriction_class[0]][1]
                 critcur = -10*np.ones(len(mccur))
                 critcur_nodes.append(critcur)
                 mccur_nodes.append(critcur)
@@ -1090,6 +1166,7 @@ class NetworkProperties:
                     roots2 = interp_ccur_t2.roots()
                     t_ccur_tidal_periods1 = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <=times_tidal_periods[-1] else tidal_periods[-1] for y in roots1]
                     t_ccur_tidal_periods2 = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <=times_tidal_periods[-1] else tidal_periods[-1] for y in roots2]
+
                 if type(crit_ccur_ebb_old) != str:
                     interp_ccur_t3 = sc.interpolate.CubicSpline(t_ccur,[ccur-crit_ccur_ebb*(1+p_ebb) for ccur in mccur])
                     interp_ccur_t4 = sc.interpolate.CubicSpline(t_ccur,[ccur-crit_ccur_ebb*(1-p_ebb) for ccur in mccur])
@@ -1183,7 +1260,7 @@ class NetworkProperties:
                     previous_time = period[1]
 
                 if type(crit_ccur_flood_old) != str:
-                    for root in enumerate(interp_ccur_t1.roots()):
+                    for root in enumerate(roots1):
                         index = bisect.bisect_right(t_ccur, root[1])
                         if index >= len(t_ccur): index -= 1
                         if mccur[index] < crit_ccur_t1 and t_ccur_tidal_periods1[root[0]] == 'Ebb Start':
@@ -1192,7 +1269,7 @@ class NetworkProperties:
                                 crit_vel_horizontal_tidal_window.append(crit_ccur_t1)
 
                 if type(crit_ccur_flood_old) != str:
-                    for root in enumerate(interp_ccur_t2.roots()):
+                    for root in enumerate(roots2):
                         index = bisect.bisect_right(t_ccur, root[1])
                         if index >= len(t_ccur): index -= 1
                         if mccur[index] < crit_ccur_t2 and t_ccur_tidal_periods2[root[0]] == 'Ebb Start':
@@ -1201,7 +1278,7 @@ class NetworkProperties:
                                 crit_vel_horizontal_tidal_window.append(crit_ccur_t2)
 
                 if type(crit_ccur_ebb_old) != str:
-                    for root in enumerate(interp_ccur_t3.roots()):
+                    for root in enumerate(roots3):
                         index = bisect.bisect_right(t_ccur, root[1])
                         if index >= len(t_ccur): index -= 1
                         if mccur[index] < crit_ccur_t3 and t_ccur_tidal_periods3[root[0]] == 'Flood Start':
@@ -1210,7 +1287,7 @@ class NetworkProperties:
                                 crit_vel_horizontal_tidal_window.append(crit_ccur_t3)
 
                 if type(crit_ccur_ebb_old) != str:
-                    for root in enumerate(interp_ccur_t4.roots()):
+                    for root in enumerate(roots4):
                         index = bisect.bisect_right(t_ccur, root[1])
                         if index >= len(t_ccur): index -= 1
                         if mccur[index] < crit_ccur_t4 and t_ccur_tidal_periods4[root[0]] == 'Flood Start':
@@ -1254,6 +1331,7 @@ class NetworkProperties:
         if out:
             sail_in_times = vessel.sail_in_times
             vessel.sail_in_times = vessel.sail_out_times
+
         waiting_time = 0
         current_time = vessel.env.now+delay
         for t in range(len(vessel.sail_in_times)):
@@ -1297,9 +1375,9 @@ class NetworkProperties:
             delay = sailing_time + 2 * vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60 + waiting_time
             current_time = vessel.env.now + delay
             if 'sail_out_times' not in dir(vessel):
-                vessel.bound = 'out'
+                vessel.bound = 'outbound'
                 vessel.sail_out_times = NetworkProperties.calculate_available_sail_in_times(vessel, vertical_tidal_window,horizontal_tidal_window, route, out=True, plot=plot)
-                vessel.bound = 'in'
+                vessel.bound = 'inbound'
             for t in range(len(vessel.sail_out_times)):
                 if vessel.sail_out_times[t][1] == 'Start':
                     continue
@@ -1517,9 +1595,9 @@ class IsLock(HasResource, HasLength, Identifiable, Log):
 
 class PassSection():
     def release_access_previous_section(vessel, origin):
-        for node in reversed(vessel.route[:vessel.route.index(origin)]):
-            if 'Junction' in vessel.env.FG.nodes[node]:
-                junction = vessel.env.FG.nodes[node]['Junction'][0]
+        for n in reversed(vessel.route[:vessel.route.index(origin)]):
+            if 'Junction' in vessel.env.FG.nodes[n]:
+                junction = vessel.env.FG.nodes[n]['Junction'][0]
                 for section in enumerate(junction.section):
                     if origin not in list(section[1].keys()):
                         continue
@@ -1529,39 +1607,39 @@ class PassSection():
                         if 'access1' not in dir(junction):
                             junction = vessel.env.FG.nodes[origin]['Junction'][0]
                             for section in enumerate(junction.section):
-                                if node not in list(section[1].keys()):
+                                if n not in list(section[1].keys()):
                                     continue
-                                junction.access2[0][node].release(vessel.request_access_entrance_section) #section[0]
+                                junction.access2[0][n].release(vessel.request_access_entrance_section) #section[0]
                                 junction.access1[0][origin].release(vessel.request_access_exit_section) #section[0]
                         else:
-                            junction.access1[0][node].release(vessel.request_access_entrance_section) #section[0]
+                            junction.access1[0][n].release(vessel.request_access_entrance_section) #section[0]
                             junction.access2[0][origin].release(vessel.request_access_exit_section) #section[0]
                         break
                 break
         return
 
     def request_access_next_section(vessel, origin, destination):
-        for node in vessel.route[vessel.route.index(destination):]:
-            if 'Junction' in vessel.env.FG.nodes[node]:
+        for n in vessel.route[vessel.route.index(destination):]:
+            if 'Junction' in vessel.env.FG.nodes[n]:
                 junction = vessel.env.FG.nodes[origin]['Junction'][0]
                 for section in enumerate(junction.section):
-                    if node not in list(section[1].keys()):
+                    if n not in list(section[1].keys()):
                         continue
                     vessel.stopping_distance = 15 * vessel.L
                     vessel.stopping_time = vessel.stopping_distance / vessel.v
-                    if section[1][node].users != [] and (section[1][node].users[-1].ta + vessel.stopping_time) > vessel.env.now:
-                        vessel.request_access_section = section[1][node].request()
-                        section[1][node].users[-1].id = vessel.id
-                        section[1][node].users[-1].ta = (section[1][node].users[-2].ta + vessel.stopping_time)
-                        yield vessel.env.timeout((section[1][node].users[-2].ta + vessel.stopping_time) - vessel.env.now)
+                    if section[1][n].users != [] and (section[1][n].users[-1].ta + vessel.stopping_time) > vessel.env.now:
+                        vessel.request_access_section = section[1][n].request()
+                        section[1][n].users[-1].id = vessel.id
+                        section[1][n].users[-1].ta = (section[1][n].users[-2].ta + vessel.stopping_time)
+                        yield vessel.env.timeout((section[1][n].users[-2].ta + vessel.stopping_time) - vessel.env.now)
                     else:
-                        vessel.request_access_section = section[1][node].request()
-                        section[1][node].users[-1].ta = vessel.env.now
-                        section[1][node].users[-1].id = vessel.id
+                        vessel.request_access_section = section[1][n].request()
+                        section[1][n].users[-1].ta = vessel.env.now
+                        section[1][n].users[-1].id = vessel.id
 
                     if junction.type[section[0]] == 'one-way_traffic':
                         if 'access1' not in dir(junction):
-                            junction = vessel.env.FG.nodes[node]['Junction'][0]
+                            junction = vessel.env.FG.nodes[n]['Junction'][0]
                             for section in enumerate(junction.section):
                                 if origin not in list(section[1].keys()):
                                     continue
@@ -1569,17 +1647,17 @@ class PassSection():
                                 vessel.request_access_entrance_section = junction.access2[0][origin].request() #section[0]
                                 junction.access2[0][origin].users[-1].id = vessel.id #section[0]
                                 #yield vessel.request_access_entrance_section
-                                vessel.request_access_exit_section = junction.access1[0][node].request() #section[0]
+                                vessel.request_access_exit_section = junction.access1[0][n].request() #section[0]
                                 #yield vessel.request_access_exit_section
-                                junction.access1[0][node].users[-1].id = vessel.id #section[0]
+                                junction.access1[0][n].users[-1].id = vessel.id #section[0]
 
                         else:
                             vessel.request_access_entrance_section = junction.access1[0][origin].request() #section[0]
                             junction.access1[0][origin].users[-1].id = vessel.id #section[0]
                             #yield vessel.request_access_entrance_section
-                            vessel.request_access_exit_section = junction.access2[0][node].request() #section[0]
+                            vessel.request_access_exit_section = junction.access2[0][n].request() #section[0]
                             #yield vessel.request_access_exit_section
-                            junction.access2[0][node].users[-1].id = vessel.id #section[0]
+                            junction.access2[0][n].users[-1].id = vessel.id #section[0]
                         break
                 break
         return
@@ -1622,7 +1700,6 @@ class PassTerminal():
         if node_anchorage != node_anchorage_area[1]:
            vessel.return_to_sea = True
            vessel.waiting_time = vessel.metadata['max_waiting_time']
-
         anchorage = network.nodes[node_anchorage]['Anchorage'][0]
         vessel.route_after_anchorage = []
         vessel.true_origin = vessel.route[0]
@@ -1659,6 +1736,7 @@ class PassTerminal():
             if new_current_time - current_time >= vessel.metadata['max_waiting_time']:
                 vessel.return_to_sea = True
                 vessel.waiting_time = 0
+                terminal.release(vessel.waiting_time_in_anchorage)
             else:
                 if terminal.type == 'quay':
                     vessel.index_quay_position, _ = PassTerminal.pick_minimum_length(vessel, terminal)
@@ -1669,6 +1747,7 @@ class PassTerminal():
                     vessel.access_terminal = terminal.request(priority=-1)
                     terminal.release(vessel.waiting_time_in_anchorage)
                     yield vessel.access_terminal
+                    terminal.users[-1].etd = 100
 
                 vessel.sail_in_times = NetworkProperties.calculate_available_sail_in_times(vessel, True, True, vessel.route_after_anchorage,out=False)
                 for t in range(len(vessel.sail_in_times)):
@@ -1698,6 +1777,14 @@ class PassTerminal():
                         else:
                             continue
 
+                    if new_current_time >= vessel.sail_in_times[t][0]:
+                        if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
+                            if t == len(vessel.sail_in_times) - 1 or new_current_time < vessel.sail_in_times[t + 1][0]:
+                                terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v
+                                vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
+                                terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + NetworkProperties.waiting_time_for_tidal_window(vessel, True, horizontal_tidal_window=True, max_waiting_time=True, out=True,route=vessel.route_after_terminal, delay=vessel_etd - vessel.env.now, plot=False)
+                                break
+
                     elif new_current_time <= vessel.sail_in_times[t][0]:
                         if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
                             if new_current_time < vessel.sail_in_times[t - 1][0]:
@@ -1717,14 +1804,6 @@ class PassTerminal():
                                     yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
                             break
 
-                    elif new_current_time >= vessel.sail_in_times[t][0]:
-                        if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
-                            if t == len(vessel.sail_in_times) - 1 or new_current_time < vessel.sail_in_times[t + 1][0]:
-                                terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v
-                                vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                                terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + NetworkProperties.waiting_time_for_tidal_window(vessel, True, horizontal_tidal_window=True, max_waiting_time=True, out=True,route=vessel.route_after_terminal, delay=vessel_etd - vessel.env.now, plot=False)
-                                break
-
                     elif t == len(vessel.sail_in_times) - 1:
                         waiting_time = vessel.sail_in_times[t][0] - current_time
                         if waiting_time >= vessel.metadata['max_waiting_time']:
@@ -1736,7 +1815,6 @@ class PassTerminal():
                             vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
                             terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + NetworkProperties.waiting_time_for_tidal_window(vessel,True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=False)
                             yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
-                        break
                     else:
                         continue
 
@@ -1839,7 +1917,7 @@ class PassTerminal():
     def request_terminal_access(vessel, edge, node):
         node = vessel.route.index(node)
         terminal = vessel.env.FG.edges[edge]["Terminal"][0]
-        vessel.bound = 'in' ##to_be_removed
+        vessel.bound = 'inbound' ##to_be_removed
         vessel.move_to_anchorage = False
         vessel.waiting_in_anchorage = False
         vessel.waiting_for_availability_terminal = False
@@ -1971,7 +2049,6 @@ class PassTerminal():
                     terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v
                     vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
                     terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + NetworkProperties.waiting_time_for_tidal_window(vessel,True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route = vessel.route_after_terminal, delay=vessel_etd-vessel.env.now,plot=False)
-
         else:
             yield from PassTerminal.move_to_anchorage(vessel, node)
 
@@ -2018,7 +2095,7 @@ class PassTerminal():
                          shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
 
         # New Route
-        vessel.dir = 0
+        vessel.bound = 'outbound'
         if 'true_origin' in dir(vessel):
             vessel.route = nx.dijkstra_path(vessel.env.FG, vessel.route[vessel.route.index(edge[1])], vessel.true_origin)
         else:
@@ -2031,12 +2108,12 @@ class PassTerminal():
             if required_water_depth > minimum_water_depth:
                 break
 
-        vessel.waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel,required_water_depth > minimum_water_depth,horizontal_tidal_window=True,max_waiting_time = False,route=vessel.route,out=True,plot=False)
-        vessel.bound = 'out' ##to_be_removed
+        vessel.waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel,required_water_depth > minimum_water_depth,horizontal_tidal_window=True,max_waiting_time = False,route=vessel.route,out=True,plot=True)
+        vessel.bound = 'outbound' ##to_be_removed
         if vessel.waiting_time:
             vessel.log_entry("Waiting for tidal window start", vessel.env.now, 0,
                              shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
-            yield vessel.env.timeout(vessel.waiting_time)
+            yield vessel.env.timeout(np.max([0,vessel.waiting_time-vessel.metadata['t_b']*60]))
 
             vessel.log_entry("Waiting for tidal window stop", vessel.env.now, vessel.waiting_time,
                              shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),)
@@ -2291,7 +2368,6 @@ class Movable(Locatable, Routeable, Log):
         # Move over the path and log every step
         for node in enumerate(self.route):
             self.node = node[1]
-
             # def vessel_bound(self):
             #     bound = 'in'
             #     return bound
@@ -2302,21 +2378,21 @@ class Movable(Locatable, Routeable, Log):
                 origin = self.route[node[0]]
                 destination = self.route[node[0] + 1]
 
-            #Leave and access waterway section
+            # Leave and access waterway section
             if 'Junction' in self.env.FG.nodes[origin].keys():
                 if 'Anchorage' not in self.env.FG.nodes[origin].keys():
-                    PassSection.release_access_previous_section(self,origin)
+                    PassSection.release_access_previous_section(self, origin)
                     yield from PassSection.request_access_next_section(self, origin, destination)
 
             if 'Turning Basin' in self.env.FG.nodes[origin].keys():
                 turning_basin = self.env.FG.nodes[origin]['Turning Basin'][0]
-                if self.dir == 0 and turning_basin.length >= self.L:
+                if self.bound == 'inbound' and turning_basin.length >= self.L:
                     self.log_entry("Vessel Turning Start", self.env.now, 0, self.env.FG.nodes[origin]['geometry'])
                     turning_basin.log_entry("Vessel Turning Start", self.env.now, 0, self.env.FG.nodes[origin]['geometry'] )
                     yield self.env.timeout(10*60)
                     turning_basin.log_entry("Vessel Turning Stop", self.env.now, 10*60, self.env.FG.nodes[origin]['geometry'] )
                     self.log_entry("Vessel Turning Stop", self.env.now, 10*60, self.env.FG.nodes[origin]['geometry'])
-                    self.dir = -1
+                    self.bound = 'outbound'
                 else:
                     self.log_entry("Passing Turning Basin", self.env.now, 0, self.env.FG.nodes[origin]['geometry'])
                     turning_basin.log_entry("Vessel Passing", self.env.now, 0,self.env.FG.nodes[origin]['geometry'])
@@ -2358,17 +2434,17 @@ class Movable(Locatable, Routeable, Log):
                 yield from lock_module.PassLock.leave_lock(self,origin)
                 self.v = 4*self.v
 
-            # Request for a terminal
-            if "Origin" in self.env.FG.nodes[origin] and 'leaving_port' not in dir(self):
-                self.dir = -1
-                yield from PassTerminal.request_terminal_access(self, [self.route[-2], self.route[-1]], origin)
-                if self.waiting_in_anchorage:
-                    break
-
             # Anchorage
             if 'Anchorage' in self.env.FG.nodes[destination].keys() and self.route[-1] == destination:
                 yield from PassTerminal.pass_anchorage(self, destination)
                 break
+
+            # Request for a terminal
+            if "Origin" in self.env.FG.nodes[origin] and 'leaving_port' not in dir(self):
+                self.bound = 'inbound'
+                yield from PassTerminal.request_terminal_access(self, [self.route[-2], self.route[-1]], origin)
+                if self.waiting_in_anchorage:
+                    break
 
             # Terminal
             if 'Terminal' in self.env.FG.edges[origin, destination].keys() and self.route[-1] == destination:
@@ -2378,9 +2454,8 @@ class Movable(Locatable, Routeable, Log):
             else:
                 # print('I am going to go to the next node {}'.format(destination))
                 yield from self.pass_edge(origin, destination)
-
-            if node[0] + 2 == len(self.route):
-                break
+            # if node[0] + 2 == len(self.route):
+            #     break
 
         # self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
