@@ -5,21 +5,22 @@
 # package(s) related to time, space and id
 import json
 import logging
-import uuid
+import math
 import os
+import uuid
 
-# you need these dependencies (you can get these from anaconda)
-# package(s) related to the simulation
-import simpy
 import networkx as nx
+import numpy as np
 
 # spatial libraries
 import pyproj
 import shapely.geometry
 
 # matplotlib
-import math
 import matplotlib.pyplot as plt
+
+# package(s) related to the simulation
+import simpy
 
 logger = logging.getLogger(__name__)
 
