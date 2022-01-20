@@ -217,17 +217,16 @@ def test_basic_simulation(graph, vessel, nodes):
 
 def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
     """test a basic simulation on the graph"""
+
+    # get the graph from the fixtures
     FG = graph
+    # here we'll use a vessel with energy mixed in
     vessel = energy_vessel
 
-    node_1 = nodes[0]
-    node_2 = nodes[1]
-    node_3 = nodes[2]
-    node_4 = nodes[3]
-
+    # set the middle edge to a different waterdepth
     middle_edges = [
-        (node_2.name, node_3.name),
-        (node_3.name, node_2.name)
+        (nodes[1].name, nodes[2].name),
+        (nodes[2].name, nodes[1].name)
     ]
     for e in middle_edges:
         edge = FG.edges[e]
@@ -235,7 +234,7 @@ def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
 
 
 
-    path = nx.dijkstra_path(FG, node_1.name, node_4.name)
+    path = nx.dijkstra_path(FG, nodes[0].name, nodes[3].name)
 
     # 4. Run simulation
     # Start simpy environment
