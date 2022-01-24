@@ -4,6 +4,9 @@
 import json
 import logging
 import uuid
+import pathlib
+import datetime
+import time
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -19,9 +22,11 @@ import pyproj
 import shapely.geometry
 
 # additional packages
-import datetime, time
+
+import opentnsim.energy
 
 logger = logging.getLogger(__name__)
+
 
 
 class SimpyObject:
@@ -221,9 +226,8 @@ class VesselProperties:
     type: can contain info on vessel type (avv class, cemt_class or other)
     B: vessel width
     L: vessel length
-    H_e: vessel height unloaded
-    H_f: vessel height loaded
-    T:actual draft
+    h_min: vessel minimum water depth
+    T: actual draft
     Add information on possible restrictions to the vessels, i.e. height, width, etc.
     """
 
@@ -232,10 +236,7 @@ class VesselProperties:
             type,
             B,
             L,
-            T_e,
-            T_f,
-            H_e,
-            H_f,
+            T=None,
             *args,
             **kwargs
     ):
@@ -245,16 +246,36 @@ class VesselProperties:
         self.type = type
         self.B = B
         self.L = L
-        self.T_e = T_e
-        self.T_f = T_f
-        self.H_e = H_e
-        self.H_f = H_f
-#         if T:
-#             self.T= T
-#         else:
-#             self.T = calculate_actual_T_and_payload() 
-        
-        
+        self._T = T
+
+    @property
+    def T(self):
+        """Compute the actual draft """
+        if self._T is not None:
+            # if we were passed a T value, use tha one
+            T = self._T
+        else:
+            # if no T was provided during initialization,  compute it using the route
+            assert self.route, 'To compute actual draft we need a route with information on the GeneralDepth'
+            T, payload = self.calculate_actual_T_and_payload(self.h_min)
+        return T
+
+    @property
+    def h_min(self):
+        self.route
+        depths = []
+        # loop over all node pairs (e: edge numbers)
+        for e in zip(self.route[:-1], self.route[1:]):
+            # get the properties
+            edge = self.env.FG.get_edge_data(e[0], e[1])
+            # lookup the depth
+            depth = edge['Info']['GeneralDepth']
+            # remember
+            depths.append(depth)
+        # find the minimum
+        h_min = np.min(depths)
+        return h_min
+
 
     @property
     def H(self):
@@ -338,7 +359,7 @@ class VesselProperties:
             [dum_container, dum_dry,
             dum_barge, dum_tanker] = [0,0,0,1]
 
-        # dum_container and dum_dry use the same "c5"   
+        # dum_container and dum_dry use the same "c5"
         T_empty = Tempty_coefs['intercept']  + (Tempty_coefs['c1'] * self.B) + \
                                                (Tempty_coefs['c2'] * ((self.L * T_design) / self.B)) + \
                                                (Tempty_coefs['c3'] * (np.sqrt(self.L * self.B)))  + \
@@ -360,7 +381,7 @@ class VesselProperties:
 
         print('The actual draft is', T_actual, 'm')
 
-        #Capacity indexes, refer to Table 3 and eq 2 
+        #Capacity indexes, refer to Table 3 and eq 2
         CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
 
                 "c1": -7.8577991460 * 10**1,
@@ -375,7 +396,7 @@ class VesselProperties:
         # Capindex_2 related to design draft
         Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
         CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
-     
+
         #DWT design capacity, refer to Table 6 and eq 3
         capacity_coefs = dict({"intercept": -1.6687441313*10**1,
              "c1": 9.7404521380*10**-1,
@@ -383,28 +404,23 @@ class VesselProperties:
              })
 
         DWT_design = capacity_coefs['intercept'] + (capacity_coefs['c1'] * self.L * self.B * T_design) + (
-         capacity_coefs['c2'] * self.L * self.B * T_empty) # designed DWT 
+         capacity_coefs['c2'] * self.L * self.B * T_empty) # designed DWT
         DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
-        
-       
+
+
         if T_actual < T_design:
-            consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT 
+            consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                               # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
-        else: 
-            consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT 
+        else:
+            consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                               # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
-        
+
         fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
         actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
         print('The actual_max_payload is', actual_max_payload, 'ton')
 
-        # set vessel properties
-        self.T = T_actual
-      
-        # self.container.level = actual_max_payload
-
         return T_actual, actual_max_payload
-        
+
 
     def get_route(
             self,
@@ -534,8 +550,8 @@ class ConsumesEnergy:
         if c_year:
             self.c_year= c_year
         else:
-            self.c_year = self.calculate_engine_age()  
-     
+            self.c_year = self.calculate_engine_age()
+
 
     # The engine age and construction year of the engine is computed with the function below.
     # The construction year of the engine is used in the emission functions (1) emission_factors_general and (2) correction_factors
@@ -563,7 +579,7 @@ class ConsumesEnergy:
         self.c_year = self.year - self.age
 
         print('The construction year of the engine is', self.c_year)
-        return c_year
+        return self.c_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
@@ -956,14 +972,15 @@ class ConsumesEnergy:
         self.calculate_total_power_required()  # You need the P_partial values
 
         # Import the correction factors table
-        self.corf = pd.read_excel(r'correctionfactors.xlsx')
+        # TODO: use package data, not an arbitrary location
+        self.corf = opentnsim.energy.correction_factors()
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
             if self.P_partial <= self.corf.iloc[0, 0]:
                 self.corf_CO2 = self.corf.iloc[0, 5]
                 self.corf_PM10 = self.corf.iloc[0, 6]
-                self.corf_fuel = self.corf_CO2 # CO2 emission is generated from fuel consumption, so these two correction factor are equal 
+                self.corf_fuel = self.corf_CO2 # CO2 emission is generated from fuel consumption, so these two correction factor are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.c_year < 2008:
@@ -1266,6 +1283,7 @@ class Movable(Locatable, Routeable, Log):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.v = v
+        self.edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     def move(self):
@@ -1987,6 +2005,9 @@ class Movable(Locatable, Routeable, Log):
         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
+        for edge_function in self.edge_functions:
+            edge_function(orig, dest, edge)
+
         if "Lock" in self.env.FG.nodes[origin].keys():
             orig = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
 
@@ -2000,7 +2021,7 @@ class Movable(Locatable, Routeable, Log):
             dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
 
         if 'geometry' in edge:
-            edge_route = np.array(edge['geometry'])
+            edge_route = np.array(edge['geometry'].coords)
 
             # check if edge is in the sailing direction, otherwise flip it
             distance_from_start = self.wgs84.inv(
@@ -2017,7 +2038,7 @@ class Movable(Locatable, Routeable, Log):
                 )[2]
             if distance_from_start>distance_from_stop:
                 # when the distance from the starting point is greater than from the end point
-                edge_route = np.flipud(np.array(edge['geometry']))
+                edge_route = np.flipud(np.array(edge['geometry'].coords))
 
             for index, pt in enumerate(edge_route[:-1]):
                 sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
@@ -2037,10 +2058,10 @@ class Movable(Locatable, Routeable, Log):
             # print('   My new origin is {}'.format(destination))
         else:
             distance = self.wgs84.inv(
-                shapely.geometry.asShape(orig).x,
-                shapely.geometry.asShape(orig).y,
-                shapely.geometry.asShape(dest).x,
-                shapely.geometry.asShape(dest).y,
+                shapely.geometry.shape(orig).x,
+                shapely.geometry.shape(orig).y,
+                shapely.geometry.shape(dest).x,
+                shapely.geometry.shape(dest).y,
             )[2]
 
             self.distance += distance
@@ -2083,3 +2104,11 @@ class ContainerDependentMovable(Movable, HasContainer):
     @property
     def current_speed(self):
         return self.compute_v(self.container.level / self.container.capacity)
+
+
+class ExtraMetadata:
+    """store all leftover keyword arguments as metadata property (use as last mixin)"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        # store all other properties as metadata
+        self.metadata = kwargs
