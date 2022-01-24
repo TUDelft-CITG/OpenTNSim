@@ -171,9 +171,9 @@ class EnergyCalculation:
                 h = calculate_depth(geometries[i], geometries[i + 1])
 
                 # printstatements to check the output (can be removed later)
-                print('delta_t: {:.4f} s'. format(delta_t))
-                print('distance: {:.4f} m'. format(distance))
-                print('velocity: {:.4f} m/s'. format(V_0))
+                logger.debug('delta_t: {:.4f} s'. format(delta_t))
+                logger.debug('distance: {:.4f} m'. format(distance))
+                logger.debug('velocity: {:.4f} m/s'. format(V_0))
 
                 # we use the calculated velocity to determine the resistance and power required
                 self.vessel.calculate_total_resistance(V_0, h)
