@@ -50,7 +50,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
         """function to optimize"""
         logger.debug(f'optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}')
         # water depth from the edge
-        h = edge['Info']['GeneralDepth']
+        h_0 = edge['Info']['GeneralDepth']
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_0)
         vessel.calculate_total_power_required()
