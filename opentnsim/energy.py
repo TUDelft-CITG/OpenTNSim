@@ -52,7 +52,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
         # water depth from the edge
         h = edge['Info']['GeneralDepth']
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
-        vessel.calculate_total_resistance(V_0=v, h=h)
+        vessel.calculate_total_resistance(v, h=h)
         vessel.calculate_total_power_required()
         diff = vessel.P_given - vessel.P_tot_given
         return diff ** 2
@@ -161,7 +161,7 @@ class EnergyCalculation:
 
                 # calculate the distance travelled and the associated velocity
                 distance = calculate_distance(geometries[i], geometries[i + 1])
-                V_0 = distance / delta_t
+                v = distance / delta_t
                 self.energy_use["distance"].append(distance)
 
                 # calculate the delta t
@@ -173,10 +173,10 @@ class EnergyCalculation:
                 # printstatements to check the output (can be removed later)
                 logger.debug('delta_t: {:.4f} s'. format(delta_t))
                 logger.debug('distance: {:.4f} m'. format(distance))
-                logger.debug('velocity: {:.4f} m/s'. format(V_0))
+                logger.debug('velocity: {:.4f} m/s'. format(v))
 
                 # we use the calculated velocity to determine the resistance and power required
-                self.vessel.calculate_total_resistance(V_0, h)
+                self.vessel.calculate_total_resistance(v, h)
                 self.vessel.calculate_total_power_required()
 
                 self.vessel.calculate_emission_factors_total()

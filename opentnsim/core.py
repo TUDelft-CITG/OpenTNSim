@@ -576,13 +576,13 @@ class ConsumesEnergy:
 
         self.D_s = 0.7 * self.T  # Diameter of the screw
 
-    def calculate_frictional_resistance(self, V_0, h):
+    def calculate_frictional_resistance(self, v, h):
         """1) Frictional resistance
 
         - 1st resistance component defined by Holtrop and Mennen (1982)
         - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects """
 
-        self.R_e = V_0 * self.L / self.nu  # Reynolds number
+        self.R_e = v * self.L / self.nu  # Reynolds number
         self.D = h - self.T  # distance from bottom ship to the bottom of the fairway
 
         # Friction coefficient in deep water
@@ -599,16 +599,16 @@ class ConsumesEnergy:
         # The average velocity underneath the ship, taking into account the shallow water effect
 
         if h / self.T <= 4:
-            self.V_B = 0.4277 * V_0 * np.exp((h / self.T) ** (-0.07625))
+            self.V_B = 0.4277 * v * np.exp((h / self.T) ** (-0.07625))
         else:
-            self.V_B = V_0
+            self.V_B = v
 
         # cf_proposed cannot be applied directly, since a vessel also has non-horizontal wet surfaces that have to be taken
         # into account. Therefore, the following formula for the final friction coefficient 'C_f' is defined:
-        self.C_f = self.Cf_0 + (self.Cf_proposed - self.Cf_katsui) * (self.S_B / self.S_T) * (self.V_B / V_0) ** 2
+        self.C_f = self.Cf_0 + (self.Cf_proposed - self.Cf_katsui) * (self.S_B / self.S_T) * (self.V_B / v) ** 2
 
         # The total frictional resistance R_f [kN]:
-        self.R_f = (self.C_f * 0.5 * self.rho * (V_0 ** 2) * self.S_T) / 1000
+        self.R_f = (self.C_f * 0.5 * self.rho * (v ** 2) * self.S_T) / 1000
 
     def calculate_viscous_resistance(self):
         """2) Viscous resistance
@@ -624,16 +624,16 @@ class ConsumesEnergy:
                     (self.L / self.L_R) ** 0.122) * (((self.L ** 3) / self.delta) ** 0.365) * (
                                   (1 - self.C_p) ** (-0.604))
 
-    def calculate_appendage_resistance(self, V_0):
+    def calculate_appendage_resistance(self, v):
         """3) Appendage resistance
 
         - 3rd resistance component defined by Holtrop and Mennen (1982)
         - Appendages (like a rudder, shafts, skeg) result in additional frictional resistance"""
 
         # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
-        self.R_APP = (0.5 * self.rho * (V_0 ** 2) * self.S_APP * self.one_k2 * self.C_f) / 1000
+        self.R_APP = (0.5 * self.rho * (v ** 2) * self.S_APP * self.one_k2 * self.C_f) / 1000
 
-    def karpov(self, V_0, h):
+    def karpov(self, v, h):
         """Intermediate calculation: Karpov
 
         - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2)
@@ -643,7 +643,7 @@ class ConsumesEnergy:
 
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
         # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
-        self.F_nh = V_0 / np.sqrt(self.g * h)
+        self.F_nh = v / np.sqrt(self.g * h)
 
         if self.F_nh <= 0.4:
 
@@ -690,16 +690,16 @@ class ConsumesEnergy:
                 if self.F_nh >= 0.6:
                     self.alpha_xx = -6.0727 * self.F_nh ** 6 + 44.97 * self.F_nh ** 5 - 135.21 * self.F_nh ** 4 + 210.13 * self.F_nh ** 3 - 176.72 * self.F_nh ** 2 + 75.728 * self.F_nh - 11.893
 
-        self.V_2 = V_0 / self.alpha_xx
+        self.V_2 = v / self.alpha_xx
 
-    def calculate_wave_resistance(self, V_0, h):
+    def calculate_wave_resistance(self, v, h):
         """4) Wave resistance
 
         - 4th resistance component defined by Holtrop and Mennen (1982)
         - When the speed or the vessel size increases, the wave making resistance increases
         - In shallow water, the wave resistance shows an asymptotical behaviour by reaching the critical speed"""
 
-        self.karpov(V_0, h)
+        self.karpov(v, h)
 
         self.F_n = self.V_2 / np.sqrt(self.g * self.L)  # Froude number
 
@@ -765,7 +765,7 @@ class ConsumesEnergy:
         else:
             self.R_W = (self.RW_1 + ((10 * self.F_n - 4) * (self.RW_2 - self.RW_1)) / 1.5) / 1000  # kN
 
-    def calculate_residual_resistance(self, V_0, h):
+    def calculate_residual_resistance(self, v, h):
         """5) Residual resistance terms
 
         - Holtrop and Mennen (1982) defined three residual resistance terms:
@@ -773,7 +773,7 @@ class ConsumesEnergy:
         - 2) Resistance due to immersed transom
         - 3) Resistance due to model-ship correlation """
 
-        self.karpov(V_0, h)
+        self.karpov(v, h)
 
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nt = self.V_2 / np.sqrt(
@@ -796,17 +796,17 @@ class ConsumesEnergy:
         ####### Holtrop and Mennen in the document of Sarris, 2003 #######
         self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S_T * self.C_A) / 1000  # kW
 
-    def calculate_total_resistance(self, V_0, h):
+    def calculate_total_resistance(self, v, h):
         """Total resistance:
 
         The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982) """
 
         self.calculate_properties()
-        self.calculate_frictional_resistance(V_0, h)
+        self.calculate_frictional_resistance(v, h)
         self.calculate_viscous_resistance()
-        self.calculate_appendage_resistance(V_0)
-        self.calculate_wave_resistance(V_0, h)
-        self.calculate_residual_resistance(V_0, h)
+        self.calculate_appendage_resistance(v)
+        self.calculate_wave_resistance(v, h)
+        self.calculate_residual_resistance(v, h)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A
