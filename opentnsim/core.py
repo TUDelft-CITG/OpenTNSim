@@ -576,14 +576,14 @@ class ConsumesEnergy:
 
         self.D_s = 0.7 * self.T  # Diameter of the screw
 
-    def calculate_frictional_resistance(self, v, h):
+    def calculate_frictional_resistance(self, v, h_0):
         """1) Frictional resistance
 
         - 1st resistance component defined by Holtrop and Mennen (1982)
         - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects """
 
         self.R_e = v * self.L / self.nu  # Reynolds number
-        self.D = h - self.T  # distance from bottom ship to the bottom of the fairway
+        self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
 
         # Friction coefficient in deep water
         self.Cf_0 = 0.075 / ((np.log10(self.R_e) - 2) ** 2)
@@ -633,7 +633,7 @@ class ConsumesEnergy:
         # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
         self.R_APP = (0.5 * self.rho * (v ** 2) * self.S_APP * self.one_k2 * self.C_f) / 1000
 
-    def karpov(self, v, h):
+    def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
 
         - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2)
@@ -643,48 +643,48 @@ class ConsumesEnergy:
 
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
         # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
-        self.F_nh = v / np.sqrt(self.g * h)
+        self.F_nh = v / np.sqrt(self.g * h_0)
 
         if self.F_nh <= 0.4:
 
-            if 0 <= h / self.T < 1.75:
+            if 0 <= h_0 / self.T < 1.75:
                 self.alpha_xx = (-4 * 10 ** (
                     -12)) * self.F_nh ** 3 - 0.2143 * self.F_nh ** 2 - 0.0643 * self.F_nh + 0.9997
-            if 1.75 <= h / self.T < 2.25:
+            if 1.75 <= h_0 / self.T < 2.25:
                 self.alpha_xx = -0.8333 * self.F_nh ** 3 + 0.25 * self.F_nh ** 2 - 0.0167 * self.F_nh + 1
-            if 2.25 <= h / self.T < 2.75:
+            if 2.25 <= h_0 / self.T < 2.75:
                 self.alpha_xx = -1.25 * self.F_nh ** 4 + 0.5833 * self.F_nh ** 3 - 0.0375 * self.F_nh ** 2 - 0.0108 * self.F_nh + 1
-            if h / self.T >= 2.75:
+            if h_0 / self.T >= 2.75:
                 self.alpha_xx = 1
 
         if self.F_nh > 0.4:
-            if 0 <= h / self.T < 1.75:
+            if 0 <= h_0 / self.T < 1.75:
                 self.alpha_xx = -0.9274 * self.F_nh ** 6 + 9.5953 * self.F_nh ** 5 - 37.197 * self.F_nh ** 4 + 69.666 * self.F_nh ** 3 - 65.391 * self.F_nh ** 2 + 28.025 * self.F_nh - 3.4143
-            if 1.75 <= h / self.T < 2.25:
+            if 1.75 <= h_0 / self.T < 2.25:
                 self.alpha_xx = 2.2152 * self.F_nh ** 6 - 11.852 * self.F_nh ** 5 + 21.499 * self.F_nh ** 4 - 12.174 * self.F_nh ** 3 - 4.7873 * self.F_nh ** 2 + 5.8662 * self.F_nh - 0.2652
-            if 2.25 <= h / self.T < 2.75:
+            if 2.25 <= h_0 / self.T < 2.75:
                 self.alpha_xx = 1.2205 * self.F_nh ** 6 - 5.4999 * self.F_nh ** 5 + 5.7966 * self.F_nh ** 4 + 6.6491 * self.F_nh ** 3 - 16.123 * self.F_nh ** 2 + 9.2016 * self.F_nh - 0.6342
-            if 2.75 <= h / self.T < 3.25:
+            if 2.75 <= h_0 / self.T < 3.25:
                 self.alpha_xx = -0.4085 * self.F_nh ** 6 + 4.534 * self.F_nh ** 5 - 18.443 * self.F_nh ** 4 + 35.744 * self.F_nh ** 3 - 34.381 * self.F_nh ** 2 + 15.042 * self.F_nh - 1.3807
-            if 3.25 <= h / self.T < 3.75:
+            if 3.25 <= h_0 / self.T < 3.75:
                 self.alpha_xx = 0.4078 * self.F_nh ** 6 - 0.919 * self.F_nh ** 5 - 3.8292 * self.F_nh ** 4 + 15.738 * self.F_nh ** 3 - 19.766 * self.F_nh ** 2 + 9.7466 * self.F_nh - 0.6409
-            if 3.75 <= h / self.T < 4.5:
+            if 3.75 <= h_0 / self.T < 4.5:
                 self.alpha_xx = 0.3067 * self.F_nh ** 6 - 0.3404 * self.F_nh ** 5 - 5.0511 * self.F_nh ** 4 + 16.892 * self.F_nh ** 3 - 20.265 * self.F_nh ** 2 + 9.9002 * self.F_nh - 0.6712
-            if 4.5 <= h / self.T < 5.5:
+            if 4.5 <= h_0 / self.T < 5.5:
                 self.alpha_xx = 0.3212 * self.F_nh ** 6 - 0.3559 * self.F_nh ** 5 - 5.1056 * self.F_nh ** 4 + 16.926 * self.F_nh ** 3 - 20.253 * self.F_nh ** 2 + 10.013 * self.F_nh - 0.7196
-            if 5.5 <= h / self.T < 6.5:
+            if 5.5 <= h_0 / self.T < 6.5:
                 self.alpha_xx = 0.9252 * self.F_nh ** 6 - 4.2574 * self.F_nh ** 5 + 5.0363 * self.F_nh ** 4 + 3.3282 * self.F_nh ** 3 - 10.367 * self.F_nh ** 2 + 6.3993 * self.F_nh - 0.2074
-            if 6.5 <= h / self.T < 7.5:
+            if 6.5 <= h_0 / self.T < 7.5:
                 self.alpha_xx = 0.8442 * self.F_nh ** 6 - 4.0261 * self.F_nh ** 5 + 5.313 * self.F_nh ** 4 + 1.6442 * self.F_nh ** 3 - 8.1848 * self.F_nh ** 2 + 5.3209 * self.F_nh - 0.0267
-            if 7.5 <= h / self.T < 8.5:
+            if 7.5 <= h_0 / self.T < 8.5:
                 self.alpha_xx = 0.1211 * self.F_nh ** 6 + 0.628 * self.F_nh ** 5 - 6.5106 * self.F_nh ** 4 + 16.7 * self.F_nh ** 3 - 18.267 * self.F_nh ** 2 + 8.7077 * self.F_nh - 0.4745
 
-            if 8.5 <= h / self.T < 9.5:
+            if 8.5 <= h_0 / self.T < 9.5:
                 if self.F_nh < 0.6:
                     self.alpha_xx = 1
                 if self.F_nh >= 0.6:
                     self.alpha_xx = -6.4069 * self.F_nh ** 6 + 47.308 * self.F_nh ** 5 - 141.93 * self.F_nh ** 4 + 220.23 * self.F_nh ** 3 - 185.05 * self.F_nh ** 2 + 79.25 * self.F_nh - 12.484
-            if h / self.T >= 9.5:
+            if h_0 / self.T >= 9.5:
                 if self.F_nh < 0.6:
                     self.alpha_xx = 1
                 if self.F_nh >= 0.6:
@@ -692,14 +692,14 @@ class ConsumesEnergy:
 
         self.V_2 = v / self.alpha_xx
 
-    def calculate_wave_resistance(self, v, h):
+    def calculate_wave_resistance(self, v, h_0):
         """4) Wave resistance
 
         - 4th resistance component defined by Holtrop and Mennen (1982)
         - When the speed or the vessel size increases, the wave making resistance increases
         - In shallow water, the wave resistance shows an asymptotical behaviour by reaching the critical speed"""
 
-        self.karpov(v, h)
+        self.karpov(v, h_0)
 
         self.F_n = self.V_2 / np.sqrt(self.g * self.L)  # Froude number
 
@@ -765,7 +765,7 @@ class ConsumesEnergy:
         else:
             self.R_W = (self.RW_1 + ((10 * self.F_n - 4) * (self.RW_2 - self.RW_1)) / 1.5) / 1000  # kN
 
-    def calculate_residual_resistance(self, v, h):
+    def calculate_residual_resistance(self, v, h_0):
         """5) Residual resistance terms
 
         - Holtrop and Mennen (1982) defined three residual resistance terms:
@@ -773,7 +773,7 @@ class ConsumesEnergy:
         - 2) Resistance due to immersed transom
         - 3) Resistance due to model-ship correlation """
 
-        self.karpov(v, h)
+        self.karpov(v, h_0)
 
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nt = self.V_2 / np.sqrt(
@@ -796,17 +796,17 @@ class ConsumesEnergy:
         ####### Holtrop and Mennen in the document of Sarris, 2003 #######
         self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S_T * self.C_A) / 1000  # kW
 
-    def calculate_total_resistance(self, v, h):
+    def calculate_total_resistance(self, v, h_0):
         """Total resistance:
 
         The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982) """
 
         self.calculate_properties()
-        self.calculate_frictional_resistance(v, h)
+        self.calculate_frictional_resistance(v, h_0)
         self.calculate_viscous_resistance()
         self.calculate_appendage_resistance(v)
-        self.calculate_wave_resistance(v, h)
-        self.calculate_residual_resistance(v, h)
+        self.calculate_wave_resistance(v, h_0)
+        self.calculate_residual_resistance(v, h_0)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A

@@ -52,7 +52,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
         # water depth from the edge
         h = edge['Info']['GeneralDepth']
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
-        vessel.calculate_total_resistance(v, h=h)
+        vessel.calculate_total_resistance(v, h_0)
         vessel.calculate_total_power_required()
         diff = vessel.P_given - vessel.P_tot_given
         return diff ** 2
@@ -125,10 +125,10 @@ class EnergyCalculation:
             except:
                 depth = np.nan     #When there is no data of the depth available of this edge, it gives a message
 
-            h = depth
+            h_0 = depth
 
             # depth of waterway between two points
-            return h
+            return h_0
 
 
         # log messages that are related to locking
@@ -168,7 +168,7 @@ class EnergyCalculation:
                 self.energy_use["delta_t"].append(delta_t)
 
                 # calculate the water depth
-                h = calculate_depth(geometries[i], geometries[i + 1])
+                h_0 = calculate_depth(geometries[i], geometries[i + 1])
 
                 # printstatements to check the output (can be removed later)
                 logger.debug('delta_t: {:.4f} s'. format(delta_t))
@@ -176,7 +176,7 @@ class EnergyCalculation:
                 logger.debug('velocity: {:.4f} m/s'. format(v))
 
                 # we use the calculated velocity to determine the resistance and power required
-                self.vessel.calculate_total_resistance(v, h)
+                self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required()
 
                 self.vessel.calculate_emission_factors_total()
@@ -198,8 +198,8 @@ class EnergyCalculation:
                     self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
                     self.energy_use["total_fuel_consumption"].append(emission_delta_fuel)
 
-                    if not np.isnan(h):
-                        self.energy_use["water depth"].append(h)
+                    if not np.isnan(h_0):
+                        self.energy_use["water depth"].append(h_0)
                     else:
                         self.energy_use["water depth"].append(self.energy_use["water depth"].iloc[i])
 
@@ -219,7 +219,7 @@ class EnergyCalculation:
                     self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
                     self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
                     self.energy_use["total_fuel_consumption"].append(emission_delta_fuel)
-                    self.energy_use["water depth"].append(h)
+                    self.energy_use["water depth"].append(h_0)
                     #self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
 
 
