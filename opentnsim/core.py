@@ -598,7 +598,7 @@ class ConsumesEnergy:
 
         # The average velocity underneath the ship, taking into account the shallow water effect
 
-        if h / self.T <= 4:
+        if h_0 / self.T <= 4:
             self.V_B = 0.4277 * v * np.exp((h / self.T) ** (-0.07625))
         else:
             self.V_B = v
