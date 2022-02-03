@@ -86,7 +86,3 @@ dist: clean ## builds source and wheel package
 
 install: clean ## install the package to the active Python's site-packages
 	python setup.py install
-
-
-frontend-data:
-	python -c "import pandas as pd;pd.read_excel('data/DTV_shiptypes_database.xlsx').to_json('DTV_shiptypes_database.json', orient='records')"
