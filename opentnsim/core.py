@@ -28,6 +28,8 @@ import opentnsim.graph_module
 
 logger = logging.getLogger(__name__)
 
+# Determine the wgs84 geoid
+wgs84 = pyproj.Geod(ellps="WGS84")
 
 
 class SimpyObject:
@@ -1257,7 +1259,7 @@ class Movable(Locatable, Routeable, Log):
         """Initialization"""
         self.v = v
         self.edge_functions = []
-        self.wgs84 = pyproj.Geod(ellps="WGS84")
+
 
     def move(self):
         """determine distance between origin and destination, and
@@ -1278,7 +1280,7 @@ class Movable(Locatable, Routeable, Log):
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
 
-            self.distance += self.wgs84.inv(
+            self.distance += wgs84.inv(
                 shapely.geometry.asShape(orig).x,
                 shapely.geometry.asShape(orig).y,
                 shapely.geometry.asShape(dest).x,
@@ -1527,11 +1529,10 @@ class Movable(Locatable, Routeable, Log):
                             else:
                                 self.lineup_dist = lock2.length.capacity - 0.5*self.L
 
-                            self.wgs84 = pyproj.Geod(ellps="WGS84")
                             [lineup_area_start_lat, lineup_area_start_lon, lineup_area_stop_lat, lineup_area_stop_lon] = [self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].y,
                                                                                                                           self.env.FG.nodes[self.route[self.route.index(r)+1]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r)+1]]['geometry'].y]
-                            fwd_azimuth,_,_ = self.wgs84.inv(lineup_area_start_lat, lineup_area_start_lon, lineup_area_stop_lat, lineup_area_stop_lon)
-                            [self.lineup_pos_lat,self.lineup_pos_lon,_] = self.wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].x,
+                            fwd_azimuth,_,_ = wgs84.inv(lineup_area_start_lat, lineup_area_start_lon, lineup_area_stop_lat, lineup_area_stop_lon)
+                            [self.lineup_pos_lat,self.lineup_pos_lon,_] = wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].x,
                                                                                          self.env.FG.nodes[self.route[self.route.index(r)]]['geometry'].y,
                                                                                          fwd_azimuth,self.lineup_dist)
 
@@ -1577,7 +1578,7 @@ class Movable(Locatable, Routeable, Log):
                                                 if lock2.doors_1[lock2.node_1].users != [] and lock2.doors_1[lock2.node_1].users[0].priority == -1:
                                                     if q <= 1 and lock.line_up_area[destination].users[q].n != lock.line_up_area[destination].users[q].n-len(lock2.resource.users):
                                                         self.lineup_dist = lock.length.capacity - 0.5*self.L
-                                            [self.lineup_pos_lat,self.lineup_pos_lon,_] = self.wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].x,
+                                            [self.lineup_pos_lat,self.lineup_pos_lon,_] = wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].x,
                                                                                                          self.env.FG.nodes[self.route[self.route.index(destination)]]['geometry'].y,
                                                                                                          fwd_azimuth,self.lineup_dist)
                                             lock.line_up_area[destination].users[q].lineup_pos_lat = self.lineup_pos_lat
@@ -1598,7 +1599,7 @@ class Movable(Locatable, Routeable, Log):
                                 for q in range(len(lock.line_up_area[origin].users)):
                                     if lock.line_up_area[origin].users[q].id == self.id:
                                         if q > 0:
-                                            _,_,distance = self.wgs84.inv(orig.x,
+                                            _,_,distance = wgs84.inv(orig.x,
                                                                           orig.y,
                                                                           lock.line_up_area[origin].users[0].lineup_pos_lat,
                                                                           lock.line_up_area[origin].users[0].lineup_pos_lon)
@@ -1843,11 +1844,10 @@ class Movable(Locatable, Routeable, Log):
                                             self.log_entry("Waiting in line-up area start", wait_for_lock_entry, 0, orig)
                                             self.log_entry("Waiting in line-up area stop", self.env.now, waiting, orig)
 
-                                        self.wgs84 = pyproj.Geod(ellps="WGS84")
                                         [doors_origin_lat, doors_origin_lon, doors_destination_lat, doors_destination_lon] = [self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].y,
                                                                                                                                self.env.FG.nodes[self.route[self.route.index(r)+1]]['geometry'].x, self.env.FG.nodes[self.route[self.route.index(r)+1]]['geometry'].y]
-                                        fwd_azimuth,_,distance = self.wgs84.inv(doors_origin_lat, doors_origin_lon, doors_destination_lat, doors_destination_lon)
-                                        [self.lock_pos_lat,self.lock_pos_lon,_] = self.wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].x,
+                                        fwd_azimuth,_,distance = wgs84.inv(doors_origin_lat, doors_origin_lon, doors_destination_lat, doors_destination_lon)
+                                        [self.lock_pos_lat,self.lock_pos_lon,_] = wgs84.fwd(self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].x,
                                                                                                  self.env.FG.nodes[self.route[self.route.index(r)-1]]['geometry'].y,
                                                                                                  fwd_azimuth,self.lock_dist)
 
@@ -1996,84 +1996,43 @@ class Movable(Locatable, Routeable, Log):
         if "Line-up area" in self.env.FG.nodes[destination].keys():
             dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
 
-        if 'geometry' in edge:
-            edge_route = np.array(edge['geometry'].coords)
+        # Wait for edge resources to become available
+        if "Resources" in edge.keys():
+            with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+                yield request
+                # we had to wait, log it
+                if arrival != self.env.now:
+                    self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, value, orig,)
+                    self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, value, orig,)
 
-            # check if edge is in the sailing direction, otherwise flip it
-            distance_from_start = self.wgs84.inv(
-                    orig.x,
-                    orig.y,
-                    edge_route[0][0],
-                    edge_route[0][1],
-                )[2]
-            distance_from_stop = self.wgs84.inv(
-                    orig.x,
-                    orig.y,
-                    edge_route[-1][0],
-                    edge_route[-1][1],
-                )[2]
-            if distance_from_start>distance_from_stop:
-                # when the distance from the starting point is greater than from the end point
-                edge_route = np.flipud(np.array(edge['geometry'].coords))
+        distance = opentnsim.graph_module.compute_distance(edge, orig, dest)
 
-            for index, pt in enumerate(edge_route[:-1]):
-                sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
-                sub_dest = shapely.geometry.Point(edge_route[index+1][0], edge_route[index+1][1])
+        value = 0
 
-                distance = self.wgs84.inv(
-                    shapely.geometry.asShape(sub_orig).x,
-                    shapely.geometry.asShape(sub_orig).y,
-                    shapely.geometry.asShape(sub_dest).x,
-                    shapely.geometry.asShape(sub_dest).y,
-                )[2]
-                self.distance += distance
-                self.log_entry("Sailing from node {} to node {} sub edge {} start".format(origin, destination, index), self.env.now, 0, sub_orig,)
-                yield self.env.timeout(distance / self.current_speed)
-                self.log_entry("Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index), self.env.now, 0, sub_dest,)
-            self.geometry = dest
-            # print('   My new origin is {}'.format(destination))
-        else:
-            distance = self.wgs84.inv(
-                shapely.geometry.shape(orig).x,
-                shapely.geometry.shape(orig).y,
-                shapely.geometry.shape(dest).x,
-                shapely.geometry.shape(dest).y,
-            )[2]
+        # remember when we arrived at the edge
+        arrival = self.env.now
 
-            self.distance += distance
+        v = self.current_speed
 
-            value = 0
+        # This is the case if we are sailing on power, compute the speed
+        if getattr(self, 'P_tot_given', None) is not None:
+            edge = self.env.FG.edges[origin, destination]
+            # use power2v on self so that you can override it from outside
+            v = self.power2v(self, edge)
+            # use computed power
+            value = self.P_given
 
-            # remember when we arrived at the edge
-            arrival = self.env.now
+        # determine time to pass edge
+        timeout = distance / v
 
-            v = self.current_speed
-
-            # This is the case if we are sailing on power
-            if getattr(self, 'P_tot_given', None) is not None:
-                edge = self.env.FG.edges[origin, destination]
-                # use power2v on self so that you can override it from outside
-                v = self.power2v(self, edge)
-                # use computed power
-                value = self.P_given
-
-            # determine time to pass edge
-            timeout = distance / v
-
-
-            # Wait for edge resources to become available
-            if "Resources" in edge.keys():
-                with self.env.FG.edges[origin, destination]["Resources"].request() as request:
-                    yield request
-                    # we had to wait, log it
-                    if arrival != self.env.now:
-                        self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, value, orig,)
-                        self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, value, orig,)
-
-            # default velocity based on current speed.
-            self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, value, orig,)
-            yield self.env.timeout(timeout)
-            self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, value, dest,)
+        # default velocity based on current speed.
+        self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, value, orig,)
+        yield self.env.timeout(timeout)
+        # update current geometry
+        self.geometry = dest
+        # keep track of sailed distance
+        self.distance += distance
+        self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, value, dest,)
 
     @property
     def current_speed(self):
@@ -2089,7 +2048,7 @@ class ContainerDependentMovable(Movable, HasContainer):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.compute_v = compute_v
-        self.wgs84 = pyproj.Geod(ellps="WGS84")
+        wgs84 = pyproj.Geod(ellps="WGS84")
 
     @property
     def current_speed(self):

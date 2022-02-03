@@ -24,6 +24,9 @@ import simpy
 
 logger = logging.getLogger(__name__)
 
+# Determine the wgs84 geoid
+wgs84 = pyproj.Geod(ellps="WGS84")
+
 
 class Graph:
     """General networkx object
@@ -174,3 +177,47 @@ def get_minimum_depth(graph, route):
         # find the minimum
     h_min = np.min(depths)
     return h_min
+
+
+def compute_distance(edge, orig, dest):
+    """compute distance over edge, or if edge does not have a geometry over orig-dest"""
+    if 'geometry' not in edge:
+        distance = wgs84.inv(
+            shapely.geometry.shape(orig).x,
+            shapely.geometry.shape(orig).y,
+            shapely.geometry.shape(dest).x,
+            shapely.geometry.shape(dest).y,
+        )[2]
+        return distance
+
+    edge_route = np.array(edge['geometry'].coords)
+
+    # check if edge is in the sailing direction, otherwise flip it
+    distance_from_start = wgs84.inv(
+            orig.x,
+            orig.y,
+            edge_route[0][0],
+            edge_route[0][1],
+        )[2]
+    distance_from_stop = wgs84.inv(
+            orig.x,
+            orig.y,
+            edge_route[-1][0],
+            edge_route[-1][1],
+        )[2]
+    if distance_from_start>distance_from_stop:
+        # when the distance from the starting point is greater than from the end point
+        edge_route = np.flipud(np.array(edge['geometry'].coords))
+
+    distance = 0
+    for index, pt in enumerate(edge_route[:-1]):
+        sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
+        sub_dest = shapely.geometry.Point(edge_route[index+1][0], edge_route[index+1][1])
+
+        distance += wgs84.inv(
+            shapely.geometry.asShape(sub_orig).x,
+            shapely.geometry.asShape(sub_orig).y,
+            shapely.geometry.asShape(sub_dest).x,
+            shapely.geometry.asShape(sub_dest).y,
+        )[2]
+    return distance
