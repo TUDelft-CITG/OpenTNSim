@@ -317,15 +317,21 @@ class IsJunction(Identifiable,HasType, Log):
         self.sections = sections
         self.section = []
 
+        # Loop over the sections which are connected to the junction
         for edge in enumerate(self.sections):
+            # If section is type 'one-way-traffic'
             if self.type[edge[0]] == 'one-way_traffic':
+                #Set default direction parameter
                 direction = 0
+                #If longitude of first node of the edge is smaller than the second node and strictly not equal to each other: set direction = 1
                 if self.env.FG.nodes[edge[1][0]]['geometry'].x != self.env.FG.nodes[edge[1][1]]['geometry'].x:
                     if self.env.FG.nodes[edge[1][0]]['geometry'].x < self.env.FG.nodes[edge[1][1]]['geometry'].x:
                         direction = 1
+                # Else is longitudes are equal: if latitude of first node of the edge is smaller than the second node: set direction = 1
                 elif self.env.FG.nodes[edge[1][0]]['geometry'].y < self.env.FG.nodes[edge[1][1]]['geometry'].y:
                     direction = 1
 
+                # If direction: append two access resources to that node
                 if direction:
                     if 'access1' not in dir(self):
                         self.access1 = []
@@ -334,7 +340,8 @@ class IsJunction(Identifiable,HasType, Log):
                     self.access1.append({edge[1][0]: simpy.PriorityResource(self.env, capacity=1),})
                     self.access2.append({edge[1][1]: simpy.PriorityResource(self.env, capacity=1),})
 
-            self.section.append({edge[1][1]: simpy.PriorityResource(self.env, capacity=10000),})
+            # Append a resource to the section with 'infinite' capacity
+            elf.section.append({edge[1][1]: simpy.PriorityResource(self.env, capacity=10000),})
 
 class IsTerminal(HasType, HasLength, Identifiable, Log):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
@@ -839,18 +846,18 @@ class VesselTrafficService:
                 - visualization_calculation:
 
         """
-        interp_wdep, ukc_s, ukc_p, fwa = provide_sail_in_times_tidal_window(vessel, [node], ukc_calc=True)
+
+        interp_wdep, ukc_s, ukc_p, fwa = VesselTrafficService.provide_sail_in_times_tidal_window(vessel, [node], ukc_calc=True)
         net_ukc = interp_wdep(vessel.env.now) - (vessel.T_f + vessel.metadata['ukc'])
 
         return net_ukc
 
-    def provide_sail_in_times_tidal_window(vessel,route,out=False,plot=False,sailing_time_correction=True,visualization_calculation=False,ukc_calc=False):
+    def provide_sail_in_times_tidal_window(vessel,route,plot=False,sailing_time_correction=True,visualization_calculation=False,ukc_calc=False):
         """ Function: calculates the sail-in-times for a specific vessel with certain properties and a pre-determined route and provides this information to the vessel
 
             Input:
                 - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
                 - route: a list of strings of node names that resemble the route that the vessel is planning to sail (can be different than vessel.route)
-                - out: a bool that indicates whether the vessels sails outbound or not (inbound)
                 - plot: provide a visualization of the calculation for each vessel
                 - sailing_time_correction: a bool that indicates whether the calculation should correct for sailing_speed (dynamic calculation) or not (static calculation)
                 - visualization_calculation: a bool that indicates whether the calculation should be made for a single node or not (for a route with multiple nodes)
@@ -870,6 +877,7 @@ class VesselTrafficService:
 
             # Predefined bool
             boolean = True
+            no_tidal_window = True
 
             # Determining if and which restriction applies for the vessel by looping over the restriction class
             for restriction_class in enumerate(specifications[0]):
@@ -995,7 +1003,7 @@ class VesselTrafficService:
 
                     # Add to axes of the plot (if plot is requested): the available water depths at all the nodes of the route
                     if plot:
-                        axes.plot(t_min_wdep, wdep, color='lightskyblue', alpha=0.4)
+                        axis.plot(t_min_wdep, wdep, color='lightskyblue', alpha=0.4)
 
                 # Pick the minimum of the water depths for each time and each node
                 min_wdep = [min(idx) for idx in zip(*wdep_nodes)]
@@ -1009,7 +1017,7 @@ class VesselTrafficService:
 
             #Calculation of the minimum available water depth along the route of the vessel
             if not ukc_calc:
-                [new_t, min_wdep, _, _, _] = minimum_available_water_depth_along_route(vessel, route, axis)
+                new_t, min_wdep = minimum_available_water_depth_along_route(vessel, route, axis, plot, sailing_time_correction, ukc_calc)
             else:
                 interp_wdep, ukc_s, ukc_p, fwa = minimum_available_water_depth_along_route(vessel, route, ukc_calc=True)
                 return interp_wdep, ukc_s, ukc_p, fwa
@@ -1060,7 +1068,7 @@ class VesselTrafficService:
             #Return the sail-in or -out-times given the vertical tidal restrictions over the route of the vessel
             return times_vertical_tidal_window
 
-        def times_horizontal_tidal_window(vessel,route,axis,plot,sailing_time_correction,visualization_calculation):
+        def times_horizontal_tidal_window(vessel,route,axis=[],plot=plot,sailing_time_correction=True,visualization_calculation=False):
             """ Function: calculates the windows available to sail-in and -out of the port given the horizontal tidal restrictions according to the tidal window policy.
 
                 Input:
@@ -1072,7 +1080,7 @@ class VesselTrafficService:
 
             """
 
-            def tidal_windows_tightest_current_restriction_along_route(vessel, route, plot=False, axis=[], sailing_time_correction=True):
+            def tidal_windows_tightest_current_restriction_along_route(vessel, route, axis=[], plot=False, sailing_time_correction=True, visualization_calculation=False):
                 """ Function: calculates the normative current restrictions along the route over time and calculates the resulting horizontal tidal windows from these locations.
 
                     Input:
@@ -1084,6 +1092,246 @@ class VesselTrafficService:
 
                 """
 
+                # Functions used for the calculation of the normative restriction along the route and the subsequent horizontal tidal windows over time
+                def calculate_and_store_normative_current_velocity_data(node, data_nodes, sailing_time_to_next_node, t_ccur_raw, ccur, critcur_nodes, mccur_nodes, method, crit_ccur=[], crit_ccur_flood=0, crit_ccur_ebb=0):
+                    """ Function: imports the current velocity data time series, corrects the time for the sailing time of the vessel, and subtracts the velocity data with the critical
+                                  cross-current in order to find the times when the velocity exceeds the limit (by interpolation). The correct critical cross-current limit is picked by
+                                  determining to what tidal period part of the time series belongs to (by determining what is the next tidal period). It appends the corrected data and
+                                  the corresponding limits to separate lists.
+
+                        Input:
+                            - node: the name string of the node in the given network
+                            - data_nodes: a list containing the two name string of the node in the given network the data is located. These locations depend on the direction of the vessel around the node of the restriction.
+                            - sailing_time_to_next_node: time in s that the vessel needs to reach the node at which the restiction holds
+                            - t_ccur_raw: a list of the raw, uncorrected timestamps of the time series for the current velocity
+                            - ccur: a list to which the corrected current data will be appended
+                            - critcur_nodes: a list to which the list of critical cross-currents corresponding to the maximum corrected current data will be appended to (for each node at which a horizontal tidal restriction is installed separately)
+                            - mccur_nodes: a list to which the list of maximum corrected current data will be appended to (for each node at which a horizontal tidal restriction is installed separately)
+                            - method: type of horizontal tidal restriction (method used)
+                            - crit_ccur: a list to which the critical current velocity limit corresponding to the current data will be appended
+                            - crit_ccur_flood: critical cross-current limit applied during flood in m/s
+                            - crit_ccur_ebb: critical cross-current limit applied during ebb in m/s
+
+                    """
+
+                    # Looping over the two nodes, one prior and one after the node at which the horizontal tidal restriction is installed, determining the direction of the vessel
+                    for rep in range(2):
+                        # Import current data and correct time series with sailing time, and import tidal periods
+                        t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][0]]
+                        cur = network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][1]
+                        times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[node]]['Info']['Tidal periods']]
+                        tidal_periods = [z[1] for z in network.nodes[route[node]]['Info']['Tidal periods']]
+
+                        # Different procedure for the methods:
+                        if method == 'Critical cross-current':
+                            critical_cross_current_method_in_restrictions = True
+                            # Determine the next tidal period of the time series
+                            t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
+                            # Interpolate new time series
+                            interp_ccur = sc.interpolate.CubicSpline(t_ccur, cur)
+                            # If the next tidal period is ebb, then it means that the current period is flood. Hence, append interpolated current data subtracted with the critical cross-current, and the critical cross-current itself to the predefined lists
+                            ccur.append([y - crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else y - crit_ccur_ebb for x, y in enumerate(interp_ccur(t_ccur_raw))])
+                            crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][1])])
+
+                        elif method == 'Point-based':
+                            point_based_method_in_restrictions = True
+                            # Just append the raw current data to the predefined list
+                            ccur.append(network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][1])
+
+                    # Take the maximum of both lists with the exceedance of the cross-current (positive values)
+                    mccur = [max(idx) for idx in zip(*ccur)]
+
+                    if method == 'Critical cross-current':
+                        # Take the cross-currents of both lists which belong to the maximum cross-current limit exceeding velocities
+                        critcur = [crit_ccur[np.argmax(val)][idx] for idx, val in enumerate(zip(*ccur))]
+
+                    if method == 'Point-based':
+                        # Interpolate new time series
+                        interp_ccur = sc.interpolate.CubicSpline(t_ccur, mccur)
+                        mccur = interp_ccur(t_ccur_raw)
+                        critcur = np.zeros(len(mccur))
+
+                    critcur_nodes.append(critcur)
+                    mccur_nodes.append(mccur)
+
+                    #Returns the determined tidal periods which may be used in a later stage of the calculation
+                    return critical_cross_current_method_in_restrictions, t_ccur, mccur, critcur, times_tidal_periods, tidal_periods
+
+                def calculate_and_append_individual_horizontal_tidal_windows_critical_cross_current_method(new_t,max_ccur,max_crit_ccur):
+                    """ Function: calculates and appends the horizontal tidal windows (available sail-in and -out times given the horizontal tidal restrictions) and corresponding critical cross-current
+                                  velocities to the appropriate lists for the 'critical cross-curent'-method
+
+                        Input:
+                            - new_t: time of the time series for the current velocity corrected for the sailing time
+                            - max_ccur: a list of the governing current velocities of the time series of the governing cross-currents in m/s
+                            - max_crit_ccur: a list containing the critical-cross currents corrspeonding to the governing current velocities of the time series of the governing cross-currents in m/s
+
+                    """
+
+                    times_horizontal_tidal_window = []
+                    crit_ccurs_horizontal_tidal_window = []
+
+                    # Interpolate the data of the exceedance of the critical cross-current velocity
+                    interp_max_cross_current = sc.interpolate.CubicSpline(new_t, [x for x in max_ccur])
+                    # Loop over the roots (crossings where the cross-current velocity exceeds the cross-current velocity limit)
+                    for root in interp_max_cross_current.roots():
+                        # If the root falls within the time series and the next cross-current does not exceed the limit and the list of tidal restrictions is still empty or there are some restrictions identified but the previous restriction is not a stopping criteria
+                        if root > new_t[0] and root < new_t[-1] and max_ccur[bisect.bisect_right(new_t, root)] < 0:
+                            if times_horizontal_tidal_window == [] or (times_horizontal_tidal_window != [] and times_horizontal_tidal_window[-1][1] != 'Stop'):
+                                # Append a stopping time of the restriction and the corresponding critical cross-current
+                                times_horizontal_tidal_window.append([root, 'Stop'])
+                                crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[bisect.bisect_right(new_t, root)])
+                        # If the root falls within the time series and the next cross-current exceeds the limit as well and the list of tidal restrictions is still empty or there are some restrictions identified but the previous restriction is not a starting criteria
+                        elif root > new_t[0] and root < new_t[-1] and max_ccur[bisect.bisect_right(new_t, root)] > 0:
+                            if times_horizontal_tidal_window == [] or (times_horizontal_tidal_window != [] and times_horizontal_tidal_window[-1][1] != 'Start'):
+                                # Append a starting time of the restriction and the corresponding critical cross-current
+                                times_horizontal_tidal_window.append([root, 'Start'])
+                                crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[bisect.bisect_right(new_t, root)])
+
+                    # If the list of tidal windows are still empty: there is no horizontal tidal restriction for the particular vessel, so restriction stops at t_start and ends at t_end of the simulation
+                    if times_horizontal_tidal_window == []:
+                        times_horizontal_tidal_window.append([vessel.waiting_time_start, 'Stop'])
+                        crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[bisect.bisect_right(new_t, vessel.waiting_time_start)])
+                        times_horizontal_tidal_window.append([np.max(new_t), 'Start'])
+                        crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[-1])
+
+                    # If the last restriction contains a starting time and is smaller than the end of the time series: add a stopping time restriction at the t_end of the simulation
+                    if times_horizontal_tidal_window[-1][1] == 'Start' and times_horizontal_tidal_window[-1][0] < np.max(new_t):
+                        times_horizontal_tidal_window.append([np.max(new_t), 'Stop'])
+                        crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[-1])
+
+                    return times_horizontal_tidal_window, crit_ccurs_horizontal_tidal_window
+
+                def finding_current_velocity_bounds_point_based_method(t_ccur, mccur, p_range, crit_ccur_tidal_period, times_tidal_periods, tidal_periods, sailing_time_to_next_node):
+                    """ Function: defines the bounds around the point-based current velocity and finds the times at which the current velocity crosses these bounds by solving the roots of the interpolation.
+                                  Furthermore, the tidal periods for each time the current velocity intersects with the bounds around the point-based current velocity.
+
+                        Input:
+                            - t_ccur: time of the time series for the current velocity corrected for the sailing time
+                            - mccur: a list of times of the governing cross-currents in m/s
+                            - p_range: the range in % around the point-based current velocity
+                            - crit_ccur_tidal_period: critical cross-current limit applied during the tidal period in m/s
+                            - times_tidal_periods: the starting times of the tidal periods
+                            - tidal_periods: the definition of the tidal periods (Ebb or Flood Start)
+                            - sailing_time_to_next_node: time in s that the vessel needs to reach the node at which the restiction holds
+
+                    """
+
+                    # Interpolate the interpolated cross-current velocity, corrected for the sailing time, subtracted with the critical cross-current for the upper and lower bound separately and calculate roots, and corresponding next tidal periods
+                    crit_ccur_upper_bound = crit_ccur_tidal_period * (1 + p_range)
+                    crit_ccur_lower_bound = crit_ccur_tidal_period * (1 - p_range)
+                    interp_ccur_upper_bound = sc.interpolate.CubicSpline(t_ccur, [ccur - crit_ccur_upper_bound for ccur in mccur])
+                    interp_ccur_lower_bound = sc.interpolate.CubicSpline(t_ccur, [ccur - crit_ccur_lower_bound for ccur in mccur])
+                    roots_upper_bound = interp_ccur_upper_bound.roots()
+                    roots_lower_bound = interp_ccur_lower_bound.roots()
+                    t_ccur_tidal_periods_upper_bound = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in roots_upper_bound]
+                    t_ccur_tidal_periods_lower_bound = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in roots_lower_bound]
+                    return crit_ccur_upper_bound, crit_ccur_lower_bound, roots_upper_bound ,roots_lower_bound, t_ccur_tidal_periods_upper_bound, t_ccur_tidal_periods_lower_bound
+
+                def calculate_and_append_individual_horizontal_tidal_windows_point_based_method(previous_time, next_tidal_period, sailing_time_to_next_node, crit_ccur_bound_tidal_period, roots_bounds_tidal_period, t_ccur_tidal_periods_bounds_period, crit_ccur_tidal_periods, p_tidal_periods, t_ccur, mccur, horizontal_tidal_window, crit_vel_horizontal_tidal_window):
+                    """ Function: calculates and appends the horizontal tidal windows (available sail-in and -out times given the horizontal tidal restrictions) and corresponding critical cross-current
+                                  velocities to the appropriate lists for the 'point-based'-method
+
+                        Input:
+                            - previous_time: stopping (starting) time of the previous (current) tidal window
+                            - next_tidal_period: the string containing information about the next tidal period (Flood/Ebb Start)
+                            - sailing_time_to_next_node: time in s that the vessel needs to reach the node at which the restiction holds
+                            - crit_ccur_bound_tidal_period: a list containing the upper and lower bounds around the critical cross-currents in m/s respectively
+                            - roots_bounds_tidal_period: a list containing the lists with the times that the current velocity intersects with the upper and lower bound around the point-based current velocity respectively
+                            - t_ccur_tidal_periods_bounds_period: a list containing the lists with the tidal periods for each time the current velocity intersects with the upper and lower bound around the point-based current velocity respectively
+                            - crit_ccur_tidal_periods: a list containing the critical cross-currents in m/s during flood and ebb respectively
+                            - p_tidal_periods: a list containing the ranges around the critical cross-currents in [-] during flood and ebb respectively
+                            - t_ccur: a list of times of the times series of the governing cross-currents in s
+                            - mccur: a list of the current velocities of the time series of the governing cross-currents in m/s
+                            - horizontal_tidal_window: a list to which the horizontal tidal windows should be appended
+                            - crit_vel_horizontal_tidal_window: a list to which the critical cross-currents corresponding to the horizontal tidal windows should be appended
+
+                    """
+
+                    # Determine the time index for the boundary of the next tidal period and if index is smaller than 0, then set index to 0
+                    next_previous_time_tidal_periods = bisect.bisect_right(times_tidal_periods, period[1]) - 2
+                    if next_previous_time_tidal_periods < 0: next_previous_time_tidal_periods = 0
+                    # Calculate the time index of the starting point and ending point of the current tidal period (corrected for the sailing time)
+                    start_time = previous_time - sailing_time_to_next_node
+                    stop_time = period[1] - sailing_time_to_next_node
+                    index_previous_time = bisect.bisect_right(t_ccur, start_time) - 1
+                    index_now = bisect.bisect_right(t_ccur, stop_time)
+                    # If the flood tide is freely accessible (critical cross-current limit is -1)
+                    tide_index = 0
+                    next_tide_index = 1
+                    if next_tidal_period == 'Flood Start': tide_index = 1
+                    next_tide_index = next_tide_index - tide_index
+                    if crit_ccur_tidal_periods[tide_index] == -1:
+                        # If the accessibility of the ebb tide is not limited to the slack tides: add stop of tidal restriction at the start of flood tide and append 0 m/s as critical cross-current to list
+                        if crit_ccur_tidal_periods[next_tide_index] != 'min':
+                            horizontal_tidal_window.append([times_tidal_periods[next_previous_time_tidal_periods], 'Stop'])
+                            crit_vel_horizontal_tidal_window.append(0)
+                        # And add the start of the tidal restriction at the end of flood tide and append 0 m/s as critical cross-current to list
+                        horizontal_tidal_window.append([period[1], 'Start'])
+                        crit_vel_horizontal_tidal_window.append(0)
+
+                    # Else if the accessibility during the ebb tide is limited to the slack waters and there is current data within this tidal period
+                    elif crit_ccur_tidal_periods[tide_index] == 'min':
+                        if mccur[index_previous_time:index_now] != []:
+                            # Interpolation of the maximum current velocities during this specific tidal period subtracted with the critical point-based cross-current and calculate the times at which the cross-current equals this critical limit
+                            interp = sc.interpolate.CubicSpline(t_ccur[index_previous_time:index_now],[y - p_tidal_periods[0] for y in mccur[index_previous_time:index_now]])
+                            times = [x for x in interp.roots() if (x >= t_ccur[index_previous_time] and x <= t_ccur[index_now])]
+                            # If there are no crossings (minimum number of crossings should be at least two)
+                            if len(times) < 2: times = [t_ccur[index_previous_time], t_ccur[index_now]]
+                            # Take the first and last value of the crossings, and append to tidal windows and critical cross-currents: restriction starts at time of first crossing and ends at time of last crossing
+                            horizontal_tidal_window.append([next(item for item in times if item is not None) + sailing_time_to_next_node, 'Start'])
+                            crit_vel_horizontal_tidal_window.append(p_tidal_periods[0])
+                            horizontal_tidal_window.append([next(item for item in reversed(times) if item is not None) + sailing_time_to_next_node,'Stop'])
+                            crit_vel_horizontal_tidal_window.append(p_tidal_periods[0])
+
+                    # Else (flood tide is restricted and accessilibity of ebb tide is not limited to the slack waters) if there is current data within this tidal period
+                    elif mccur[index_previous_time:index_now] != []:
+                        # If the maximum cross-current in the tidal period does not exceed the upper bound limit: append to list that restriction stops at the maximum cross-current, with the corresponding maximum cross-current
+                        if np.max(mccur[index_previous_time:index_now]) < crit_ccur_bound_tidal_period[0]:
+                            horizontal_tidal_window.append([t_ccur[np.argmax(mccur[index_previous_time:index_now]) + index_previous_time] + sailing_time_to_next_node,'Stop'])
+                            crit_vel_horizontal_tidal_window.append(np.max(mccur[index_previous_time:index_now]))
+                        # Limit the analysis to the tidal period from this time to the end of the period
+                        index_previous_time2 = np.argmax(mccur[index_previous_time:index_now]) + index_previous_time
+                        # If the maximum cross-current in the remainder of the tidal period does not exceed the lower bound limit and flood is accessible (crit-current is not 0 m/s and the ebb accessibility is not limited to the slack waters (critical cross-current is not 'min'): append to list that restriction starts at the minimum cross-current, with the corresponding minimum cross-current
+                        if np.min(mccur[index_previous_time2:index_now]) > crit_ccur_bound_tidal_period[1] and p_tidal_periods[0] != 0 and crit_ccur_tidal_periods[1] != 'min':
+                            horizontal_tidal_window.append([t_ccur[np.argmin(mccur[index_previous_time2:index_now]) + index_previous_time2] + sailing_time_to_next_node,'Start'])
+                            crit_vel_horizontal_tidal_window.append(np.min(mccur[index_previous_time2:index_now]))
+                        # Else if the flood tide is not accessible and the accessibility of the ebb tide is not limited to the slack waters: only append the start time of the tidal window and the corresponding cross-current (= 0 m/s)
+                        elif p_tidal_periods[0] == 0 and crit_ccur_tidal_periods[next_tide_index] != 'min':
+                            horizontal_tidal_window.append([period[1], 'Start'])
+                            crit_vel_horizontal_tidal_window.append(0)
+                        # Else if the accessibility of the ebb tide is limited to the slack waters: only append the start time of the tidal window and the corresponding cross-current (= critical cross-current during ebb)
+                        elif crit_ccur_tidal_periods[next_tide_index] == 'min':
+                            # Interpolation of the maximum current velocities during this specific tidal period subtracted with the critical point-based cross-current for ebb tide and calculate the times at which the cross-current equals this critical limit
+                            interp = sc.interpolate.CubicSpline(t_ccur[index_previous_time:index_now],[y - p_tidal_periods[1] for y in mccur[index_previous_time:index_now]])
+                            times = [x for x in interp.roots() if (x >= t_ccur[index_previous_time] and x <= t_ccur[index_now])]
+                            # If there are no crossings (minimum number of crossings should be at least two)
+                            if len(times) < 2: times = [t_ccur[index_previous_time], t_ccur[index_now]]
+                            # Take the first and last value of the crossings, and append to tidal windows and critical cross-currents: restriction starts at time of first crossing
+                            horizontal_tidal_window.append([next(item for item in times if item is not None) + sailing_time_to_next_node,'Start'])
+                            crit_vel_horizontal_tidal_window.append(p_tidal_periods[1])
+
+                    # If none of the above applies and hence the regular cross-current velocity bounds (resulting from finding_current_velocity_bounds_point_based_method) apply:
+                    if type(crit_ccur_tidal_periods[tide_index]) != str and crit_ccur_tidal_periods[tide_index] != -1:
+                        for bound_index in [0,1]:
+                            bool_restriction = 'Stop'
+                            if bound_index == 1: bool_restriction = 'Start'
+                            for root in enumerate(roots_bounds_tidal_period[bound_index]):
+                                if root[1] >= start_time and root[1] <= stop_time:
+                                    # calculate the time index of the root
+                                    index = bisect.bisect_right(t_ccur, root[1])
+                                    # if the index is greater than the length of the time series: index = -1
+                                    if index >= len(t_ccur): index -= 1
+                                    # if the critical cross-current at the index is lower than the upper bound of the critical cross-current and is located in the flood tidal period and the accessibility during flood tide is not limited to the slack waters: append root (corrected for the sailing time) and the corresponding cross-current to the stopping times of the tidal restriction
+                                    if mccur[index] < crit_ccur_bound_tidal_period[bound_index] and t_ccur_tidal_periods_bounds_period[bound_index][root[0]] == next_tidal_period:
+                                        if crit_ccur_tidal_periods[tide_index] != -1:
+                                            horizontal_tidal_window.append([root[1] + sailing_time_to_next_node, bool_restriction])
+                                            crit_vel_horizontal_tidal_window.append(crit_ccur_bound_tidal_period[bound_index])
+                                            break
+
+                    #Data appended to the lists, nothing has to be returned
+                    return
+
                 # Predefining some parameters
                 network = vessel.env.FG
                 distance_to_next_node = 0
@@ -1091,7 +1339,12 @@ class VesselTrafficService:
                 max_ccur = []
                 list_of_nodes = []
                 critcur_nodes = []
-                t_max_ccur = network.nodes[route[0]]['Info']['Water level'][0]
+                times_horizontal_tidal_windows = []
+                crit_ccurs_horizontal_tidal_windows = []
+                list_of_list_indexes = []
+                critical_cross_current_method_in_restrictions = False
+                point_based_method_in_restrictions = False
+                t_ccur_raw = network.nodes[route[0]]['Info']['Current velocity'][0]
 
                 # Start of calculation by looping over the nodes of the route
                 for nodes in enumerate(route):
@@ -1111,8 +1364,6 @@ class VesselTrafficService:
                         continue
 
                     # Else: importing some node specific data on the type and specifications of the horizontal tidal restriction and predefining some bools
-                    no_tidal_window = True
-                    boolean = True
                     types = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Type']
                     specifications = network.nodes[nodes[1]]['Info']['Horizontal tidal restriction']['Specification']
 
@@ -1123,17 +1374,18 @@ class VesselTrafficService:
                     if no_tidal_window:
                         continue
 
-                    # Predefining some parameters
+                    # Else if there applies a horizontal tidal window: continue tidal window calculation by predefining some parameters and importing critical cross-currents
                     ccur = []
                     crit_ccur = []
                     t_ccur = []
-                    horizontal_tidal_window = []
+                    times_horizontal_tidal_window = []
                     crit_vel_horizontal_tidal_window = []
                     crit_ccur_flood_old = types[1][restriction_index][0]
                     crit_ccur_ebb_old = types[1][restriction_index][1]
 
-                    ###!!!ATTENTION REQUIRED!!!###
+                    # Determination of the direction of the vessel and the nodes that the vessel passes by in order, in order to extract the correct data
                     restriction_on_route = False
+                    # -if the calculation is requested to be performed for visualization purposes (no route, but for single node), then use the given direction of the specified vessel
                     if visualization_calculation:
                         restriction_on_route = True
                         if vessel.bound == 'inbound':
@@ -1142,357 +1394,254 @@ class VesselTrafficService:
                         elif vessel.bound == 'outbound':
                             n2 = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Specification'][5][restriction_index][0]
                             n1 = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Specification'][5][restriction_index][1]
+                    # -else: select the nodes by the modelled direction of the vessel by nested looping over the nodes in the route
                     else:
-                        for n1 in vessel.route[:nodes[0]]:
-                            if n1 == network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction'][
-                                'Specification'][5][restriction_index][0]:
-                                for n2 in vessel.route[nodes[0]:]:
-                                    if n2 == network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction'][
-                                        'Specification'][5][restriction_index][1]:
+                        for n1 in route[:nodes[0]]:
+                            if n1 == network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Specification'][5][restriction_index][0]:
+                                for n2 in route[nodes[0]:]:
+                                    if n2 == network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Specification'][5][restriction_index][1]:
                                         restriction_on_route = True
                                         break
                                 break
 
-                    # Else if there applies a horizontal tidal window and it has the type 'critical cross-current': continue tidal window calculation
+                    #Determining critical cross-current limits based on critical cross-current limit input (potentially integers [-1,0] or strings) by subtracting it with vessel-specific cross-current (if applicable)
+                    # if passing the node during flood period is not restricted to the slack water (critical cross-current = type<str> = 'min') or freely or never accessible, then import cricital cross-current for flood and subtract it with vessel-specific cross-current (if applicable)
+                    if crit_ccur_flood_old != -1 or crit_ccur_flood_old != 0 or type(crit_ccur_flood_old) != str:
+                        crit_ccur_flood = crit_ccur_flood_old - vessel.metadata['max_cross_current']
+                    # else if flood is freely accessible: set critical cross-current for flood at the very high level of 10 m/s
+                    elif crit_ccur_flood_old == -1:
+                        crit_ccur_flood = 10
+                    # if passing the node during ebb period is not restricted to the slack water (critical cross-current = type<str> = 'min') or freely or never accessible, then import cricital cross-current for ebb and subtract it with vessel-specific cross-current (if applicable)
+                    if crit_ccur_ebb_old != -1 or crit_ccur_flood_old != 0 or type(crit_ccur_ebb_old) != str:
+                        crit_ccur_ebb = crit_ccur_ebb_old - vessel.metadata['max_cross_current']
+                    # else if flood is freely accessible: set critical cross-current for ebb at the very high level of 10 m/s
+                    elif crit_ccur_ebb_old == -1:
+                        crit_ccur_ebb = 10
+
+                    #Import and store data
                     if types[0][restriction_index] == 'Critical cross-current':
-                        if crit_ccur_flood_old != -1:
-                            crit_ccur_flood = crit_ccur_flood_old - vessel.metadata['max_cross_current']
-                        else:
-                            crit_ccur_flood = 10
-                        if crit_ccur_ebb_old != -1:
-                            crit_ccur_ebb = crit_ccur_ebb_old - vessel.metadata['max_cross_current']
-                        else:
-                            crit_ccur_ebb = 10
-
-                        if nodes[1] != route[0] or visualization_calculation:
-                            t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][0]]
-                            cur = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][1]
-                            interp_ccur = sc.interpolate.CubicSpline(t_ccur, cur)
-                            times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                            ccur.append([y - crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else y - crit_ccur_ebb for x, y in enumerate(interp_ccur(t_max_ccur))])
-                            crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][1])])
-                        if nodes[1] != route[-1] or visualization_calculation:
-                            t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][0]]
-                            cur = network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][1]
-                            interp_ccur = sc.interpolate.CubicSpline(t_ccur, cur)
-                            times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                            ccur.append([y - crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else y - crit_ccur_ebb for x, y in enumerate(interp_ccur(t_max_ccur))])
-                            crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][1])])
-
-                        mccur = [max(idx) for idx in zip(*ccur)]
-                        critcur = [crit_ccur[np.argmax(val)][idx] for idx, val in enumerate(zip(*ccur))]
-                        critcur_nodes.append(critcur)
-                        mccur_nodes.append(mccur)
-
+                        critical_cross_current_method_in_restrictions,t_ccur,mccur,critcur,_,_ = calculate_and_store_normative_current_velocity_data(nodes[0],[n1,n2],sailing_time_to_next_node,t_ccur_raw,ccur,critcur_nodes,mccur_nodes,'Critical cross-current',crit_ccur,crit_ccur_flood,crit_ccur_ebb)
+                        # If a plot is requested, then plot the cross-current velocities and the corresponding critical cross-currents
                         if plot:
-                            axis.plot(t_max_ccur, [y + critcur[x] for x, y in enumerate(mccur)], color='lightcoral', alpha=0.4)
-                            axis.plot(t_max_ccur, [y if y != 10 else None for y in critcur], color='lightcoral', linestyle='--', alpha=0.4)
+                            axis.plot(t_ccur_raw, [y + critcur[x] for x, y in enumerate(mccur)], color='lightcoral', alpha=0.4)
+                            axis.plot(t_ccur_raw, [y if y != 10 else None for y in critcur], color='lightcoral', linestyle='--', alpha=0.4)
 
                     elif types[0][restriction_index] == 'Point-based':
-                        if type(crit_ccur_flood_old) != str:
-                            crit_ccur_flood = crit_ccur_flood_old - vessel.metadata['max_cross_current']
-                        if type(crit_ccur_ebb_old) != str:
-                            crit_ccur_ebb = crit_ccur_ebb_old - vessel.metadata['max_cross_current']
+                        t_ccur,mccur,critcur,times_tidal_periods,tidal_periods = calculate_and_store_normative_current_velocity_data(nodes[0],[n1,n2],sailing_time_to_next_node,t_ccur_raw,ccur,critcur_nodes,mccur_nodes,'Point-based')
 
-                        if nodes[1] != route[0] or visualization_calculation:
-                            t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][0]]
-                            times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                            ccur.append(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n1][1])
-                        if nodes[1] != route[-1] or visualization_calculation:
-                            t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][0]]
-                            times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            tidal_periods = [z[1] for z in network.nodes[route[nodes[0]]]['Info']['Tidal periods']]
-                            t_ccur_tidal_periods = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in t_ccur]
-                            ccur.append(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][n2][1])
-
-                        mccur = [max(idx) for idx in zip(*ccur)]
-                        interp_ccur = sc.interpolate.CubicSpline(t_ccur, mccur)
-                        mccur = interp_ccur(t_max_ccur)
-                        previous_time = t_ccur[0]
+                        # Setting some default parameters and lists and importing some information about the range outside the point of entry of vessels
                         p_flood = types[2][restriction_index][0]
                         p_ebb = types[2][restriction_index][1]
-                        critcur = -10 * np.ones(len(mccur))
-                        critcur_nodes.append(critcur)
-                        mccur_nodes.append(critcur)
 
+                        # if passing the node during flood period is not restricted to the slack water (critical cross-current = type<str> = 'min')
                         if type(crit_ccur_flood_old) != str:
-                            interp_ccur_t1 = sc.interpolate.CubicSpline(t_ccur,[ccur - crit_ccur_flood * (1 + p_flood) for ccur in mccur])
-                            interp_ccur_t2 = sc.interpolate.CubicSpline(t_ccur,[ccur - crit_ccur_flood * (1 - p_flood) for ccur in mccur])
-                            crit_ccur_t1 = crit_ccur_flood * (1 + p_flood)
-                            crit_ccur_t2 = crit_ccur_flood * (1 - p_flood)
-                            roots1 = interp_ccur_t1.roots()
-                            roots2 = interp_ccur_t2.roots()
-                            t_ccur_tidal_periods1 = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in roots1]
-                            t_ccur_tidal_periods2 = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in roots2]
+                            # Interpolate the interpolated cross-current velocity, corrected for the sailing time, subtracted with the critical cross-current for the upper and lower bound separately and calculate roots, and corresponding next tidal periods
+                            [crit_ccur_upper_bound_flood,
+                             crit_ccur_lower_bound_flood,
+                             roots_upper_bound_flood,
+                             roots_lower_bound_flood,
+                             t_ccur_tidal_periods_upper_bound_flood,
+                             t_ccur_tidal_periods_lower_bound_flood] = finding_current_velocity_bounds_point_based_method(t_ccur, mccur, p_flood, crit_ccur_flood, times_tidal_periods, tidal_periods, sailing_time_to_next_node)
 
+                        # if passing the node during ebb period is not restricted to the slack water (critical cross-current = type<str> = 'min')
                         if type(crit_ccur_ebb_old) != str:
-                            interp_ccur_t3 = sc.interpolate.CubicSpline(t_ccur,[ccur - crit_ccur_ebb * (1 + p_ebb) for ccur in mccur])
-                            interp_ccur_t4 = sc.interpolate.CubicSpline(t_ccur,[ccur - crit_ccur_ebb * (1 - p_ebb) for ccur in mccur])
-                            crit_ccur_t3 = crit_ccur_ebb * (1 + p_ebb)
-                            crit_ccur_t4 = crit_ccur_ebb * (1 - p_ebb)
-                            roots3 = interp_ccur_t3.roots()
-                            roots4 = interp_ccur_t4.roots()
-                            t_ccur_tidal_periods3 = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in roots3]
-                            t_ccur_tidal_periods4 = [tidal_periods[bisect.bisect_right(times_tidal_periods,y + sailing_time_to_next_node)] if y + sailing_time_to_next_node <= times_tidal_periods[-1] else tidal_periods[-1] for y in roots4]
+                            # Interpolate the interpolated cross-current velocity, corrected for the sailing time, subtracted with the critical cross-current for the upper and lower bound separately and calculate roots, and corresponding next tidal periods
+                            [crit_ccur_upper_bound_ebb,
+                             crit_ccur_lower_bound_ebb,
+                             roots_upper_bound_ebb,
+                             roots_lower_bound_ebb,
+                             t_ccur_tidal_periods_upper_bound_ebb,
+                             t_ccur_tidal_periods_lower_bound_ebb] = finding_current_velocity_bounds_point_based_method(t_ccur, mccur, p_ebb, crit_ccur_ebb, times_tidal_periods, tidal_periods,sailing_time_to_next_node)
 
+                        #Setting a a default starting time for the tidal period and looping over each tidal period to determine whether there are special cases (special restrictions or currents within tidal periods that do not reach the lower and/or upper bound)
                         previous_time = t_ccur[0]
                         for period in enumerate(times_tidal_periods):
+                            #If next tidal period is ebb, hence current tidal period is flood:
                             if tidal_periods[period[0]] == 'Ebb Start':
-                                next_previous_time_tidal_periods = bisect.bisect_right(times_tidal_periods,period[1]) - 2
-                                if next_previous_time_tidal_periods < 0: next_previous_time_tidal_periods = 0
-                                index_previous_time = bisect.bisect_right(t_ccur,previous_time - sailing_time_to_next_node) - 1
-                                index_now = bisect.bisect_right(t_ccur, period[1] - sailing_time_to_next_node)
-                                if crit_ccur_flood_old == -1:
-                                    if crit_ccur_ebb_old != 'min':
-                                        horizontal_tidal_window.append([times_tidal_periods[next_previous_time_tidal_periods], 'Stop'])
-                                        crit_vel_horizontal_tidal_window.append(0)
-                                    horizontal_tidal_window.append([period[1], 'Start'])
-                                    crit_vel_horizontal_tidal_window.append(0)
-                                elif crit_ccur_flood_old == 'min':
-                                    if mccur[index_previous_time:index_now] != []:
-                                        interp = sc.interpolate.CubicSpline(t_ccur[index_previous_time:index_now],[y - p_flood for y in mccur[index_previous_time:index_now]])
-                                        times = [x for x in interp.roots() if (x >= t_ccur[index_previous_time] and x <= t_ccur[index_now])]
-                                        if len(times) < 2: times = [t_ccur[index_previous_time], t_ccur[index_now]]
-                                        horizontal_tidal_window.append([next(item for item in times if item is not None) + sailing_time_to_next_node,'Start'])
-                                        crit_vel_horizontal_tidal_window.append(p_flood)
-                                        horizontal_tidal_window.append([next(item for item in reversed(times) if item is not None) + sailing_time_to_next_node,'Stop'])
-                                        crit_vel_horizontal_tidal_window.append(p_flood)
-                                else:
-                                    if mccur[index_previous_time:index_now] != []:
-                                        if np.max(mccur[index_previous_time:index_now]) < crit_ccur_t1:
-                                            horizontal_tidal_window.append([t_ccur[np.argmax(mccur[index_previous_time:index_now]) + index_previous_time] + sailing_time_to_next_node,'Stop'])
-                                            crit_vel_horizontal_tidal_window.append(np.max(mccur[index_previous_time:index_now]))
-                                        index_previous_time2 = np.argmax(mccur[index_previous_time:index_now]) + index_previous_time
-                                        if np.min(mccur[index_previous_time2:index_now]) > crit_ccur_t2 and p_flood != 0 and crit_ccur_ebb_old != 'min':
-                                            horizontal_tidal_window.append([t_ccur[np.argmin(mccur[index_previous_time2:index_now]) + index_previous_time2] + sailing_time_to_next_node,'Start'])
-                                            crit_vel_horizontal_tidal_window.append(np.min(mccur[index_previous_time2:index_now]))
-                                        elif p_flood == 0 and crit_ccur_ebb_old != 'min':
-                                            horizontal_tidal_window.append([period[1], 'Start'])
-                                            crit_vel_horizontal_tidal_window.append(0)
-                                        elif crit_ccur_ebb_old == 'min':
-                                            interp = sc.interpolate.CubicSpline(t_ccur[index_previous_time:index_now],[y - p_ebb for y in mccur[index_previous_time:index_now]])
-                                            times = [x for x in interp.roots() if (x >= t_ccur[index_previous_time] and x <= t_ccur[index_now])]
-                                            if len(times) < 2: times = [t_ccur[index_previous_time], t_ccur[index_now]]
-                                            horizontal_tidal_window.append([next(item for item in times if item is not None) + sailing_time_to_next_node,'Start'])
-                                            crit_vel_horizontal_tidal_window.append(p_ebb)
+                                calculate_and_append_individual_horizontal_tidal_windows_point_based_method(previous_time,
+                                                                                                            tidal_periods[period[0]],
+                                                                                                            sailing_time_to_next_node,
+                                                                                                            [crit_ccur_upper_bound_flood,crit_ccur_lower_bound_flood],
+                                                                                                            [roots_upper_bound_flood,roots_lower_bound_flood],
+                                                                                                            [t_ccur_tidal_periods_upper_bound_flood,t_ccur_tidal_periods_lower_bound_flood],
+                                                                                                            [crit_ccur_flood,crit_ccur_ebb],
+                                                                                                            [p_flood,p_ebb],
+                                                                                                            t_ccur,
+                                                                                                            mccur,
+                                                                                                            times_horizontal_tidal_window,
+                                                                                                            crit_vel_horizontal_tidal_window)
 
-                            if tidal_periods[period[0]] == 'Flood Start':
-                                next_previous_time_tidal_periods = bisect.bisect_right(times_tidal_periods,period[1]) - 2
-                                if next_previous_time_tidal_periods < 0: next_previous_time_tidal_periods = 0
-                                index_previous_time = bisect.bisect_right(t_ccur,previous_time - sailing_time_to_next_node) - 1
-                                index_now = bisect.bisect_right(t_ccur, period[1] - sailing_time_to_next_node)
-                                if crit_ccur_ebb_old == -1:
-                                    if crit_ccur_flood_old != 'min':
-                                        horizontal_tidal_window.append([times_tidal_periods[next_previous_time_tidal_periods], 'Stop'])
-                                        crit_vel_horizontal_tidal_window.append(0)
-                                    horizontal_tidal_window.append([period[1], 'Start'])
-                                    crit_vel_horizontal_tidal_window.append(0)
-                                elif crit_ccur_ebb_old == 'min':
-                                    if mccur[index_previous_time:index_now] != []:
-                                        interp = sc.interpolate.CubicSpline(t_ccur[index_previous_time:index_now],[y - p_ebb for y in mccur[index_previous_time:index_now]])
-                                        times = [x for x in interp.roots() if (x >= t_ccur[index_previous_time] and x <= t_ccur[index_now])]
-                                        if len(times) < 2: times = [t_ccur[index_previous_time], t_ccur[index_now]]
-                                        horizontal_tidal_window.append([next(item for item in times if item is not None) + sailing_time_to_next_node,'Start'])
-                                        crit_vel_horizontal_tidal_window.append(p_ebb)
-                                        horizontal_tidal_window.append([next(item for item in reversed(times) if item is not None) + sailing_time_to_next_node,'Stop'])
-                                        crit_vel_horizontal_tidal_window.append(p_ebb)
-                                else:
-                                    if mccur[index_previous_time:index_now] != []:
-                                        if np.max(mccur[index_previous_time:index_now]) < crit_ccur_t3:
-                                            horizontal_tidal_window.append([t_ccur[np.argmax(mccur[index_previous_time:index_now]) + index_previous_time] + sailing_time_to_next_node,'Stop'])
-                                            crit_vel_horizontal_tidal_window.append(np.max(mccur[index_previous_time:index_now]))
-                                        index_previous_time2 = np.argmax(mccur[index_previous_time:index_now]) + index_previous_time
-                                        if np.min(mccur[index_previous_time2:index_now]) > crit_ccur_t4 and p_ebb != 0 and crit_ccur_flood_old != 'min':
-                                            horizontal_tidal_window.append([t_ccur[np.argmin(mccur[index_previous_time2:index_now]) + index_previous_time2] + sailing_time_to_next_node,'Start'])
-                                            crit_vel_horizontal_tidal_window.append(np.min(mccur[index_previous_time2:index_now]))
-                                        elif p_ebb == 0 and crit_ccur_flood_old != 'min':
-                                            horizontal_tidal_window.append([period[1], 'Start'])
-                                            crit_vel_horizontal_tidal_window.append(0)
-                                        elif crit_ccur_flood_old == 'min':
-                                            interp = sc.interpolate.CubicSpline(t_ccur[index_previous_time:index_now],[y - p_flood for y in mccur[index_previous_time:index_now]])
-                                            times = [x for x in interp.roots() if (x >= t_ccur[index_previous_time] and x <= t_ccur[index_now])]
-                                            if len(times) < 2: times = [t_ccur[index_previous_time], t_ccur[index_now]]
-                                            horizontal_tidal_window.append([next(item for item in times if item is not None) + sailing_time_to_next_node, 'Start'])
-                                            crit_vel_horizontal_tidal_window.append(p_flood)
+                            # Else if next tidal period is flood, hence current tidal period is ebb:
+                            elif tidal_periods[period[0]] == 'Flood Start':
+                                calculate_and_append_individual_horizontal_tidal_windows_point_based_method(previous_time,
+                                                                                                            tidal_periods[period[0]],
+                                                                                                            sailing_time_to_next_node,
+                                                                                                            [crit_ccur_upper_bound_ebb,crit_ccur_lower_bound_ebb],
+                                                                                                            [roots_upper_bound_ebb,roots_lower_bound_ebb],
+                                                                                                            [t_ccur_tidal_periods_upper_bound_ebb,t_ccur_tidal_periods_lower_bound_ebb],
+                                                                                                            [crit_ccur_flood,crit_ccur_ebb],
+                                                                                                            [p_flood,p_ebb],
+                                                                                                            t_ccur,
+                                                                                                            mccur,
+                                                                                                            times_horizontal_tidal_window,
+                                                                                                            crit_vel_horizontal_tidal_window)
 
+                            # Setting new starting time for the tidal period equalling the end time of the previous tidal period
                             previous_time = period[1]
 
-                        if type(crit_ccur_flood_old) != str:
-                            for root in enumerate(roots1):
-                                index = bisect.bisect_right(t_ccur, root[1])
-                                if index >= len(t_ccur): index -= 1
-                                if mccur[index] < crit_ccur_t1 and t_ccur_tidal_periods1[root[0]] == 'Ebb Start':
-                                    if crit_ccur_flood_old != -1:
-                                        horizontal_tidal_window.append([root[1] + sailing_time_to_next_node, 'Stop'])
-                                        crit_vel_horizontal_tidal_window.append(crit_ccur_t1)
-
-                        if type(crit_ccur_flood_old) != str:
-                            for root in enumerate(roots2):
-                                index = bisect.bisect_right(t_ccur, root[1])
-                                if index >= len(t_ccur): index -= 1
-                                if mccur[index] < crit_ccur_t2 and t_ccur_tidal_periods2[root[0]] == 'Ebb Start':
-                                    if crit_ccur_flood_old != -1:
-                                        horizontal_tidal_window.append([root[1] + sailing_time_to_next_node, 'Start'])
-                                        crit_vel_horizontal_tidal_window.append(crit_ccur_t2)
-
-                        if type(crit_ccur_ebb_old) != str:
-                            for root in enumerate(roots3):
-                                index = bisect.bisect_right(t_ccur, root[1])
-                                if index >= len(t_ccur): index -= 1
-                                if mccur[index] < crit_ccur_t3 and t_ccur_tidal_periods3[root[0]] == 'Flood Start':
-                                    if crit_ccur_ebb_old != -1:
-                                        horizontal_tidal_window.append([root[1] + sailing_time_to_next_node, 'Stop'])
-                                        crit_vel_horizontal_tidal_window.append(crit_ccur_t3)
-
-                        if type(crit_ccur_ebb_old) != str:
-                            for root in enumerate(roots4):
-                                index = bisect.bisect_right(t_ccur, root[1])
-                                if index >= len(t_ccur): index -= 1
-                                if mccur[index] < crit_ccur_t4 and t_ccur_tidal_periods4[root[0]] == 'Flood Start':
-                                    if crit_ccur_ebb_old != -1:
-                                        horizontal_tidal_window.append([root[1] + sailing_time_to_next_node, 'Start'])
-                                        crit_vel_horizontal_tidal_window.append(crit_ccur_t4)
-
-                        zipped_lists = zip(horizontal_tidal_window, crit_vel_horizontal_tidal_window)
+                        # Combine the lists for the restrictions and corresponding critical cross-currents and sort on the starting and stopping times of the restrictions
+                        zipped_lists = zip(times_horizontal_tidal_window, crit_vel_horizontal_tidal_window)
                         sorted_pairs = sorted(zipped_lists)
                         tuples = zip(*sorted_pairs)
-                        horizontal_tidal_window, crit_vel_horizontal_tidal_window = [list(tuple) for tuple in tuples]
+                        times_horizontal_tidal_window, crit_vel_horizontal_tidal_window = [list(tuple) for tuple in tuples]
+
+                        # Set a default list of indexes in the restrictions list that should be removed based on the following conditions by looping over all the times
                         indexes_to_be_removed = []
-                        for time in range(len(horizontal_tidal_window)):
+                        for time in range(len(times_horizontal_tidal_window)):
+                            # Skip the first index
                             if time == 0:
                                 continue
-                            elif horizontal_tidal_window[time][1] == 'Stop' and horizontal_tidal_window[time - 1][1] == 'Stop':
+                            # If there are two stopping restrictions in sequence in the list, add the index of the previous stopping time of the restriction to the list of indexes to be removed
+                            elif times_horizontal_tidal_window[time][1] == 'Stop' and times_horizontal_tidal_window[time - 1][1] == 'Stop':
                                 indexes_to_be_removed.append(time - 1)
-                            elif horizontal_tidal_window[time][1] == 'Start' and horizontal_tidal_window[time - 1][1] == 'Start':
+                            # If there are two starting restrictions in sequence in the list, add the index of the next starting time of the restriction to the list of indexes to be removed
+                            elif times_horizontal_tidal_window[time][1] == 'Start' and times_horizontal_tidal_window[time - 1][1] == 'Start':
                                 indexes_to_be_removed.append(time)
 
+                        # Remove the indexes in the list of the restrictions and corresponding cross-currents
                         for remove_index in list(reversed(indexes_to_be_removed)):
-                            horizontal_tidal_window.pop(remove_index)
+                            times_horizontal_tidal_window.pop(remove_index)
                             crit_vel_horizontal_tidal_window.pop(remove_index)
 
-                        horizontal_tidal_windows.extend(horizontal_tidal_window)
+                        # Add the horizontal tidal window to the list of all horizontal tidal windows along the route
+                        times_horizontal_tidal_windows.extend(times_horizontal_tidal_window)
+                        crit_ccurs_horizontal_tidal_windows.extend(crit_vel_horizontal_tidal_window)
+                        list_of_list_indexes.extend(np.ones(len(times_horizontal_tidal_window)))
 
+                        # If a plot is requested: plot the maximum cross-currents and the critical point-based cross-currents
                         if plot:
-                            axis.plot(t_max_ccur, [y for x, y in enumerate(mccur)], color='rosybrown')
+                            axis.plot(t_ccur_raw, [y for x, y in enumerate(mccur)], color='rosybrown')
                             axis.plot([x[0] for x in horizontal_tidal_window], crit_vel_horizontal_tidal_window,color='sienna', marker='o', linestyle='None')
 
+                # Pick the maximum cross-current and cross-current limits of all the tidal restrictions
                 max_ccur = [max(idx) for idx in zip(*mccur_nodes)]
                 max_critcur = [critcur_nodes[np.argmax(val)][idx] for idx, val in enumerate(zip(*mccur_nodes))]
+
+                if critical_cross_current_method_in_restrictions:
+                    [times_horizontal_tidal_window,
+                     crit_ccurs_horizontal_tidal_window] = calculate_and_append_individual_horizontal_tidal_windows_critical_cross_current_method(t_ccur,max_ccur,max_critcur)
+                    times_horizontal_tidal_windows.extend(times_horizontal_tidal_window)
+                    crit_ccurs_horizontal_tidal_windows.extend(crit_ccurs_horizontal_tidal_window)
+                    list_of_list_indexes.extend(np.zeros(len(times_horizontal_tidal_window)))
+
+                # If a plot is requested and the list of maximum cross-current limits is not empty: plot these maximum cross-currents except for when the tidal period is fully accessible (cross-current limit was set to 10 m/s)
                 if plot and max_critcur != []:
-                    axis.plot(t_max_ccur, [y if y != 10 else None for y in max_critcur], color='lightcoral', alpha=0.4,linestyle='--')
+                    axis.plot(t_ccur_raw, [y if y != 10 else None for y in max_critcur], color='lightcoral', alpha=0.4,linestyle='--')
 
-                return t_max_ccur, max_ccur, max_critcur, horizontal_tidal_windows
+                # Return the modified time series for the cross-currents, critical cross-currents and if applicable the calculated horizontal tidal windows
+                return t_ccur_raw, max_ccur, max_critcur, times_horizontal_tidal_windows, crit_ccurs_horizontal_tidal_windows, list_of_list_indexes
 
-            #Continuation of the calculation
+            #Continuation of the calculation by defining the network
             network = vessel.env.FG
-            critical_cross_current_velocity = vessel.metadata['max_cross_current']
-            max_cur = []
-            for node in route:
-                max_cur.append(np.max(network.nodes[node]['Info']['Current velocity'][1]))
-            [new_t, max_ccur, max_crit_ccur,add_horizontal_tidal_windows] = tidal_windows_tightest_current_restriction_along_route(vessel,route,axis,plot,sailing_time_correction,visualization_calculation=visualization_calculation)
-            if max_ccur != []:
-                interp_max_cross_current = sc.interpolate.CubicSpline(new_t, [x for x in max_ccur])
-                times_horizontal_tidal_window = []
-                crit_ccurs_horizontal_tidal_window = []
-                list_of_list_indexes = []
-                list_indexes = [0, 1]
-                for root in interp_max_cross_current.roots():
-                    if root > new_t[0] and root < new_t[-1] and max_ccur[bisect.bisect_right(new_t,root)] < 0:
-                        if times_horizontal_tidal_window == [] or (times_horizontal_tidal_window != [] and times_horizontal_tidal_window[-1][1] != 'Stop'):
-                            times_horizontal_tidal_window.append([root, 'Stop'])
-                            crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[bisect.bisect_right(new_t,root)])
-                            list_of_list_indexes.append(0)
-                    elif root > new_t[0] and root < new_t[-1] and max_ccur[bisect.bisect_right(new_t,root)] > 0:
-                        if times_horizontal_tidal_window == [] or (times_horizontal_tidal_window != [] and times_horizontal_tidal_window[-1][1] != 'Start'):
-                            times_horizontal_tidal_window.append([root, 'Start'])
-                            crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[bisect.bisect_right(new_t,root)])
-                            list_of_list_indexes.append(0)
 
-                if times_horizontal_tidal_window == []:
-                    times_horizontal_tidal_window.append([vessel.waiting_time_start, 'Stop'])
-                    crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[bisect.bisect_right(new_t, vessel.waiting_time_start)])
-                    list_of_list_indexes.append(0)
-                    times_horizontal_tidal_window.append([np.max(new_t), 'Start'])
-                    crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[-1])
-                    list_of_list_indexes.append(0)
+            # Calculate the maximum current-velocity at each node of the route in order to set the y-lim of the plot properly
+            if plot:
+                max_cur = []
+                for node in route:
+                    max_cur.append(np.max(network.nodes[node]['Info']['Current velocity'][1]))
 
-                if times_horizontal_tidal_window[-1][1] == 'Start' and times_horizontal_tidal_window[-1][0] < np.max(new_t):
-                    times_horizontal_tidal_window.append([np.max(new_t), 'Stop'])
-                    crit_ccurs_horizontal_tidal_window.append(max_crit_ccur[-1])
-                    list_of_list_indexes.append(0)
+            # Set some default parameters
+            times_horizontal_tidal_window = []
+            crit_ccurs_horizontal_tidal_window = []
+            list_of_list_indexes = []
+            list_indexes = [0, 1]
 
-                if add_horizontal_tidal_windows != []:
-                    for time in add_horizontal_tidal_windows:
-                        times_horizontal_tidal_window.append(time)
-                        crit_ccurs_horizontal_tidal_window.append(0)
-                        list_of_list_indexes.append(1)
+            # Determine the data of the governing horizontal tidal restriction (critical cross-current method) and/or the governing horizontal tidal restriction (point-based method)
+            [new_t, max_ccur, max_crit_ccur, times_horizontal_tidal_window,crit_ccurs_horizontal_tidal_window,list_of_list_indexes] = tidal_windows_tightest_current_restriction_along_route(vessel, route, axis, plot, sailing_time_correction, visualization_calculation)
 
-                list_of_list_indexes = [x for _, x in sorted(zip(times_horizontal_tidal_window, list_of_list_indexes))]
-                crit_ccurs_horizontal_tidal_window = [x for _, x in sorted(zip(times_horizontal_tidal_window, crit_ccurs_horizontal_tidal_window))]
-                times_horizontal_tidal_window.sort()
+            # If the list of tidal windows are still empty: there is no horizontal tidal restriction for the particular vessel, so restriction stops at t_start and ends at t_end of the simulation
+            if times_horizontal_tidal_window == []:
+                times_horizontal_tidal_window.append([vessel.waiting_time_start, 'Stop'])
+                crit_ccurs_horizontal_tidal_window.append(0)
+                list_of_list_indexes.append(0)  # integer = 0 meaning that the restriction is of type critical cross-current
+                times_horizontal_tidal_window.append([np.max(new_t), 'Start'])
+                crit_ccurs_horizontal_tidal_window.append(0)
+                list_of_list_indexes.append(0)  # integer = 0 meaning that the restriction is of type critical cross-current
 
-                indexes_to_be_removed = []
-                for list_index in list_indexes:
-                    for time1 in range(len(times_horizontal_tidal_window)):
-                        if times_horizontal_tidal_window[time1][1] == 'Start' and list_of_list_indexes[time1] == list_index:
-                            for time2 in range(len(times_horizontal_tidal_window)):
-                                if time2 > time1 and times_horizontal_tidal_window[time2][1] == 'Stop' and list_of_list_indexes[time2] == list_index:
-                                    indexes = np.arange(time1 + 1, time2, 1)
-                                    for index in indexes:
-                                        indexes_to_be_removed.append(index)
-                                    break
+            # Combine the list of the horizontal tidal windows and the restriction types and critical cross-currents respectively and sort it chronologically
+            list_of_list_indexes = [x for _, x in sorted(zip(times_horizontal_tidal_window, list_of_list_indexes))]
+            crit_ccurs_horizontal_tidal_window = [x for _, x in sorted(zip(times_horizontal_tidal_window, crit_ccurs_horizontal_tidal_window))]
+            times_horizontal_tidal_window.sort()
 
-                indexes_to_be_removed.sort()
-                indexes_to_be_removed = list(dict.fromkeys(indexes_to_be_removed))
+            # Set a default list of indexes in the restrictions list that should be removed based on the following conditions by nested looping over the restriction types and all the starting and stopping times of the restriction
+            indexes_to_be_removed = []
+            for list_index in list_indexes:
+                for time1 in range(len(times_horizontal_tidal_window)):
+                    # If the time is a starting time of a restriction and is the same as the selected restriction type: loop over the times again and find the next stopping time of the restriction with the same restriction type
+                    if times_horizontal_tidal_window[time1][1] == 'Start' and list_of_list_indexes[time1] == list_index:
+                        for time2 in range(len(times_horizontal_tidal_window)):
+                            if time2 > time1 and times_horizontal_tidal_window[time2][1] == 'Stop' and list_of_list_indexes[time2] == list_index:
+                                # select all the integers between the starting and stopping time of the restriction and add them to the indexes to be removed
+                                indexes = np.arange(time1 + 1, time2, 1)
+                                for index in indexes:
+                                    indexes_to_be_removed.append(index)
+                                break
 
-                for remove_index in list(reversed(indexes_to_be_removed)):
-                    times_horizontal_tidal_window.pop(remove_index)
-                    list_of_list_indexes.pop(remove_index)
-                    crit_ccurs_horizontal_tidal_window.pop(remove_index)
+            # Sort the indexes to be removed and remove the duplicates
+            indexes_to_be_removed.sort()
+            indexes_to_be_removed = list(dict.fromkeys(indexes_to_be_removed))
 
-                indexes_to_be_removed = []
-                for time in range(len(times_horizontal_tidal_window)):
-                    if time == 0:
-                        continue
-                    elif times_horizontal_tidal_window[time][1] == 'Stop' and times_horizontal_tidal_window[time - 1][1] == 'Stop':
-                        indexes_to_be_removed.append(time - 1)
-                    elif times_horizontal_tidal_window[time][1] == 'Start' and times_horizontal_tidal_window[time - 1][1] == 'Start':
-                        indexes_to_be_removed.append(time)
+            # Remove the times of the restriction, the corresponding type of restriction and critical cross-current of the restriction by looping over the indexes to be removed
+            for remove_index in list(reversed(indexes_to_be_removed)):
+                times_horizontal_tidal_window.pop(remove_index)
+                list_of_list_indexes.pop(remove_index)
+                crit_ccurs_horizontal_tidal_window.pop(remove_index)
 
-                for remove_index in list(reversed(indexes_to_be_removed)):
-                    times_horizontal_tidal_window.pop(remove_index)
-                    list_of_list_indexes.pop(remove_index)
-                    crit_ccurs_horizontal_tidal_window.pop(remove_index)
+            # Set a new default list of indexes in the restrictions list that should be removed based on the following conditions by looping over all the times
+            indexes_to_be_removed = []
+            for time in range(len(times_horizontal_tidal_window)):
+                # Skip the first index
+                if time == 0:
+                    continue
+                # If there are two stopping restrictions in sequence in the list, add the index of the previous stopping time of the restriction to the list of indexes to be removed
+                elif times_horizontal_tidal_window[time][1] == 'Stop' and times_horizontal_tidal_window[time - 1][1] == 'Stop':
+                    indexes_to_be_removed.append(time - 1)
+                # If there are two starting restrictions in sequence in the list, add the index of the next starting time of the restriction to the list of indexes to be removed
+                elif times_horizontal_tidal_window[time][1] == 'Start' and times_horizontal_tidal_window[time - 1][1] == 'Start':
+                    indexes_to_be_removed.append(time)
 
-                if times_horizontal_tidal_window[0][1] == 'Start' and times_horizontal_tidal_window[0][0] > vessel.waiting_time_start:
-                    times_horizontal_tidal_window.insert(0,[vessel.waiting_time_start, 'Stop'])
-                    crit_ccurs_horizontal_tidal_window.insert(0,max_crit_ccur[bisect.bisect_right(new_t, vessel.waiting_time_start)])
-                elif times_horizontal_tidal_window[0][1] == 'Stop' and times_horizontal_tidal_window[0][0] > vessel.waiting_time_start:
-                    times_horizontal_tidal_window.insert(0,[vessel.waiting_time_start, 'Start'])
-                    crit_ccurs_horizontal_tidal_window.insert(0,max_crit_ccur[bisect.bisect_right(new_t, vessel.waiting_time_start)])
+            # Again remove the times of the restriction, the corresponding type of restriction and critical cross-current of the restriction by looping over the indexes to be removed
+            for remove_index in list(reversed(indexes_to_be_removed)):
+                times_horizontal_tidal_window.pop(remove_index)
+                list_of_list_indexes.pop(remove_index)
+                crit_ccurs_horizontal_tidal_window.pop(remove_index)
 
-                if plot:
-                    axis.plot(new_t,[y if y != 10 else None for y in max_crit_ccur], color='indianred', linestyle='--')
-                    axis.plot([t for t in new_t], [y + max_crit_ccur[i] for i,y in enumerate(max_ccur)],color='indianred')
-                    axis.set_ylabel('Cross-current velocity [m/s]', color='indianred')
-                    y_loc = [y if y != 10 else None for y in max_crit_ccur][bisect.bisect_right(new_t, vessel.env.now + vessel.metadata['max_waiting_time'])]
-                    if y_loc == None: y_loc = next(item for item in [y if y != 10 else None for y in max_crit_ccur][bisect.bisect_right(new_t, vessel.env.now + vessel.metadata['max_waiting_time']):] if item is not None)
-                    if y_loc >= 0:
-                        axis.plot([x[0] for x in times_horizontal_tidal_window],[y for y in crit_ccurs_horizontal_tidal_window], color='indianred', marker='o',linestyle='None')
-                        axis.text(vessel.env.now + vessel.metadata['max_waiting_time'],y_loc, 'Critical cross-current', color='indianred',horizontalalignment='center')
-                    axis.set_ylim([0,np.max(max_cur)])
-            else:
-                times_horizontal_tidal_window = []
+            # If the first restriction in the list is a starting time and is greater than the starting time of the waiting time of the vessel: add a stopping condition at the starting time of the vessel and add the corresponding critical cross-current
+            if times_horizontal_tidal_window[0][1] == 'Start' and times_horizontal_tidal_window[0][0] > vessel.waiting_time_start:
+                times_horizontal_tidal_window.insert(0,[vessel.waiting_time_start, 'Stop'])
+                crit_ccurs_horizontal_tidal_window.insert(0,max_crit_ccur[bisect.bisect_right(new_t, vessel.waiting_time_start)])
+            # If the first restriction in the list is a stopping time and is greater than the starting time of the waiting time of the vessel: add a starting condition at the starting time of the vessel and add the corresponding critical cross-current
+            elif times_horizontal_tidal_window[0][1] == 'Stop' and times_horizontal_tidal_window[0][0] > vessel.waiting_time_start:
+                times_horizontal_tidal_window.insert(0,[vessel.waiting_time_start, 'Start'])
+                crit_ccurs_horizontal_tidal_window.insert(0,max_crit_ccur[bisect.bisect_right(new_t, vessel.waiting_time_start)])
 
+            # If a plot is requested: plot the governing maximum cross-current limits and cross-current with a corresponding label and add a lay-out
+            if plot:
+                axis.plot(new_t,[y if y != 10 else None for y in max_crit_ccur], color='indianred', linestyle='--')
+                axis.plot([t for t in new_t], [y + max_crit_ccur[i] for i,y in enumerate(max_ccur)],color='indianred')
+                axis.set_ylabel('Cross-current velocity [m/s]', color='indianred')
+                y_loc = [y if y != 10 else None for y in max_crit_ccur][bisect.bisect_right(new_t, vessel.env.now + vessel.metadata['max_waiting_time'])]
+                # If the location of the label for the critical cross-current is not visible in the plot (exceeds the y-lim): calculate a new location for the label when the critical cross-current is visible
+                if y_loc == None: y_loc = next(item for item in [y if y != 10 else None for y in max_crit_ccur][bisect.bisect_right(new_t, vessel.env.now + vessel.metadata['max_waiting_time']):] if item is not None)
+                if y_loc >= 0: #if a new value is found: plot the critical cross-currents limits corresponding to the horizontal tidal windows
+                    axis.plot([x[0] for x in times_horizontal_tidal_window],[y for y in crit_ccurs_horizontal_tidal_window], color='indianred', marker='o',linestyle='None')
+                    axis.text(vessel.env.now + vessel.metadata['max_waiting_time'],y_loc, 'Critical cross-current', color='indianred',horizontalalignment='center')
+                axis.set_ylim([0,np.max(max_cur)])
+
+            # Return the horizontal tidal windows
             return times_horizontal_tidal_window
 
-        def times_tidal_window(vessel,route,axes=[[],[]],plot=False,sailing_time_correction=True,ukc_calc=False):
+        def times_tidal_window(vessel,route,axes=[[],[]],plot=False,sailing_time_correction=True,visualization_calculation=False,ukc_calc=False):
             """ Function: calculates the windows available to sail-in and -out of the port by combining the tidal windows of the horizontal and vertical tidal restrictions given the tidal window polciy
 
                 Input:
@@ -1503,20 +1652,22 @@ class VesselTrafficService:
                     - sailing_time_correction: a bool that indicates whether the calculation should correct for sailing_speed (dynamic calculation) or not (static calculation)
 
             """
+
+            # If just a calculation of the net_ukc is required:
             if ukc_calc:
                 interp_wdep, ukc_s, ukc_p, fwa = times_vertical_tidal_window(vessel, route, ukc_calc=ukc_calc)
                 return interp_wdep, ukc_s, ukc_p, fwa
 
-            list_of_times_vertical_tidal_window = []
-            list_of_times_horizontal_tidal_window = []
+            # Else: calculate the tidal window restriction for the vertical and horizontal tide respectively
+            list_of_times_vertical_tidal_window = times_vertical_tidal_window(vessel,route,axes[0],plot,sailing_time_correction,ukc_calc)
+            list_of_times_horizontal_tidal_window = times_horizontal_tidal_window(vessel,route,axes[1],plot,sailing_time_correction,visualization_calculation)
 
-            list_of_times_vertical_tidal_window = times_vertical_tidal_window(vessel,route,axes[0],plot,sailing_time_correction)
-            list_of_times_horizontal_tidal_window = times_horizontal_tidal_window(vessel,route,axes[1],plot,sailing_time_correction)
-
+            # Set some default parameters
             list_indexes = [0,1]
             times_tidal_window = []
             list_of_list_indexes = []
 
+            #Append data to the lists and append a corresponding indentification index (0=vertical, 1=horizontal)
             for time in list_of_times_vertical_tidal_window:
                 times_tidal_window.append(time)
                 list_of_list_indexes.append(0)
@@ -1524,9 +1675,11 @@ class VesselTrafficService:
                 times_tidal_window.append(time)
                 list_of_list_indexes.append(1)
 
+            #Sort lists on time
             list_of_list_indexes = [x for _, x in sorted(zip(times_tidal_window, list_of_list_indexes))]
             times_tidal_window.sort()
 
+            #Remove values that fall within restrictive periods of both tidal policies.
             indexes_to_be_removed = []
             for list_index in list_indexes:
                 for time1 in range(len(times_tidal_window)):
@@ -1538,26 +1691,33 @@ class VesselTrafficService:
                                     indexes_to_be_removed.append(index)
                                 break
 
+            #Sort the indexes that should be removed and remove duplicates
             indexes_to_be_removed.sort()
             indexes_to_be_removed = list(dict.fromkeys(indexes_to_be_removed))
 
+            #Remove the values on the indexes that should be removed
             for remove_index in list(reversed(indexes_to_be_removed)):
                 times_tidal_window.pop(remove_index)
                 list_of_list_indexes.pop(remove_index)
 
+            # Set a new default list of indexes in the restrictions list that should be removed based on the following conditions by looping over all the times
             indexes_to_be_removed = []
             for time in range(len(times_tidal_window)):
                 if time == 0:
                     continue
+                # If there are two stopping restrictions in sequence in the list, add the index of the previous stopping time of the restriction to the list of indexes to be removed
                 elif times_tidal_window[time][1] == 'Stop' and times_tidal_window[time - 1][1] == 'Stop':
                     indexes_to_be_removed.append(time - 1)
+                # If the first restriction in the list is a stopping time and is greater than the starting time of the waiting time of the vessel: add a starting condition at the starting time of the vessel and add the corresponding critical cross-current
                 elif times_tidal_window[time][1] == 'Start' and times_tidal_window[time - 1][1] == 'Start':
                     indexes_to_be_removed.append(time)
 
+            # Again remove the values on the indexes that should be removed
             for remove_index in list(reversed(indexes_to_be_removed)):
                 times_tidal_window.pop(remove_index)
                 list_of_list_indexes.pop(remove_index)
 
+            # Return the final tidal windows
             return times_tidal_window
 
         # Continuation of the calculation of the available sail-in-times by setting the starting time and some lists
@@ -1575,7 +1735,7 @@ class VesselTrafficService:
             axes = [ax1,ax2]
 
         # Running the above functions to determine the available-sail-in-times
-        available_sail_in_times = times_tidal_window(vessel,route,axes,plot,sailing_time_correction)
+        available_sail_in_times = times_tidal_window(vessel,route,axes,plot,sailing_time_correction,visualization_calculation,ukc_calc)
 
         # If plot requested: add the following to the plot
         if plot:
@@ -1656,6 +1816,8 @@ class IsLockLineUpArea(HasResource, HasLength, Identifiable, Log):
         self.pass_line_up_area = {node: simpy.PriorityResource(self.env, capacity=1),} #used to prevent vessel from entering the lock before all previously locked vessels have passed the line-up area one by one, so capacity must be 1
 
 class IsTurningBasin(HasResource, Identifiable, Log):
+    """Mixin class: Something which has a turning basin object properties as part of a lock complex [in SI-units] """
+
     def __init__(
         self,
         node, #a string which indicates the location of the start of the waiting area
@@ -1721,8 +1883,7 @@ class IsLock(HasResource, HasLength, Identifiable, Log):
         self.water_level = random.choice([node_1, node_3])
 
     def operation_time(self, environment):
-        """ Function which calculates the operation time:
-                based on the constant or nearest in the signal of the water level difference
+        """ Function which calculates the operation time: based on the constant or nearest in the signal of the water level difference
 
             Input:
                 - environment: see init function"""
@@ -1777,17 +1938,34 @@ class IsLock(HasResource, HasLength, Identifiable, Log):
                     -1, self.resource.queue.pop(self.resource.queue.index(request))
                 )
 
-class PassSection():
+class PassSection:
+    """Mixin class: Collection of functions that release and request sections. Important to obey the traffic regulations (safety distance and one-way-traffic) """
+
     def release_access_previous_section(vessel, origin):
+        """ Function: when a vessel sails out of a section, it releases the request of the previous section
+
+            Input:
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                - origin: string that contains the node that the vessel is currently on
+
+        """
+
+        # Reversely loop over the nodes of the route of the vessel (from the node that it is currently on backwards)
         for n in reversed(vessel.route[:vessel.route.index(origin)]):
+            # If a junction is encountered on that node: extract information of the previous junction
             if 'Junction' in vessel.env.FG.nodes[n]:
                 junction = vessel.env.FG.nodes[n]['Junction'][0]
+                # Loop over the section of that junction
                 for section in enumerate(junction.section):
+                    # Pick the correct section by checking which section contains the current node of the vessel:
                     if origin not in list(section[1].keys()):
                         continue
+                    # Release the request of that section made previously by the vessel
                     section[1][origin].release(vessel.request_access_section)
 
+                    # If the section is of type 'one-way traffic':
                     if junction.type[section[0]] == 'one-way_traffic':
+                        # If the entrance/exit resources are not in the previous junction: find the current junction and release the specific requests at that junction
                         if 'access1' not in dir(junction):
                             junction = vessel.env.FG.nodes[origin]['Junction'][0]
                             for section in enumerate(junction.section):
@@ -1795,6 +1973,7 @@ class PassSection():
                                     continue
                                 junction.access2[0][n].release(vessel.request_access_entrance_section) #section[0]
                                 junction.access1[0][origin].release(vessel.request_access_exit_section) #section[0]
+                        # Else: release the specific requests of the entrance/exit resources at the previous junction
                         else:
                             junction.access1[0][n].release(vessel.request_access_entrance_section) #section[0]
                             junction.access2[0][origin].release(vessel.request_access_exit_section) #section[0]
@@ -1803,25 +1982,43 @@ class PassSection():
         return
 
     def request_access_next_section(vessel, origin, destination):
+        """ Function: when a vessel sails out of a section, it releases the request of the previous section
+
+            Input:
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                - origin: string that contains the node of the route that the vessel is currently on
+                - destination: string that contains the node of the route that the vessel is heading to
+
+        """
+
+        # Loop over the nodes of the route of the vessel (from the node that it is heading to onwards)
         for n in vessel.route[vessel.route.index(destination):]:
+            # If a junction is encountered on that node: extract information of the current junction
             if 'Junction' in vessel.env.FG.nodes[n]:
                 junction = vessel.env.FG.nodes[origin]['Junction'][0]
+                # Loop over the section of that junction
                 for section in enumerate(junction.section):
+                    # Pick the correct section by checking which section contains the current node of the vessel:
                     if n not in list(section[1].keys()):
                         continue
+                    # Setting the stopping distance and stopping time
                     vessel.stopping_distance = 15 * vessel.L
                     vessel.stopping_time = vessel.stopping_distance / vessel.v
+                    # If there is already a vessel present in the section and the time the current vessel arrives within the safety distance: request access and yield timeout until safety distance is complied to
                     if section[1][n].users != [] and (section[1][n].users[-1].ta + vessel.stopping_time) > vessel.env.now:
                         vessel.request_access_section = section[1][n].request()
                         section[1][n].users[-1].id = vessel.id
                         section[1][n].users[-1].ta = (section[1][n].users[-2].ta + vessel.stopping_time)
                         yield vessel.env.timeout((section[1][n].users[-2].ta + vessel.stopping_time) - vessel.env.now)
+                    # Else if there are no other vessels present in the section: request access
                     else:
                         vessel.request_access_section = section[1][n].request()
                         section[1][n].users[-1].ta = vessel.env.now
                         section[1][n].users[-1].id = vessel.id
 
+                    # If the section is of type 'one-way traffic':
                     if junction.type[section[0]] == 'one-way_traffic':
+                        # If the entrance/exit resources are not in the current junction: find the next junction and request the specific requests at that junction
                         if 'access1' not in dir(junction):
                             junction = vessel.env.FG.nodes[n]['Junction'][0]
                             for section in enumerate(junction.section):
@@ -1833,6 +2030,7 @@ class PassSection():
                                 vessel.request_access_exit_section = junction.access1[0][n].request() #section[0]
                                 junction.access1[0][n].users[-1].id = vessel.id #section[0]
 
+                        # Else: request the specific requests for the entrance/exit resources at the current junction
                         else:
                             vessel.request_access_entrance_section = junction.access1[0][origin].request() #section[0]
                             junction.access1[0][origin].users[-1].id = vessel.id #section[0]
@@ -1843,42 +2041,71 @@ class PassSection():
         return
 
 class PassTerminal:
-    def waiting_time_for_tidal_window(vessel,route,max_waiting_time = True,delay=0,out=False,plot=False):
+    """Mixin class: Collection of interacting functions that handle the vessels that call at a terminal and take the correct measures"""
+
+    def waiting_time_for_tidal_window(vessel,route,delay=0,plot=False):
+        """ Function: calulates the time that a vessel has to wait depending on the available tidal windows
+
+            Input:
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                - route: a list of strings that resemble the route of the vessel (can be different than the vessel.route)
+                - delay: a delay that can be included to calculate a future situation
+                - plot: bool that specifies if a plot is requested or not
+
+        """
+
+        # If the sail-in times of the vessel is not calculated before: request VesselTrafficService what are the available sail-in times given the tidal window policy
         if 'sail_in_times' not in dir(vessel):
-            vessel.sail_in_times = VesselTrafficService.provide_sail_in_times_tidal_window(vessel,route=route,out=out,plot=plot)
-        if out:
+            vessel.sail_in_times = VesselTrafficService.provide_sail_in_times_tidal_window(vessel,route=route,plot=plot)
+        # If a vessel is bound for offshore (meaning that sail-out times have already been calculated): store its sail-in times in a parameter and use the sail-out times as input (sail-in times)
+        if vessel.bound == 'outbound':
             sail_in_times = vessel.sail_in_times
             vessel.sail_in_times = vessel.sail_out_times
 
+        # Set default parameters
         waiting_time = 0
         current_time = vessel.env.now+delay
+
+        # Loop over the available sail-in (or sail-out) times:
         for t in range(len(vessel.sail_in_times)):
+            # If the next sail-in time contains a starting condition for a restriction: if it is the last time, then let the vessel wait wait for this time, else continue the loop
             if vessel.sail_in_times[t][1] == 'Start':
                 if t == len(vessel.sail_in_times)-1:
                     waiting_time = vessel.sail_in_times[t][0] - current_time
                     break
                 else:
                     continue
+            # If the current time of the vessel is greater or equal to the next sail-in time containing a stopping condition for a restriction and is smaller than the next starting time of a restriction: waiting time = 0
             if current_time >= vessel.sail_in_times[t][0]:
                 waiting_time = 0
                 if t == len(vessel.sail_in_times)-1 or current_time < vessel.sail_in_times[t+1][0]:
                     break
+            # Else if the current time of the vessel is smaller or equal to the next sail-in time containing a stopping condition for a restriction
             elif current_time <= vessel.sail_in_times[t][0]:
+                # And is smaller than the previous starting time of a restriction: waiting time = 0
                 if current_time < vessel.sail_in_times[t-1][0]:
                     waiting_time = 0
+                # Waiting time = next stopping time - current time
                 else:
                     waiting_time = vessel.sail_in_times[t][0] - current_time
                 break
+            # Else if it is the last time, then let the vessel wait wait for this time
             elif t == len(vessel.sail_in_times) - 1:
                 waiting_time = vessel.sail_in_times[t][0] - current_time
+            # Else if none of the above conditions hold: continue the loop
             else:
                 continue
-        if out:
+
+        # If vessel is bound for offshore: reset the sail-in times to their original
+        if vessel.bound == 'outbound':
             vessel.sail_in_times = sail_in_times
-        if not out:
+
+        # Else if the vessel is bound for the terminal: request the sail-out times by reversing the route
+        elif vessel.bound == 'inbound':
             network = vessel.env.FG
             distance_to_node = 0
             route.reverse()
+            # Calculate the total time that a vessel will spend in the port before returning: sailing time of the vessel + 2 times (de)berthing time + (un)loading time
             for n in range(len(route)):
                 if n == 0:
                     continue
@@ -1890,39 +2117,63 @@ class PassTerminal:
                                                                    network.nodes[route[n]]['geometry'].y)[2]
 
             sailing_time = distance_to_node / vessel.v
+            # Calculate delay and include in current time
             delay = sailing_time + 2 * vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60 + waiting_time
             current_time = vessel.env.now + delay
-            if 'sail_out_times' not in dir(vessel):
-                vessel.bound = 'outbound'
-                vessel.sail_out_times = VesselTrafficService.provide_sail_in_times_tidal_window(vessel, route, out=True, plot=plot)
-                vessel.bound = 'inbound'
+            # Request the sail-out times by temporarily setting the vessel bound as outbound
+            vessel.bound = 'outbound'
+            vessel.sail_out_times = VesselTrafficService.provide_sail_in_times_tidal_window(vessel,route=route,plot=plot)
+            vessel.bound = 'inbound'
+
+            # Loop over the provided sail-out times: if there is no suitable tidal window or if the waiting time is too large: set waiting time to maximum waiting time of vessel (it will return without entering the port)
             for t in range(len(vessel.sail_out_times)):
+                # If the next sail-in time contains a starting condition for a restriction: continue the loop
                 if vessel.sail_out_times[t][1] == 'Start':
                     continue
+                # If the current time of the vessel is greater or equal to the next sail-in time containing a stopping condition for a restriction and is smaller than the next starting time of a restriction: break loop
                 if current_time >= vessel.sail_out_times[t][0]:
                     if t == len(vessel.sail_out_times)-1 or current_time < vessel.sail_out_times[t+1][0]:
                         break
+                # Else if the current time of the vessel is smaller or equal to the next sail-in time containing a stopping condition for a restriction
                 elif current_time <= vessel.sail_out_times[t][0]:
+                    # Determine if the waiting time is allowed or not: if not revise waiting time to maximum waiting time, else break the loop
                     if vessel.sail_out_times[t][0]-current_time >= vessel.metadata['max_waiting_time']:
                         waiting_time = vessel.metadata['max_waiting_time']
                     else:
                         break
+                # Else if it is the last time, then revise waiting time to maximum waiting time
                 elif t == len(vessel.sail_out_times)-1:
                     waiting_time = vessel.metadata['max_waiting_time']
+                # Else if none of the conditions holds: continue the loop
                 else:
                     continue
+            # Reset the route
             route.reverse()
+
+        # Return the vessel waiting time. If the vessel is not able to return within the maximum waiting time at the terminal: the waiting time is unacceptable and the vessel will return
         return waiting_time
 
     def move_to_anchorage(vessel,node):
+        """ Function: moves a vessel to the anchorage area instead of continuing its route to the terminal if a vessel is required to wait in the anchorage area
+
+            Input:
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                - node: a string that contains the node of the route that the vessel is currently on
+
+        """
+
+        # Set some default parameters:
         network = vessel.env.FG
         vessel.waiting_in_anchorage = True
         nodes_of_anchorages = []
         capacity_of_anchorages = []
         users_of_anchorages = []
         sailing_distances_from_anchorages = []
+
+        # Loop over the nodes of the network and identify all the anchorage areas:
         for node_anchorage in network.nodes:
             if 'Anchorage' in network.nodes[node_anchorage]:
+                #Extract information over the individual anchorage areas: capacity, users, and the sailing distance to the anchorage area from the designated terminal the vessel is planning to call
                 nodes_of_anchorages.append(node_anchorage)
                 capacity_of_anchorages.append(vessel.env.FG.nodes[node_anchorage]['Anchorage'][0].anchorage_area[node_anchorage].capacity)
                 users_of_anchorages.append(len(vessel.env.FG.nodes[node_anchorage]['Anchorage'][0].anchorage_area[node_anchorage].users))
@@ -1938,25 +2189,30 @@ class PassTerminal:
                     sailing_distance_from_anchorage += distance
                 sailing_distances_from_anchorages.append(sailing_distance_from_anchorage)
 
+        # Sort the lists based on the sailing distance to the anchorage area from the designated terminal the vessel is planning to call
         sorted_nodes_anchorages = [nodes for (distances,nodes) in sorted(zip(sailing_distances_from_anchorages, nodes_of_anchorages))]
         sorted_users_of_anchorages = [nodes for (distances,nodes) in sorted(zip(sailing_distances_from_anchorages, users_of_anchorages))]
         sorted_capacity_of_anchorages = [nodes for (distances,nodes) in sorted(zip(sailing_distances_from_anchorages, capacity_of_anchorages))]
 
+        # Take the anchorage area that is closest to the designated terminal the vessel is planning to call if there is sufficient capacity:
         node_anchorage = sorted_nodes_anchorages[np.argmin(sailing_distances_from_anchorages)]
         for node_anchorage_area in enumerate(sorted_nodes_anchorages):
             if sorted_users_of_anchorages[node_anchorage_area[0]] < sorted_capacity_of_anchorages[node_anchorage_area[0]]:
                 node_anchorage = node_anchorage_area[1]
                 break
 
+        # If there is not an available anchorage area: leave the port after entering the anchorage area
         if node_anchorage != node_anchorage_area[1]:
            vessel.return_to_sea = True
            vessel.waiting_time = vessel.metadata['max_waiting_time']
+        # Set the route that the vessel will take after calling at the terminal (back to the origin) and after waiting in the anchorage area
         anchorage = network.nodes[node_anchorage]['Anchorage'][0]
         vessel.route_after_anchorage = []
         vessel.true_origin = vessel.route[0]
         current_time = vessel.env.now
         vessel.route_after_anchorage = nx.dijkstra_path(vessel.env.FG, node_anchorage, vessel.route[-1])
         vessel.route_after_terminal = nx.dijkstra_path(vessel.env.FG, vessel.route[-1], vessel.route[0])
+        # Start the moving process by setting the route of the vessel from current node to chosen anchorage area
         yield from Movable.pass_edge(vessel,vessel.route[node], vessel.route[node+1])
         vessel.route = nx.dijkstra_path(vessel.env.FG, vessel.route[node+1], node_anchorage)
         vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[node]]
@@ -1964,19 +2220,30 @@ class PassTerminal:
         return
 
     def pass_anchorage(vessel, node):
+        """ Function: function that handles a vessel waiting in an anchorage area
+
+            Input:
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                - node: string that contains the node of the route that the vessel is moving to (the anchorage area)
+
+        """
+
+        # Set default parameter and extract information of anchorage area
         network = vessel.env.FG
         anchorage = network.nodes[node]['Anchorage'][0]
-        yield from Movable.pass_edge(vessel, vessel.route[vessel.route.index(node) - 1],
-                                     vessel.route[vessel.route.index(node)])
 
+        # Moves the vessel to the node of the anchorage area
+        yield from Movable.pass_edge(vessel, vessel.route[vessel.route.index(node) - 1],vessel.route[vessel.route.index(node)])
+
+        # Request access to the anchorage area and log this to the anchorage area log and vessel log (including the calculated value for the net ukc)
         vessel.anchorage_access = anchorage.anchorage_area[node].request()
         yield vessel.anchorage_access
-
         anchorage.log_entry("Vessel arrival", vessel.env.now, len(anchorage.anchorage_area[node].users),nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], )
-
         current_time = vessel.env.now
         ukc = VesselTrafficService.provide_ukc_clearance(vessel,node)
         vessel.log_entry("Waiting in anchorage start", vessel.env.now, ukc,nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], )
+
+        # Determine the sailing distance to the destined terminal (important for later in the calculation)
         edge = vessel.route_after_anchorage[-2], vessel.route_after_anchorage[-1]
         terminal = vessel.env.FG.edges[edge]["Terminal"][0]
         sailing_distance = 0
@@ -1987,28 +2254,37 @@ class PassTerminal:
                                               vessel.env.FG.nodes[vessel.route_after_anchorage[nodes[0] + 1]]['geometry'].y)
             sailing_distance += distance
 
+        # If the vessel is not allowed in (so has not to return to sea) and should wait in the anchorage area for an available berth
         if vessel.return_to_sea == False and vessel.waiting_for_availability_terminal:
+            # Vessel waits for the available berth, or if it takes longer than the permitted maximum waiting time: the vessel will wait until that specific waiting time
             yield vessel.waiting_time_in_anchorage | vessel.env.timeout(vessel.metadata['max_waiting_time'])
             new_current_time = vessel.env.now
+            # If waiting time is greater or equal than the maximum waiting time: vessel returns to sea and releases its request for the berth at the terminal of call
             if new_current_time - current_time >= vessel.metadata['max_waiting_time']:
                 vessel.return_to_sea = True
                 vessel.waiting_time = 0
                 if terminal.type == 'quay': terminal = terminal.terminal[edge[0]]
                 elif terminal.type == 'jetty': terminal = terminal.terminal[vessel.index_jetty_position][edge[0]]
                 terminal.release(vessel.waiting_time_in_anchorage)
+            # Else:
             else:
+                # If terminal of call is of type 'quay': determine the quay position, request the quay length and adjust the available quay length
                 if terminal.type == 'quay':
                     vessel.index_quay_position, _ = PassTerminal.pick_minimum_length(vessel, terminal)
                     PassTerminal.adjust_available_quay_lengths(vessel, terminal, vessel.index_quay_position)
                     terminal = terminal.terminal[edge[0]]
+                # Else if terminal of call is of type 'jetty': request terminal again (with priority) before releasing the initial request (based on which the waiting time was calculated)
                 elif terminal.type == 'jetty':
                     terminal = terminal.terminal[vessel.index_jetty_position][edge[0]]
                     vessel.access_terminal = terminal.request(priority=-1)
                     terminal.release(vessel.waiting_time_in_anchorage)
                     yield vessel.access_terminal
 
-                vessel.sail_in_times = VesselTrafficService.provide_sail_in_times_tidal_window(vessel, vessel.route_after_anchorage,out=False)
+                # Determine the new sail-in times of the vessel (since the vessel had to wait in the anchorage area, the available sail-in times are now different)
+                vessel.sail_in_times = VesselTrafficService.provide_sail_in_times_tidal_window(vessel, vessel.route_after_anchorage)
+                # Loop over the sail-in times to determine if the vessel should wait or not, or even has to return to sea (due to non-allowable waiting time by exceeding the set maximum)
                 for t in range(len(vessel.sail_in_times)):
+                    # If the next sail-in time contains a starting condition for a restriction: if it is the last time, then let the vessel wait wait for this time (if permitted, else return to sea), else continue the loop
                     if vessel.sail_in_times[t][1] == 'Start':
                         if t == len(vessel.sail_in_times) - 1:
                             waiting_time = vessel.sail_in_times[t][0] - current_time
@@ -2018,35 +2294,40 @@ class PassTerminal:
                                 if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
                                     terminal.release(vessel.access_terminal)
                             else:
+                                # Yield waiting time and if terminal of call is of type 'jetty': calculate the estimated time of arrival and departure (important for the queuing procedure)
                                 if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
                                     terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v + vessel.sail_in_times[t][0] - new_current_time
                                     vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                                    waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel, True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=True)
+                                    waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=False)
                                     terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + np.max([0, waiting_time - vessel.metadata['t_b'] * 60])
                                     terminal.users[-1].type = vessel.type
-                                    yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
+                                yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
                             break
                         else:
                             continue
-
+                    # If the current time of the vessel is greater or equal to the next sail-in time containing a stopping condition for a restriction and is smaller than the next starting time of a restriction
                     if new_current_time >= vessel.sail_in_times[t][0]:
                         if t == len(vessel.sail_in_times) - 1 or new_current_time < vessel.sail_in_times[t + 1][0]:
+                            # No waiting time and if terminal of call is of type 'jetty': calculate the estimated time of arrival and departure (important for the queuing procedure)
                             if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
                                 terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v
                                 vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                                waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel, True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=True)
+                                waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=False)
                                 terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + np.max([0, waiting_time - vessel.metadata['t_b'] * 60])
                                 terminal.users[-1].type = vessel.type
                             break
-
+                    # Else if the current time of the vessel is smaller or equal to the next sail-in time containing a stopping condition for a restriction
                     elif new_current_time <= vessel.sail_in_times[t][0]:
+                        # If the current time of the vessel is smaller than the next starting time of a restriction:
                         if new_current_time < vessel.sail_in_times[t - 1][0]:
+                            # No waiting time and if terminal of call is of type 'jetty': calculate the estimated time of arrival and departure (important for the queuing procedure)
                             if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
                                 terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v
                                 vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                                waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel, True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=True)
+                                waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=False)
                                 terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + np.max([0, waiting_time - vessel.metadata['t_b'] * 60])
                                 terminal.users[-1].type = vessel.type
+                        # Else: there is waiting time: determine if allowed or not (exceeds the maximum permitted or not)
                         else:
                             waiting_time = vessel.sail_in_times[t][0] - current_time
                             if waiting_time >= vessel.metadata['max_waiting_time']:
@@ -2054,15 +2335,16 @@ class PassTerminal:
                                 vessel.waiting_time = 0
                                 terminal.release(vessel.access_terminal)
                             else:
+                                # Yield waiting time and if terminal of call is of type 'jetty': calculate the estimated time of arrival and departure (important for the queuing procedure)
                                 if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
                                     terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v + vessel.sail_in_times[t][0] - new_current_time
                                     vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                                    waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel, True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=True)
+                                    waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=False)
                                     terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + np.max([0, waiting_time - vessel.metadata['t_b'] * 60])
                                     terminal.users[-1].type = vessel.type
-                                    yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
+                                yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
                         break
-
+                    # Else if it is the last time, then there is waiting time, so determine if allowed or not (exceeds the maximum permitted or not)
                     elif t == len(vessel.sail_in_times) - 1:
                         waiting_time = vessel.sail_in_times[t][0] - current_time
                         if waiting_time >= vessel.metadata['max_waiting_time']:
@@ -2070,42 +2352,44 @@ class PassTerminal:
                             vessel.waiting_time = 0
                             terminal.release(vessel.access_terminal)
                         else:
+                            # Yield waiting time and if terminal of call is of type 'jetty': calculate the estimated time of arrival and departure (important for the queuing procedure)
                             if vessel.env.FG.edges[edge]["Terminal"][0].type == 'jetty':
                                 terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v + vessel.sail_in_times[t][0] - new_current_time
                                 vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                                waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel, True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=True)
+                                waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=False)
                                 terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + np.max([0, waiting_time - vessel.metadata['t_b'] * 60])
                                 terminal.users[-1].type = vessel.type
-                                yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
+                            yield vessel.env.timeout(vessel.sail_in_times[t][0] - new_current_time)
+                    # Else if none of the conditions holds: continue the loop
                     else:
                         continue
 
+        # Else if the vessel (so has not to return to sea) and should wait in the anchorage area for an available tidal window:
         elif vessel.return_to_sea == False and vessel.waiting_time:
+            # If terminal of call is of type 'jetty': calculate the estimated time of arrival and departure (important for the queuing procedure) including the waiting time for the tidal window
             if terminal.type == 'jetty':
                 terminal = terminal.terminal[vessel.index_jetty_position][edge[0]]
                 terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v + vessel.waiting_time
                 vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel, True,horizontal_tidal_window=True,max_waiting_time=True, out=True,route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=True)
+                waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel_etd - vessel.env.now,plot=False)
                 terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + np.max([0, waiting_time - vessel.metadata['t_b'] * 60])
                 terminal.users[-1].type = vessel.type
+            # Else if terminal of call is of type 'quay': vessel will pick predetermined quay position, get this length, so adjust available quay lengths
             elif terminal.type == 'quay':
                 PassTerminal.adjust_available_quay_lengths(vessel, terminal, vessel.index_quay_position)
-            new_current_time = vessel.env.now
+            # Determine the new time: if the maximum allowabel waiting time will be or has been exceeded: return to sea, otherwise yield waiting time
+            new_current_time = vessel.env.now + vessel.waiting_time
             if new_current_time - current_time >= vessel.metadata['max_waiting_time']:
                 vessel.return_to_sea = True
                 vessel.waiting_time = 0
             yield vessel.env.timeout(vessel.waiting_time)
 
+        # If vessel does not has to return to sea: log this in the anchorage log and vessel log, set the route from anchorage to terminal, release the access to the section to the anchorage area, and request access to the first section on its route and initate the move
         if vessel.return_to_sea == False:
             ukc = VesselTrafficService.provide_ukc_clearance(vessel,node)
             vessel.log_entry("Waiting in anchorage stop", vessel.env.now, ukc, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], )
             vessel.route = vessel.route_after_anchorage
-            PassSection.release_access_previous_section(vessel, vessel.route[0])
-            yield from PassSection.request_access_next_section(vessel, vessel.route[0], vessel.route[1])
-            vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]]
-            vessel.env.process(vessel.move())
-            anchorage.anchorage_area[node].release(vessel.anchorage_access)
-            anchorage.log_entry("Vessel departure", vessel.env.now, len(anchorage.anchorage_area[node].users),nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], )
+        # Else if the vessel has to return to sea: log this as well in the log files of the anchorage and vessel, set route back to origin, release the access to the section to the anchorage area, and request access to the first section on its route and initate the move
         else:
             if 'waiting_time_in_anchorage' in dir(vessel):
                 vessel.waiting_time_in_anchorage.cancel()
@@ -2113,12 +2397,12 @@ class PassTerminal:
             ukc = VesselTrafficService.provide_ukc_clearance(vessel,node)
             vessel.log_entry("Waiting in anchorage stop", vessel.env.now, ukc, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], )
             vessel.route = nx.dijkstra_path(vessel.env.FG, vessel.route[vessel.route.index(node)], vessel.true_origin)
-            PassSection.release_access_previous_section(vessel, vessel.route[0])
-            yield from PassSection.request_access_next_section(vessel, vessel.route[0], vessel.route[1])
-            vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]]
-            vessel.env.process(vessel.move())
-            anchorage.anchorage_area[node].release(vessel.anchorage_access)
-            anchorage.log_entry("Vessel departure", vessel.env.now, len(anchorage.anchorage_area[node].users),nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]],)
+        PassSection.release_access_previous_section(vessel, vessel.route[0])
+        yield from PassSection.request_access_next_section(vessel, vessel.route[0], vessel.route[1])
+        vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]]
+        vessel.env.process(vessel.move())
+        anchorage.anchorage_area[node].release(vessel.anchorage_access)
+        anchorage.log_entry("Vessel departure", vessel.env.now, len(anchorage.anchorage_area[node].users),nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]],)
 
     def pick_minimum_length(vessel, terminal):
         available_quay_lengths = [0]
@@ -2193,7 +2477,7 @@ class PassTerminal:
         vessel.waiting_for_availability_terminal = False
 
         def checks_waiting_time_due_to_tidal_window(vessel, route, node, maximum_waiting_time = False):
-            vessel.waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel,vertical_tidal_window=True,route=route,horizontal_tidal_window = True,max_waiting_time = True,delay=0,out=False,plot=False)
+            vessel.waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel,route=route,delay=0,plot=False)
             if vessel.waiting_time >= vessel.metadata['max_waiting_time'] and maximum_waiting_time:
                 vessel.return_to_sea = True
                 vessel.waiting_time = 0
@@ -2314,7 +2598,7 @@ class PassTerminal:
                         sailing_distance += distance
                     terminal.users[-1].eta = vessel.env.now + sailing_distance / vessel.v
                     vessel_etd = terminal.users[-1].eta + vessel.metadata['t_b'] * 60 + vessel.metadata['t_l'] * 60
-                    waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel,True,horizontal_tidal_window=True,max_waiting_time=True,out=True,route = vessel.route_after_terminal, delay=vessel_etd-vessel.env.now,plot=False)
+                    waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel,route = vessel.route_after_terminal, delay=vessel_etd-vessel.env.now,plot=False)
                     terminal.users[-1].etd = vessel_etd + vessel.metadata['t_b'] * 60 + np.max([0, waiting_time - vessel.metadata['t_b'] * 60])
                     terminal.users[-1].type = vessel.type
         else:
@@ -2374,7 +2658,7 @@ class PassTerminal:
             if required_water_depth > minimum_water_depth:
                 break
 
-        vessel.waiting_time = NetworkProperties.waiting_time_for_tidal_window(vessel,vertical_tidal_window=True,horizontal_tidal_window=True,max_waiting_time = False,route=vessel.route,out=True,plot=False)
+        vessel.waiting_time = PassTerminal.waiting_time_for_tidal_window(vessel,route=vessel.route,delay=0,plot=False)
         vessel.bound = 'outbound' ##to_be_removed later
         if vessel.waiting_time:
             ukc = VesselTrafficService.provide_ukc_clearance(vessel, edge[1])
@@ -2597,12 +2881,17 @@ class Movable(Locatable, Routeable, Log):
         self.v = v
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
+    def initial_timeout(self):
+        yield self.env.timeout(self.metadata['start_time'])
+        self.metadata['start_time'] = 0
+
     def move(self):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
         self.distance = 0
+        if self.metadata['start_time'] != 0: yield from Movable.initial_timeout(self)
 
         # Check if vessel is at correct location - if not, move to location
         if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
@@ -2632,12 +2921,12 @@ class Movable(Locatable, Routeable, Log):
 
             if 'Turning Basin' in self.env.FG.nodes[origin].keys():
                 turning_basin = self.env.FG.nodes[origin]['Turning Basin'][0]
-                ukc = VesselTrafficService.provide_ukc_clearance(vessel, origin)
+                ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                 if self.bound == 'inbound' and turning_basin.length >= self.L:
                     self.log_entry("Vessel Turning Start", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
                     turning_basin.log_entry("Vessel Turning Start", self.env.now, 0, self.env.FG.nodes[origin]['geometry'] )
                     yield self.env.timeout(10*60)
-                    ukc = VesselTrafficService.provide_ukc_clearance(vessel, origin)
+                    ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                     turning_basin.log_entry("Vessel Turning Stop", self.env.now, 10*60, self.env.FG.nodes[origin]['geometry'] )
                     self.log_entry("Vessel Turning Stop", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
                     self.bound = 'outbound'
@@ -2768,10 +3057,10 @@ class Movable(Locatable, Routeable, Log):
                                           shapely.geometry.asShape(sub_dest).x,
                                           shapely.geometry.asShape(sub_dest).y,)[2]
                 self.distance += distance
-                ukc = VesselTrafficService.provide_ukc_clearance(vessel, origin)
+                ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                 self.log_entry("Sailing from node {} to node {} sub edge {} start".format(origin, destination, index), self.env.now, ukc, sub_orig,)
                 yield self.env.timeout(distance / self.current_speed)
-                ukc = VesselTrafficService.provide_ukc_clearance(vessel, destination)
+                ukc = VesselTrafficService.provide_ukc_clearance(self, destination)
                 self.log_entry("Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index), self.env.now, ukc, sub_dest,)
             self.geometry = dest
 
@@ -2786,25 +3075,25 @@ class Movable(Locatable, Routeable, Log):
 
             # Act based on resources
             if "Resources" in edge.keys():
-                ukc = VesselTrafficService.provide_ukc_clearance(vessel, origin)
+                ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                 with self.env.FG.edges[origin, destination]["Resources"].request() as request:
                     yield request
 
                     if arrival != self.env.now:
                         self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, ukc, orig,)
-                        ukc = VesselTrafficService.provide_ukc_clearance(vessel, origin)
+                        ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                         self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, ukc, orig,)
 
                     self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
                     yield self.env.timeout(distance / self.current_speed)
-                    ukc = VesselTrafficService.provide_ukc_clearance(vessel, destination)
+                    ukc = VesselTrafficService.provide_ukc_clearance(self, destination)
                     self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
 
             else:
-                ukc = VesselTrafficService.provide_ukc_clearance(vessel, origin)
+                ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, ukc, orig,)
                 yield self.env.timeout(distance / self.current_speed)
-                ukc = VesselTrafficService.provide_ukc_clearance(vessel, destination)
+                ukc = VesselTrafficService.provide_ukc_clearance(self, destination)
                 self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
 
     @property
