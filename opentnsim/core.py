@@ -874,7 +874,7 @@ class ConsumesEnergy:
             self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
         
-        return self.P_tot
+        return self.P_given
           
             
         logger.debug(f'The total power required is {self.P_tot} kW')
@@ -1068,23 +1068,23 @@ class ConsumesEnergy:
     def calculate_fuel_use_g_m(self,v):
         """Total fuel use in g/m:
         - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.SFC) diveded by the sailing distance (v *         delt_t)"""
-        self.fuel_use_g_m = (self.P_tot * self.SFC / v ) * 3600
+        self.fuel_use_g_m = (self.P_given * self.SFC / v ) * 3600
         return self.fuel_use_g_m  
 
 
     def calculate_fuel_use_g_s(self):
         """Total fuel use in g/s:
         - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.SFC) diveded by the sailing duration (           delt_t)"""
-        self.fuel_use_g_m = self.P_tot * self.SFC * 3600             
+        self.fuel_use_g_m = self.P_given * self.SFC * 3600             
         return self.fuel_use_g_s
 
 
     def calculate_emission_rates_g_m(self,v):
         """CO2, PM10, NOX emission rates in g/m:
         - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.Emf) diveded by the               sailing distance (v * delt_t)"""
-        self.emission_g_m_CO2 = self.P_tot * self.Emf_CO2 / v * 3600
-        self.emission_g_m_PM10 = self.P_tot * self.Emf_PM10 / v * 3600
-        self.emission_g_m_NOX = self.P_tot * self.Emf_NOX / v * 3600
+        self.emission_g_m_CO2 = self.P_given * self.Emf_CO2 / v * 3600
+        self.emission_g_m_PM10 = self.P_given * self.Emf_PM10 / v * 3600
+        self.emission_g_m_NOX = self.P_given * self.Emf_NOX / v * 3600
         
         return self.emission_g_m_CO2, self.emission_g_m_PM10, self.emission_g_m_NOX   
     
@@ -1093,9 +1093,9 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
         - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.Emf) diveded by the               sailing duration ( delt_t)"""
-        self.emission_g_s_CO2 = self.P_tot * self.Emf_CO2 / 3600
-        self.emission_g_s_PM10 = self.P_tot * self.Emf_PM10 / 3600
-        self.emission_g_s_NOX = self.P_tot * self.Emf_NOX / 3600
+        self.emission_g_s_CO2 = self.P_given * self.Emf_CO2 / 3600
+        self.emission_g_s_PM10 = self.P_given * self.Emf_PM10 / 3600
+        self.emission_g_s_NOX = self.P_given * self.Emf_NOX / 3600
         
         return self.emission_g_s_CO2, self.emission_g_s_PM10, self.emission_g_s_NOX        
         
