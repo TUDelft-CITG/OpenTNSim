@@ -609,7 +609,8 @@ class ConsumesEnergy:
 
         # The total frictional resistance R_f [kN]:
         self.R_f = (self.C_f * 0.5 * self.rho * (v ** 2) * self.S_T) / 1000
-
+        return self.R_f
+    
     def calculate_viscous_resistance(self):
         """2) Viscous resistance
 
@@ -623,7 +624,9 @@ class ConsumesEnergy:
         self.one_k1 = 0.93 + 0.487 * self.c_14 * ((self.B / self.L) ** 1.068) * ((self.T / self.L) ** 0.461) * (
                     (self.L / self.L_R) ** 0.122) * (((self.L ** 3) / self.delta) ** 0.365) * (
                                   (1 - self.C_p) ** (-0.604))
-
+        self.R_f_one_k1 = self.R_f * self.one_k1
+        return self.R_f_one_k1
+    
     def calculate_appendage_resistance(self, v):
         """3) Appendage resistance
 
@@ -632,7 +635,8 @@ class ConsumesEnergy:
 
         # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
         self.R_APP = (0.5 * self.rho * (v ** 2) * self.S_APP * self.one_k2 * self.C_f) / 1000
-
+        return self.R_APP
+    
     def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
 
@@ -764,7 +768,9 @@ class ConsumesEnergy:
             self.R_W = self.RW_2 / 1000  # kN
         else:
             self.R_W = (self.RW_1 + ((10 * self.F_n - 4) * (self.RW_2 - self.RW_1)) / 1.5) / 1000  # kN
-
+        
+        return self.R_W
+            
     def calculate_residual_resistance(self, v, h_0):
         """5) Residual resistance terms
 
@@ -796,6 +802,10 @@ class ConsumesEnergy:
         ####### Holtrop and Mennen in the document of Sarris, 2003 #######
         self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S_T * self.C_A) / 1000  # kW
 
+        self.R_res = self.R_TR + self.R_A
+        
+        return self.R_res
+        
     def calculate_total_resistance(self, v, h_0):
         """Total resistance:
 
@@ -810,7 +820,9 @@ class ConsumesEnergy:
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A
-
+        
+        return self.R_tot
+        
     def calculate_total_power_required(self):
         """Total required power:
 
@@ -861,7 +873,10 @@ class ConsumesEnergy:
         else:
             self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
-
+        
+        return self.P_tot
+          
+            
         logger.debug(f'The total power required is {self.P_tot} kW')
         logger.debug(f'The actual total power given is {self.P_given} kW')
         logger.debug(f'The partial load is {self.P_partial}')
@@ -931,7 +946,7 @@ class ConsumesEnergy:
         logger.debug(f'The general emission factor of CO2 is {self.EM_CO2} g/kWh')
         logger.debug(f'The general emission factor of PM10 is {self.EM_PM10} g/kWh')
         logger.debug(f'The general emission factor CO2 is {self.EM_NOX} g/kWh')
-        logger.debug(f'The general fuel consumption factor is {self.general_fuel} g/kWh')
+        logger.debug(f'The general fuel consumption factor for diesel is {self.general_fuel} g/kWh')
 
     def correction_factors(self):
         """Correction factors:
@@ -1022,7 +1037,7 @@ class ConsumesEnergy:
         logger.debug(f'Correction factor of CO2 is {self.corf_CO2}')
         logger.debug(f'Correction factor of PM10 is {self.corf_PM10}')
         logger.debug(f'Correction factor of NOX is {self.corf_NOX}')
-        logger.debug(f'Correction factor of fuel consumption is {self.corf_fuel}')
+        logger.debug(f'Correction factor of diesel fuel consumption is {self.corf_fuel}')
 
     def calculate_emission_factors_total(self):
         """Total emission factors:
@@ -1041,15 +1056,52 @@ class ConsumesEnergy:
         self.Emf_CO2 = self.EM_CO2 * self.corf_CO2
         self.Emf_PM10 = self.EM_PM10 * self.corf_PM10
         self.Emf_NOX = self.EM_NOX * self.corf_NOX
-        self.fuel_consumption = self.general_fuel * self.corf_fuel
+        self.SFC = self.general_fuel * self.corf_fuel
 
         logger.debug(f'The total emission factor of CO2 is {self.Emf_CO2} g/kWh')
         logger.debug(f'The total emission factor of PM10 is {self.Emf_PM10} g/kWh')
         logger.debug(f'The total emission factor CO2 is {self.Emf_NOX} g/kWh')
-        logger.debug(f'The total fuel consumption factor is {self.fuel_consumption} g/kWh')
+        logger.debug(f'The corrected fuel consumption factor for diesel is {self.SFC} g/kWh')
+    
+
+        
+    def calculate_fuel_use_g_m(self,v):
+        """Total fuel use in g/m:
+        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.SFC) diveded by the sailing distance (v *         delt_t)"""
+        self.fuel_use_g_m = (self.P_tot * self.SFC / v ) * 3600
+        return self.fuel_use_g_m  
 
 
+    def calculate_fuel_use_g_s(self):
+        """Total fuel use in g/s:
+        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.SFC) diveded by the sailing duration (           delt_t)"""
+        self.fuel_use_g_m = self.P_tot * self.SFC * 3600             
+        return self.fuel_use_g_s
 
+
+    def calculate_emission_rates_g_m(self,v):
+        """CO2, PM10, NOX emission rates in g/m:
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.Emf) diveded by the               sailing distance (v * delt_t)"""
+        self.emission_g_m_CO2 = self.P_tot * self.Emf_CO2 / v * 3600
+        self.emission_g_m_PM10 = self.P_tot * self.Emf_PM10 / v * 3600
+        self.emission_g_m_NOX = self.P_tot * self.Emf_NOX / v * 3600
+        
+        return self.emission_g_m_CO2, self.emission_g_m_PM10, self.emission_g_m_NOX   
+    
+    
+    
+    def calculate_emission_rates_g_s(self):
+        """CO2, PM10, NOX emission rates in g/s:
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.Emf) diveded by the               sailing duration ( delt_t)"""
+        self.emission_g_s_CO2 = self.P_tot * self.Emf_CO2 / 3600
+        self.emission_g_s_PM10 = self.P_tot * self.Emf_PM10 / 3600
+        self.emission_g_s_NOX = self.P_tot * self.Emf_NOX / 3600
+        
+        return self.emission_g_s_CO2, self.emission_g_s_PM10, self.emission_g_s_NOX        
+        
+        
+        
+        
 class Routeable:
     """Mixin class: Something with a route (networkx format)
 
