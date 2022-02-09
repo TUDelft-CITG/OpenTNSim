@@ -10,6 +10,9 @@ notebooks/energy basic functionality/6-6-6current-NOX
 notebooks/energy basic functionality/6-6-6current-PM10
 notebooks/energy basic functionality/6-6-6current-fuel
 
+# Generated jupyter book files
+book/_build
+
 # Temporary and binary files
 *~
 *.py[cod]
