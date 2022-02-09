@@ -874,12 +874,12 @@ class ConsumesEnergy:
             self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
 
-        return self.P_given
-
-
         logger.debug(f'The total power required is {self.P_tot} kW')
         logger.debug(f'The actual total power given is {self.P_given} kW')
         logger.debug(f'The partial load is {self.P_partial}')
+        return self.P_given
+
+
 
     def emission_factors_general(self):
         """General emission factors:

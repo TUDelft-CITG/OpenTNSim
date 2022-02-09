@@ -234,7 +234,7 @@ def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
 
     # 4. Run simulation
     # Start simpy environment
-    simulation_start = datetime.datetime.now()
+    simulation_start = datetime.datetime(2000, 1, 1)
     env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
     env.epoch = time.mktime(simulation_start.timetuple())
 
@@ -257,3 +257,25 @@ def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
     dt_1 = df.loc[2]["Timestamp"] - df.loc[0]["Timestamp"]
     dt_2 = df.loc[4]["Timestamp"] - df.loc[2]["Timestamp"]
     assert dt_2 > dt_1, f"second edge {dt_2} should take longer than first edge {dt_1}"
+
+
+def test_power2v(graph, energy_vessel, nodes):
+    """test a basic simulation on the graph"""
+
+    # get the graph from the fixtures
+    FG = graph
+    # here we'll use a vessel with energy mixed in
+    vessel = energy_vessel
+
+    # set the middle edge to a different waterdepth
+    middle_e = (nodes[1].name, nodes[2].name)
+    edge = FG.edges[middle_e]
+    edge["Info"]["GeneralDepth"] = 2.5
+
+    # Add environment and path to the vessel
+    simulation_start = datetime.datetime(2000, 1, 1)
+    env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
+    env.epoch = time.mktime(simulation_start.timetuple())
+
+    v = opentnsim.energy.power2v(vessel, edge)
+    assert v < 5, "power should be low"
