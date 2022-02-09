@@ -4,7 +4,11 @@ notebooks/fis_cache
 notebooks/**/*.pdf
 notebooks/**/*.xlsx
 notebooks/**/*.eps
-
+notebooks/energy basic functionality/6-6-6-engine age-bar
+notebooks/energy basic functionality/6-6-6current-CO2
+notebooks/energy basic functionality/6-6-6current-NOX
+notebooks/energy basic functionality/6-6-6current-PM10
+notebooks/energy basic functionality/6-6-6current-fuel
 
 # Temporary and binary files
 *~
