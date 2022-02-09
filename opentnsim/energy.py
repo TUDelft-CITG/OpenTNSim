@@ -189,7 +189,7 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.Emf_CO2 * energy_delta # in g
                     emission_delta_PM10 = self.vessel.Emf_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.Emf_NOX * energy_delta # in g
-                    emission_delta_fuel=self.vessel.fuel_consumption* energy_delta/1000 # in kg
+                    emission_delta_fuel=self.vessel.SFC* energy_delta/1000 # in kg
 
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(energy_delta)
@@ -211,7 +211,7 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.Emf_CO2 * energy_delta #Energy consumed per time step delta_t in the stationary phase # in g
                     emission_delta_PM10 = self.vessel.Emf_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.Emf_NOX * energy_delta # in g
-                    emission_delta_fuel=self.vessel.fuel_consumption* energy_delta/1000 # in kg
+                    emission_delta_fuel=self.vessel.SFC * energy_delta/1000 # in kg
 
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(0)
