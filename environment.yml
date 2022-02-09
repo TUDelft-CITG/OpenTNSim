@@ -10,7 +10,7 @@ dependencies:
   - geopandas=0.10
   - networkx>=2.6
   - numpy=1
-  - pandas=2
+  - pandas=1
   - pyproj=3
   - requests=2
   - scipy=1
