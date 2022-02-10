@@ -567,6 +567,7 @@ class ConsumesEnergy:
         self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
 
         # Total wet area
+        assert self.C_M >= 0, f'C_M should be positive: {self.C_M}'
         self.S_T = self.L * (2 * self.T + self.B) * np.sqrt(self.C_M) * (
                     0.453 + 0.4425 * self.C_b - 0.2862 * self.C_M - 0.003467 * (
                         self.B / self.T) + 0.3696 * self.C_wp)  # + 2.38 * (self.A_BT / self.C_b)
@@ -585,12 +586,17 @@ class ConsumesEnergy:
         self.R_e = v * self.L / self.nu  # Reynolds number
         self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
 
+        assert self.D > 0,  f'D should be > 0: {self.D}'
+
+
         # Friction coefficient in deep water
         self.Cf_0 = 0.075 / ((np.log10(self.R_e) - 2) ** 2)
 
         # Friction coefficient proposed, taking into account shallow water effects
         self.Cf_proposed = (0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)) * (
                     1 + (0.003998 / (np.log10(self.R_e) - 4.393)) * (self.D / self.L) ** (-1.083))
+        assert not isinstance(self.Cf_proposed, complex),  f'Cf_proposed should not be complex: {self.Cf_proposed}'
+
 
         # 'a' is the coefficient needed to calculate the Katsui friction coefficient
         self.a = 0.042612 * np.log10(self.R_e) + 0.56725
@@ -606,9 +612,13 @@ class ConsumesEnergy:
         # cf_proposed cannot be applied directly, since a vessel also has non-horizontal wet surfaces that have to be taken
         # into account. Therefore, the following formula for the final friction coefficient 'C_f' is defined:
         self.C_f = self.Cf_0 + (self.Cf_proposed - self.Cf_katsui) * (self.S_B / self.S_T) * (self.V_B / v) ** 2
+        assert not isinstance(self.C_f, complex),  f'C_f should not be complex: {self.C_f}'
+
 
         # The total frictional resistance R_f [kN]:
         self.R_f = (self.C_f * 0.5 * self.rho * (v ** 2) * self.S_T) / 1000
+        assert not isinstance(self.R_f, complex),  f'R_f should not be complex: {self.R_f}'
+
         return self.R_f
 
     def calculate_viscous_resistance(self):
@@ -647,6 +657,8 @@ class ConsumesEnergy:
 
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
         # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
+        assert self.g >= 0, f'g should be positive: {self.g}'
+        assert h_0 >= 0, f'g should be positive: {h_0}'
         self.F_nh = v / np.sqrt(self.g * h_0)
 
         if self.F_nh <= 0.4:
@@ -705,6 +717,8 @@ class ConsumesEnergy:
 
         self.karpov(v, h_0)
 
+        assert self.g >= 0, f'g should be positive: {self.g}'
+        assert self.L >= 0, f'L should be positive: {self.L}'
         self.F_n = self.V_2 / np.sqrt(self.g * self.L)  # Froude number
 
         # parameter c_7 is determined by the B/L ratio
@@ -784,6 +798,9 @@ class ConsumesEnergy:
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nt = self.V_2 / np.sqrt(
             2 * self.g * self.A_T / (self.B + self.B * self.C_wp))  # Froude number based on transom immersion
+        assert not isinstance(self.F_nt, complex),  f'residual? froude number should not be complex: {self.F_nt}'
+
+
         self.c_6 = 0.2 * (1 - 0.2 * self.F_nt)  # Assuming F_nt < 5, this is the expression for coefficient c_6
 
         self.R_TR = (0.5 * self.rho * (self.V_2 ** 2) * self.A_T * self.c_6) / 1000
@@ -798,6 +815,8 @@ class ConsumesEnergy:
 
         self.C_A = 0.006 * (self.L + 100) ** (-0.16) - 0.00205 + 0.003 * np.sqrt(self.L / 7.5) * (
                     self.C_b ** 4) * self.c_2 * (0.04 - self.c_4)
+        assert not isinstance(self.C_A, complex),  f'C_A number should not be complex: {self.C_A}'
+
 
         ####### Holtrop and Mennen in the document of Sarris, 2003 #######
         self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S_T * self.C_A) / 1000  # kW
@@ -849,6 +868,9 @@ class ConsumesEnergy:
         self.w = 0.11 * (0.16 / self.x) * self.C_b * np.sqrt(
             (self.delta ** (1 / 3)) / self.D_s) - self.dw  # wake fraction 'w'
 
+        assert not isinstance(self.w, complex),  f'w should not be complex: {self.w}'
+
+
         if self.x == 1:
             self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
         else:
@@ -877,6 +899,9 @@ class ConsumesEnergy:
         logger.debug(f'The total power required is {self.P_tot} kW')
         logger.debug(f'The actual total power given is {self.P_given} kW')
         logger.debug(f'The partial load is {self.P_partial}')
+
+        assert not isinstance(self.P_given, complex),  f'P_given number should not be complex: {self.P_given}'
+
         return self.P_given
 
 
@@ -1249,6 +1274,8 @@ class IsLock(HasResource, HasLength, HasLockDoors, Identifiable, Log):
 
         elif type(self.wlev_dif) == float or type(self.wlev_dif) == int:
             operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+        assert not isinstance(operating_time, complex),  f'operating_time number should not be complex: {operating_time}'
+
 
         return operating_time
 
