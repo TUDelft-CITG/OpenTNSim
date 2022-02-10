@@ -48,7 +48,6 @@ def power2v(vessel, edge, bounds=(0, 10)):
     # TODO: check what the origin of this is.
     def seek_v_given_power(v, vessel, edge):
         """function to optimize"""
-        logger.debug(f'optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}')
         # water depth from the edge
         h_0 = edge['Info']['GeneralDepth']
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
@@ -60,6 +59,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
 
         # compute difference between power setting by captain and power needed for velocity
         diff = vessel.P_tot_given - vessel.P_tot
+        logger.debug(f'optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}')
         return diff ** 2
 
     # fill in some of the parameters that we already know
