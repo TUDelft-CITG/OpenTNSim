@@ -138,7 +138,7 @@ def energy_vessel():
         "level": 2500,  # actual payload
         "H_e": None,
         "H_f": None,
-        "T": 3.5,
+        "T": 2.2,
         "P_installed": 1750.0,
         "P_tot_given": 396,  # kW
         "L_w": 3.0,
