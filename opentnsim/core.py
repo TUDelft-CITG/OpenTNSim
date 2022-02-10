@@ -446,22 +446,24 @@ class VesselProperties:
 class ConsumesEnergy:
     """Mixin class: Something that consumes energy.
 
-    P_installed: installed engine power [kW]
-    P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
-    L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
-    C_b: block coefficient ('fullness') [-]
-    current_year: current year
-    nu: kinematic viscosity [m^2/s]
-    rho: density of the surrounding water [kg/m^3]
-    g: gravitational accelleration [m/s^2]
-    x: number of propellers [-]
-    eta_0: open water efficiency of propeller [-]
-    eta_r: relative rotative efficiency [-]
-    eta_t: transmission efficiency [-]
-    eta_g: gearing efficiency [-]
-    c_stern: determines shape of the afterbody [-]
-    one_k2: appendage resistance factor [-]
-    c_year: construction year of the engine [y]
+    Keyword arguments:
+
+    - P_installed: installed engine power [kW]
+    - P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
+    - L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
+    - C_b: block coefficient ('fullness') [-]
+    - current_year: current year
+    - nu: kinematic viscosity [m^2/s]
+    - rho: density of the surrounding water [kg/m^3]
+    - g: gravitational accelleration [m/s^2]
+    - x: number of propellers [-]
+    - eta_0: open water efficiency of propeller [-]
+    - eta_r: relative rotative efficiency [-]
+    - eta_t: transmission efficiency [-]
+    - eta_g: gearing efficiency [-]
+    - c_stern: determines shape of the afterbody [-]
+    - one_k2: appendage resistance factor [-]
+    - c_year: construction year of the engine [y]
     """
 
     def __init__(
@@ -637,8 +639,9 @@ class ConsumesEnergy:
         self.R_f_one_k1 = self.R_f * self.one_k1
         return self.R_f_one_k1
 
+    # step 3)
     def calculate_appendage_resistance(self, v):
-        """3) Appendage resistance
+        """Appendage resistance
 
         - 3rd resistance component defined by Holtrop and Mennen (1982)
         - Appendages (like a rudder, shafts, skeg) result in additional frictional resistance"""
@@ -896,9 +899,9 @@ class ConsumesEnergy:
             self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
 
-        logger.debug(f'The total power required is {self.P_tot} kW')
-        logger.debug(f'The actual total power given is {self.P_given} kW')
-        logger.debug(f'The partial load is {self.P_partial}')
+        # logger.debug(f'The total power required is {self.P_tot} kW')
+        # logger.debug(f'The actual total power given is {self.P_given} kW')
+        # logger.debug(f'The partial load is {self.P_partial}')
 
         assert not isinstance(self.P_given, complex),  f'P_given number should not be complex: {self.P_given}'
 
