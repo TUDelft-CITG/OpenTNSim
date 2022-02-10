@@ -335,7 +335,7 @@ class VesselProperties:
         elif (T_design > (h_min - ukc)):
             T_actual = h_min -  ukc
 
-        logger.debug(f'The actual draft is {T_actual} m')
+        #logger.debug(f'The actual draft is {T_actual} m')
 
         #Capacity indexes, refer to Table 3 and eq 2
         CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
@@ -373,7 +373,7 @@ class VesselProperties:
 
         fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
         actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
-        logger.debug('The actual_max_payload is {actual_max_payload} ton')
+        #logger.debug('The actual_max_payload is {actual_max_payload} ton')
 
         return T_actual, actual_max_payload
 
