@@ -208,7 +208,9 @@ class VesselProperties:
 
     @property
     def T(self):
-        """Compute the actual draft """
+        """Compute the actual draft 
+        
+        to do: explain the 3 ways to get actual draught """
         if self._T is not None:
             # if we were passed a T value, use tha one
             T = self._T
@@ -754,39 +756,27 @@ class ConsumesEnergy:
         if self.C_p < 0.8:
             self.c_16 = 8.07981 * self.C_p - 13.8673 * (self.C_p ** 2) + 6.984388 * (self.C_p ** 3)
         else:
-            self.c_16 = 1.73014 - 0.7067
-
-        self.m_1 = 0.0140407 * (self.L / self.T) - 1.75254 * ((self.delta) ** (1 / 3) / self.L) - 4.79323 * (
-                    self.B / self.L) - self.c_16
-
-        self.m_4 = 0.4 * self.c_15 * np.exp(-0.034 * (self.F_n ** (-3.29)))
+            self.c_16 = 1.73014 - 0.7067 * self.C_p
 
         if self.L / self.B < 12:
             self.lmbda = 1.446 * self.C_p - 0.03 * (self.L / self.B)
         else:
-            self.lmbda = 1.446 * self.C_p - 0.036
-
-        # parameters needed for RW_2
-        self.c_17 = 6919.3 * (self.C_M ** (-1.3346)) * ((self.delta / (self.L ** 3)) ** 2.00977) * (
-                    (self.L / self.B - 2) ** 1.40692)
-        self.m_3 = -7.2035 * ((self.B / self.L) ** 0.326869) * ((self.T / self.B) ** 0.605375)
-
-        ######### When Fn < 0.4
-        self.RW_1 = self.c_1 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(
-            self.m_1 * (self.F_n ** (-0.9)) + self.m_4 * np.cos(self.lmbda * (self.F_n ** (-2))))
-
-        ######## When Fn > 0.5
-        self.RW_2 = self.c_17 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(
-            self.m_3 * (self.F_n ** (-0.9)) + self.m_4 * np.cos(self.lmbda * (self.F_n ** (-2))))
-
-        if self.F_n < 0.4:
-            self.R_W = self.RW_1 / 1000  # kN
-        if self.F_n > 0.55:
-            self.R_W = self.RW_2 / 1000  # kN
-        else:
-            self.R_W = (self.RW_1 + ((10 * self.F_n - 4) * (self.RW_2 - self.RW_1)) / 1.5) / 1000  # kN
+            self.lmbda = 1.446 * self.C_p - 0.36
+            
+        self.m_1 = 0.0140407 * (self.L / self.T) - 1.75254 * ((self.delta) ** (1 / 3) / self.L) - 4.79323 * (
+                    self.B / self.L) - self.c_16
+        self.m_2 = self.c_15 * (self.C_p**2) *np.exp((-0.1)* (self.F_n**(-2))) 
+            
+        self.R_W = self.c_1 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(self.m_1 * (self.F_n**(-0.9)) + 
+                   self.m_2 * np.cos(self.lmbda * (self.F_n ** (-2)))) / 1000 # kN
 
         return self.R_W
+    
+    
+    
+    
+    
+    
 
     def calculate_residual_resistance(self, v, h_0):
         """5) Residual resistance terms

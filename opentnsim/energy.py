@@ -233,7 +233,7 @@ class EnergyCalculation:
         #   vessel database ook nog een speed_loaded en een speed_unloaded worden toegevoegd.
         # - er zou nog eens goed gekeken moeten worden wat er gedaan kan worden rond kustwerken
         # - en er is nog iets mis met de snelheid rond een sluis
-
+        # - add HasCurrent Class or def
 
     def plot(self):
 
