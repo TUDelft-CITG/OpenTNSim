@@ -453,13 +453,14 @@ class ConsumesEnergy:
     - P_installed: installed engine power [kW]
     - P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
     - L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
-    - C_b: block coefficient ('fullness') [-]
+    - C_B: block coefficient ('fullness') [-]
     - current_year: current year
     - nu: kinematic viscosity [m^2/s]
     - rho: density of the surrounding water [kg/m^3]
     - g: gravitational accelleration [m/s^2]
     - x: number of propellers [-]
-    - eta_0: open water efficiency of propeller [-]
+    - A_BT: cross-sectional area of the bulb at still water level [m^2], most inland ships do not have a bulb. So we assume A_BT=0.
+    - eta_o: open water efficiency of propeller [-]
     - eta_r: relative rotative efficiency [-]
     - eta_t: transmission efficiency [-]
     - eta_g: gearing efficiency [-]
@@ -472,15 +473,16 @@ class ConsumesEnergy:
             self,
             P_installed,
             L_w,
-            C_b,
+            C_B,
             current_year, # current_year
             c_year,
             P_tot_given=None,  # the actual power engine setting
-            nu=1 * 10 ** (-6),  # kinematic viscosity
+            nu=1 * 10 ** (-6),  
             rho=1000,
             g=9.81,
-            x=2,  # number of propellers
-            eta_0=0.6,
+            x=2,  
+            A_BT=0, 
+            eta_o=0.6,
             eta_r=1.00,
             eta_t=0.98,
             eta_g=0.96,
@@ -495,13 +497,14 @@ class ConsumesEnergy:
         self.P_installed = P_installed
         self.P_tot_given=P_tot_given
         self.L_w = L_w
-        self.C_b = C_b
+        self.C_B = C_B
         self.year = current_year
         self.nu = nu
         self.rho = rho
         self.g = g
         self.x = x
-        self.eta_0 = eta_0
+        self.A_BT = A_BT
+        self.eta_o = eta_o
         self.eta_r = eta_r
         self.eta_t = eta_t
         self.eta_g = eta_g
@@ -558,25 +561,27 @@ class ConsumesEnergy:
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
-        self.C_M = 1.006 - 0.0056 * self.C_b ** (-3.56)  # Midship section coefficient
-        self.C_wp = (1 + 2 * self.C_b) / 3  # Waterplane coefficient
-        self.C_p = self.C_b / self.C_M  # Prismatic coefficient
+        # TO DO: add properties for seagoing ships with bulbs
+        
+        self.C_M = 1.006 - 0.0056 * self.C_B ** (-3.56)  # Midship section coefficient
+        self.C_WP = (1 + 2 * self.C_B) / 3  # Waterplane coefficient
+        self.C_P = self.C_B / self.C_M  # Prismatic coefficient
 
-        self.delta = self.C_b * self.L * self.B * self.T  # Water displacement
+        self.delta = self.C_B * self.L * self.B * self.T  # Water displacement
 
-        self.lcb = -13.5 + 19.4 * self.C_p  # longitudinal center of buoyancy
-        self.L_R = self.L * (1 - self.C_p + (0.06 * self.C_p * self.lcb) / (
-                    4 * self.C_p - 1))  # parameter reflecting the length of the run
+        self.lcb = -13.5 + 19.4 * self.C_P  # longitudinal center of buoyancy
+        self.L_R = self.L * (1 - self.C_P + (0.06 * self.C_P * self.lcb) / (
+                    4 * self.C_P - 1))  # parameter reflecting the length of the run
 
         self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
 
-        # Total wet area
+        # Total wet area: S
         assert self.C_M >= 0, f'C_M should be positive: {self.C_M}'
-        self.S_T = self.L * (2 * self.T + self.B) * np.sqrt(self.C_M) * (
-                    0.453 + 0.4425 * self.C_b - 0.2862 * self.C_M - 0.003467 * (
-                        self.B / self.T) + 0.3696 * self.C_wp)  # + 2.38 * (self.A_BT / self.C_b)
+        self.S = self.L * (2 * self.T + self.B) * np.sqrt(self.C_M) * (
+                    0.453 + 0.4425 * self.C_B - 0.2862 * self.C_M - 0.003467 * (
+                        self.B / self.T) + 0.3696 * self.C_WP)  + 2.38 * (self.A_BT / self.C_B)
 
-        self.S_APP = 0.05 * self.S_T  # Wet area of appendages
+        self.S_APP = 0.05 * self.S  # Wet area of appendages
         self.S_B = self.L * self.B  # Area of flat bottom
 
         self.D_s = 0.7 * self.T  # Diameter of the screw
@@ -588,39 +593,54 @@ class ConsumesEnergy:
         - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects """
 
         self.R_e = v * self.L / self.nu  # Reynolds number
+        # TO DO: include "z" (the maximum water level depression) to take sinkage into account: self.D = h_0 - z - self.T
+        
         self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
-
         assert self.D > 0,  f'D should be > 0: {self.D}'
 
-
-        # Friction coefficient in deep water
-        self.Cf_0 = 0.075 / ((np.log10(self.R_e) - 2) ** 2)
-
-        # Friction coefficient proposed, taking into account shallow water effects
-        self.Cf_proposed = (0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)) * (
+        # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
+        self.Cf_deep = 0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)        
+        assert not isinstance(self.Cf_deep, complex),  f'Cf_deep should not be complex: {self.Cf_deep}'
+        
+        # Friction coefficient based on CFD computations of Zeng et al. (2018), taking into account shallow water effects
+        self.Cf_shallow = (0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)) * (
                     1 + (0.003998 / (np.log10(self.R_e) - 4.393)) * (self.D / self.L) ** (-1.083))
-        assert not isinstance(self.Cf_proposed, complex),  f'Cf_proposed should not be complex: {self.Cf_proposed}'
+        assert not isinstance(self.Cf_shallow, complex),  f'Cf_shallow should not be complex: {self.Cf_shallow}'
 
+        # Friction coefficient in deep water according to ITTC-1957 curve
+        self.Cf_0 = 0.075 / ((np.log10(self.R_e) - 2) ** 2)
 
         # 'a' is the coefficient needed to calculate the Katsui friction coefficient
         self.a = 0.042612 * np.log10(self.R_e) + 0.56725
-        self.Cf_katsui = 0.0066577 / ((np.log10(self.R_e) - 4.3762) ** self.a)
+        self.Cf_Katsui = 0.0066577 / ((np.log10(self.R_e) - 4.3762) ** self.a)
 
         # The average velocity underneath the ship, taking into account the shallow water effect
-
+        # This calculation is to get V_B, which will be used in the following Cf for shallow water equation: 
         if h_0 / self.T <= 4:
             self.V_B = 0.4277 * v * np.exp((h_0 / self.T) ** (-0.07625))
         else:
-            self.V_B = v
-
-        # cf_proposed cannot be applied directly, since a vessel also has non-horizontal wet surfaces that have to be taken
-        # into account. Therefore, the following formula for the final friction coefficient 'C_f' is defined:
-        self.C_f = self.Cf_0 + (self.Cf_proposed - self.Cf_katsui) * (self.S_B / self.S_T) * (self.V_B / v) ** 2
+            self.V_B = v       
+            
+        # cf_shallow and cf_deep cannot be applied directly, since a vessel also has non-horizontal wet surfaces that have to be taken
+        # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is 
+        # defined according to Zeng et al. (2018)
+ 
+        # TO DO: it might need to re-define the deep and shallow water ranges for the below calculation 
+    
+        # calculate Friction coefficient Cf for deep water: 
+        
+        if (h_0 - self.T) / self.L > 1:
+            self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S) # * (self.V_B / v) ** 2
+            print('now i am in the deep loop') 
+        else:
+        
+            # calculate Friction coefficient Cf for shallow water: 
+            self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
+            print('now i am in the shallow loop') 
         assert not isinstance(self.C_f, complex),  f'C_f should not be complex: {self.C_f}'
 
-
         # The total frictional resistance R_f [kN]:
-        self.R_f = (self.C_f * 0.5 * self.rho * (v ** 2) * self.S_T) / 1000
+        self.R_f = (self.C_f * 0.5 * self.rho * (v ** 2) * self.S) / 1000
         assert not isinstance(self.R_f, complex),  f'R_f should not be complex: {self.R_f}'
 
         return self.R_f
@@ -637,7 +657,7 @@ class ConsumesEnergy:
         # the form factor (1+k1) describes the viscous resistance
         self.one_k1 = 0.93 + 0.487 * self.c_14 * ((self.B / self.L) ** 1.068) * ((self.T / self.L) ** 0.461) * (
                     (self.L / self.L_R) ** 0.122) * (((self.L ** 3) / self.delta) ** 0.365) * (
-                                  (1 - self.C_p) ** (-0.604))
+                                  (1 - self.C_P) ** (-0.604))
         self.R_f_one_k1 = self.R_f * self.one_k1
         return self.R_f_one_k1
 
@@ -735,8 +755,8 @@ class ConsumesEnergy:
             self.c_7 = self.B / self.L
 
         # half angle of entrance in degrees
-        self.i_E = 1 + 89 * np.exp(-((self.L / self.B) ** 0.80856) * ((1 - self.C_wp) ** 0.30484) * (
-                    (1 - self.C_p - 0.0225 * self.lcb) ** 0.6367) * ((self.L_R / self.B) ** 0.34574) * (
+        self.i_E = 1 + 89 * np.exp(-((self.L / self.B) ** 0.80856) * ((1 - self.C_WP) ** 0.30484) * (
+                    (1 - self.C_P - 0.0225 * self.lcb) ** 0.6367) * ((self.L_R / self.B) ** 0.34574) * (
                                                (100 * self.delta / (self.L ** 3)) ** 0.16302))
 
         self.c_1 = 2223105 * (self.c_7 ** 3.78613) * ((self.T / self.B) ** 1.07961) * (90 - self.i_E) ** (-1.37165)
@@ -752,20 +772,20 @@ class ConsumesEnergy:
         else:
             self.c_15 = -1.69385 + (self.L / (self.delta ** (1 / 3)) - 8) / 2.36
 
-        # parameter c_16 depends on C_p
-        if self.C_p < 0.8:
-            self.c_16 = 8.07981 * self.C_p - 13.8673 * (self.C_p ** 2) + 6.984388 * (self.C_p ** 3)
+        # parameter c_16 depends on C_P
+        if self.C_P < 0.8:
+            self.c_16 = 8.07981 * self.C_P - 13.8673 * (self.C_P ** 2) + 6.984388 * (self.C_P ** 3)
         else:
-            self.c_16 = 1.73014 - 0.7067 * self.C_p
+            self.c_16 = 1.73014 - 0.7067 * self.C_P
 
         if self.L / self.B < 12:
-            self.lmbda = 1.446 * self.C_p - 0.03 * (self.L / self.B)
+            self.lmbda = 1.446 * self.C_P - 0.03 * (self.L / self.B)
         else:
-            self.lmbda = 1.446 * self.C_p - 0.36
+            self.lmbda = 1.446 * self.C_P - 0.36
             
         self.m_1 = 0.0140407 * (self.L / self.T) - 1.75254 * ((self.delta) ** (1 / 3) / self.L) - 4.79323 * (
                     self.B / self.L) - self.c_16
-        self.m_2 = self.c_15 * (self.C_p**2) *np.exp((-0.1)* (self.F_n**(-2))) 
+        self.m_2 = self.c_15 * (self.C_P**2) *np.exp((-0.1)* (self.F_n**(-2))) 
             
         self.R_W = self.c_1 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(self.m_1 * (self.F_n**(-0.9)) + 
                    self.m_2 * np.cos(self.lmbda * (self.F_n ** (-2)))) / 1000 # kN
@@ -790,7 +810,7 @@ class ConsumesEnergy:
 
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nt = self.V_2 / np.sqrt(
-            2 * self.g * self.A_T / (self.B + self.B * self.C_wp))  # Froude number based on transom immersion
+            2 * self.g * self.A_T / (self.B + self.B * self.C_WP))  # Froude number based on transom immersion
         assert not isinstance(self.F_nt, complex),  f'residual? froude number should not be complex: {self.F_nt}'
 
 
@@ -807,12 +827,12 @@ class ConsumesEnergy:
         self.c_2 = 1
 
         self.C_A = 0.006 * (self.L + 100) ** (-0.16) - 0.00205 + 0.003 * np.sqrt(self.L / 7.5) * (
-                    self.C_b ** 4) * self.c_2 * (0.04 - self.c_4)
+                    self.C_B ** 4) * self.c_2 * (0.04 - self.c_4)
         assert not isinstance(self.C_A, complex),  f'C_A number should not be complex: {self.C_A}'
 
 
         ####### Holtrop and Mennen in the document of Sarris, 2003 #######
-        self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S_T * self.C_A) / 1000  # kW
+        self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S * self.C_A) / 1000  # kW
 
         self.R_res = self.R_TR + self.R_A
 
@@ -841,7 +861,7 @@ class ConsumesEnergy:
         - The total required power is the sum of the power for systems on board (P_hotel) + power required for propulsion (P_BHP)
         - The P_BHP depends on the calculated resistance"""
 
-        # ---- Required power for systems on board
+        # ---- Required power for systems on board, add ref for 5%
         self.P_hotel = 0.05 * self.P_installed
 
         # ---- Required power for propulsion
@@ -858,7 +878,7 @@ class ConsumesEnergy:
         else:
             self.dw = 0.1
 
-        self.w = 0.11 * (0.16 / self.x) * self.C_b * np.sqrt(
+        self.w = 0.11 * (0.16 / self.x) * self.C_B * np.sqrt(
             (self.delta ** (1 / 3)) / self.D_s) - self.dw  # wake fraction 'w'
 
         assert not isinstance(self.w, complex),  f'w should not be complex: {self.w}'
@@ -874,7 +894,7 @@ class ConsumesEnergy:
 
         # Delivered Horse Power (DHP)
 
-        self.P_DHP = self.P_EHP / (self.eta_0 * self.eta_r * self.eta_h)
+        self.P_DHP = self.P_EHP / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP)
         self.P_BHP = self.P_DHP / (self.eta_t * self.eta_g)
@@ -1083,23 +1103,23 @@ class ConsumesEnergy:
     def calculate_fuel_use_g_m(self,v):
         """Total fuel use in g/m:
         - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.SFC) diveded by the sailing distance (v *         delt_t)"""
-        self.fuel_use_g_m = (self.P_given * self.SFC / v ) * 3600
+        self.fuel_use_g_m = (self.P_given * self.SFC / v ) / 3600
         return self.fuel_use_g_m
 
 
     def calculate_fuel_use_g_s(self):
         """Total fuel use in g/s:
         - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.SFC) diveded by the sailing duration (           delt_t)"""
-        self.fuel_use_g_m = self.P_given * self.SFC * 3600
+        self.fuel_use_g_m = self.P_given * self.SFC / 3600
         return self.fuel_use_g_s
 
 
     def calculate_emission_rates_g_m(self,v):
         """CO2, PM10, NOX emission rates in g/m:
         - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.Emf) diveded by the               sailing distance (v * delt_t)"""
-        self.emission_g_m_CO2 = self.P_given * self.Emf_CO2 / v * 3600
-        self.emission_g_m_PM10 = self.P_given * self.Emf_PM10 / v * 3600
-        self.emission_g_m_NOX = self.P_given * self.Emf_NOX / v * 3600
+        self.emission_g_m_CO2 = self.P_given * self.Emf_CO2 / v / 3600
+        self.emission_g_m_PM10 = self.P_given * self.Emf_PM10 / v / 3600
+        self.emission_g_m_NOX = self.P_given * self.Emf_NOX / v / 3600
 
         return self.emission_g_m_CO2, self.emission_g_m_PM10, self.emission_g_m_NOX
 
