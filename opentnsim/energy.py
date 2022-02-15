@@ -53,7 +53,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_0)
         # compute total power given
-        P_given = vessel.calculate_total_power_required()
+        P_given = vessel.calculate_total_power_required(v=v)
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
@@ -182,7 +182,7 @@ class EnergyCalculation:
 
                 # we use the calculated velocity to determine the resistance and power required
                 self.vessel.calculate_total_resistance(v, h_0)
-                self.vessel.calculate_total_power_required()
+                self.vessel.calculate_total_power_required(v=v)
 
                 self.vessel.calculate_emission_factors_total()
 
@@ -191,10 +191,10 @@ class EnergyCalculation:
                     energy_delta = self.vessel.P_hotel * delta_t / 3600  # kJ/3600 = kWh
 
                     #Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t, consuming 'energy_delta' kWh
-                    emission_delta_CO2 = self.vessel.Emf_CO2 * energy_delta # in g
-                    emission_delta_PM10 = self.vessel.Emf_PM10 * energy_delta # in g
-                    emission_delta_NOX = self.vessel.Emf_NOX * energy_delta # in g
-                    emission_delta_fuel=self.vessel.SFC* energy_delta/1000 # in kg
+                    emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta # in g
+                    emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
+                    emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
+                    emission_delta_fuel=self.vessel.total_factor_FU * energy_delta/1000 # in kg
 
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(energy_delta)
@@ -213,10 +213,10 @@ class EnergyCalculation:
                     energy_delta = self.vessel.P_tot * delta_t / 3600  # kJ/3600 = kWh
 
                     #Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t, consuming 'energy_delta' kWh
-                    emission_delta_CO2 = self.vessel.Emf_CO2 * energy_delta #Energy consumed per time step delta_t in the stationary phase # in g
-                    emission_delta_PM10 = self.vessel.Emf_PM10 * energy_delta # in g
-                    emission_delta_NOX = self.vessel.Emf_NOX * energy_delta # in g
-                    emission_delta_fuel=self.vessel.SFC * energy_delta/1000 # in kg
+                    emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta #Energy consumed per time step delta_t in the stationary phase # in g
+                    emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
+                    emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
+                    emission_delta_fuel=self.vessel.total_factor_FU * energy_delta/1000 # in kg
 
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(0)

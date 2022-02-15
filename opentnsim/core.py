@@ -465,8 +465,8 @@ class ConsumesEnergy:
     - eta_t: transmission efficiency [-]
     - eta_g: gearing efficiency [-]
     - c_stern: determines shape of the afterbody [-]
-    - one_k2: appendage resistance factor [-]
-    - c_year: construction year of the engine [y]
+    - one_k2: appendage resistance factor (1+k2) [-]
+    - C_year: construction year of the engine [y]
     """
 
     def __init__(
@@ -475,7 +475,7 @@ class ConsumesEnergy:
             L_w,
             C_B,
             current_year, # current_year
-            c_year,
+            C_year,
             P_tot_given=None,  # the actual power engine setting
             nu=1 * 10 ** (-6),  
             rho=1000,
@@ -514,10 +514,10 @@ class ConsumesEnergy:
         # plugin function that computes velocity based on power
         self.power2v = opentnsim.energy.power2v
 
-        if c_year:
-            self.c_year= c_year
+        if C_year:
+            self.C_year= C_year
         else:
-            self.c_year = self.calculate_engine_age()
+            self.C_year = self.calculate_engine_age()
 
         # check assumption that we don't use more power than we have
         # TODO: add test
@@ -554,10 +554,10 @@ class ConsumesEnergy:
         self.age = int(np.random.weibull(self.k) * self.lmb)
 
         # Construction year of the engine
-        self.c_year = self.year - self.age
+        self.C_year = self.year - self.age
 
-        logger.debug(f'The construction year of the engine is {self.c_year}')
-        return self.c_year
+        logger.debug(f'The construction year of the engine is {self.C_year}')
+        return self.C_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
@@ -571,7 +571,7 @@ class ConsumesEnergy:
 
         self.lcb = -13.5 + 19.4 * self.C_P  # longitudinal center of buoyancy
         self.L_R = self.L * (1 - self.C_P + (0.06 * self.C_P * self.lcb) / (
-                    4 * self.C_P - 1))  # parameter reflecting the length of the run
+                    4 * self.C_P - 1))  # length parameter reflecting the length of the run
 
         self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
 
@@ -630,13 +630,13 @@ class ConsumesEnergy:
         # calculate Friction coefficient Cf for deep water: 
         
         if (h_0 - self.T) / self.L > 1:
-            self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S) # * (self.V_B / v) ** 2
-            print('now i am in the deep loop') 
+            self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S) 
+            logger.debug(f'now i am in the deep loop') 
         else:
         
             # calculate Friction coefficient Cf for shallow water: 
             self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
-            print('now i am in the shallow loop') 
+            logger.debug(f'now i am in the shallow loop') 
         assert not isinstance(self.C_f, complex),  f'C_f should not be complex: {self.C_f}'
 
         # The total frictional resistance R_f [kN]:
@@ -675,61 +675,61 @@ class ConsumesEnergy:
     def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
 
-        - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2)
-        - V2 has to be implemented in the wave resistance and the residual resistance terms"""
+        - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2, expressed as "Vs+           delta_V" in the paper)
+        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance terms (R_res: R_TR, R_A)"""
 
-        # The Froude number used in the Karpov method is the depth related froude number F_nh
+        # The Froude number used in the Karpov method is the depth related froude number F_rh
 
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
         # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
         assert self.g >= 0, f'g should be positive: {self.g}'
         assert h_0 >= 0, f'g should be positive: {h_0}'
-        self.F_nh = v / np.sqrt(self.g * h_0)
+        self.F_rh = v / np.sqrt(self.g * h_0)
 
-        if self.F_nh <= 0.4:
+        if self.F_rh <= 0.4:
 
             if 0 <= h_0 / self.T < 1.75:
                 self.alpha_xx = (-4 * 10 ** (
-                    -12)) * self.F_nh ** 3 - 0.2143 * self.F_nh ** 2 - 0.0643 * self.F_nh + 0.9997
+                    -12)) * self.F_rh ** 3 - 0.2143 * self.F_rh ** 2 - 0.0643 * self.F_rh + 0.9997
             if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = -0.8333 * self.F_nh ** 3 + 0.25 * self.F_nh ** 2 - 0.0167 * self.F_nh + 1
+                self.alpha_xx = -0.8333 * self.F_rh ** 3 + 0.25 * self.F_rh ** 2 - 0.0167 * self.F_rh + 1
             if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = -1.25 * self.F_nh ** 4 + 0.5833 * self.F_nh ** 3 - 0.0375 * self.F_nh ** 2 - 0.0108 * self.F_nh + 1
+                self.alpha_xx = -1.25 * self.F_rh ** 4 + 0.5833 * self.F_rh ** 3 - 0.0375 * self.F_rh ** 2 - 0.0108 * self.F_rh + 1
             if h_0 / self.T >= 2.75:
                 self.alpha_xx = 1
 
-        if self.F_nh > 0.4:
+        if self.F_rh > 0.4:
             if 0 <= h_0 / self.T < 1.75:
-                self.alpha_xx = -0.9274 * self.F_nh ** 6 + 9.5953 * self.F_nh ** 5 - 37.197 * self.F_nh ** 4 + 69.666 * self.F_nh ** 3 - 65.391 * self.F_nh ** 2 + 28.025 * self.F_nh - 3.4143
+                self.alpha_xx = -0.9274 * self.F_rh ** 6 + 9.5953 * self.F_rh ** 5 - 37.197 * self.F_rh ** 4 + 69.666 * self.F_rh ** 3 - 65.391 * self.F_rh ** 2 + 28.025 * self.F_rh - 3.4143
             if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = 2.2152 * self.F_nh ** 6 - 11.852 * self.F_nh ** 5 + 21.499 * self.F_nh ** 4 - 12.174 * self.F_nh ** 3 - 4.7873 * self.F_nh ** 2 + 5.8662 * self.F_nh - 0.2652
+                self.alpha_xx = 2.2152 * self.F_rh ** 6 - 11.852 * self.F_rh ** 5 + 21.499 * self.F_rh ** 4 - 12.174 * self.F_rh ** 3 - 4.7873 * self.F_rh ** 2 + 5.8662 * self.F_rh - 0.2652
             if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = 1.2205 * self.F_nh ** 6 - 5.4999 * self.F_nh ** 5 + 5.7966 * self.F_nh ** 4 + 6.6491 * self.F_nh ** 3 - 16.123 * self.F_nh ** 2 + 9.2016 * self.F_nh - 0.6342
+                self.alpha_xx = 1.2205 * self.F_rh ** 6 - 5.4999 * self.F_rh ** 5 + 5.7966 * self.F_rh ** 4 + 6.6491 * self.F_rh ** 3 - 16.123 * self.F_rh ** 2 + 9.2016 * self.F_rh - 0.6342
             if 2.75 <= h_0 / self.T < 3.25:
-                self.alpha_xx = -0.4085 * self.F_nh ** 6 + 4.534 * self.F_nh ** 5 - 18.443 * self.F_nh ** 4 + 35.744 * self.F_nh ** 3 - 34.381 * self.F_nh ** 2 + 15.042 * self.F_nh - 1.3807
+                self.alpha_xx = -0.4085 * self.F_rh ** 6 + 4.534 * self.F_rh ** 5 - 18.443 * self.F_rh ** 4 + 35.744 * self.F_rh ** 3 - 34.381 * self.F_rh ** 2 + 15.042 * self.F_rh - 1.3807
             if 3.25 <= h_0 / self.T < 3.75:
-                self.alpha_xx = 0.4078 * self.F_nh ** 6 - 0.919 * self.F_nh ** 5 - 3.8292 * self.F_nh ** 4 + 15.738 * self.F_nh ** 3 - 19.766 * self.F_nh ** 2 + 9.7466 * self.F_nh - 0.6409
+                self.alpha_xx = 0.4078 * self.F_rh ** 6 - 0.919 * self.F_rh ** 5 - 3.8292 * self.F_rh ** 4 + 15.738 * self.F_rh ** 3 - 19.766 * self.F_rh ** 2 + 9.7466 * self.F_rh - 0.6409
             if 3.75 <= h_0 / self.T < 4.5:
-                self.alpha_xx = 0.3067 * self.F_nh ** 6 - 0.3404 * self.F_nh ** 5 - 5.0511 * self.F_nh ** 4 + 16.892 * self.F_nh ** 3 - 20.265 * self.F_nh ** 2 + 9.9002 * self.F_nh - 0.6712
+                self.alpha_xx = 0.3067 * self.F_rh ** 6 - 0.3404 * self.F_rh ** 5 - 5.0511 * self.F_rh ** 4 + 16.892 * self.F_rh ** 3 - 20.265 * self.F_rh ** 2 + 9.9002 * self.F_rh - 0.6712
             if 4.5 <= h_0 / self.T < 5.5:
-                self.alpha_xx = 0.3212 * self.F_nh ** 6 - 0.3559 * self.F_nh ** 5 - 5.1056 * self.F_nh ** 4 + 16.926 * self.F_nh ** 3 - 20.253 * self.F_nh ** 2 + 10.013 * self.F_nh - 0.7196
+                self.alpha_xx = 0.3212 * self.F_rh ** 6 - 0.3559 * self.F_rh ** 5 - 5.1056 * self.F_rh ** 4 + 16.926 * self.F_rh ** 3 - 20.253 * self.F_rh ** 2 + 10.013 * self.F_rh - 0.7196
             if 5.5 <= h_0 / self.T < 6.5:
-                self.alpha_xx = 0.9252 * self.F_nh ** 6 - 4.2574 * self.F_nh ** 5 + 5.0363 * self.F_nh ** 4 + 3.3282 * self.F_nh ** 3 - 10.367 * self.F_nh ** 2 + 6.3993 * self.F_nh - 0.2074
+                self.alpha_xx = 0.9252 * self.F_rh ** 6 - 4.2574 * self.F_rh ** 5 + 5.0363 * self.F_rh ** 4 + 3.3282 * self.F_rh ** 3 - 10.367 * self.F_rh ** 2 + 6.3993 * self.F_rh - 0.2074
             if 6.5 <= h_0 / self.T < 7.5:
-                self.alpha_xx = 0.8442 * self.F_nh ** 6 - 4.0261 * self.F_nh ** 5 + 5.313 * self.F_nh ** 4 + 1.6442 * self.F_nh ** 3 - 8.1848 * self.F_nh ** 2 + 5.3209 * self.F_nh - 0.0267
+                self.alpha_xx = 0.8442 * self.F_rh ** 6 - 4.0261 * self.F_rh ** 5 + 5.313 * self.F_rh ** 4 + 1.6442 * self.F_rh ** 3 - 8.1848 * self.F_rh ** 2 + 5.3209 * self.F_rh - 0.0267
             if 7.5 <= h_0 / self.T < 8.5:
-                self.alpha_xx = 0.1211 * self.F_nh ** 6 + 0.628 * self.F_nh ** 5 - 6.5106 * self.F_nh ** 4 + 16.7 * self.F_nh ** 3 - 18.267 * self.F_nh ** 2 + 8.7077 * self.F_nh - 0.4745
+                self.alpha_xx = 0.1211 * self.F_rh ** 6 + 0.628 * self.F_rh ** 5 - 6.5106 * self.F_rh ** 4 + 16.7 * self.F_rh ** 3 - 18.267 * self.F_rh ** 2 + 8.7077 * self.F_rh - 0.4745
 
             if 8.5 <= h_0 / self.T < 9.5:
-                if self.F_nh < 0.6:
+                if self.F_rh < 0.6:
                     self.alpha_xx = 1
-                if self.F_nh >= 0.6:
-                    self.alpha_xx = -6.4069 * self.F_nh ** 6 + 47.308 * self.F_nh ** 5 - 141.93 * self.F_nh ** 4 + 220.23 * self.F_nh ** 3 - 185.05 * self.F_nh ** 2 + 79.25 * self.F_nh - 12.484
+                if self.F_rh >= 0.6:
+                    self.alpha_xx = -6.4069 * self.F_rh ** 6 + 47.308 * self.F_rh ** 5 - 141.93 * self.F_rh ** 4 + 220.23 * self.F_rh ** 3 - 185.05 * self.F_rh ** 2 + 79.25 * self.F_rh - 12.484
             if h_0 / self.T >= 9.5:
-                if self.F_nh < 0.6:
+                if self.F_rh < 0.6:
                     self.alpha_xx = 1
-                if self.F_nh >= 0.6:
-                    self.alpha_xx = -6.0727 * self.F_nh ** 6 + 44.97 * self.F_nh ** 5 - 135.21 * self.F_nh ** 4 + 210.13 * self.F_nh ** 3 - 176.72 * self.F_nh ** 2 + 75.728 * self.F_nh - 11.893
+                if self.F_rh >= 0.6:
+                    self.alpha_xx = -6.0727 * self.F_rh ** 6 + 44.97 * self.F_rh ** 5 - 135.21 * self.F_rh ** 4 + 210.13 * self.F_rh ** 3 - 176.72 * self.F_rh ** 2 + 75.728 * self.F_rh - 11.893
 
         self.V_2 = v / self.alpha_xx
 
@@ -744,7 +744,7 @@ class ConsumesEnergy:
 
         assert self.g >= 0, f'g should be positive: {self.g}'
         assert self.L >= 0, f'L should be positive: {self.L}'
-        self.F_n = self.V_2 / np.sqrt(self.g * self.L)  # Froude number
+        self.F_rL = self.V_2 / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
 
         # parameter c_7 is determined by the B/L ratio
         if self.B / self.L < 0.11:
@@ -785,10 +785,10 @@ class ConsumesEnergy:
             
         self.m_1 = 0.0140407 * (self.L / self.T) - 1.75254 * ((self.delta) ** (1 / 3) / self.L) - 4.79323 * (
                     self.B / self.L) - self.c_16
-        self.m_2 = self.c_15 * (self.C_P**2) *np.exp((-0.1)* (self.F_n**(-2))) 
+        self.m_2 = self.c_15 * (self.C_P**2) *np.exp((-0.1)* (self.F_rL**(-2))) 
             
-        self.R_W = self.c_1 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(self.m_1 * (self.F_n**(-0.9)) + 
-                   self.m_2 * np.cos(self.lmbda * (self.F_n ** (-2)))) / 1000 # kN
+        self.R_W = self.c_1 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(self.m_1 * (self.F_rL**(-0.9)) + 
+                   self.m_2 * np.cos(self.lmbda * (self.F_rL ** (-2)))) / 1000 # kN
 
         return self.R_W
     
@@ -802,19 +802,20 @@ class ConsumesEnergy:
         """5) Residual resistance terms
 
         - Holtrop and Mennen (1982) defined three residual resistance terms:
-        - 1) Resistance due to the bulbous bow (not incorporated since inland ships in general don't have a bulb)
+        - 1) Resistance due to the bulbous bow (not incorporated since inland ships in general don't have a bulb; when incorporate it 
+             for seagoing ships the velocity should use Vs instead of Karpov corrected velocity V2)
         - 2) Resistance due to immersed transom
         - 3) Resistance due to model-ship correlation """
 
         self.karpov(v, h_0)
 
         # Resistance due to immersed transom: R_TR [kN]
-        self.F_nt = self.V_2 / np.sqrt(
+        self.F_nT = self.V_2 / np.sqrt(
             2 * self.g * self.A_T / (self.B + self.B * self.C_WP))  # Froude number based on transom immersion
-        assert not isinstance(self.F_nt, complex),  f'residual? froude number should not be complex: {self.F_nt}'
+        assert not isinstance(self.F_nT, complex),  f'residual? froude number should not be complex: {self.F_nT}'
 
 
-        self.c_6 = 0.2 * (1 - 0.2 * self.F_nt)  # Assuming F_nt < 5, this is the expression for coefficient c_6
+        self.c_6 = 0.2 * (1 - 0.2 * self.F_nT)  # Assuming F_nT < 5, this is the expression for coefficient c_6
 
         self.R_TR = (0.5 * self.rho * (self.V_2 ** 2) * self.A_T * self.c_6) / 1000
 
@@ -855,7 +856,7 @@ class ConsumesEnergy:
 
         return self.R_tot
 
-    def calculate_total_power_required(self):
+    def calculate_total_power_required(self, v):
         """Total required power:
 
         - The total required power is the sum of the power for systems on board (P_hotel) + power required for propulsion (P_BHP)
@@ -866,14 +867,14 @@ class ConsumesEnergy:
 
         # ---- Required power for propulsion
 
-        # Effective Horse Power (EHP)
-        self.P_EHP = self.V_B * self.R_tot
+        # Effective Horse Power (EHP), P_e
+        self.P_e = v * self.R_tot
 
         # Calculation hull efficiency
         dw = np.zeros(101)  # velocity correction coefficient
         counter = 0
 
-        if self.F_n < 0.2:
+        if self.F_rL < 0.2:
             self.dw = 0
         else:
             self.dw = 0.1
@@ -892,14 +893,15 @@ class ConsumesEnergy:
         # TODO: consider making a hull efficiency table for a range of v's for faster runtimes
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
-        # Delivered Horse Power (DHP)
+        # Delivered Horse Power (DHP), P_d
 
-        self.P_DHP = self.P_EHP / (self.eta_o * self.eta_r * self.eta_h)
+        self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
-        # Brake Horse Power (BHP)
-        self.P_BHP = self.P_DHP / (self.eta_t * self.eta_g)
+        # Brake Horse Power (BHP), P_b
+        self.P_b = self.P_d / (self.eta_t * self.eta_g)
+        self.P_propusion = self.P_b    # propulsion power is brake horse power
 
-        self.P_tot = self.P_hotel + self.P_BHP
+        self.P_tot = self.P_hotel + self.P_propulsion
 
         # Partial engine load (P_partial): needed in the 'Emission calculations'
         if self.P_tot > self.P_installed:
@@ -914,8 +916,9 @@ class ConsumesEnergy:
         # logger.debug(f'The partial load is {self.P_partial}')
 
         assert not isinstance(self.P_given, complex),  f'P_given number should not be complex: {self.P_given}'
-
-        return self.P_given
+        
+        # return to the power given by the engine to the ship (for hotelling and propulsion), which is the actual power the ship uses
+        return self.P_given    
 
 
 
@@ -927,155 +930,156 @@ class ConsumesEnergy:
 
         Please note: later on a correction factor has to be applied to get the total emission factor"""
 
-        # The general emission factors of CO2, PM10 and NOX are based on the construction year of the engine
+        # The general emission factors of CO2, PM10 and NOX, and SFC are based on the construction year of the engine
 
-        if self.c_year < 1974:
-            self.EM_CO2 = 756
-            self.EM_PM10 = 0.6
-            self.EM_NOX = 10.8
-            self.general_fuel=235
-        if 1975 <= self.c_year <= 1979:
-            self.EM_CO2 = 730
-            self.EM_PM10 = 0.6
-            self.EM_NOX = 10.6
-            self.general_fuel=230
-        if 1980 <= self.c_year <= 1984:
-            self.EM_CO2 = 714
-            self.EM_PM10 = 0.6
-            self.EM_NOX = 10.4
-            self.general_fuel=225
-        if 1985 <= self.c_year <= 1989:
-            self.EM_CO2 = 698
-            self.EM_PM10 = 0.5
-            self.EM_NOX = 10.1
-            self.general_fuel=220
-        if 1990 <= self.c_year <= 1994:
-            self.EM_CO2 = 698
-            self.EM_PM10 = 0.4
-            self.EM_NOX = 10.1
-            self.general_fuel=220
-        if 1995 <= self.c_year <= 2002:
-            self.EM_CO2 = 650
-            self.EM_PM10 = 0.3
-            self.EM_NOX = 9.4
-            self.general_fuel=205
-        if 2003 <= self.c_year <= 2007:
-            self.EM_CO2 = 635
-            self.EM_PM10 = 0.3
-            self.EM_NOX = 9.2
-            self.general_fuel=200
-        if 2008 <= self.c_year <= 2019:
-            self.EM_CO2 = 635
-            self.EM_PM10 = 0.2
-            self.EM_NOX = 7
-            self.general_fuel=200
-        if self.c_year > 2019:
+        if self.C_year < 1974:
+            self.EF_CO2 = 756
+            self.EF_PM10 = 0.6
+            self.EF_NOX = 10.8
+            self.SFC = 235
+        if 1975 <= self.C_year <= 1979:
+            self.EF_CO2 = 730
+            self.EF_PM10 = 0.6
+            self.EF_NOX = 10.6
+            self.SFC = 230
+        if 1980 <= self.C_year <= 1984:
+            self.EF_CO2 = 714
+            self.EF_PM10 = 0.6
+            self.EF_NOX = 10.4
+            self.SFC = 225
+        if 1985 <= self.C_year <= 1989:
+            self.EF_CO2 = 698
+            self.EF_PM10 = 0.5
+            self.EF_NOX = 10.1
+            self.SFC = 220
+        if 1990 <= self.C_year <= 1994:
+            self.EF_CO2 = 698
+            self.EF_PM10 = 0.4
+            self.EF_NOX = 10.1
+            self.SFC = 220
+        if 1995 <= self.C_year <= 2002:
+            self.EF_CO2 = 650
+            self.EF_PM10 = 0.3
+            self.EF_NOX = 9.4
+            self.SFC = 205
+        if 2003 <= self.C_year <= 2007:
+            self.EF_CO2 = 635
+            self.EF_PM10 = 0.3
+            self.EF_NOX = 9.2
+            self.SFC = 200
+        if 2008 <= self.C_year <= 2019:
+            self.EF_CO2 = 635
+            self.EF_PM10 = 0.2
+            self.EF_NOX = 7
+            self.SFC = 200
+        if self.C_year > 2019:
             if self.L_w == 1:
-                self.EM_CO2 = 650
-                self.EM_PM10 = 0.1
-                self.EM_NOX = 2.9
-                self.general_fuel=205
+                self.EF_CO2 = 650
+                self.EF_PM10 = 0.1
+                self.EF_NOX = 2.9
+                self.SFC = 205
             else:
-                self.EM_CO2 = 603
-                self.EM_PM10 = 0.015
-                self.EM_NOX = 2.4
-                self.general_fuel=190
+                self.EF_CO2 = 603
+                self.EF_PM10 = 0.015
+                self.EF_NOX = 2.4
+                self.SFC = 190
 
-        logger.debug(f'The general emission factor of CO2 is {self.EM_CO2} g/kWh')
-        logger.debug(f'The general emission factor of PM10 is {self.EM_PM10} g/kWh')
-        logger.debug(f'The general emission factor CO2 is {self.EM_NOX} g/kWh')
-        logger.debug(f'The general fuel consumption factor for diesel is {self.general_fuel} g/kWh')
+        logger.debug(f'The general emission factor of CO2 is {self.EF_CO2} g/kWh')
+        logger.debug(f'The general emission factor of PM10 is {self.EF_PM10} g/kWh')
+        logger.debug(f'The general emission factor CO2 is {self.EF_NOX} g/kWh')
+        logger.debug(f'The general fuel consumption factor for diesel is {self.SFC} g/kWh')
 
     def correction_factors(self):
-        """Correction factors:
+        """ Partial engine load correction factors (C_partial_load):
 
         - The correction factors have to be multiplied by the general emission factors, to get the total emission factors
         - The correction factor takes into account the effect of the partial engine load
         - When the partial engine load is low, the correction factors are higher (engine is less efficient)
         - Based on literature TNO (2019)"""
-
-        self.calculate_total_power_required()  # You need the P_partial values
+        #TODO: implement the case where v=None
+        self.calculate_total_power_required(self.v)  # You need the P_partial values
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
-        self.corf = opentnsim.energy.correction_factors()
+        self.C_partial_load = opentnsim.energy.correction_factors()
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
-            if self.P_partial <= self.corf.iloc[0, 0]:
-                self.corf_CO2 = self.corf.iloc[0, 5]
-                self.corf_PM10 = self.corf.iloc[0, 6]
-                self.corf_fuel = self.corf_CO2 # CO2 emission is generated from fuel consumption, so these two correction factor are equal
+            if self.P_partial <= self.C_partial_load.iloc[0, 0]:
+                self.C_partial_load_CO2 = self.C_partial_load.iloc[0, 5]
+                self.C_partial_load_PM10 = self.C_partial_load.iloc[0, 6]
+                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two    
+                                                                   # correction factors are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
-                if self.c_year < 2008:
-                    self.corf_NOX = self.corf.iloc[0, 1]  # <= CCR-1 class
-                if 2008 <= self.c_year <= 2019:
-                    self.corf_NOX = self.corf.iloc[0, 2]  # CCR-2 / Stage IIIa
-                if self.c_year > 2019:
+                if self.C_year < 2008:
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[0, 1]  # <= CCR-1 class
+                if 2008 <= self.C_year <= 2019:
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[0, 2]  # CCR-2 / Stage IIIa
+                if self.C_year > 2019:
                     if self.L_w == 1:  #
-                        self.corf_NOX = self.corf.iloc[
+                        self.C_partial_load_NOX = self.C_partial_load.iloc[
                             0, 3]  # Stage V: IWP/IWA-v/c-3 class (vessels with P <300 kW: assumed to be weight class L1)
                     else:
-                        self.corf_NOX = self.corf.iloc[
+                        self.C_partial_load_NOX = self.C_partial_load.iloc[
                             0, 4]  # Stage V:IWP/IWA-v/c-4 class (vessels with P >300 kw: assumed to be weight class L2-L3)
 
             # If the partial engine load is greater than 5%:
             # It is determined inbetween which two percentages in the table the partial engine load lies
             # The correction factor is determined by means of linear interpolation
 
-            elif self.corf.iloc[i, 0] < self.P_partial <= self.corf.iloc[i + 1, 0]:
-                self.corf_CO2 = ((self.P_partial - self.corf.iloc[i, 0]) * (
-                            self.corf.iloc[i + 1, 5] - self.corf.iloc[i, 5])) / (
-                                            self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[i, 5]
-                self.corf_PM10 = ((self.P_partial - self.corf.iloc[i, 0]) * (
-                            self.corf.iloc[i + 1, 6] - self.corf.iloc[i, 6])) / (
-                                             self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[i, 6]
-                self.corf_fuel = self.corf_CO2# CO2 emission is generated from fuel consumption, so these two correction factor are equal
+            elif self.C_partial_load.iloc[i, 0] < self.P_partial <= self.C_partial_load.iloc[i + 1, 0]:
+                self.C_partial_load_CO2 = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                            self.C_partial_load.iloc[i + 1, 5] - self.C_partial_load.iloc[i, 5])) / (
+                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 5]
+                self.C_partial_load_PM10 = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                            self.C_partial_load.iloc[i + 1, 6] - self.C_partial_load.iloc[i, 6])) / (
+                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 6]
+                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two 
+                                                                   # correction factors are equal
 
-                if self.c_year < 2008:
-                    self.corf_NOX = ((self.P_partial - self.corf.iloc[i, 0]) * (
-                                self.corf.iloc[i + 1, 1] - self.corf.iloc[i, 1])) / (
-                                                self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[i, 1]
-                if 2008 <= self.c_year <= 2019:
-                    self.corf_NOX = ((self.P_partial - self.corf.iloc[i, 0]) * (
-                                self.corf.iloc[i + 1, 2] - self.corf.iloc[i, 2])) / (
-                                                self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[i, 2]
-                if self.c_year > 2019:
+                if self.C_year < 2008:
+                    self.C_partial_load_NOX = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                                self.C_partial_load.iloc[i + 1, 1] - self.C_partial_load.iloc[i, 1])) / (
+                                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) +                                                                             self.C_partial_load.iloc[i, 1]
+                if 2008 <= self.C_year <= 2019:
+                    self.C_partial_load_NOX = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                                self.C_partial_load.iloc[i + 1, 2] - self.C_partial_load.iloc[i, 2])) / (
+                                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) +                                                                             self.C_partial_load.iloc[i, 2]
+                if self.C_year > 2019:
                     if self.L_w == 1:
-                        self.corf_NOX = ((self.P_partial - self.corf.iloc[i, 0]) * (
-                                    self.corf.iloc[i + 1, 3] - self.corf.iloc[i, 3])) / (
-                                                    self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[
-                                            i, 3]
+                        self.C_partial_load_NOX = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                                    self.C_partial_load.iloc[i + 1, 3] - self.C_partial_load.iloc[i, 3])) / (
+                                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) +                                                                             self.C_partial_load.iloc[i, 3]
                     else:
-                        self.corf_NOX = ((self.P_partial - self.corf.iloc[i, 0]) * (
-                                    self.corf.iloc[i + 1, 4] - self.corf.iloc[i, 4])) / (
-                                                    self.corf.iloc[i + 1, 0] - self.corf.iloc[i, 0]) + self.corf.iloc[
-                                            i, 4]
+                        self.C_partial_load_NOX = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                                    self.C_partial_load.iloc[i + 1, 4] - self.C_partial_load.iloc[i, 4])) / (
+                                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) +                                                                             self.C_partial_load.iloc[i, 4]
 
             # If the partial engine load is => 100%, the correction factors corresponding to P_partial = 100% are assigned.
-            elif self.P_partial >= self.corf.iloc[19, 0]:
-                self.corf_CO2 = self.corf.iloc[19, 5]
-                self.corf_PM10 = self.corf.iloc[19, 6]
-                self.corf_fuel = self.corf_CO2# CO2 emission is generated from fuel consumption, so these two correction factor are equal
+            elif self.P_partial >= self.C_partial_load.iloc[19, 0]:
+                self.C_partial_load_CO2 = self.C_partial_load.iloc[19, 5]
+                self.C_partial_load_PM10 = self.C_partial_load.iloc[19, 6]
+                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two 
+                                                                   # correction factors are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
-                if self.c_year < 2008:
-                    self.corf_NOX = self.corf.iloc[19, 1]  # <= CCR-1 class
-                if 2008 <= self.c_year <= 2019:
-                    self.corf_NOX = self.corf.iloc[19, 2]  # CCR-2 / Stage IIIa
-                if self.c_year > 2019:
+                if self.C_year < 2008:
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[19, 1]  # <= CCR-1 class
+                if 2008 <= self.C_year <= 2019:
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[19, 2]  # CCR-2 / Stage IIIa
+                if self.C_year > 2019:
                     if self.L_w == 1:  #
-                        self.corf_NOX = self.corf.iloc[
+                        self.C_partial_load_NOX = self.C_partial_load.iloc[
                             19, 3]  # Stage V: IWP/IWA-v/c-3 class (vessels with P <300 kW: assumed to be weight class L1)
                     else:
-                        self.corf_NOX = self.corf.iloc[
+                        self.C_partial_load_NOX = self.C_partial_load.iloc[
                             19, 4]  # Stage V:IWP/IWA-v/c-4 class (vessels with P >300 kw: assumed to be weight class L2-L3)
 
-        logger.debug(f'Correction factor of CO2 is {self.corf_CO2}')
-        logger.debug(f'Correction factor of PM10 is {self.corf_PM10}')
-        logger.debug(f'Correction factor of NOX is {self.corf_NOX}')
-        logger.debug(f'Correction factor of diesel fuel consumption is {self.corf_fuel}')
+        logger.debug(f'Partial engine load correction factor of CO2 is {self.C_partial_load_CO2}')
+        logger.debug(f'Partial engine load correction factor of PM10 is {self.C_partial_load_PM10}')
+        logger.debug(f'Partial engine load correction factor of NOX is {self.C_partial_load_NOX}')
+        logger.debug(f'Partial engine load correction factor of diesel fuel consumption is {self.C_partial_load_fuel}')
 
     def calculate_emission_factors_total(self):
         """Total emission factors:
@@ -1085,41 +1089,41 @@ class ConsumesEnergy:
         self.emission_factors_general()  # You need the values of the general emission factors of CO2, PM10, NOX
         self.correction_factors()  # You need the correction factors of CO2, PM10, NOX
 
-        # The total emission factor is calculated by multiplying the general emission factor (EM_CO2 / EM_PM10 / EM_NOX)
-        # By the correction factor (corf_CO2 / corf_PM10 / corf_NOX)
+        # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
+        # By the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
 
-        self.Emf_CO2 = self.EM_CO2 * self.corf_CO2
-        self.Emf_PM10 = self.EM_PM10 * self.corf_PM10
-        self.Emf_NOX = self.EM_NOX * self.corf_NOX
-        self.SFC = self.general_fuel * self.corf_fuel
+        self.total_factor_CO2 = self.EF_CO2 * self.C_partial_load_CO2
+        self.total_factor_PM10 = self.EF_PM10 * self.C_partial_load_PM10
+        self.total_factor_NOX = self.EF_NOX * self.C_partial_load_NOX
+        self.total_factor_FU = self.SFC * self.C_partial_load_fuel
 
-        logger.debug(f'The total emission factor of CO2 is {self.Emf_CO2} g/kWh')
-        logger.debug(f'The total emission factor of PM10 is {self.Emf_PM10} g/kWh')
-        logger.debug(f'The total emission factor CO2 is {self.Emf_NOX} g/kWh')
-        logger.debug(f'The corrected fuel consumption factor for diesel is {self.SFC} g/kWh')
+        logger.debug(f'The total emission factor of CO2 is {self.total_factor_CO2} g/kWh')
+        logger.debug(f'The total emission factor of PM10 is {self.total_factor_PM10} g/kWh')
+        logger.debug(f'The total emission factor CO2 is {self.total_factor_NOX} g/kWh')
+        logger.debug(f'The total fuel use factor for diesel is {self.total_factor_FU} g/kWh')
 
 
 
     def calculate_fuel_use_g_m(self,v):
         """Total fuel use in g/m:
-        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.SFC) diveded by the sailing distance (v *         delt_t)"""
-        self.fuel_use_g_m = (self.P_given * self.SFC / v ) / 3600
+        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing distance (v * delt_t)"""
+        self.fuel_use_g_m = (self.P_given * self.total_factor_FU / v ) / 3600
         return self.fuel_use_g_m
 
 
     def calculate_fuel_use_g_s(self):
         """Total fuel use in g/s:
-        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.SFC) diveded by the sailing duration (           delt_t)"""
-        self.fuel_use_g_m = self.P_given * self.SFC / 3600
+        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing duration (delt_t)"""
+        self.fuel_use_g_m = self.P_given * self.total_factor_FU / 3600
         return self.fuel_use_g_s
 
 
     def calculate_emission_rates_g_m(self,v):
         """CO2, PM10, NOX emission rates in g/m:
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.Emf) diveded by the               sailing distance (v * delt_t)"""
-        self.emission_g_m_CO2 = self.P_given * self.Emf_CO2 / v / 3600
-        self.emission_g_m_PM10 = self.P_given * self.Emf_PM10 / v / 3600
-        self.emission_g_m_NOX = self.P_given * self.Emf_NOX / v / 3600
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the               sailing distance (v * delt_t)"""
+        self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
+        self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
+        self.emission_g_m_NOX = self.P_given * self.total_factor_NOX / v / 3600
 
         return self.emission_g_m_CO2, self.emission_g_m_PM10, self.emission_g_m_NOX
 
@@ -1127,10 +1131,10 @@ class ConsumesEnergy:
 
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
-        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.Emf) diveded by the               sailing duration ( delt_t)"""
-        self.emission_g_s_CO2 = self.P_given * self.Emf_CO2 / 3600
-        self.emission_g_s_PM10 = self.P_given * self.Emf_PM10 / 3600
-        self.emission_g_s_NOX = self.P_given * self.Emf_NOX / 3600
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the               sailing duration ( delt_t)"""
+        self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
+        self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
+        self.emission_g_s_NOX = self.P_given * self.total_factor_NOX / 3600
 
         return self.emission_g_s_CO2, self.emission_g_s_PM10, self.emission_g_s_NOX
 
