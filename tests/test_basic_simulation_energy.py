@@ -143,7 +143,7 @@ def energy_vessel():
         "P_tot_given": 396,  # kW
         "L_w": 3.0,
         "C_B": 0.85,
-        "c_year": 1990,
+        "C_year": 1990,
         "current_year": None,
     }
 
