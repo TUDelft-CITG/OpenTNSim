@@ -29,6 +29,7 @@ import opentnsim.graph_module
 logger = logging.getLogger(__name__)
 
 from openclsim.core import SimpyObject
+from openclsim.core import Identifiable
 
 # class SimpyObject:
     # """General object which can be extended by any class requiring a simpy environment
@@ -53,20 +54,6 @@ class HasResource(SimpyObject):
             if priority
             else simpy.Resource(self.env, capacity=nr_resources)
         )
-
-
-class Identifiable:
-    """Mixin class: Something that has a name and id
-
-    name: a name
-    id: a unique id generated with uuid"""
-
-    def __init__(self, name, id=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.name = name
-        # generate some id, in this case based on m
-        self.id = id if id else str(uuid.uuid1())
 
 
 class Locatable:
