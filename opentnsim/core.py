@@ -877,6 +877,7 @@ class NetworkProperties:
 class VesselTrafficService:
     """Class: a collection of functions that processes requests of vessels regarding the nautical processes on ow to enter the port safely"""
 
+    @staticmethod
     def provide_sailing_direction(vessel,edge):
         initial_bound = vessel.bound
         network = vessel.env.FG
@@ -1413,6 +1414,11 @@ class VesselTrafficService:
                 # Start of calculation by looping over the nodes of the route
                 for nodes in enumerate(route):
                     # - if a correction for the sailing time should be applied: the total distance should be keep track of
+                    if nodes[0] == 0:
+                        if 'bound' not in dir(vessel): vessel.bound = 'inbound'  # to be removed later: should be part of the vessel generator in which the user should define the initial direction of the vessel
+                    else:
+                        vessel.bound = VesselTrafficService.provide_sailing_direction(vessel, [route[route.index(nodes[1])-1], nodes[1]])
+
                     if sailing_time_correction:
                         if not nodes[1] == route[0]:
                             distance_to_next_node += pyproj.Geod(ellps='WGS84').inv(network.nodes[route[nodes[0] - 1]]['geometry'].x,
@@ -3118,6 +3124,7 @@ class Movable(Locatable, Routeable, Log):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.v = v
+        self.on_pass_node = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     def initial_timeout(self):
@@ -3152,29 +3159,11 @@ class Movable(Locatable, Routeable, Log):
                 origin = self.route[node[0]]
                 destination = self.route[node[0] + 1]
 
-            if 'bound' not in dir(self): self.bound = 'inbound'  # to be removed later: should be part of the vessel generator in which the user should define the initial direction of the vessel
-            self.bound = VesselTrafficService.provide_sailing_direction(self, [origin,destination])
-
             # Leave and access waterway section
             if 'Junction' in self.env.FG.nodes[origin].keys():
                 if 'Anchorage' not in self.env.FG.nodes[origin].keys():
                     PassSection.release_access_previous_section(self, origin)
                     yield from PassSection.request_access_next_section(self, origin, destination)
-
-            if 'Turning Basin' in self.env.FG.nodes[origin].keys():
-                turning_basin = self.env.FG.nodes[origin]['Turning Basin'][0]
-                ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
-                if self.bound == 'outbound' and turning_basin.length >= self.L:
-                    self.log_entry("Vessel Turning Start", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
-                    turning_basin.log_entry("Vessel Turning Start", self.env.now, 0, self.env.FG.nodes[origin]['geometry'] )
-                    yield self.env.timeout(10*60)
-                    ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
-                    turning_basin.log_entry("Vessel Turning Stop", self.env.now, 10*60, self.env.FG.nodes[origin]['geometry'] )
-                    self.log_entry("Vessel Turning Stop", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
-                else:
-                    self.log_entry("Passing Turning Basin", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
-                    turning_basin.log_entry("Vessel Passing", self.env.now, 0,self.env.FG.nodes[origin]['geometry'])
-                turning_basin.turning_basin[origin].release(self.request_access_turning_basin)
 
             if 'Turning Basin' in self.env.FG.nodes[destination].keys():
                 turning_basin = self.env.FG.nodes[destination]['Turning Basin'][0]
@@ -3230,11 +3219,19 @@ class Movable(Locatable, Routeable, Log):
                 break
 
             else:
+                yield from self.pass_node(origin)
                 yield from self.pass_edge(origin, destination)
+
+            if node[0] + 2 == len(self.route):
+                break
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
         logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
+
+    def pass_node(self,origin):
+        for gen in self.on_pass_node:
+            yield from gen(origin)
 
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
@@ -3331,15 +3328,44 @@ class Movable(Locatable, Routeable, Log):
                     self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
 
             else:
-                ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
+                if 'Info' in self.env.FG.nodes[origin]:
+                    ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
+                else:
+                    ukc = []
                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, ukc, orig,)
                 yield self.env.timeout(distance / self.current_speed)
-                ukc = VesselTrafficService.provide_ukc_clearance(self, destination)
+                if 'Info' in self.env.FG.nodes[destination]:
+                    ukc = VesselTrafficService.provide_ukc_clearance(self, destination)
+                else:
+                    ukc = []
                 self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
+            self.geometry = dest
 
     @property
     def current_speed(self):
         return self.v
+
+class HasTurningBasin(Movable):
+    def __init__(self,*args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_pass_node.append(self.enter_turning_basin)
+
+    def enter_turning_basin(self, origin):
+        if 'Turning Basin' in self.env.FG.nodes[origin].keys():
+            turning_basin = self.env.FG.nodes[origin]['Turning Basin'][0]
+            ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
+            if self.bound == 'outbound' and turning_basin.length >= self.L:
+                self.log_entry("Vessel Turning Start", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
+                turning_basin.log_entry("Vessel Turning Start", self.env.now, 0, self.env.FG.nodes[origin]['geometry'])
+                yield self.env.timeout(10 * 60)
+                ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
+                turning_basin.log_entry("Vessel Turning Stop", self.env.now, 10 * 60,
+                                        self.env.FG.nodes[origin]['geometry'])
+                self.log_entry("Vessel Turning Stop", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
+            else:
+                self.log_entry("Passing Turning Basin", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
+                turning_basin.log_entry("Vessel Passing", self.env.now, 0, self.env.FG.nodes[origin]['geometry'])
+            turning_basin.turning_basin[origin].release(self.request_access_turning_basin)
 
 class ContainerDependentMovable(Movable, HasContainer):
     """ContainerDependentMovable class
