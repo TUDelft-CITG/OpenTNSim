@@ -28,16 +28,16 @@ import opentnsim.graph_module
 
 logger = logging.getLogger(__name__)
 
+from openclsim.core import SimpyObject
 
-
-class SimpyObject:
-    """General object which can be extended by any class requiring a simpy environment
-    env: a simpy Environment
-    """
-
-    def __init__(self, env, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.env = env
+# class SimpyObject:
+    # """General object which can be extended by any class requiring a simpy environment
+    # env: a simpy Environment
+    # """
+    #
+    # def __init__(self, env, *args, **kwargs):
+    #     super().__init__(*args, **kwargs)
+    #     self.env = env
 
 
 class HasResource(SimpyObject):
