@@ -33,7 +33,7 @@ import pytest
 
 
 def test_correction_factors():
-    corf = opentnsim.energy.correction_factors()
+    corf = opentnsim.energy.load_partial_engine_load_correction_factors()
     assert corf.shape[0] > 10, "Correction factors are not available"
 
 
