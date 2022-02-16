@@ -10,7 +10,9 @@ import scipy.optimize
 logger = logging.getLogger(__name__)
 
 def correction_factors():
-    """read correction factor from package directory"""
+    """read correction factor from package directory
+    """
+    
     # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent / 'data'
     correctionfactors_path = data_dir / 'Correctionfactors.csv'
@@ -18,7 +20,9 @@ def correction_factors():
     return df
 
 def karpov_smooth_curves():
-    """read correction factor from package directory"""
+    """read correction factor from package directory
+    """
+    
     # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent / 'data'
     karpov_smooth_curves_path = data_dir / 'KarpovSmoothCurves.csv'
@@ -28,7 +32,8 @@ def karpov_smooth_curves():
 
 
 def find_closest_node(G, point):
-    """find the closest node on the graph from a given point"""
+    """find the closest node on the graph from a given point
+    """
 
     distance = np.full((len(G.nodes)), fill_value=np.nan)
     for ii, n in enumerate(G.nodes):
@@ -41,6 +46,7 @@ def find_closest_node(G, point):
 
 def power2v(vessel, edge, bounds=(0, 10)):
     """Compute vessel velocity given an edge and power (P_tot_given)
+    
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
     """
@@ -76,8 +82,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
 
 
 class EnergyCalculation:
-    """
-    Add information on energy use and effects on energy use.
+    """Add information on energy use and effects on energy use.
     """
 
     def __init__(self, FG, vessel, *args, **kwargs):
@@ -105,10 +110,13 @@ class EnergyCalculation:
         self.mki_footprint = {"total_footprint": 0, "stationary": 0}
 
     def calculate_energy_consumption(self):
-        """Calculation of energy consumption based on total time in system and properties"""
+        """Calculation of energy consumption based on total time in system and properties
+        """
 
         def calculate_distance(geom_start, geom_stop):
-            """method to calculate the distance in meters between two geometries"""
+            """method to calculate the distance in meters between two geometries
+            """
+            
             wgs84 = pyproj.Geod(ellps='WGS84')
 
             # distance between two points
@@ -116,7 +124,9 @@ class EnergyCalculation:
                                  geom_stop.x,  geom_stop.y) [2])
 
         def calculate_depth(geom_start, geom_stop):
-            """method to calculate the depth of the waterway in meters between two geometries"""
+            """method to calculate the depth of the waterway in meters between two geometries
+            """
+            
             depth = 0
 
             #The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
@@ -190,7 +200,8 @@ class EnergyCalculation:
                     #Energy consumed per time step delta_t in the stationary stage
                     energy_delta = self.vessel.P_hotel * delta_t / 3600  # kJ/3600 = kWh
 
-                    #Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t, consuming 'energy_delta' kWh
+                    # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t, 
+                    # consuming 'energy_delta' kWh
                     emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
@@ -212,8 +223,9 @@ class EnergyCalculation:
                     #Energy consumed per time step delta_t in the propulsion stage
                     energy_delta = self.vessel.P_tot * delta_t / 3600  # kJ/3600 = kWh
 
-                    #Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t, consuming 'energy_delta' kWh
-                    emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta #Energy consumed per time step delta_t in the stationary phase # in g
+                    # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t, 
+                    # consuming 'energy_delta' kWh
+                    emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta #Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
                     emission_delta_fuel=self.vessel.total_factor_FU * energy_delta/1000 # in kg
@@ -233,7 +245,8 @@ class EnergyCalculation:
         #   vessel database ook nog een speed_loaded en een speed_unloaded worden toegevoegd.
         # - er zou nog eens goed gekeken moeten worden wat er gedaan kan worden rond kustwerken
         # - en er is nog iets mis met de snelheid rond een sluis
-        # - add HasCurrent Class or def
+       
+
 
     def plot(self):
 
