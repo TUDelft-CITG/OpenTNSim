@@ -1443,6 +1443,7 @@ class Movable(Locatable, Routeable, Log):
         # TODO: consider what to do with v vs current_speed
         v = self.v
         z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
+        print(self.T+z)
         ukc = 0.3 + z
         logger.debug('maximum ship squat z is {z} m')
         logger.debug('minimum ukc is {ukc} m')      
