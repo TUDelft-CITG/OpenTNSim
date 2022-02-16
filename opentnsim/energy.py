@@ -9,7 +9,7 @@ import scipy.optimize
 
 logger = logging.getLogger(__name__)
 
-def correction_factors():
+def load_partial_engine_load_correction_factors():
     """read correction factor from package directory
     """
     
@@ -194,7 +194,7 @@ class EnergyCalculation:
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v)
 
-                self.vessel.calculate_emission_factors_total()
+                self.vessel.calculate_emission_factors_total(v=v)
 
                 if messages[i + 1] in stationary_phase_indicator:  # if we are in a stationary stage only log P_hotel
                     #Energy consumed per time step delta_t in the stationary stage
@@ -205,7 +205,7 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
-                    emission_delta_fuel=self.vessel.total_factor_FU * energy_delta/1000 # in kg
+                    emission_delta_fuel = self.vessel.total_factor_FU * energy_delta # in g
 
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(energy_delta)
@@ -228,7 +228,7 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta #Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
-                    emission_delta_fuel=self.vessel.total_factor_FU * energy_delta/1000 # in kg
+                    emission_delta_fuel=self.vessel.total_factor_FU * energy_delta # in g
 
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(0)
@@ -246,7 +246,8 @@ class EnergyCalculation:
         # - er zou nog eens goed gekeken moeten worden wat er gedaan kan worden rond kustwerken
         # - en er is nog iets mis met de snelheid rond een sluis
        
-
+        # - add HasCurrent Class or def
+        # - add HasSquat 
 
     def plot(self):
 

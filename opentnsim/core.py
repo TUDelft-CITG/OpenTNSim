@@ -175,7 +175,8 @@ class VesselProperties:
     - L: vessel length
     - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property ['Info']['GeneralDepth']
     - T: actual draught
-
+    - C_B: block coefficient ('fullness') [-]
+    
     Alternatively you can specify draught based on filling degree
     - H_e: vessel height unloaded
     - H_f: vessel height loaded
@@ -183,7 +184,8 @@ class VesselProperties:
     - T_f: draught loaded
 
     """
-
+        # TODO: add blockage factor S to vessel properties
+        
     def __init__(
             self,
             type,
@@ -191,11 +193,11 @@ class VesselProperties:
             L,
             h_min=None,
             T=None,
+            C_B=None,
             H_e=None,
             H_f=None,
             T_e=None,
             T_f=None,
-            C_B=None,
             *args,
             **kwargs
     ):
@@ -209,12 +211,13 @@ class VesselProperties:
         # hidden because these can also computed on the fly
         self._T = T
         self._h_min = h_min
+        self.C_B = C_B
         # alternative  options
         self.H_e = H_e
         self.H_f = H_f
         self.T_e = T_e
         self.T_f = T_f
-        self.C_B = C_B
+
     @property
     def T(self):
         """Compute the actual draught 
@@ -261,25 +264,29 @@ class VesselProperties:
 
     #TODO: include "vesl_type" as one of the input arguments for "calculate_ukc", make sure the vesl_types work both for "calculate_ukc"              and "calculate_actual_T_and_payload"  
     
-    def calculate_ukc (self, C_B, v):
-         """ Calculate minimum under keel clearance considering maximum ship squat
-         
-         - ukc: minimum under keel clearance
-         - z: maximum ship squat 
-         """
-        z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
-        ukc = 0.3 + z
-        logger.debug('maximum ship squat z is {z} m')
-        logger.debug('minimu ukc is {ukc} m')
+    @property
+    def static_ukc(self):
+        """Underkeel clearance for a static (non-moving) ship
         
-        return ukc
+        Here we assume ukc = 0.3 m according to Van Dorsser et al
+        """
+        # TODO: add a table/ code of ukc values for different vessel types according to Van Dorsser et al
+        return 0.3
     
-    def calculate_actual_T_and_payload(self, h_min, ukc,vesl_type="Dry_DH"):
+
+    
+    def calculate_actual_T_and_payload(self, h_min, vesl_type="Dry_DH"):
         """ Calculate actual draft based on Van Dorsser et al
         
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
         """
         #Design draft T_design, refer to Table 5
+        
+        # prefer the dynamic ukc, if available....
+        if (hasattr(self, 'dynamic_ukc')):
+            ukc = self.dynamic_ukc
+        else:
+            ukc = self.static_ukc
 
         Tdesign_coefs = dict({"intercept":0,
                          "c1": 1.7244153371,
@@ -485,7 +492,6 @@ class ConsumesEnergy:
     - P_installed: installed engine power [kW]
     - P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
     - L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
-    - C_B: block coefficient ('fullness') [-]
     - current_year: current year
     - nu: kinematic viscosity [m^2/s]
     - rho: density of the surrounding water [kg/m^3]
@@ -504,8 +510,7 @@ class ConsumesEnergy:
     def __init__(
             self,
             P_installed,
-            L_w,
-            C_B,
+            L_w,          
             current_year, # current_year
             C_year,
             P_tot_given=None,  # the actual power engine setting
@@ -531,7 +536,6 @@ class ConsumesEnergy:
         self.P_installed = P_installed
         self.P_tot_given=P_tot_given
         self.L_w = L_w
-        self.C_B = C_B
         self.year = current_year
         self.nu = nu
         self.rho = rho
@@ -740,48 +744,48 @@ class ConsumesEnergy:
 
         if self.F_rh > 0.4:
             if 0 <= h_0 / self.T < 1.75:
-                self.alpha_xx = -0.9274 * self.F_rh ** 6 + 9.5953 * self.F_rh ** 5 - 37.197 * self.F_rh ** 
-                4 + 69.666 * self.F_rh ** 3 - 65.391 * self.F_rh ** 2 + 28.025 * self.F_rh - 3.4143
+                self.alpha_xx = (-0.9274 * self.F_rh ** 6 + 9.5953 * self.F_rh ** 5 - 37.197 * self.F_rh ** 4 +
+                69.666 * self.F_rh ** 3 - 65.391 * self.F_rh ** 2 + 28.025 * self.F_rh - 3.4143)
             if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = 2.2152 * self.F_rh ** 6 - 11.852 * self.F_rh ** 5 + 21.499 * self.F_rh ** 
-                4 - 12.174 * self.F_rh ** 3 - 4.7873 * self.F_rh ** 2 + 5.8662 * self.F_rh - 0.2652
+                self.alpha_xx = (2.2152 * self.F_rh ** 6 - 11.852 * self.F_rh ** 5 + 21.499 * self.F_rh ** 4 - 
+                12.174 * self.F_rh ** 3 - 4.7873 * self.F_rh ** 2 + 5.8662 * self.F_rh - 0.2652)
             if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = 1.2205 * self.F_rh ** 6 - 5.4999 * self.F_rh ** 5 + 5.7966 * self.F_rh ** 
-                4 + 6.6491 * self.F_rh ** 3 - 16.123 * self.F_rh ** 2 + 9.2016 * self.F_rh - 0.6342
+                self.alpha_xx = (1.2205 * self.F_rh ** 6 - 5.4999 * self.F_rh ** 5 + 5.7966 * self.F_rh ** 4 + 
+                6.6491 * self.F_rh ** 3 - 16.123 * self.F_rh ** 2 + 9.2016 * self.F_rh - 0.6342)
             if 2.75 <= h_0 / self.T < 3.25:
-                self.alpha_xx = -0.4085 * self.F_rh ** 6 + 4.534 * self.F_rh ** 5 - 18.443 * self.F_rh ** 
-                4 + 35.744 * self.F_rh ** 3 - 34.381 * self.F_rh ** 2 + 15.042 * self.F_rh - 1.3807
+                self.alpha_xx = (-0.4085 * self.F_rh ** 6 + 4.534 * self.F_rh ** 5 - 18.443 * self.F_rh ** 4 + 
+                35.744 * self.F_rh ** 3 - 34.381 * self.F_rh ** 2 + 15.042 * self.F_rh - 1.3807)
             if 3.25 <= h_0 / self.T < 3.75:
-                self.alpha_xx = 0.4078 * self.F_rh ** 6 - 0.919 * self.F_rh ** 5 - 3.8292 * self.F_rh ** 
-                4 + 15.738 * self.F_rh ** 3 - 19.766 * self.F_rh ** 2 + 9.7466 * self.F_rh - 0.6409
+                self.alpha_xx = (0.4078 * self.F_rh ** 6 - 0.919 * self.F_rh ** 5 - 3.8292 * self.F_rh ** 4 + 
+                15.738 * self.F_rh ** 3 - 19.766 * self.F_rh ** 2 + 9.7466 * self.F_rh - 0.6409)
             if 3.75 <= h_0 / self.T < 4.5:
-                self.alpha_xx = 0.3067 * self.F_rh ** 6 - 0.3404 * self.F_rh ** 5 - 5.0511 * self.F_rh ** 
-                4 + 16.892 * self.F_rh ** 3 - 20.265 * self.F_rh ** 2 + 9.9002 * self.F_rh - 0.6712
+                self.alpha_xx = (0.3067 * self.F_rh ** 6 - 0.3404 * self.F_rh ** 5 - 5.0511 * self.F_rh ** 4 +  
+                16.892 * self.F_rh ** 3 - 20.265 * self.F_rh ** 2 + 9.9002 * self.F_rh - 0.6712)
             if 4.5 <= h_0 / self.T < 5.5:
-                self.alpha_xx = 0.3212 * self.F_rh ** 6 - 0.3559 * self.F_rh ** 5 - 5.1056 * self.F_rh ** 
-                4 + 16.926 * self.F_rh ** 3 - 20.253 * self.F_rh ** 2 + 10.013 * self.F_rh - 0.7196
+                self.alpha_xx = (0.3212 * self.F_rh ** 6 - 0.3559 * self.F_rh ** 5 - 5.1056 * self.F_rh ** 4 + 
+                16.926 * self.F_rh ** 3 - 20.253 * self.F_rh ** 2 + 10.013 * self.F_rh - 0.7196)
             if 5.5 <= h_0 / self.T < 6.5:
-                self.alpha_xx = 0.9252 * self.F_rh ** 6 - 4.2574 * self.F_rh ** 5 + 5.0363 * self.F_rh ** 
-                4 + 3.3282 * self.F_rh ** 3 - 10.367 * self.F_rh ** 2 + 6.3993 * self.F_rh - 0.2074
+                self.alpha_xx = (0.9252 * self.F_rh ** 6 - 4.2574 * self.F_rh ** 5 + 5.0363 * self.F_rh ** 4 + 
+                3.3282 * self.F_rh ** 3 - 10.367 * self.F_rh ** 2 + 6.3993 * self.F_rh - 0.2074)
             if 6.5 <= h_0 / self.T < 7.5:
-                self.alpha_xx = 0.8442 * self.F_rh ** 6 - 4.0261 * self.F_rh ** 5 + 5.313 * self.F_rh ** 
-                4 + 1.6442 * self.F_rh ** 3 - 8.1848 * self.F_rh ** 2 + 5.3209 * self.F_rh - 0.0267
+                self.alpha_xx = (0.8442 * self.F_rh ** 6 - 4.0261 * self.F_rh ** 5 + 5.313 * self.F_rh ** 4 + 
+                1.6442 * self.F_rh ** 3 - 8.1848 * self.F_rh ** 2 + 5.3209 * self.F_rh - 0.0267)
             if 7.5 <= h_0 / self.T < 8.5:
-                self.alpha_xx = 0.1211 * self.F_rh ** 6 + 0.628 * self.F_rh ** 5 - 6.5106 * self.F_rh **
-                4 + 16.7 * self.F_rh ** 3 - 18.267 * self.F_rh ** 2 + 8.7077 * self.F_rh - 0.4745
+                self.alpha_xx = (0.1211 * self.F_rh ** 6 + 0.628 * self.F_rh ** 5 - 6.5106 * self.F_rh ** 4 + 
+                16.7 * self.F_rh ** 3 - 18.267 * self.F_rh ** 2 + 8.7077 * self.F_rh - 0.4745)
 
             if 8.5 <= h_0 / self.T < 9.5:
                 if self.F_rh < 0.6:
                     self.alpha_xx = 1
                 if self.F_rh >= 0.6:
-                    self.alpha_xx = -6.4069 * self.F_rh ** 6 + 47.308 * self.F_rh ** 5 - 141.93 * self.F_rh **
-                    4 + 220.23 * self.F_rh ** 3 - 185.05 * self.F_rh ** 2 + 79.25 * self.F_rh - 12.484
+                    self.alpha_xx = (-6.4069 * self.F_rh ** 6 + 47.308 * self.F_rh ** 5 - 141.93 * self.F_rh ** 4 +
+                    220.23 * self.F_rh ** 3 - 185.05 * self.F_rh ** 2 + 79.25 * self.F_rh - 12.484)
             if h_0 / self.T >= 9.5:
                 if self.F_rh < 0.6:
                     self.alpha_xx = 1
                 if self.F_rh >= 0.6:
-                    self.alpha_xx = -6.0727 * self.F_rh ** 6 + 44.97 * self.F_rh ** 5 - 135.21 * self.F_rh ** 
-                    4 + 210.13 * self.F_rh ** 3 - 176.72 * self.F_rh ** 2 + 75.728 * self.F_rh - 11.893
+                    self.alpha_xx = (-6.0727 * self.F_rh ** 6 + 44.97 * self.F_rh ** 5 - 135.21 * self.F_rh ** 4 +
+                    210.13 * self.F_rh ** 3 - 176.72 * self.F_rh ** 2 + 75.728 * self.F_rh - 11.893)
 
         self.V_2 = v / self.alpha_xx
 
@@ -916,8 +920,7 @@ class ConsumesEnergy:
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011):Walstrom versus generators troom
         self.P_hotel = 0.05 * self.P_installed
 
-        # Required power for propulsion
-
+        # Required power for propulsion        
         # Effective Horse Power (EHP), P_e
         self.P_e = v * self.R_tot
 
@@ -949,7 +952,7 @@ class ConsumesEnergy:
 
         # Brake Horse Power (BHP), P_b
         self.P_b = self.P_d / (self.eta_t * self.eta_g)
-        self.P_propusion = self.P_b    # propulsion power is brake horse power
+        self.P_propulsion = self.P_b    # propulsion power is brake horse power
 
         self.P_tot = self.P_hotel + self.P_propulsion
 
@@ -1040,7 +1043,7 @@ class ConsumesEnergy:
         logger.debug(f'The general emission factor CO2 is {self.EF_NOX} g/kWh')
         logger.debug(f'The general fuel consumption factor for diesel is {self.SFC} g/kWh')
 
-    def correction_factors(self):
+    def correction_factors(self, v):
         """ Partial engine load correction factors (C_partial_load):
 
         - The correction factors have to be multiplied by the general emission factors, to get the total emission factors
@@ -1049,11 +1052,11 @@ class ConsumesEnergy:
         - Based on literature TNO (2019)
         """
         #TODO: implement the case where v=None
-        self.calculate_total_power_required(self.v)  # You need the P_partial values
+        self.calculate_total_power_required(v=v)  # You need the P_partial values
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
-        self.C_partial_load = opentnsim.energy.correction_factors()
+        self.C_partial_load = opentnsim.energy.load_partial_engine_load_correction_factors()
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
@@ -1133,14 +1136,14 @@ class ConsumesEnergy:
         logger.debug(f'Partial engine load correction factor of NOX is {self.C_partial_load_NOX}')
         logger.debug(f'Partial engine load correction factor of diesel fuel consumption is {self.C_partial_load_fuel}')
 
-    def calculate_emission_factors_total(self):
+    def calculate_emission_factors_total(self, v):
         """Total emission factors:
 
         - The total emission factors can be computed by multiplying the general emission factor by the correction factor
         """
 
         self.emission_factors_general()  # You need the values of the general emission factors of CO2, PM10, NOX
-        self.correction_factors()  # You need the correction factors of CO2, PM10, NOX
+        self.correction_factors(v=v)  # You need the correction factors of CO2, PM10, NOX
 
         # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
         # By the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
@@ -1421,7 +1424,30 @@ class Movable(Locatable, Routeable, Log):
         self.v = v
         self.edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
-
+    
+    @property
+    def dynamic_ukc(self):
+        """ Calculate minimum under keel clearance considering maximum ship squat while moving 
+         
+         - ukc: minimum under keel clearance needed while moving
+         - z: maximum ship squat while moving. It depends on ship block cofficient C_B (C_B varys from ship types), blockage factor S and                 ship speed v. 
+         - S: blockage factor, calculated by (ship beam * actual draught) / (waterway width * water depth). 
+         
+         There are equations to calculate z in open water conditions, confined channels. Reference: Sergiu et al (2015) 
+         https://www.scientificbulletin.upb.ro/rev_docs_arhiva/full649_520719.pdf
+         
+         Here we only provide z calculation for confined channels. The z calculation for open water conditions need to be added for                  seagoing shipping.  
+        """
+        # TODO: add z calculation for open water conditions
+        # TODO: add blockage factor S to vessel properties
+        # TODO: consider what to do with v vs current_speed
+        v = self.v
+        z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
+        ukc = 0.3 + z
+        logger.debug('maximum ship squat z is {z} m')
+        logger.debug('minimum ukc is {ukc} m')      
+        return ukc
+    
     def move(self):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
