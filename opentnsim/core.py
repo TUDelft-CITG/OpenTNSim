@@ -195,6 +195,7 @@ class VesselProperties:
             H_f=None,
             T_e=None,
             T_f=None,
+            C_B=None,
             *args,
             **kwargs
     ):
@@ -213,7 +214,7 @@ class VesselProperties:
         self.H_f = H_f
         self.T_e = T_e
         self.T_f = T_f
-
+        self.C_B = C_B
     @property
     def T(self):
         """Compute the actual draught 
@@ -258,7 +259,22 @@ class VesselProperties:
                 + self.H_e
         )
 
-    def calculate_actual_T_and_payload(self, h_min, ukc=.3,vesl_type="Dry_DH"):
+    #TODO: include "vesl_type" as one of the input arguments for "calculate_ukc", make sure the vesl_types work both for "calculate_ukc"              and "calculate_actual_T_and_payload"  
+    
+    def calculate_ukc (self, C_B, v):
+         """ Calculate minimum under keel clearance considering maximum ship squat
+         
+         - ukc: minimum under keel clearance
+         - z: maximum ship squat 
+         """
+        z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
+        ukc = 0.3 + z
+        logger.debug('maximum ship squat z is {z} m')
+        logger.debug('minimu ukc is {ukc} m')
+        
+        return ukc
+    
+    def calculate_actual_T_and_payload(self, h_min, ukc,vesl_type="Dry_DH"):
         """ Calculate actual draft based on Van Dorsser et al
         
         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
@@ -1274,7 +1290,8 @@ class HasLockDoors(SimpyObject):
         **kwargs
     ):
         super().__init__(*args, **kwargs)
-        """Initialization"""
+        """Initialization
+        """
 
         self.doors_1 = {
             node_1: simpy.PriorityResource(self.env, capacity = 1),
