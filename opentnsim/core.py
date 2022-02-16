@@ -507,13 +507,13 @@ class NetworkProperties:
             old_stdout = sys.stdout  # backup current stdout
             sys.stdout = open(os.devnull, "w")
             signal_datetime = [datetime.datetime.fromtimestamp(y) for y in signal_time]
-            const_list = hatyan.get_const_list_hatyan('month')
+            const_list = hatyan.get_const_list_hatyan('tidalcycle')
             ts_meas = pd.DataFrame({'values': signal_values}, index=signal_datetime)
             ts_meas = hatyan.crop_timeseries(ts=ts_meas, times_ext=signal_datetime);
             comp_frommeas, comp_allyears = hatyan.get_components_from_ts(ts=ts_meas, const_list=const_list, nodalfactors=True, return_allyears=True, fu_alltimes=True, analysis_peryear=True)
             ts_prediction = hatyan.prediction(comp=comp_frommeas, nodalfactors=True, xfac=True, fu_alltimes=True, times_ext=signal_datetime, timestep_min=10)
             sys.stdout = old_stdout  # reset old stdout
-            return [[index.timestamp() for index in ts_prediction.index],[value for value in ts_prediction['values']]]
+            return [[index.timestamp()-3600 for index in ts_prediction.index],[value for value in ts_prediction['values']]]
 
         def H99(t,wlev,node):
             """ Function: calculates the water level which is exceeded 99% of the tides for a given node in the network.
@@ -557,6 +557,7 @@ class NetworkProperties:
                 if t[index_range_min] - prev_root < deltat / 2: index_range_min = index_range_min - 1
                 index_range_max = bisect.bisect_right(t, root[1])
                 if index_range_max == len(t) or t[index_range_max] - root[1] < deltat / 2: index_range_max = index_range_max - 1
+                if index_range_min == index_range_max: continue
                 max_index.append(np.argmax(wlev[index_range_min:index_range_max]) + index_range_min)
                 max_t.append(t[max_index[-1]])
                 max_wlev.append(wlev[max_index[-1]])
@@ -729,7 +730,7 @@ class NetworkProperties:
                 network.nodes[node[1]]['Info']['Current direction'][1] = vdir[1][node[0]][1]
 
             # Calculation of the water level which is exceeded 99% of the tides
-            network.nodes[node[1]]['Info']['Astronomical tide'] = [network.nodes[node[1]]['Info']['Water level'][0],network.nodes[node[1]]['Info']['Water level'][1]] #astronomical_tide()
+            network.nodes[node[1]]['Info']['Astronomical tide'] = astronomical_tide(network.nodes[node[1]]['Info']['Water level'][0],network.nodes[node[1]]['Info']['Water level'][1])
             network.nodes[node[1]]['Info']['H_99%'] = H99(network.nodes[node[1]]['Info']['Astronomical tide'][0],network.nodes[node[1]]['Info']['Astronomical tide'][1],node[1])
             network.nodes[node[1]]['Info']['Tidal periods'] = tidal_periods(network.nodes[node[1]]['Info']['Astronomical tide'][0],
                                                                             network.nodes[node[1]]['Info']['Astronomical tide'][1])
@@ -3163,14 +3164,13 @@ class Movable(Locatable, Routeable, Log):
             if 'Turning Basin' in self.env.FG.nodes[origin].keys():
                 turning_basin = self.env.FG.nodes[origin]['Turning Basin'][0]
                 ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
-                if self.bound == 'inbound' and turning_basin.length >= self.L:
+                if self.bound == 'outbound' and turning_basin.length >= self.L:
                     self.log_entry("Vessel Turning Start", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
                     turning_basin.log_entry("Vessel Turning Start", self.env.now, 0, self.env.FG.nodes[origin]['geometry'] )
                     yield self.env.timeout(10*60)
                     ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                     turning_basin.log_entry("Vessel Turning Stop", self.env.now, 10*60, self.env.FG.nodes[origin]['geometry'] )
                     self.log_entry("Vessel Turning Stop", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
-                    self.bound = 'outbound'
                 else:
                     self.log_entry("Passing Turning Basin", self.env.now, ukc, self.env.FG.nodes[origin]['geometry'])
                     turning_basin.log_entry("Vessel Passing", self.env.now, 0,self.env.FG.nodes[origin]['geometry'])
