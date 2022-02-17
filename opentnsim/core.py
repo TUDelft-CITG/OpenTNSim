@@ -1433,16 +1433,18 @@ class Movable(Locatable, Routeable, Log):
          - z: maximum ship squat while moving. It depends on ship block cofficient C_B (C_B varys from ship types), blockage factor S and                 ship speed v. 
          - S: blockage factor, calculated by (ship beam * actual draught) / (waterway width * water depth). 
          
-         There are equations to calculate z in open water conditions, confined channels. Reference: Sergiu et al (2015) 
+         There are equations to calculate z in open water conditions, medium width channels, confined channels. Reference: Sergiu et al (2015) 
          https://www.scientificbulletin.upb.ro/rev_docs_arhiva/full649_520719.pdf
          
-         Here we only provide z calculation for confined channels. The z calculation for open water conditions need to be added for                  seagoing shipping.  
+         Here we only provide z calculation for medium width channels and confined channels. The z calculation for open water conditions            need to be added for seagoing shipping.  
         """
         # TODO: add z calculation for open water conditions
         # TODO: add blockage factor S to vessel properties
         # TODO: consider what to do with v vs current_speed
         v = self.v
-        z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
+        
+        z = (self.C_B * (1.94 * v)**2) * (6 * 0.15 + 0.4) / 100
+        #z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
         print(self.T+z)
         ukc = 0.3 + z
         logger.debug('maximum ship squat z is {z} m')
