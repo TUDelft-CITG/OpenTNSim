@@ -374,7 +374,8 @@ class VesselProperties:
 
         elif (T_design > (h_min - ukc)):
             T_actual = h_min -  ukc
-        print("T_actual", T_actual)
+        
+        #print('T_actual: {:.2f} m'.format(T_actual))
 
         #logger.debug(f'The actual draft is {T_actual} m')
 
@@ -415,7 +416,11 @@ class VesselProperties:
         fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
         actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
         #logger.debug('The actual_max_payload is {actual_max_payload} ton')
-
+        # print('T_actual: {:.2f} m'.format(T_actual))
+        # print('actual_max_payload: {:.2f} ton'.format(actual_max_payload))
+        # print('h_min: {:.2f} m'.format(h_min))
+        # print('ukc: {:.2f} m'.format(ukc))
+        
         return T_actual, actual_max_payload
 
 
@@ -1443,13 +1448,16 @@ class Movable(Locatable, Routeable, Log):
         # TODO: add blockage factor S to vessel properties
         # TODO: consider what to do with v vs current_speed
         v = self.v
-        
-        z = (self.C_B * (1.94 * v)**2) * (6 * 0.15 + 0.4) / 100
+        h_0 = self.h_0
+        z = (self.C_B * (1.94 * v)**2) * (6 * self.B * self.T / (150 * h_0) + 0.4) / 100
         #z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
         #print(self.T+z)
         ukc = 0.3 + z
         logger.debug('maximum ship squat z is {z} m')
-        logger.debug('minimum ukc is {ukc} m')      
+        logger.debug('minimum ukc is {ukc} m') 
+        # print('h_0: {:.2f} m'.format(h_0))
+        print('z: {:.2f} m'.format(z))
+        #print('self.T+z: {:.2f} m'.format(self.T+z))
         return ukc
     
     def move(self):
