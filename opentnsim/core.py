@@ -282,7 +282,7 @@ class VesselProperties:
         """
         #Design draft T_design, refer to Table 5
         
-        # prefer the dynamic ukc, if available....
+        #prefer the dynamic ukc, if available....
         if (hasattr(self, 'dynamic_ukc')):
             ukc = self.dynamic_ukc
         else:
@@ -374,6 +374,7 @@ class VesselProperties:
 
         elif (T_design > (h_min - ukc)):
             T_actual = h_min -  ukc
+        print("T_actual", T_actual)
 
         #logger.debug(f'The actual draft is {T_actual} m')
 
@@ -1418,7 +1419,7 @@ class Movable(Locatable, Routeable, Log):
     - v: speed
     """
 
-    def __init__(self, v=4, *args, **kwargs):
+    def __init__(self, v, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.v = v
@@ -1430,13 +1431,13 @@ class Movable(Locatable, Routeable, Log):
         """ Calculate minimum under keel clearance considering maximum ship squat while moving 
          
          - ukc: minimum under keel clearance needed while moving
-         - z: maximum ship squat while moving. It depends on ship block cofficient C_B (C_B varys from ship types), blockage factor S and                 ship speed v. 
+         - z: maximum ship squat while moving. It depends on ship block cofficient C_B (C_B varys from ship types), blockage factor S and ship speed v. 
          - S: blockage factor, calculated by (ship beam * actual draught) / (waterway width * water depth). 
          
          There are equations to calculate z in open water conditions, medium width channels, confined channels. Reference: Sergiu et al (2015) 
          https://www.scientificbulletin.upb.ro/rev_docs_arhiva/full649_520719.pdf
          
-         Here we only provide z calculation for medium width channels and confined channels. The z calculation for open water conditions            need to be added for seagoing shipping.  
+         Here we only provide z calculation for medium width channels and confined channels. The z calculation for open water conditions need to be added for seagoing                shipping.  
         """
         # TODO: add z calculation for open water conditions
         # TODO: add blockage factor S to vessel properties
