@@ -240,7 +240,8 @@ class VesselProperties:
 
             # rules from Van Dorsser et al
             # https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
-            T, payload = self.calculate_actual_T_and_payload(self.h_min)
+            T = self.T_strategy_consider_squat(self.h_min)
+            #T, payload = self.calculate_actual_T_and_payload(self.h_min)
         return T
 
     @property
@@ -249,6 +250,7 @@ class VesselProperties:
             h_min = self._h_min
         else:
             h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
+    
         return h_min
 
 
@@ -409,6 +411,7 @@ class VesselProperties:
         if T_actual < T_design:
             consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                               # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
+        # TODO: if else conditions here should be updated according to the difference between desighned draught of inland vessels and seagoing vessels 
         else:
             consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                               # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
@@ -1459,6 +1462,17 @@ class Movable(Locatable, Routeable, Log):
         print('z: {:.2f} m'.format(z))
         #print('self.T+z: {:.2f} m'.format(self.T+z))
         return ukc
+    @property
+    def T_strategy_consider_squat(self):
+        """determine the maximum draught a vessel can have to pass the minimum water depth section, considering the maximum squat while sailing in limited water depth.
+        """
+        v = self.v
+        h_min = self.h_min
+        static_ukc = self.static_ukc
+        z = (self.C_B * (1.94 * v)**2) * (6 * self.B * self.T / (150 * h_min) + 0.4) / 100
+        T_strategy = h_min - static_ukc - z
+        
+        return T_strategy
     
     def move(self):
         """determine distance between origin and destination, and
