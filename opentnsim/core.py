@@ -240,8 +240,8 @@ class VesselProperties:
 
             # rules from Van Dorsser et al
             # https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
-            T = self.T_strategy_consider_squat(self.h_min)
-            #T, payload = self.calculate_actual_T_and_payload(self.h_min)
+            #T = self.T_strategy_consider_squat(self.h_min)
+            T, payload = self.calculate_actual_T_and_payload(self.h_min)
         return T
 
     @property
