@@ -193,6 +193,7 @@ class EnergyCalculation:
                 logger.debug('velocity: {:.4f} m/s'. format(v))
 
                 # we use the calculated velocity to determine the resistance and power required
+                #self.vessel.dynamic_ukc()
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v)
 
@@ -206,6 +207,7 @@ class EnergyCalculation:
                     # consuming 'energy_delta' kWh
                     P_hotel_delta = self.vessel.P_hotel   # in kW
                     P_installed_delta = self.vessel.P_installed   # in kW
+                    #sinkage_max_delta = 0     # no sinkage at stationary_phase
                     emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
@@ -213,6 +215,7 @@ class EnergyCalculation:
 
                     self.energy_use["P_tot"].append(P_hotel_delta)
                     self.energy_use["P_installed"].append(P_installed_delta)
+                    #self.energy_use["sinkage_max"].append(sinkage_max_delta) 
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(energy_delta)
                     self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
@@ -233,6 +236,7 @@ class EnergyCalculation:
                     # consuming 'energy_delta' kWh
                     P_tot_delta = self.vessel.P_tot   # in kW
                     P_installed_delta = self.vessel.P_installed   # in kW
+                    #sinkage_max_delta = self.vessel.dynamic_ukc - self.vessel.static_ukc    # in m
                     emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta #Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
@@ -240,6 +244,7 @@ class EnergyCalculation:
 
                     self.energy_use["P_tot"].append(P_tot_delta)
                     self.energy_use["P_installed"].append(P_installed_delta)
+                    #self.energy_use["sinkage_max"].append(sinkage_max_delta)
                     self.energy_use["total_energy"].append(energy_delta)
                     self.energy_use["stationary"].append(0)
                     self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
