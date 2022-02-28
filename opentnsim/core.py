@@ -2344,6 +2344,9 @@ class Movable(Locatable, Routeable, Log):
         """
         self.distance = 0
 
+        # Create a list of constant speed over route if not given by user
+        speed = self.v
+
         # Check if vessel is at correct location - if not, move to location
         if (
             self.geometry
@@ -2368,6 +2371,7 @@ class Movable(Locatable, Routeable, Log):
         # Move over the path and log every step
         for node in enumerate(self.route):
             self.node = node[1]
+            self.inode = node[0]
             # def vessel_bound(self):
             #     bound = 'in'
             #     return bound
@@ -2377,6 +2381,8 @@ class Movable(Locatable, Routeable, Log):
             if node[0] + 2 <= len(self.route):
                 origin = self.route[node[0]]
                 destination = self.route[node[0] + 1]
+
+                print("origin = {}, destination = {}".format(origin, destination))
 
             # Leave and access waterway section
             if 'Junction' in self.env.FG.nodes[origin].keys():
@@ -2454,8 +2460,9 @@ class Movable(Locatable, Routeable, Log):
             else:
                 # print('I am going to go to the next node {}'.format(destination))
                 yield from self.pass_edge(origin, destination)
-            # if node[0] + 2 == len(self.route):
-            #     break
+
+            if node[0] + 2 == len(self.route):
+                break
 
         # self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
@@ -2544,9 +2551,10 @@ class Movable(Locatable, Routeable, Log):
                     shapely.geometry.asShape(sub_dest).y,
                 )[2]
                 self.distance += distance
-                self.log_entry("Sailing from node {} to node {} sub edge {} start".format(origin, destination, index), self.env.now, 0, sub_orig,)
+                self.log_entry("Sailing from node {} to node {} sub edge {} start".format(origin, destination, index), self.env.now, self.name, sub_orig,)
+                print('inode = {}, speed = {}, name = {}'.format(self.inode, self.current_speed, self.name))
                 yield self.env.timeout(distance / self.current_speed)
-                self.log_entry("Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index), self.env.now, 0, sub_dest,)
+                self.log_entry("Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index), self.env.now, self.name, sub_dest,)
             self.geometry = dest
             # print('   My new origin is {}'.format(destination))
         else:
@@ -2580,8 +2588,10 @@ class Movable(Locatable, Routeable, Log):
 
     @property
     def current_speed(self):
-        return self.v
-
+        if isinstance(self.v, list):
+            return self.v[self.inode]
+        else:
+            return self.v
 
 class ContainerDependentMovable(Movable, HasContainer):
     """ContainerDependentMovable class
@@ -2596,5 +2606,10 @@ class ContainerDependentMovable(Movable, HasContainer):
 
     @property
     def current_speed(self):
-        return self.compute_v(self.container.level / self.container.capacity)
+        v_computed = self.compute_v(self.container.level / self.container.capacity)
 
+        # if v_computed is a list, get the speed corresponding to the edge it's crossing
+        if isinstance(v_computed, list):
+            return v_computed[self.inode]
+        else:
+            return v_computed
