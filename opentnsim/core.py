@@ -1,4 +1,7 @@
-"""Main module."""
+"""OpenTNSim Core module
+
+You can use this module to create nodes, vessels and other objects on the network.
+"""
 
 # package(s) related to time, space and id
 import json

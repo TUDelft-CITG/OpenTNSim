@@ -10,6 +10,11 @@ logo: logo.png
 execute:
   execute_notebooks: force
 
+# enable api doc extension
+sphinx:
+  extra_extensions:
+  - 'sphinx.ext.autodoc'
+
 # Define the name of the latex output file for PDF builds
 latex:
   latex_documents:
