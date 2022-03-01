@@ -183,7 +183,7 @@ class VesselProperties:
     - T_e: draught unloaded
     - T_f: draught loaded
     - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing, the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude of the ship captain and shipping companies.
-
+    - h_squat: the water depth considering ship squatting while the ship moving
     """
         # TODO: add blockage factor S to vessel properties
         
@@ -198,8 +198,9 @@ class VesselProperties:
             H_e=None,
             H_f=None,
             T_e=None,
-            T_f=None,
-            safety_margin = None,
+            T_f=None,        
+            safety_margin=None,
+            h_squat=None, 
             *args,
             **kwargs
     ):
@@ -220,6 +221,7 @@ class VesselProperties:
         self.T_e = T_e
         self.T_f = T_f
         self.safety_margin = safety_margin
+        self.h_squat = h_squat
         
     @property
     def T(self):
@@ -255,7 +257,21 @@ class VesselProperties:
             h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
     
         return h_min
-
+    
+    def max_sinkage_at_v_strategy(self, v, h_0):
+        
+        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
+    
+        return max_sinkage
+   
+    def h_squat(self, h_0):
+        if self._h_squat is not None:
+            h_squat = self.h_squat
+        else:
+            h_squat = h_0 - max_sinkage
+    
+        return h_squat
+    
 
     @property
     def H(self):
