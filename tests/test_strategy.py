@@ -6,6 +6,7 @@ import time
 import networkx as nx
 import shapely.geometry
 import simpy
+import numpy as np
 
 import opentnsim.core
 import opentnsim.strategy
@@ -156,9 +157,24 @@ def vessel(env, path, T_strategy):
     vessel._T =  T_strategy # start with the minimum operational draft (and fill up)
     return vessel
 
+@pytest.fixture
+def vessel_type():
+    return "Tanker"
 
-def test_strategy(graph, path, vessel, T_strategy):
+
+def test_sailing_strategy(graph, path, vessel, T_strategy):
     """Test to see if we can call formulate_sailing_strategies"""
     # a deep ship with 40cm under keel clearance
     # Do this computation for this T_strategy (independent of the vessel.T)
     v_T2v, v_P2v = opentnsim.strategy.formulate_sailing_strategies(FG=graph, path=path, vessel=vessel, T_strategy=T_strategy)
+    # these are the results previously. Use this as a regression test to make sure results stay the same.
+    np.testing.assert_almost_equal(v_T2v, 4.405382019875273)
+    np.testing.assert_almost_equal(v_P2v, 3.9146400450887224)
+
+
+def test_payload_strategy(vessel, T_strategy, vessel_type):
+    """Test to see if we can call formulate_sailing_strategies"""
+    payload = opentnsim.strategy.T2Payload(vessel=vessel, T_strategy=T_strategy, vessel_type=vessel_type)
+
+    # these are the results previously. Use this as a regression test to make sure results stay the same.
+    np.testing.assert_almost_equal(payload, +1112.7660789593735)
