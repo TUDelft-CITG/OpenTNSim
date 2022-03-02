@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 class SimpyObject:
     """General object which can be extended by any class requiring a simpy environment
-    
+
     - env: a simpy Environment
     """
 
@@ -87,7 +87,7 @@ class Locatable:
 
 class Neighbours:
     """Can be added to a locatable object (list)
-    
+
     - travel_to: list of locatables to which can be travelled
     """
 
@@ -98,7 +98,7 @@ class Neighbours:
 
 class HasLength(SimpyObject):
     """Mixin class: Something with a storage capacity
-    
+
     capacity: amount the container can hold
     level: amount the container holds initially
     total_requested: a counter that helps to prevent over requesting
@@ -176,7 +176,7 @@ class VesselProperties:
     - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property ['Info']['GeneralDepth']
     - T: actual draught
     - C_B: block coefficient ('fullness') [-]
-    
+
     Alternatively you can specify draught based on filling degree
     - H_e: vessel height unloaded
     - H_f: vessel height loaded
@@ -186,7 +186,7 @@ class VesselProperties:
     - h_squat: the water depth considering ship squatting while the ship moving
     """
         # TODO: add blockage factor S to vessel properties
-        
+
     def __init__(
             self,
             type,
@@ -198,9 +198,9 @@ class VesselProperties:
             H_e=None,
             H_f=None,
             T_e=None,
-            T_f=None,        
+            T_f=None,
             safety_margin=None,
-            h_squat=None, 
+            h_squat=None,
             *args,
             **kwargs
     ):
@@ -222,16 +222,16 @@ class VesselProperties:
         self.T_f = T_f
         self.safety_margin = safety_margin
         self.h_squat = h_squat
-        
+
     @property
     def T(self):
-        """Compute the actual draught 
-        
-        There are 3 ways to get actual draught 
+        """Compute the actual draught
+
+        There are 3 ways to get actual draught
         - by directly providing actual draught values in the notebook
         - Or by providing ship draughts in fully loaded state and empty state, the actual draught will be computed based on filling degree
-        - Or by giving a sailing route with water depth info, the actual draught (and corresponding payload) will be computed for that               route depending on the minimum water depth (h_0) ased on Van Dorsser et al's method                      
-        
+        - Or by giving a sailing route with water depth info, the actual draught (and corresponding payload) will be computed for that               route depending on the minimum water depth (h_0) ased on Van Dorsser et al's method
+
         """
         if self._T is not None:
             # if we were passed a T value, use tha one
@@ -255,27 +255,27 @@ class VesselProperties:
             h_min = self._h_min
         else:
             h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
-    
+
         return h_min
-    
+
     def max_sinkage_at_v_strategy(self, v, h_0):
-        
+
         max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
-    
+
         return max_sinkage
-   
+
     def h_squat(self, h_0):
         if self._h_squat is not None:
             h_squat = self.h_squat
         else:
             h_squat = h_0 - max_sinkage
-    
+
         return h_squat
-    
+
 
     @property
     def H(self):
-        """ Calculate current height based on filling degree 
+        """ Calculate current height based on filling degree
         """
 
         return (
@@ -283,28 +283,28 @@ class VesselProperties:
                 + self.H_e
         )
 
-    #TODO: include "vesl_type" as one of the input arguments for "calculate_ukc", make sure the vesl_types work both for "calculate_ukc"              and "calculate_actual_T_and_payload"  
-    
+    #TODO: include "vesl_type" as one of the input arguments for "calculate_ukc", make sure the vesl_types work both for "calculate_ukc"              and "calculate_actual_T_and_payload"
+
     @property
     def static_ukc(self):
         """Underkeel clearance for a static (non-moving) ship
-        
+
         Here we assume ukc = 0.3 m according to Van Dorsser et al
         """
         # TODO: add a table/ code of ukc values for different vessel types according to Van Dorsser et al
         return 0.3
-    
+
     def T2v(vessel, h_min, bounds=(0, 10)):
-        """Compute vessel velocity given the minimum water depth and possible actual draught 
-    
+        """Compute vessel velocity given the minimum water depth and possible actual draught
+
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
         """
-    
+
         def seek_v_given_T(v, vessel, h_min):
             """function to optimize"""
 
-            # compute the maximum draught a vessel can have to pass the minimum water depth section, 
+            # compute the maximum draught a vessel can have to pass the minimum water depth section,
             # considering the maximum squat while sailing in limited water depth.
             h_min = vessel.h_min
             #z = (vessel.C_B * (1.94 * v)**2) * (6 * vessel.B * vessel.T / (150 * vessel.h_min) + 0.4) / 100 # vessel.T is the computed T
@@ -313,21 +313,21 @@ class VesselProperties:
             # compute difference between given draught (T_strategy) and computed draught (T_computed)
             T_strategy = vessel._T  # the user provided T
             T_computed = vessel.h_min - z - vessel.safety_margin
-            # T_computed = vessel.h_min - z 
+            # T_computed = vessel.h_min - z
             diff = T_strategy - T_computed
 
 
-            return diff ** 2        
+            return diff ** 2
 
         # fill in some of the parameters that we already know
-        fun = functools.partial(seek_v_given_T, vessel=vessel, h_min = vessel.h_min)       
+        fun = functools.partial(seek_v_given_T, vessel=vessel, h_min = vessel.h_min)
 
         # lookup a minimum
         fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
 
         # check if we found a minimum
         if not fit.success:
-            raise ValueError(fit)    
+            raise ValueError(fit)
 
         v_comupted =  fit.x
 
@@ -336,10 +336,11 @@ class VesselProperties:
         return v_comupted
 
 
-    
-    
-    
+
+
+
  # TODO: make vesl_type as one of the input rather than setting default type. Then you can provide payload related stratigies for all the different ship types.
+ # TODO: remove this one, it's now in strategy...
     def T2Payload(self, T_strategy, vesl_type):
     #def calculate_actual_T_and_payload(self, h_min, vesl_type="Dry_SH"):
         """ Calculate payload based on Van Dorsser et al
@@ -353,7 +354,7 @@ class VesselProperties:
         - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker"
 
         Output:
-        - corresponding payload for the T_strategy for different vessel types     
+        - corresponding payload for the T_strategy for different vessel types
 
         """
         #Design draft T_design, refer to Table 5
@@ -484,11 +485,11 @@ class VesselProperties:
 #     def calculate_actual_T_and_payload(self, h_min, vesl_type):
 #     #def calculate_actual_T_and_payload(self, h_min, vesl_type="Dry_SH"):
 #         """ Calculate actual draft based on Van Dorsser et al
-        
+
 #         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
 #         """
 #         #Design draft T_design, refer to Table 5
-        
+
 #         #prefer the dynamic ukc, if available....
 #         if (hasattr(self, 'dynamic_ukc')):
 #             ukc = self.dynamic_ukc
@@ -581,7 +582,7 @@ class VesselProperties:
 
 #         elif (T_design > (h_min - ukc)):
 #             T_actual = h_min -  ukc
-        
+
 #         #print('T_actual: {:.2f} m'.format(T_actual))
 
 #         #logger.debug(f'The actual draft is {T_actual} m')
@@ -628,7 +629,7 @@ class VesselProperties:
 #         # print('actual_max_payload: {:.2f} ton'.format(actual_max_payload))
 #         # print('h_min: {:.2f} m'.format(h_min))
 #         # print('ukc: {:.2f} m'.format(ukc))
-        
+
 #         return T_actual, actual_max_payload
 
 
@@ -642,7 +643,7 @@ class VesselProperties:
             minDepth=None,
             randomSeed=4,
     ):
-        """ Calculate a path based on vessel restrictions 
+        """ Calculate a path based on vessel restrictions
         """
 
         graph = graph if graph else self.env.FG
@@ -724,15 +725,15 @@ class ConsumesEnergy:
     def __init__(
             self,
             P_installed,
-            L_w,          
+            L_w,
             current_year, # current_year
             C_year,
             P_tot_given=None,  # the actual power engine setting
-            nu=1 * 10 ** (-6),  
+            nu=1 * 10 ** (-6),
             rho=1000,
             g=9.81,
-            x=2,  
-            A_BT=0, 
+            x=2,
+            A_BT=0,
             eta_o=0.6,
             eta_r=1.00,
             eta_t=0.98,
@@ -746,7 +747,7 @@ class ConsumesEnergy:
 
         """Initialization
         """
-        
+
         self.P_installed = P_installed
         self.P_tot_given=P_tot_given
         self.L_w = L_w
@@ -815,9 +816,9 @@ class ConsumesEnergy:
     def calculate_properties(self):
         """Calculate a number of basic vessel properties
         """
-       
+
     # TO DO: add properties for seagoing ships with bulbs
-        
+
         self.C_M = 1.006 - 0.0056 * self.C_B ** (-3.56)  # Midship section coefficient
         self.C_WP = (1 + 2 * self.C_B) / 3  # Waterplane coefficient
         self.C_P = self.C_B / self.C_M  # Prismatic coefficient
@@ -845,19 +846,19 @@ class ConsumesEnergy:
         """Frictional resistance
 
         - 1st resistance component defined by Holtrop and Mennen (1982)
-        - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water                 effects 
+        - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water                 effects
         """
 
         self.R_e = v * self.L / self.nu  # Reynolds number
         # TO DO: include "z" (the maximum water level depression) to take sinkage into account: self.D = h_0 - z - self.T
-        
+
         self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
         assert self.D > 0,  f'D should be > 0: {self.D}'
 
         # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
-        self.Cf_deep = 0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)        
+        self.Cf_deep = 0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)
         assert not isinstance(self.Cf_deep, complex),  f'Cf_deep should not be complex: {self.Cf_deep}'
-        
+
         # Friction coefficient based on CFD computations of Zeng et al. (2018), taking into account shallow water effects
         self.Cf_shallow = (0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)) * (
                     1 + (0.003998 / (np.log10(self.R_e) - 4.393)) * (self.D / self.L) ** (-1.083))
@@ -871,28 +872,28 @@ class ConsumesEnergy:
         self.Cf_Katsui = 0.0066577 / ((np.log10(self.R_e) - 4.3762) ** self.a)
 
         # The average velocity underneath the ship, taking into account the shallow water effect
-        # This calculation is to get V_B, which will be used in the following Cf for shallow water equation: 
+        # This calculation is to get V_B, which will be used in the following Cf for shallow water equation:
         if h_0 / self.T <= 4:
             self.V_B = 0.4277 * v * np.exp((h_0 / self.T) ** (-0.07625))
         else:
-            self.V_B = v       
-            
+            self.V_B = v
+
         # cf_shallow and cf_deep cannot be applied directly, since a vessel also has non-horizontal wet surfaces that have to be taken
-        # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is 
+        # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is
         # defined according to Zeng et al. (2018)
- 
-        # TO DO: it might need to re-define the deep and shallow water ranges for the below calculation 
-    
-        # calculate Friction coefficient Cf for deep water: 
-        
+
+        # TO DO: it might need to re-define the deep and shallow water ranges for the below calculation
+
+        # calculate Friction coefficient Cf for deep water:
+
         if (h_0 - self.T) / self.L > 1:
-            self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S) 
-            logger.debug(f'now i am in the deep loop') 
+            self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
+            logger.debug(f'now i am in the deep loop')
         else:
-        
-            # calculate Friction coefficient Cf for shallow water: 
+
+            # calculate Friction coefficient Cf for shallow water:
             self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
-            logger.debug(f'now i am in the shallow loop') 
+            logger.debug(f'now i am in the shallow loop')
         assert not isinstance(self.C_f, complex),  f'C_f should not be complex: {self.C_f}'
 
         # The total frictional resistance R_f [kN]:
@@ -925,17 +926,17 @@ class ConsumesEnergy:
 
         # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
         self.R_APP = (0.5 * self.rho * (v ** 2) * self.S_APP * self.one_k2 * self.C_f) / 1000
-        
+
         return self.R_APP
 
     def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
 
-        - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2, 
+        - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2,
           expressed as "Vs + delta_V" in the paper)
         - V2 has to be implemented in the wave resistance (R_W) and the residual resistance terms (R_res: R_TR, R_A)
         """
-     
+
         # The Froude number used in the Karpov method is the depth related froude number F_rh
 
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
@@ -961,31 +962,31 @@ class ConsumesEnergy:
                 self.alpha_xx = (-0.9274 * self.F_rh ** 6 + 9.5953 * self.F_rh ** 5 - 37.197 * self.F_rh ** 4 +
                 69.666 * self.F_rh ** 3 - 65.391 * self.F_rh ** 2 + 28.025 * self.F_rh - 3.4143)
             if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = (2.2152 * self.F_rh ** 6 - 11.852 * self.F_rh ** 5 + 21.499 * self.F_rh ** 4 - 
+                self.alpha_xx = (2.2152 * self.F_rh ** 6 - 11.852 * self.F_rh ** 5 + 21.499 * self.F_rh ** 4 -
                 12.174 * self.F_rh ** 3 - 4.7873 * self.F_rh ** 2 + 5.8662 * self.F_rh - 0.2652)
             if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = (1.2205 * self.F_rh ** 6 - 5.4999 * self.F_rh ** 5 + 5.7966 * self.F_rh ** 4 + 
+                self.alpha_xx = (1.2205 * self.F_rh ** 6 - 5.4999 * self.F_rh ** 5 + 5.7966 * self.F_rh ** 4 +
                 6.6491 * self.F_rh ** 3 - 16.123 * self.F_rh ** 2 + 9.2016 * self.F_rh - 0.6342)
             if 2.75 <= h_0 / self.T < 3.25:
-                self.alpha_xx = (-0.4085 * self.F_rh ** 6 + 4.534 * self.F_rh ** 5 - 18.443 * self.F_rh ** 4 + 
+                self.alpha_xx = (-0.4085 * self.F_rh ** 6 + 4.534 * self.F_rh ** 5 - 18.443 * self.F_rh ** 4 +
                 35.744 * self.F_rh ** 3 - 34.381 * self.F_rh ** 2 + 15.042 * self.F_rh - 1.3807)
             if 3.25 <= h_0 / self.T < 3.75:
-                self.alpha_xx = (0.4078 * self.F_rh ** 6 - 0.919 * self.F_rh ** 5 - 3.8292 * self.F_rh ** 4 + 
+                self.alpha_xx = (0.4078 * self.F_rh ** 6 - 0.919 * self.F_rh ** 5 - 3.8292 * self.F_rh ** 4 +
                 15.738 * self.F_rh ** 3 - 19.766 * self.F_rh ** 2 + 9.7466 * self.F_rh - 0.6409)
             if 3.75 <= h_0 / self.T < 4.5:
-                self.alpha_xx = (0.3067 * self.F_rh ** 6 - 0.3404 * self.F_rh ** 5 - 5.0511 * self.F_rh ** 4 +  
+                self.alpha_xx = (0.3067 * self.F_rh ** 6 - 0.3404 * self.F_rh ** 5 - 5.0511 * self.F_rh ** 4 +
                 16.892 * self.F_rh ** 3 - 20.265 * self.F_rh ** 2 + 9.9002 * self.F_rh - 0.6712)
             if 4.5 <= h_0 / self.T < 5.5:
-                self.alpha_xx = (0.3212 * self.F_rh ** 6 - 0.3559 * self.F_rh ** 5 - 5.1056 * self.F_rh ** 4 + 
+                self.alpha_xx = (0.3212 * self.F_rh ** 6 - 0.3559 * self.F_rh ** 5 - 5.1056 * self.F_rh ** 4 +
                 16.926 * self.F_rh ** 3 - 20.253 * self.F_rh ** 2 + 10.013 * self.F_rh - 0.7196)
             if 5.5 <= h_0 / self.T < 6.5:
-                self.alpha_xx = (0.9252 * self.F_rh ** 6 - 4.2574 * self.F_rh ** 5 + 5.0363 * self.F_rh ** 4 + 
+                self.alpha_xx = (0.9252 * self.F_rh ** 6 - 4.2574 * self.F_rh ** 5 + 5.0363 * self.F_rh ** 4 +
                 3.3282 * self.F_rh ** 3 - 10.367 * self.F_rh ** 2 + 6.3993 * self.F_rh - 0.2074)
             if 6.5 <= h_0 / self.T < 7.5:
-                self.alpha_xx = (0.8442 * self.F_rh ** 6 - 4.0261 * self.F_rh ** 5 + 5.313 * self.F_rh ** 4 + 
+                self.alpha_xx = (0.8442 * self.F_rh ** 6 - 4.0261 * self.F_rh ** 5 + 5.313 * self.F_rh ** 4 +
                 1.6442 * self.F_rh ** 3 - 8.1848 * self.F_rh ** 2 + 5.3209 * self.F_rh - 0.0267)
             if 7.5 <= h_0 / self.T < 8.5:
-                self.alpha_xx = (0.1211 * self.F_rh ** 6 + 0.628 * self.F_rh ** 5 - 6.5106 * self.F_rh ** 4 + 
+                self.alpha_xx = (0.1211 * self.F_rh ** 6 + 0.628 * self.F_rh ** 5 - 6.5106 * self.F_rh ** 4 +
                 16.7 * self.F_rh ** 3 - 18.267 * self.F_rh ** 2 + 8.7077 * self.F_rh - 0.4745)
 
             if 8.5 <= h_0 / self.T < 9.5:
@@ -1053,17 +1054,17 @@ class ConsumesEnergy:
             self.lmbda = 1.446 * self.C_P - 0.03 * (self.L / self.B)
         else:
             self.lmbda = 1.446 * self.C_P - 0.36
-            
+
         self.m_1 = 0.0140407 * (self.L / self.T) - 1.75254 * ((self.delta) ** (1 / 3) / self.L) - 4.79323 * (
                     self.B / self.L) - self.c_16
-        self.m_2 = self.c_15 * (self.C_P**2) *np.exp((-0.1)* (self.F_rL**(-2))) 
-            
-        self.R_W = self.c_1 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(self.m_1 * (self.F_rL**(-0.9)) + 
+        self.m_2 = self.c_15 * (self.C_P**2) *np.exp((-0.1)* (self.F_rL**(-2)))
+
+        self.R_W = self.c_1 * self.c_2 * self.c_5 * self.delta * self.rho * self.g * np.exp(self.m_1 * (self.F_rL**(-0.9)) +
                    self.m_2 * np.cos(self.lmbda * (self.F_rL ** (-2)))) / 1000 # kN
 
         return self.R_W
-    
-   
+
+
 
     def calculate_residual_resistance(self, v, h_0):
         """Residual resistance terms
@@ -1071,7 +1072,7 @@ class ConsumesEnergy:
         - Holtrop and Mennen (1982) defined three residual resistance terms:
         - 1) Resistance due to the bulbous bow (R_B), not incorporated since inland ships in general don't have a bulb; when incorporate                it for seagoing ships the velocity should use Vs instead of Karpov corrected velocity V2
         - 2) Resistance due to immersed transom (R_TR), Karpov corrected velocity V2 is used
-        - 3) Resistance due to model-ship correlation (R_A), Karpov corrected velocity V2 is used 
+        - 3) Resistance due to model-ship correlation (R_A), Karpov corrected velocity V2 is used
         """
 
         self.karpov(v, h_0)
@@ -1109,7 +1110,7 @@ class ConsumesEnergy:
     def calculate_total_resistance(self, v, h_0):
         """Total resistance:
 
-        The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982) 
+        The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982)
         """
 
         self.calculate_properties()
@@ -1134,7 +1135,7 @@ class ConsumesEnergy:
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011):Walstrom versus generators troom
         self.P_hotel = 0.05 * self.P_installed
 
-        # Required power for propulsion        
+        # Required power for propulsion
         # Effective Horse Power (EHP), P_e
         self.P_e = v * self.R_tot
 
@@ -1183,9 +1184,9 @@ class ConsumesEnergy:
         # logger.debug(f'The partial load is {self.P_partial}')
 
         assert not isinstance(self.P_given, complex),  f'P_given number should not be complex: {self.P_given}'
-        
+
         # return to the power given by the engine to the ship (for hotelling and propulsion), which is the actual power the ship uses
-        return self.P_given    
+        return self.P_given
 
 
 
@@ -1277,7 +1278,7 @@ class ConsumesEnergy:
             if self.P_partial <= self.C_partial_load.iloc[0, 0]:
                 self.C_partial_load_CO2 = self.C_partial_load.iloc[0, 5]
                 self.C_partial_load_PM10 = self.C_partial_load.iloc[0, 6]
-                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two    
+                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
                                                                    # correction factors are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
@@ -1304,7 +1305,7 @@ class ConsumesEnergy:
                 self.C_partial_load_PM10 = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
                             self.C_partial_load.iloc[i + 1, 6] - self.C_partial_load.iloc[i, 6])) / (
                                 self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 6]
-                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two 
+                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
                                                                    # correction factors are equal
 
                 if self.C_year < 2008:
@@ -1329,7 +1330,7 @@ class ConsumesEnergy:
             elif self.P_partial >= self.C_partial_load.iloc[19, 0]:
                 self.C_partial_load_CO2 = self.C_partial_load.iloc[19, 5]
                 self.C_partial_load_PM10 = self.C_partial_load.iloc[19, 6]
-                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two 
+                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
                                                                    # correction factors are equal
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
@@ -1376,7 +1377,7 @@ class ConsumesEnergy:
 
     def calculate_fuel_use_g_m(self,v):
         """Total fuel use in g/m:
-        
+
         - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing           distance (v * delt_t)
         """
         self.fuel_use_g_m = (self.P_given * self.total_factor_FU / v ) / 3600
@@ -1385,7 +1386,7 @@ class ConsumesEnergy:
 
     def calculate_fuel_use_g_s(self):
         """Total fuel use in g/s:
-       
+
        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing            duration (delt_t)
        """
         self.fuel_use_g_m = self.P_given * self.total_factor_FU / 3600
@@ -1394,7 +1395,7 @@ class ConsumesEnergy:
 
     def calculate_emission_rates_g_m(self,v):
         """CO2, PM10, NOX emission rates in g/m:
-        
+
         - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by           the sailing distance (v * delt_t)
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
@@ -1407,7 +1408,7 @@ class ConsumesEnergy:
 
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
-        
+
         - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by           the sailing duration (delt_t)
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
@@ -1418,10 +1419,10 @@ class ConsumesEnergy:
 
 
         # TODO: add HasCurrent Class or def
-        # TODO: add HasSquat Class or def 
+        # TODO: add HasSquat Class or def
         # TODO: unify the output unites: g/m, g/km, kg/m, kg/km, km/h, m/s, kWh
         # TODO: add & modify seagoing shipping related functions, it should be able to swatch between inland and seagoing shipping                         calculation (involve Resistance components R_B and choose suitable velocity).
-    
+
 
 class Routeable:
     """Mixin class: Something with a route (networkx format)
@@ -1437,7 +1438,7 @@ class Routeable:
 
 class IsLockWaitingArea(HasResource, Identifiable, Log):
     """Mixin class: Something has lock object properties
-    
+
     - properties in meters
     - operation in seconds
     """
@@ -1638,19 +1639,19 @@ class Movable(Locatable, Routeable, Log):
         self.v = v
         self.edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
-        
+
     @property
     def dynamic_ukc(self):
-        """ Calculate minimum under keel clearance considering maximum ship squat while moving 
-         
+        """ Calculate minimum under keel clearance considering maximum ship squat while moving
+
          - ukc: minimum under keel clearance needed while moving
-         - z: maximum ship squat while moving. It depends on ship block cofficient C_B (C_B varys from ship types), blockage factor S and ship speed v. 
-         - S: blockage factor, calculated by (ship beam * actual draught) / (waterway width * water depth). 
-         
-         There are equations to calculate z in open water conditions, medium width channels, confined channels. Reference: Sergiu et al (2015) 
+         - z: maximum ship squat while moving. It depends on ship block cofficient C_B (C_B varys from ship types), blockage factor S and ship speed v.
+         - S: blockage factor, calculated by (ship beam * actual draught) / (waterway width * water depth).
+
+         There are equations to calculate z in open water conditions, medium width channels, confined channels. Reference: Sergiu et al (2015)
          https://www.scientificbulletin.upb.ro/rev_docs_arhiva/full649_520719.pdf
-         
-         Here we only provide z calculation for medium width channels and confined channels. The z calculation for open water conditions need to be added for seagoing                shipping.  
+
+         Here we only provide z calculation for medium width channels and confined channels. The z calculation for open water conditions need to be added for seagoing                shipping.
         """
         # TODO: add z calculation for open water conditions
         # TODO: add blockage factor S to vessel properties
@@ -1662,7 +1663,7 @@ class Movable(Locatable, Routeable, Log):
         #print(self.T+z)
         ukc = 0.3 + z
         logger.debug('maximum ship squat z is {z} m')
-        logger.debug('minimum ukc is {ukc} m') 
+        logger.debug('minimum ukc is {ukc} m')
         # print('h_0: {:.2f} m'.format(h_0))
         print('z: {:.2f} m'.format(z))
         #print('self.T+z: {:.2f} m'.format(self.T+z))
@@ -1676,9 +1677,9 @@ class Movable(Locatable, Routeable, Log):
         static_ukc = self.static_ukc
         z = (self.C_B * (1.94 * v)**2) * (6 * self.B * self.T / (150 * h_min) + 0.4) / 100
         T_strategy = h_min - static_ukc - z
-        
+
         return T_strategy
-    
+
     def move(self):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
