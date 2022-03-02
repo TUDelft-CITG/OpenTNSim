@@ -258,17 +258,17 @@ class VesselProperties:
 
         return h_min
 
-    def max_sinkage_at_v_strategy(self, v, h_0):
+    def calculate_max_sinkage(self, v, h_0):
 
         max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
 
         return max_sinkage
 
-    def h_squat(self, h_0):
-        if self._h_squat is not None:
+    def calculate_h_squat(self, v, h_0):
+        if self.h_squat is not None:
             h_squat = self.h_squat
         else:
-            h_squat = h_0 - max_sinkage
+            h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
 
         return h_squat
 
