@@ -7,3 +7,4 @@ chapters:
 - file: markdown
 - file: notebooks
 - file: api.rst
+- file: Example 00 - Basic simulation.ipynb
