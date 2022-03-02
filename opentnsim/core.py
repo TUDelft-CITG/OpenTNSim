@@ -1245,12 +1245,12 @@ class ConsumesEnergy:
             if self.L_w == 1:
                 self.EF_CO2 = 650
                 self.EF_PM10 = 0.1
-                self.EF_NOX = 2.9
+                self.EF_NOX = 2.1
                 self.SFC = 205
             else:
                 self.EF_CO2 = 603
                 self.EF_PM10 = 0.015
-                self.EF_NOX = 2.4
+                self.EF_NOX = 1.8
                 self.SFC = 190
 
         logger.debug(f'The general emission factor of CO2 is {self.EF_CO2} g/kWh')
