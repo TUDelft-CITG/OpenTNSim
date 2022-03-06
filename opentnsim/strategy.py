@@ -1,4 +1,20 @@
-"""Sailing strategies for OpenTNSim. This is the place to put logic like sailing limited by engine, draught, velocity, fuel usage."""
+"""Sailing strategies in OpenTNSim. 
+
+The vessel-waterway interaction is complex, since the vessel's sailing behaviors are influenced by not only the changing waterway situations along the route, but also the varation of its own payload, fuel weight, velocity, engine power, etc. Therefore, to sail wisely and safely, it is necessary to formulate optimal sailing stratigies to achieve various sailing goals according to different needs.
+
+This package combine with "optimal sailing stratigies notebook" provides stratigies for preventing ship grounding, optimizing cargo capacity, optimizing fuel usage, reducing emissions, considering sailing duration, etc. 
+"""
+
+# To Do in this pacakge:
+# 1) add "burning lighter" function to monitor the fuel weight decreasing along the route. For the battery-container or electricity powered vessel, the "fuel weight" is constant. 
+# 2）add "refueling heavier" function to show the fuel weight increased again at the refueling stations. For the battery-container or electricy powered vessel, the "fuel weight" is constant.
+# 3) add "get_fuel_weight" function which call both the "burning lighter" and "refueling heavier" functions to take into account the influence of the variation of fuel weight to the actual draught and payload.
+# 4) add "get_refueling_duration" function. For the battery-container, the duration is the unloading and loading time for the battery-containers.
+# 5) add "get_optimal_refueling_amount" function. It's not always beneficial to be fully refueled with fuel for sailing, since more fuel on board leads to less cargo and there might still be residual fuel in the tank after a round trip if refuel too much. Therefore, it's needed to calculate the optimal refuling amount for each unique sailing case (route, vessel size & type, payload, time plan, refueling spots along the route).  The optimal refueling amount for a transport case determined by both the fuel consumption in time and space and the locations of refuling spots.
+# 6) consider writting the "fix power or fix speed" example which is in the paper as a function into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it benefit if adds this function?
+# 7) consider moving h_min calculation from core.py into strategy.py, since h_min is for strategy. But is it do-able? Any undesired influence to other calculations?
+
+
 import datetime
 import functools
 import time
@@ -10,40 +26,60 @@ import simpy
 
 logger = logging.getLogger(__name__)
 
+# To do before March 9 OpenTNSim releasing: 
+
+# 1) orgnize the strategy example notebook,consistant name using, (giving strategies for T,V_max,payload, max_sinkage, remaining space,fuel use and emissions for bottleneck section; giving strategies for T,V_strategy, max_sinkage, remaining space,fuel use and emissions for whole 3 sections; ). (Man Jiang)
+# 2) make a seperate notebook for validtion Fig_07 which disable squatting.(other figures with squatting). check whether can be done in one notebook using h_0 and h_squat (Man Jiang)
+# 3) update all tests (Man Jiang)
+# 4) add R_B (if has, else) into core.py, A_BT calculate update. (Man Jiang)
+
+# 5) discussion strategy.py, core.py, stratigy notebook, fig notebooks.  (Mark) 
+
+# 6) make the functions elegant (explicy name, dry code, etc.) in strategy.py and "optimal sailing stratigies notebook", then test again. (Fedor)
+# 7) Can calculate_max_sinakge function be removed from the core? will it break something? Now we have it in strategy.py  (Fedor)
+# 8)fix error of payload_2_T functions in strategy.py (Fedor)
+
+
+def calculate_max_sinkage(self, v, h_0):
+    """Calculate the maximum sinkage of a moving ship 
+
+    the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates, chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6 
+
+    some explanation for the variables in the equation:
+    - h_0: water depth
+    - v: ship velocity relative to the water
+    - 150: Here we use the standard width 150 m as the waterway width
+
+    """
+
+    max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
+
+    return max_sinkage
+
 
 def T2v(vessel, h_min, bounds=(0, 10)):
-    """Compute vessel velocity given the minimum water depth and possible actual draught
+    """Compute the maximum velocity a vessel can have without touching the safety margin above bed in the bottleneck section
 
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
+    
+    the maximum velocity a ship should not exceed v_T2v to prevent grounding
     """
 
     def seek_v_given_T(v, vessel, h_min):
         """function to optimize"""
-
-        # compute the maximum draught a vessel can have to pass the minimum water depth section,
-        # considering the maximum squat while sailing in limited water depth.
+        
+        # calculate the maximum ship sinkage (z) in the waterway section with minimum water depth
         h_min = vessel.h_min
-        #z = (vessel.C_B * (1.94 * v)**2) * (6 * vessel.B * vessel.T / (150 * vessel.h_min) + 0.4) / 100 # vessel.T is the computed T
-        # Here we use the standard width 150 m as the waterway width
         z = (vessel.C_B * ((vessel.B * vessel.T) / (150 * vessel.h_min)) ** 0.81) * (v ** 2.08) / 20
-        # print('z: {:.2f} m'.format(z))
-        # compute difference between given draught (T_strategy) and computed draught (T_computed)
-        T_strategy = vessel._T  # the user provided T
-        T_computed = vessel.h_min - z - vessel.safety_margin
-        # T_computed = vessel.h_min - z
+
+        # compute difference between a given draught (T_strategy) and a computed draught (T_computed)
+        T_strategy = vessel._T  # the user provided draught, which is stored in the vessel properties
+        T_computed = vessel.h_min - z - vessel.safety_margin # the comupted draught
         diff = T_strategy - T_computed
 
-        # print('T_strategy: {:.2f} m'.format(T_strategy))
-        # print('T_computed: {:.2f} m'.format(T_computed))
-        # print('T_strategy - T_computed: {:.2f} m'.format(diff))
-
-#        logger.debug(f'optimizing for v: {v}, T_strategy: {T_strategy}, T: {vessel.T}'T_computed: {:.2f} m'.format(T_computed), T: {vessel.T}')
 
         return diff ** 2
-
-#    print('')
-#    print('I am in T2v')
 
     # fill in some of the parameters that we already know
     fun = functools.partial(seek_v_given_T, vessel=vessel, h_min = vessel.h_min)
@@ -55,7 +91,8 @@ def T2v(vessel, h_min, bounds=(0, 10)):
     if not fit.success:
         raise ValueError(fit)
 
-    v_T2v =  fit.x
+    # the value of fit.x within the bound (0,10) is the velocity we find where the diff**2 reach a minimum (zero).
+        v_T2v =  fit.x
 
 
     return v_T2v
@@ -63,45 +100,65 @@ def T2v(vessel, h_min, bounds=(0, 10)):
 
 
 def P2v(vessel, h_min, bounds=(0, 10)):
-    """Compute vessel velocity given an edge and power (P_tot_given)
+    """Compute the maximum vessel velocity limited by the installed engine power (P_installed) in the bottleneck section 
 
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
+    
+    the maximum velocity a ship can sail should be no larger than v_P2v due to the installed engine power limitation
     """
 
     def seek_v_given_P_installed(v, vessel, h_min):
         """function to optimize"""
-        # water depth from the edge
+        
+        # to get vessel.P_tot, we need to comupute total resistance and total power required first
+        # compute total resistance with the minimum water depth 
         h_min = vessel.h_min
-        # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_min)
         # compute total power given
         vessel.calculate_total_power_required(v=v)
+        
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
-        # compute difference between power setting by captain and power needed for velocity
+        # calculate difference between installed engine power(already given by user in vessel properties) and the computed total power 
         diff = vessel.P_installed - vessel.P_tot
-        #logger.debug(f'optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}')
+
         return diff ** 2
 
     # fill in some of the parameters that we already know
     fun = functools.partial(seek_v_given_P_installed, vessel=vessel, h_min = vessel.h_min)
     # lookup a minimum
     fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+
+    # the value of fit.x within the bound (0,10) is the velocity we find where the diff**2 reach a minimum (zero).
     v_P2v = fit.x
 
     # check if we found a minimum
     if not fit.success:
         raise ValueError(fit)
     logger.debug(f"fit: {fit}")
-    # return fit.x
+
     return v_P2v
 
-# To get maximum velocity (v_computed) for each T_strategy considering maximum sinkage and safety margin
-# here we need Graph (FG) and path (overall) to know the minimum waterdepth h_min along the route for planning strategies
-def formulate_sailing_strategies(FG, path, vessel, T_strategy):
-    """TODO: add docstring here..."""
+
+def get_v_max_for_bottleneck(FG, path, vessel, T_strategy):
+    """Compute the maximum speed a vessel can sail at with a given draught to pass a waterway section with limited water depth (bottleneck section). 
+    
+    assumption: 
+    - the fuel weight remains a same value thus doesn't influence ship's actual draught while sailing. Later we will add the "burning lighter" and "refueling heavier" functions to take into account the influence of the variation of fuel weight to the actual draught and cargo capacity (payload).
+    
+    input:
+    - FG: a graph with nodes and edges. It is an 1D network along which the vessel will move.
+    - path: the route on which the vessel will move. It's a list of nodes pairs.
+    - vessel: a vessel object with vessel properties and TransportResource (ConsumesEnergy mixin classes)
+    - T_strategy: possible draughts given by the user considering the vessel size and water depth 
+    
+    output:
+    - v_T2v: the maximum speed a vessel can sail at without touching the safety margin above the bed
+    - v_P2v: the maximum speed a vessel can sail at within the installed engine power
+    - v_max_final: the final maximum speed calculated for passing the bottleneck section, which is the smaller one between v_T2v and v_P2v        
+    """
 
     # Start simpy environment
     simulation_start = datetime.datetime.now()
@@ -111,36 +168,32 @@ def formulate_sailing_strategies(FG, path, vessel, T_strategy):
     # Add graph to environment
     env.FG = FG
 
-
-    # get T2v
+    # get v_T2v in the bottleneck section 
     v_T2v  = T2v(vessel, h_min = vessel.h_min)
-    # get P2v
+    # get v_P2v in the bottleneck section 
     v_P2v = P2v(vessel, h_min = vessel.h_min)
-    #print('v_computed: {:.2f} m/s'.format(v_computed))
+    # get final maximum velocity in the bottleneck section 
+    v_max_final = min (v_T2v, v_P2v)
 
-    #print('z: {:.2f} m'.format(z))
     # Start the simulation
     env.process(vessel.move())
     env.run()
 
-
-    return v_T2v, v_P2v
+    return v_T2v, v_P2v, v_max_final
 
 
 # To know the corresponding Payload for each T_strategy
 def T2Payload(vessel, T_strategy, vessel_type):
-    """ Calculate payload based on Van Dorsser et al
-    (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+    """ Calculate the corresponding payload for each T_strategy
+    the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
 
-    Given a route we get several possible draught (T_strategy) with veolicity (v_computed) combinations for the moving vessel, this step is done via T2v simulation.
-    At this step, we calculate the payload for the possible draughts (T_strategy).
 
-    Input:
-    - T_strategy
-    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker"
+    input:
+    - T_strategy: user given possible draught
+    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
 
-    Output:
-    - corresponding payload for the T_strategy for different vessel types
+    output:
+    - Payload_comupted: corresponding payload for the T_strategy for different vessel types
 
     """
     #Design draft T_design, refer to Table 5
@@ -260,7 +313,52 @@ def T2Payload(vessel, T_strategy, vessel_type):
                           # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
 
     fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
-    Payload_strategy = DWT_actual-fuel_weight # payload=DWT-fuel_weight
+    Payload_comupted = DWT_actual-fuel_weight # payload=DWT-fuel_weight
 
 
-    return Payload_strategy
+    return Payload_comupted
+
+
+# def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 40)):
+#     """ Calculate the corresponding draught (T_Payload2T) for each Payload_strategy 
+#     the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+
+
+#     input:
+#     - Payload_strategy: user given payload
+#     - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+
+#     output:
+#     - T_Payload2T: corresponding draught for each payload for different vessel types
+
+#     """    
+       
+#     def seek_T_given_Payload(Payload_strategy, vessel, vessel_type):
+#         """function to optimize"""
+        
+#         Payload_computed = T2Payload(vessel, T_strategy, vessel_type)
+#         # compute difference between a given payload (Payload_strategy) and a computed payload (Payload_computed)
+#         diff = Payload_strategy - Payload_computed
+
+#         return diff ** 2
+
+#     # fill in some of the parameters that we already know
+#     fun = functools.partial(seek_T_given_Payload, vessel=vessel)
+
+#     # lookup a minimum
+#     fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+
+#     # check if we found a minimum
+#     if not fit.success:
+#         raise ValueError(fit)
+
+#     # the value of fit.x within the bound (0,10) is the velocity we find where the diff**2 reach a minimum (zero).
+#         T_Payload2T =  fit.x
+
+
+#     return T_Payload2T
+
+    
+    
+    
+    
