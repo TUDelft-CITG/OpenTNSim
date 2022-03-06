@@ -194,6 +194,8 @@ class EnergyCalculation:
 
                 # we use the calculated velocity to determine the resistance and power required
                 #self.vessel.dynamic_ukc()
+                self.vessel.calculate_max_sinkage(v, h_0)
+                self.vessel.calculate_h_squat(v, h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v)
 

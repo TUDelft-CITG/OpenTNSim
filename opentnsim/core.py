@@ -176,14 +176,15 @@ class VesselProperties:
     - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property ['Info']['GeneralDepth']
     - T: actual draught
     - C_B: block coefficient ('fullness') [-]
-
+    - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing, the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude of the ship captain and shipping companies.
+    - h_squat: the water depth considering ship squatting while the ship moving
+    
     Alternatively you can specify draught based on filling degree
     - H_e: vessel height unloaded
     - H_f: vessel height loaded
     - T_e: draught unloaded
     - T_f: draught loaded
-    - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing, the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude of the ship captain and shipping companies.
-    - h_squat: the water depth considering ship squatting while the ship moving
+
     """
         # TODO: add blockage factor S to vessel properties
 
@@ -201,6 +202,7 @@ class VesselProperties:
             T_f=None,
             safety_margin=None,
             h_squat=None,
+            payload=None,
             *args,
             **kwargs
     ):
@@ -222,7 +224,7 @@ class VesselProperties:
         self.T_f = T_f
         self.safety_margin = safety_margin
         self.h_squat = h_squat
-
+        self.payload = payload
     @property
     def T(self):
         """Compute the actual draught
@@ -283,354 +285,6 @@ class VesselProperties:
                 + self.H_e
         )
 
-    #TODO: include "vesl_type" as one of the input arguments for "calculate_ukc", make sure the vesl_types work both for "calculate_ukc"              and "calculate_actual_T_and_payload"
-
-    @property
-    def static_ukc(self):
-        """Underkeel clearance for a static (non-moving) ship
-
-        Here we assume ukc = 0.3 m according to Van Dorsser et al
-        """
-        # TODO: add a table/ code of ukc values for different vessel types according to Van Dorsser et al
-        return 0.3
-
-    def T2v(vessel, h_min, bounds=(0, 10)):
-        """Compute vessel velocity given the minimum water depth and possible actual draught
-
-    bounds is the limits where to look for a solution for the velocity [m/s]
-    returns velocity [m/s]
-        """
-
-        def seek_v_given_T(v, vessel, h_min):
-            """function to optimize"""
-
-            # compute the maximum draught a vessel can have to pass the minimum water depth section,
-            # considering the maximum squat while sailing in limited water depth.
-            h_min = vessel.h_min
-            #z = (vessel.C_B * (1.94 * v)**2) * (6 * vessel.B * vessel.T / (150 * vessel.h_min) + 0.4) / 100 # vessel.T is the computed T
-            z = (vessel.C_B * ((vessel.B * vessel.T) / (150 * vessel.h_min)) ** 0.81) * (v ** 2.08) / 20
-
-            # compute difference between given draught (T_strategy) and computed draught (T_computed)
-            T_strategy = vessel._T  # the user provided T
-            T_computed = vessel.h_min - z - vessel.safety_margin
-            # T_computed = vessel.h_min - z
-            diff = T_strategy - T_computed
-
-
-            return diff ** 2
-
-        # fill in some of the parameters that we already know
-        fun = functools.partial(seek_v_given_T, vessel=vessel, h_min = vessel.h_min)
-
-        # lookup a minimum
-        fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
-
-        # check if we found a minimum
-        if not fit.success:
-            raise ValueError(fit)
-
-        v_comupted =  fit.x
-
-    #    print('v_comupted: {:.2f} m/s'.format(v_comupted))
-
-        return v_comupted
-
-
-
-
-
- # TODO: make vesl_type as one of the input rather than setting default type. Then you can provide payload related stratigies for all the different ship types.
- # TODO: remove this one, it's now in strategy...
-    def T2Payload(self, T_strategy, vesl_type):
-    #def calculate_actual_T_and_payload(self, h_min, vesl_type="Dry_SH"):
-        """ Calculate payload based on Van Dorsser et al
-        (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
-
-        Given a route we get several possible draught (T_strategy) with veolicity (v_computed) combinations for the moving vessel, this step is done via T2v simulation.
-        At this step, we calculate the payload for the possible draughts (T_strategy).
-
-        Input:
-        - T_strategy
-        - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker"
-
-        Output:
-        - corresponding payload for the T_strategy for different vessel types
-
-        """
-        #Design draft T_design, refer to Table 5
-
-        Tdesign_coefs = dict({"intercept":0,
-                         "c1": 1.7244153371,
-                         "c2": 2.2767179246,
-                         "c3": 1.3365379898,
-                         "c4": -5.9459308905,
-                         "c5": 6.2902305560*10**-2,
-                         "c6": 7.7398861528*10**-5,
-                         "c7": 9.0052384439*10**-3,
-                         "c8": 2.8438560877
-                         })
-
-        assert vesl_type in ["Container","Dry_SH","Dry_DH","Barge","Tanker"],'Invalid value vesl_type, should be "Container","Dry_SH","Dry_DH","Barge" or "Tanker"'
-        if vesl_type == "Container":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [1,0,0,0]
-        elif vesl_type == "Dry_SH":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,1,0,0]
-        elif vesl_type == "Dry_DH":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,1,0,0]
-        elif vesl_type == "Barge":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,0,1,0]
-        elif vesl_type == "Tanker":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,0,0,1]
-
-        T_design = Tdesign_coefs['intercept'] + (dum_container * Tdesign_coefs['c1']) + \
-                                                (dum_dry * Tdesign_coefs['c2']) + \
-                                                (dum_barge * Tdesign_coefs['c3']) +\
-                                                (dum_tanker * Tdesign_coefs['c4']) +\
-                                                (Tdesign_coefs['c5'] * dum_container * self.L**0.4 * self.B**0.6) +\
-                                                (Tdesign_coefs['c6'] * dum_dry * self.L**0.7 * self.B**2.6)+\
-                                                (Tdesign_coefs['c7'] * dum_barge * self.L**0.3 * self.B**1.8) +\
-                                                (Tdesign_coefs['c8'] * dum_tanker * self.L**0.1 * self.B**0.3)
-
-        #Empty draft T_empty, refer to Table 4
-
-        Tempty_coefs = dict({"intercept": 7.5740820927*10**-2,
-                    "c1": 1.1615080992*10**-1,
-                    "c2": 1.6865973494*10**-2,
-                    "c3": -2.7490565381*10**-2,
-                    "c4": -5.1501240744*10**-5,
-                    "c5": 1.0257551153*10**-1,
-                    "c6": 2.4299435211*10**-1,
-                    "c7": -2.1354295627*10**-1,
-                    })
-
-
-        if vesl_type == "Container":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [1,0,0,0]
-        elif vesl_type == "Dry_SH":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,0,0,0]
-        elif vesl_type == "Dry_DH":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,1,0,0]
-        elif vesl_type == "Barge":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,0,1,0]
-
-        elif vesl_type == "Tanker":
-            [dum_container, dum_dry,
-            dum_barge, dum_tanker] = [0,0,0,1]
-
-        # dum_container and dum_dry use the same "c5"
-        T_empty = Tempty_coefs['intercept']  + (Tempty_coefs['c1'] * self.B) + \
-                                               (Tempty_coefs['c2'] * ((self.L * T_design) / self.B)) + \
-                                               (Tempty_coefs['c3'] * (np.sqrt(self.L * self.B)))  + \
-                                               (Tempty_coefs['c4'] * (self.L * self.B * T_design)) +  \
-                                               (Tempty_coefs['c5'] * dum_container) + \
-                                               (Tempty_coefs['c5'] * dum_dry)   + \
-                                               (Tempty_coefs['c6'] * dum_tanker) + \
-                                               (Tempty_coefs['c7'] * dum_barge)
-
-
-
-        #Capacity indexes, refer to Table 3 and eq 2
-        CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
-
-                "c1": -7.8577991460 * 10**1,
-                "c2": -7.0671612519 * 10**0,
-                "c3": 2.7744056480 * 10**1,
-                "c4": 7.5588609922 * 10**-1,
-                "c5": 3.6591813315 * 10**1
-                })
-        # Capindex_1 related to actual draft (especially used for shallow water)
-        Capindex_1 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)  +  (
-        CI_coefs["c3"] * T_strategy) + (CI_coefs["c4"] * T_strategy**2)   + ( CI_coefs["c5"] * (T_empty * T_strategy))
-        # Capindex_2 related to design draft
-        Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
-        CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
-
-        #DWT design capacity, refer to Table 6 and eq 3
-        capacity_coefs = dict({"intercept": -1.6687441313*10**1,
-             "c1": 9.7404521380*10**-1,
-             "c2": -1.1068568208,
-             })
-
-        DWT_design = capacity_coefs['intercept'] + (capacity_coefs['c1'] * self.L * self.B * T_design) + (
-         capacity_coefs['c2'] * self.L * self.B * T_empty) # designed DWT
-        DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
-
-
-        if T_strategy < T_design:
-            consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
-                              # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
-
-        else:
-            consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
-                              # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
-
-        fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
-        Payload_strategy = DWT_actual-fuel_weight # payload=DWT-fuel_weight
-
-
-        return  Payload_strategy
-
-
-
-
-#     def calculate_actual_T_and_payload(self, h_min, vesl_type):
-#     #def calculate_actual_T_and_payload(self, h_min, vesl_type="Dry_SH"):
-#         """ Calculate actual draft based on Van Dorsser et al
-
-#         https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
-#         """
-#         #Design draft T_design, refer to Table 5
-
-#         #prefer the dynamic ukc, if available....
-#         if (hasattr(self, 'dynamic_ukc')):
-#             ukc = self.dynamic_ukc
-#         else:
-#             ukc = self.static_ukc
-
-#         Tdesign_coefs = dict({"intercept":0,
-#                          "c1": 1.7244153371,
-#                          "c2": 2.2767179246,
-#                          "c3": 1.3365379898,
-#                          "c4": -5.9459308905,
-#                          "c5": 6.2902305560*10**-2,
-#                          "c6": 7.7398861528*10**-5,
-#                          "c7": 9.0052384439*10**-3,
-#                          "c8": 2.8438560877
-#                          })
-
-#         assert vesl_type in ["Container","Dry_SH","Dry_DH","Barge","Tanker"],'Invalid value vesl_type, should be               "Container","Dry_SH","Dry_DH","Barge" or "Tanker"'
-#         if vesl_type == "Container":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [1,0,0,0]
-#         elif vesl_type == "Dry_SH":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,1,0,0]
-#         elif vesl_type == "Dry_DH":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,1,0,0]
-#         elif vesl_type == "Barge":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,0,1,0]
-
-#         elif vesl_type == "Tanker":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,0,0,1]
-
-#         T_design = Tdesign_coefs['intercept'] + (dum_container * Tdesign_coefs['c1']) + \
-#                                                 (dum_dry * Tdesign_coefs['c2']) + \
-#                                                 (dum_barge * Tdesign_coefs['c3']) +\
-#                                                 (dum_tanker * Tdesign_coefs['c4']) +\
-#                                                 (Tdesign_coefs['c5'] * dum_container * self.L**0.4 * self.B**0.6) +\
-#                                                 (Tdesign_coefs['c6'] * dum_dry * self.L**0.7 * self.B**2.6)+\
-#                                                 (Tdesign_coefs['c7'] * dum_barge * self.L**0.3 * self.B**1.8) +\
-#                                                 (Tdesign_coefs['c8'] * dum_tanker * self.L**0.1 * self.B**0.3)
-
-#         #Empty draft T_empty, refer to Table 4
-#         Tempty_coefs = dict({"intercept": 7.5740820927*10**-2,
-#                     "c1": 1.1615080992*10**-1,
-#                     "c2": 1.6865973494*10**-2,
-#                     "c3": -2.7490565381*10**-2,
-#                     "c4": -5.1501240744*10**-5,
-#                     "c5": 1.0257551153*10**-1,
-#                     "c6": 2.4299435211*10**-1,
-#                     "c7": -2.1354295627*10**-1,
-#                     })
-
-
-#         if vesl_type == "Container":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [1,0,0,0]
-#         elif vesl_type == "Dry_SH":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,0,0,0]
-#         elif vesl_type == "Dry_DH":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,1,0,0]
-#         elif vesl_type == "Barge":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,0,1,0]
-
-#         elif vesl_type == "Tanker":
-#             [dum_container, dum_dry,
-#             dum_barge, dum_tanker] = [0,0,0,1]
-
-#         # dum_container and dum_dry use the same "c5"
-#         T_empty = Tempty_coefs['intercept']  + (Tempty_coefs['c1'] * self.B) + \
-#                                                (Tempty_coefs['c2'] * ((self.L * T_design) / self.B)) + \
-#                                                (Tempty_coefs['c3'] * (np.sqrt(self.L * self.B)))  + \
-#                                                (Tempty_coefs['c4'] * (self.L * self.B * T_design)) +  \
-#                                                (Tempty_coefs['c5'] * dum_container) + \
-#                                                (Tempty_coefs['c5'] * dum_dry)   + \
-#                                                (Tempty_coefs['c6'] * dum_tanker) + \
-#                                                (Tempty_coefs['c7'] * dum_barge)
-
-#         #Actual draft T_actual
-#         if (T_design <= (h_min - ukc)):
-#             T_actual = T_design
-
-#         elif T_empty > (h_min - ukc):
-#             T_actual =  (f"No trip possible. Available depth smaller than empty draft: {h_min - T_empty} m")
-
-#         elif (T_design > (h_min - ukc)):
-#             T_actual = h_min -  ukc
-
-#         #print('T_actual: {:.2f} m'.format(T_actual))
-
-#         #logger.debug(f'The actual draft is {T_actual} m')
-
-#         #Capacity indexes, refer to Table 3 and eq 2
-#         CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
-
-#                 "c1": -7.8577991460 * 10**1,
-#                 "c2": -7.0671612519 * 10**0,
-#                 "c3": 2.7744056480 * 10**1,
-#                 "c4": 7.5588609922 * 10**-1,
-#                 "c5": 3.6591813315 * 10**1
-#                 })
-#         # Capindex_1 related to actual draft (especially used for shallow water)
-#         Capindex_1 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)  +  (
-#         CI_coefs["c3"] * T_actual) + (CI_coefs["c4"] * T_actual**2)   + ( CI_coefs["c5"] * (T_empty * T_actual))
-#         # Capindex_2 related to design draft
-#         Capindex_2 = CI_coefs["intercept"] + (CI_coefs["c1"] * T_empty) + (CI_coefs["c2"] * T_empty**2)   + (
-#         CI_coefs["c3"] * T_design) + (CI_coefs["c4"] * T_design**2)  + (CI_coefs["c5"] * (T_empty * T_design))
-
-#         #DWT design capacity, refer to Table 6 and eq 3
-#         capacity_coefs = dict({"intercept": -1.6687441313*10**1,
-#              "c1": 9.7404521380*10**-1,
-#              "c2": -1.1068568208,
-#              })
-
-#         DWT_design = capacity_coefs['intercept'] + (capacity_coefs['c1'] * self.L * self.B * T_design) + (
-#          capacity_coefs['c2'] * self.L * self.B * T_empty) # designed DWT
-#         DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
-
-
-#         if T_actual < T_design:
-#             consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
-#                               # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
-
-#         else:
-#             consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
-#                               # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
-
-#         fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
-#         actual_max_payload = DWT_actual-fuel_weight # payload=DWT-fuel_weight
-#         #logger.debug('The actual_max_payload is {actual_max_payload} ton')
-#         # print('T_actual: {:.2f} m'.format(T_actual))
-#         # print('actual_max_payload: {:.2f} ton'.format(actual_max_payload))
-#         # print('h_min: {:.2f} m'.format(h_min))
-#         # print('ukc: {:.2f} m'.format(ukc))
-
-#         return T_actual, actual_max_payload
 
 
     def get_route(
@@ -729,6 +383,7 @@ class ConsumesEnergy:
             current_year, # current_year
             C_year,
             P_tot_given=None,  # the actual power engine setting
+            bulbous_bow,
             nu=1 * 10 ** (-6),
             rho=1000,
             g=9.81,
@@ -750,6 +405,7 @@ class ConsumesEnergy:
 
         self.P_installed = P_installed
         self.P_tot_given=P_tot_given
+        self.bulbous_bow=bulbous_bow
         self.L_w = L_w
         self.year = current_year
         self.nu = nu
@@ -763,6 +419,7 @@ class ConsumesEnergy:
         self.eta_g = eta_g
         self.c_stern = c_stern
         self.one_k2 = one_k2
+        
 
         # plugin function that computes velocity based on power
         self.power2v = opentnsim.energy.power2v
@@ -772,8 +429,7 @@ class ConsumesEnergy:
         else:
             self.C_year = self.calculate_engine_age()
 
-        # check assumption that we don't use more power than we have
-        # TODO: add test
+ 
         if self.P_tot_given is not None and self.P_installed is not None:
             if P_tot_given > P_installed:
                 self.P_tot_given = self.P_installed
@@ -841,6 +497,8 @@ class ConsumesEnergy:
         self.S_B = self.L * self.B  # Area of flat bottom
 
         self.D_s = 0.7 * self.T  # Diameter of the screw
+        self.T_F = self.T  #Forward draft of the vessel [m]
+        self.h_B = 0.2 * self.T    #Position of the centre of the transverse area [m]
 
     def calculate_frictional_resistance(self, v, h_0):
         """Frictional resistance
@@ -850,7 +508,6 @@ class ConsumesEnergy:
         """
 
         self.R_e = v * self.L / self.nu  # Reynolds number
-        # TO DO: include "z" (the maximum water level depression) to take sinkage into account: self.D = h_0 - z - self.T
 
         self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
         assert self.D > 0,  f'D should be > 0: {self.D}'
@@ -882,16 +539,14 @@ class ConsumesEnergy:
         # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is
         # defined according to Zeng et al. (2018)
 
-        # TO DO: it might need to re-define the deep and shallow water ranges for the below calculation
-
-        # calculate Friction coefficient Cf for deep water:
+        # calculate Friction coefficient C_f for deep water:
 
         if (h_0 - self.T) / self.L > 1:
             self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
             logger.debug(f'now i am in the deep loop')
         else:
 
-            # calculate Friction coefficient Cf for shallow water:
+            # calculate Friction coefficient C_f for shallow water:
             self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
             logger.debug(f'now i am in the shallow loop')
         assert not isinstance(self.C_f, complex),  f'C_f should not be complex: {self.C_f}'
@@ -933,8 +588,8 @@ class ConsumesEnergy:
         """Intermediate calculation: Karpov
 
         - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2,
-          expressed as "Vs + delta_V" in the paper)
-        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance terms (R_res: R_TR, R_A)
+          expressed as "Vs + delta_V" in the paper), but it also can be used for deeper water depth (h_0 / T >= 9.5).
+        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance terms (R_res: R_TR, R_A, R_B)
         """
 
         # The Froude number used in the Karpov method is the depth related froude number F_rh
@@ -1070,9 +725,9 @@ class ConsumesEnergy:
         """Residual resistance terms
 
         - Holtrop and Mennen (1982) defined three residual resistance terms:
-        - 1) Resistance due to the bulbous bow (R_B), not incorporated since inland ships in general don't have a bulb; when incorporate                it for seagoing ships the velocity should use Vs instead of Karpov corrected velocity V2
-        - 2) Resistance due to immersed transom (R_TR), Karpov corrected velocity V2 is used
-        - 3) Resistance due to model-ship correlation (R_A), Karpov corrected velocity V2 is used
+        - 1) Resistance due to immersed transom (R_TR), Karpov corrected velocity V2 is used
+        - 2) Resistance due to model-ship correlation (R_A), Karpov corrected velocity V2 is used
+        - 3) Resistance due to the bulbous bow (R_B), Karpov corrected velocity V2 is used
         """
 
         self.karpov(v, h_0)
@@ -1100,10 +755,28 @@ class ConsumesEnergy:
         assert not isinstance(self.C_A, complex),  f'C_A number should not be complex: {self.C_A}'
 
 
-        ####### Holtrop and Mennen in the document of Sarris, 2003 #######
         self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S * self.C_A) / 1000  # kW
+        
+        # Resistance due to the bulbous bow (R_B)
+       
+        # Froude number based on immersoin of bulbous bow [-]
+        self.F_ni = (self.V_2 / np.sqrt( self.g * (self.T_F - self.h_B - 0.25 * np.sqrt(self.A_BT) + 0.15 * self.V_2**2)))
 
-        self.R_res = self.R_TR + self.R_A
+        
+        self.P_B = (0.56 * np.sqrt(self.A_BT)) / (self.T_F - 1.5 * self.h_B) #P_B is coefficient for the emergence of bulbous bow
+
+        self.R_B = ((0.11 * np.exp(-3 * self.P_B**2) * self.F_ni**3 * self.A_BT**1.5 * self.rho * self.g) / (1+ self.F_ni**2)) / 1000
+        
+        
+        
+        
+        if self.bulbous_bow = None:
+            self.R_B = 0
+        else:
+            
+         
+            
+        self.R_res = self.R_TR + self.R_A + self.R_B
 
         return self.R_res
 
@@ -1121,7 +794,7 @@ class ConsumesEnergy:
         self.calculate_residual_resistance(v, h_0)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
-        self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A
+        self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A + self.R_B
 
         return self.R_tot
 
@@ -1418,10 +1091,8 @@ class ConsumesEnergy:
         return self.emission_g_s_CO2, self.emission_g_s_PM10, self.emission_g_s_NOX
 
 
-        # TODO: add HasCurrent Class or def
-        # TODO: add HasSquat Class or def
-        # TODO: unify the output unites: g/m, g/km, kg/m, kg/km, km/h, m/s, kWh
-        # TODO: add & modify seagoing shipping related functions, it should be able to swatch between inland and seagoing shipping                         calculation (involve Resistance components R_B and choose suitable velocity).
+
+        # TODO: add & modify seagoing shipping related functions, it should be able to switch between inland and seagoing shipping                         calculation (involve Resistance components R_B and choose suitable velocity).
 
 
 class Routeable:
@@ -1640,45 +1311,6 @@ class Movable(Locatable, Routeable, Log):
         self.edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    @property
-    def dynamic_ukc(self):
-        """ Calculate minimum under keel clearance considering maximum ship squat while moving
-
-         - ukc: minimum under keel clearance needed while moving
-         - z: maximum ship squat while moving. It depends on ship block cofficient C_B (C_B varys from ship types), blockage factor S and ship speed v.
-         - S: blockage factor, calculated by (ship beam * actual draught) / (waterway width * water depth).
-
-         There are equations to calculate z in open water conditions, medium width channels, confined channels. Reference: Sergiu et al (2015)
-         https://www.scientificbulletin.upb.ro/rev_docs_arhiva/full649_520719.pdf
-
-         Here we only provide z calculation for medium width channels and confined channels. The z calculation for open water conditions need to be added for seagoing                shipping.
-        """
-        # TODO: add z calculation for open water conditions
-        # TODO: add blockage factor S to vessel properties
-        # TODO: consider what to do with v vs current_speed
-        v = self.v
-        h_0 = self.h_0
-        z = (self.C_B * (1.94 * v)**2) * (6 * self.B * self.T / (150 * h_0 ) + 0.4) / 100
-        #z = (self.C_B * (1.94 * v)**2) / 50    # v: 1 m/s =1.94 knot
-        #print(self.T+z)
-        ukc = 0.3 + z
-        logger.debug('maximum ship squat z is {z} m')
-        logger.debug('minimum ukc is {ukc} m')
-        # print('h_0: {:.2f} m'.format(h_0))
-        print('z: {:.2f} m'.format(z))
-        #print('self.T+z: {:.2f} m'.format(self.T+z))
-        return ukc
-    @property
-    def T_strategy_consider_squat(self):
-        """determine the maximum draught a vessel can have to pass the minimum water depth section, considering the maximum squat while sailing in limited water depth.
-        """
-        v = self.v
-        h_min = self.h_min
-        static_ukc = self.static_ukc
-        z = (self.C_B * (1.94 * v)**2) * (6 * self.B * self.T / (150 * h_min) + 0.4) / 100
-        T_strategy = h_min - static_ukc - z
-
-        return T_strategy
 
     def move(self):
         """determine distance between origin and destination, and
