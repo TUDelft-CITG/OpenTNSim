@@ -360,18 +360,19 @@ class ConsumesEnergy:
 
     - P_installed: installed engine power [kW]
     - P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
+    - bulbous_bow: inland ships generally do not have a bulbous_bow,set to none. If a ship has a bulbous_bow, set to 1.
     - L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
     - current_year: current year
     - nu: kinematic viscosity [m^2/s]
     - rho: density of the surrounding water [kg/m^3]
     - g: gravitational accelleration [m/s^2]
     - x: number of propellers [-]
-    - A_BT: cross-sectional area of the bulb at still water level [m^2], most inland ships do not have a bulb. So we assume A_BT=0.
     - eta_o: open water efficiency of propeller [-]
     - eta_r: relative rotative efficiency [-]
     - eta_t: transmission efficiency [-]
     - eta_g: gearing efficiency [-]
     - c_stern: determines shape of the afterbody [-]
+    - C_BB: breadth coefficient of bulbous_bow, set to 0.2 according to the paper of Kracht (1970), https://doi.org/10.5957/jsr.1970.14.1.1
     - one_k2: appendage resistance factor (1+k2) [-]
     - C_year: construction year of the engine [y]
     """
@@ -387,13 +388,13 @@ class ConsumesEnergy:
             nu=1 * 10 ** (-6),
             rho=1000,
             g=9.81,
-            x=2,
-            A_BT=0,
+            x=2,            
             eta_o=0.6,
             eta_r=1.00,
             eta_t=0.98,
             eta_g=0.96,
             c_stern=0,
+            C_BB=0.2,
             one_k2=2.5,
             *args,
             **kwargs
@@ -412,12 +413,12 @@ class ConsumesEnergy:
         self.rho = rho
         self.g = g
         self.x = x
-        self.A_BT = A_BT
         self.eta_o = eta_o
         self.eta_r = eta_r
         self.eta_t = eta_t
         self.eta_g = eta_g
         self.c_stern = c_stern
+        self.C_BB = C_BB
         self.one_k2 = one_k2
         
 
@@ -434,7 +435,8 @@ class ConsumesEnergy:
             if P_tot_given > P_installed:
                 self.P_tot_given = self.P_installed
 
-
+        
+        
         # # TODO: check assumption when combining move with energy
         # if self.P_tot_given is not None and self.v is not None:
         #     raise ValueError("please specify v or P_tot_given, but not both")
@@ -486,7 +488,12 @@ class ConsumesEnergy:
                     4 * self.C_P - 1))  # length parameter reflecting the length of the run
 
         self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
-
+        # calculation for A_BT (cross-sectional area of the bulb at still water level [m^2]) depends on whether a ship has a bulb       
+        if bulbous_bow is None:
+            self.A_BT = 0     # most inland ships do not have a bulb. So we assume A_BT=0.
+        else:         
+            self.A_BT = self.C_BB * self.B * self.T * self.C_M  # calculate A_BT for seagoing ships having a bulb
+            
         # Total wet area: S
         assert self.C_M >= 0, f'C_M should be positive: {self.C_M}'
         self.S = self.L * (2 * self.T + self.B) * np.sqrt(self.C_M) * (
@@ -497,8 +504,8 @@ class ConsumesEnergy:
         self.S_B = self.L * self.B  # Area of flat bottom
 
         self.D_s = 0.7 * self.T  # Diameter of the screw
-        self.T_F = self.T  #Forward draft of the vessel [m]
-        self.h_B = 0.2 * self.T    #Position of the centre of the transverse area [m]
+        self.T_F = self.T  # Forward draught of the vessel [m]
+        self.h_B = 0.2 * self.T  # Position of the centre of the transverse area [m]
 
     def calculate_frictional_resistance(self, v, h_0):
         """Frictional resistance
@@ -761,21 +768,13 @@ class ConsumesEnergy:
        
         # Froude number based on immersoin of bulbous bow [-]
         self.F_ni = (self.V_2 / np.sqrt( self.g * (self.T_F - self.h_B - 0.25 * np.sqrt(self.A_BT) + 0.15 * self.V_2**2)))
-
         
         self.P_B = (0.56 * np.sqrt(self.A_BT)) / (self.T_F - 1.5 * self.h_B) #P_B is coefficient for the emergence of bulbous bow
-
-        self.R_B = ((0.11 * np.exp(-3 * self.P_B**2) * self.F_ni**3 * self.A_BT**1.5 * self.rho * self.g) / (1+ self.F_ni**2)) / 1000
-        
-        
-        
-        
         if self.bulbous_bow = None:
             self.R_B = 0
-        else:
-            
-         
-            
+        else:            
+            self.R_B = ((0.11 * np.exp(-3 * self.P_B**2) * self.F_ni**3 * self.A_BT**1.5 * self.rho * self.g) / (1+ self.F_ni**2)) / 1000
+                  
         self.R_res = self.R_TR + self.R_A + self.R_B
 
         return self.R_res
