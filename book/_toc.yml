@@ -8,3 +8,8 @@ chapters:
 - file: notebooks
 - file: api.rst
 - file: Example 00 - Basic simulation.ipynb
+- file: Example 01 - Defining a basic graph.ipynb
+- file: Example 02 - Defining a basic vessel.ipynb
+- file: Example 03 - Defining a basic simulation.ipynb
+- file: Example 04 - Create a graph from shapefile.ipynb
+- file: Example 05 - Defining a basic simulation on a real graph.ipynb
