@@ -124,9 +124,10 @@ def vessel(env, path, T_strategy):
         "P_installed": 1750.0,
         "P_tot_given": None, # kW
         "L_w": 3.0 ,
-        "C_B":0.85,
-        "C_year":1990,
-        "current_year":None
+        "C_B": 0.85,
+        "C_year": 1990,
+        "current_year": None,
+        "bulbous_bow": None
     }
     TransportResource = type(
         "Vessel",
@@ -166,7 +167,7 @@ def test_sailing_strategy(graph, path, vessel, T_strategy):
     """Test to see if we can call formulate_sailing_strategies"""
     # a deep ship with 40cm under keel clearance
     # Do this computation for this T_strategy (independent of the vessel.T)
-    v_T2v, v_P2v = opentnsim.strategy.formulate_sailing_strategies(FG=graph, path=path, vessel=vessel, T_strategy=T_strategy)
+    v_T2v, v_P2v, v_max_final = opentnsim.strategy.get_v_max_for_bottleneck(FG=graph, path=path, vessel=vessel, T_strategy=T_strategy)
     # these are the results previously. Use this as a regression test to make sure results stay the same.
     np.testing.assert_almost_equal(v_T2v, 4.405382019875273)
     np.testing.assert_almost_equal(v_P2v, 3.9146400450887224)

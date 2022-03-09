@@ -228,6 +228,7 @@ class VesselProperties:
         self.h_squat = h_squat
         self.payload = payload
         self.vessel_type = vessel_type
+
     @property
     def T(self):
         """Compute the actual draught
@@ -244,7 +245,7 @@ class VesselProperties:
         elif self.T_f is not None and self.T_e is not None:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
-        elif self.payload is not None and self.vessel_type is not None:           
+        elif self.payload is not None and self.vessel_type is not None:
             T = opentnsim.strategy.Payload2T(self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40))  # this need to be tested
 
         return T
@@ -260,9 +261,9 @@ class VesselProperties:
 
 
     def calculate_max_sinkage(self, v, h_0):
-        """Calculate the maximum sinkage of a moving ship 
+        """Calculate the maximum sinkage of a moving ship
 
-        the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates, chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6 
+        the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates, chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6
 
         some explanation for the variables in the equation:
         - h_0: water depth
@@ -274,7 +275,7 @@ class VesselProperties:
         max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
 
         return max_sinkage
-    
+
     def calculate_h_squat(self, v, h_0):
         if self.h_squat is "No":
             h_squat = h_0
@@ -390,14 +391,14 @@ class ConsumesEnergy:
             self,
             P_installed,
             L_w,
-            current_year, # current_year
             C_year,
-            bulbous_bow,
-            P_tot_given=None,  # the actual power engine setting            
+            current_year=None,  # current_year
+            bulbous_bow=None,
+            P_tot_given=None,  # the actual power engine setting
             nu=1 * 10 ** (-6),
             rho=1000,
             g=9.81,
-            x=2,            
+            x=2,
             eta_o=0.6,
             eta_r=1.00,
             eta_t=0.98,
@@ -415,7 +416,7 @@ class ConsumesEnergy:
 
         self.P_installed = P_installed
         self.bulbous_bow=bulbous_bow
-        self.P_tot_given=P_tot_given        
+        self.P_tot_given=P_tot_given
         self.L_w = L_w
         self.year = current_year
         self.nu = nu
@@ -429,7 +430,7 @@ class ConsumesEnergy:
         self.c_stern = c_stern
         self.C_BB = C_BB
         self.one_k2 = one_k2
-        
+
 
         # plugin function that computes velocity based on power
         self.power2v = opentnsim.energy.power2v
@@ -439,13 +440,13 @@ class ConsumesEnergy:
         else:
             self.C_year = self.calculate_engine_age()
 
- 
+
         if self.P_tot_given is not None and self.P_installed is not None:
             if P_tot_given > P_installed:
                 self.P_tot_given = self.P_installed
 
-        
-        
+
+
         # # TODO: check assumption when combining move with energy
         # if self.P_tot_given is not None and self.v is not None:
         #     raise ValueError("please specify v or P_tot_given, but not both")
@@ -497,12 +498,12 @@ class ConsumesEnergy:
                     4 * self.C_P - 1))  # length parameter reflecting the length of the run
 
         self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
-        # calculation for A_BT (cross-sectional area of the bulb at still water level [m^2]) depends on whether a ship has a bulb       
+        # calculation for A_BT (cross-sectional area of the bulb at still water level [m^2]) depends on whether a ship has a bulb
         if self.bulbous_bow is None:
             self.A_BT = 0     # most inland ships do not have a bulb. So we assume A_BT=0.
-        else:         
+        else:
             self.A_BT = self.C_BB * self.B * self.T * self.C_M  # calculate A_BT for seagoing ships having a bulb
-            
+
         # Total wet area: S
         assert self.C_M >= 0, f'C_M should be positive: {self.C_M}'
         self.S = self.L * (2 * self.T + self.B) * np.sqrt(self.C_M) * (
@@ -772,18 +773,18 @@ class ConsumesEnergy:
 
 
         self.R_A = (0.5 * self.rho * (self.V_2 ** 2) * self.S * self.C_A) / 1000  # kW
-        
+
         # Resistance due to the bulbous bow (R_B)
-       
+
         # Froude number based on immersoin of bulbous bow [-]
         self.F_ni = (self.V_2 / np.sqrt( self.g * (self.T_F - self.h_B - 0.25 * np.sqrt(self.A_BT) + 0.15 * self.V_2**2)))
-        
+
         self.P_B = (0.56 * np.sqrt(self.A_BT)) / (self.T_F - 1.5 * self.h_B) #P_B is coefficient for the emergence of bulbous bow
         if self.bulbous_bow is None:
             self.R_B = 0
-        else:            
+        else:
             self.R_B = ((0.11 * np.exp(-3 * self.P_B**2) * self.F_ni**3 * self.A_BT**1.5 * self.rho * self.g) / (1+ self.F_ni**2)) / 1000
-                  
+
         self.R_res = self.R_TR + self.R_A + self.R_B
 
         return self.R_res
