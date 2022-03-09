@@ -177,7 +177,7 @@ class VesselProperties:
     - T: actual draught
     - C_B: block coefficient ('fullness') [-]
     - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing, the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude of the ship captain and shipping companies.
-    - h_squat: the water depth considering ship squatting while the ship moving (if set to 0, h_squat is disabled)
+    - h_squat: the water depth considering ship squatting while the ship moving (if set to False, h_squat is disabled)
     - payload: cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
     - vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull), based on van Dorsser et al's paper.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
     Alternatively you can specify draught based on filling degree
