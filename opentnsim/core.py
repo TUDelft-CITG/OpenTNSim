@@ -177,7 +177,7 @@ class VesselProperties:
     - T: actual draught
     - C_B: block coefficient ('fullness') [-]
     - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing, the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude of the ship captain and shipping companies.
-    - h_squat: the water depth considering ship squatting while the ship moving
+    - h_squat: the water depth considering ship squatting while the ship moving (if set to 0, h_squat is disabled)
     - payload: cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
     - vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull), based on van Dorsser et al's paper.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
     Alternatively you can specify draught based on filling degree
@@ -277,10 +277,11 @@ class VesselProperties:
         return max_sinkage
 
     def calculate_h_squat(self, v, h_0):
-        if self.h_squat is "No":
-            h_squat = h_0
-        elif self.h_squat is "Yes":
+
+        if self.h_squat:
             h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
+        else:
+            h_squat = h_0
 
         return h_squat
 
@@ -370,7 +371,7 @@ class ConsumesEnergy:
 
     - P_installed: installed engine power [kW]
     - P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
-    - bulbous_bow: inland ships generally do not have a bulbous_bow,set to none. If a ship has a bulbous_bow, set to 1.
+    - bulbous_bow: inland ships generally do not have a bulbous_bow, set to False (default). If a ship has a bulbous_bow, set to True.
     - L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
     - current_year: current year
     - nu: kinematic viscosity [m^2/s]
@@ -393,7 +394,7 @@ class ConsumesEnergy:
             L_w,
             C_year,
             current_year=None,  # current_year
-            bulbous_bow=None,
+            bulbous_bow=False,
             P_tot_given=None,  # the actual power engine setting
             nu=1 * 10 ** (-6),
             rho=1000,
@@ -499,10 +500,10 @@ class ConsumesEnergy:
 
         self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
         # calculation for A_BT (cross-sectional area of the bulb at still water level [m^2]) depends on whether a ship has a bulb
-        if self.bulbous_bow is None:
-            self.A_BT = 0     # most inland ships do not have a bulb. So we assume A_BT=0.
-        else:
+        if self.bulbous_bow:
             self.A_BT = self.C_BB * self.B * self.T * self.C_M  # calculate A_BT for seagoing ships having a bulb
+        else:
+            self.A_BT = 0     # most inland ships do not have a bulb. So we assume A_BT=0.
 
         # Total wet area: S
         assert self.C_M >= 0, f'C_M should be positive: {self.C_M}'
@@ -780,10 +781,10 @@ class ConsumesEnergy:
         self.F_ni = (self.V_2 / np.sqrt( self.g * (self.T_F - self.h_B - 0.25 * np.sqrt(self.A_BT) + 0.15 * self.V_2**2)))
 
         self.P_B = (0.56 * np.sqrt(self.A_BT)) / (self.T_F - 1.5 * self.h_B) #P_B is coefficient for the emergence of bulbous bow
-        if self.bulbous_bow is None:
-            self.R_B = 0
-        else:
+        if self.bulbous_bow:
             self.R_B = ((0.11 * np.exp(-3 * self.P_B**2) * self.F_ni**3 * self.A_BT**1.5 * self.rho * self.g) / (1+ self.F_ni**2)) / 1000
+        else:
+            self.R_B = 0
 
         self.R_res = self.R_TR + self.R_A + self.R_B
 
