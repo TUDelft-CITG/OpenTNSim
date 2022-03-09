@@ -26,35 +26,18 @@ import simpy
 
 logger = logging.getLogger(__name__)
 
-# To do before March 9 OpenTNSim releasing: 
+# To do before OpenTNSim releasing: 
 
 # 1) orgnize the strategy example notebook,consistant name using, (giving strategies for T,V_max,payload, max_sinkage, remaining space,fuel use and emissions for bottleneck section; giving strategies for T,V_strategy, max_sinkage, remaining space,fuel use and emissions for whole 3 sections; ). (Man Jiang)
-# 2) make a seperate notebook for validtion Fig_07 which disable squatting.(other figures with squatting). check whether can be done in one notebook using h_0 and h_squat (Man Jiang)
-# 3) update all tests (Man Jiang)
-# 4) add R_B (if has, else) into core.py, A_BT calculate update. (Man Jiang)
 
-# 5) discussion strategy.py, core.py, stratigy notebook, fig notebooks.  (Mark) 
+# 3) update all tests (Man Jiang)
+
+# 5) discussion strategy.py, core.py, strategy notebook, fig notebooks.  (Mark) 
 
 # 6) make the functions elegant (explicy name, dry code, etc.) in strategy.py and "optimal sailing stratigies notebook", then test again. (Fedor)
-# 7) Can calculate_max_sinakge function be removed from the core? will it break something? Now we have it in strategy.py  (Fedor)
+
 # 8)fix error of payload_2_T functions in strategy.py (Fedor)
 
-
-def calculate_max_sinkage(self, v, h_0):
-    """Calculate the maximum sinkage of a moving ship 
-
-    the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates, chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6 
-
-    some explanation for the variables in the equation:
-    - h_0: water depth
-    - v: ship velocity relative to the water
-    - 150: Here we use the standard width 150 m as the waterway width
-
-    """
-
-    max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
-
-    return max_sinkage
 
 
 def T2v(vessel, h_min, bounds=(0, 10)):

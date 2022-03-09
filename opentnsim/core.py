@@ -178,7 +178,8 @@ class VesselProperties:
     - C_B: block coefficient ('fullness') [-]
     - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing, the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude of the ship captain and shipping companies.
     - h_squat: the water depth considering ship squatting while the ship moving
-    
+    - payload: cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+    - vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull), based on van Dorsser et al's paper.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
     Alternatively you can specify draught based on filling degree
     - H_e: vessel height unloaded
     - H_f: vessel height loaded
@@ -203,6 +204,7 @@ class VesselProperties:
             safety_margin=None,
             h_squat=None,
             payload=None,
+            vessel_type=None,
             *args,
             **kwargs
     ):
@@ -225,6 +227,7 @@ class VesselProperties:
         self.safety_margin = safety_margin
         self.h_squat = h_squat
         self.payload = payload
+        self.vessel_type = vessel_type
     @property
     def T(self):
         """Compute the actual draught
@@ -232,7 +235,7 @@ class VesselProperties:
         There are 3 ways to get actual draught
         - by directly providing actual draught values in the notebook
         - Or by providing ship draughts in fully loaded state and empty state, the actual draught will be computed based on filling degree
-        - Or by giving a sailing route with water depth info, the actual draught (and corresponding payload) will be computed for that               route depending on the minimum water depth (h_0) ased on Van Dorsser et al's method
+        - Or by giving vessel type with its payload (van Dorsser et al, 2020)
 
         """
         if self._T is not None:
@@ -241,14 +244,9 @@ class VesselProperties:
         elif self.T_f is not None and self.T_e is not None:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
-        else:
-            # if no T was provided during initialization,  compute it using the route
-            assert self.route, 'To compute actual draft we need a route with information on the GeneralDepth'
+        elif self.payload is not None and self.vessel_type is not None:           
+            T = opentnsim.strategy.Payload2T(self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40))  # this need to be tested
 
-            # rules from Van Dorsser et al
-            # https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
-            #T, payload = self.calculate_actual_T_and_payload(self.h_min, vesl_type)
-            # TODO: calculate a group of possible T strategies based on minimum water depth in the route and the minimum operational draught for different ship size and types.
         return T
 
     @property
@@ -260,16 +258,27 @@ class VesselProperties:
 
         return h_min
 
+
     def calculate_max_sinkage(self, v, h_0):
+        """Calculate the maximum sinkage of a moving ship 
+
+        the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates, chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6 
+
+        some explanation for the variables in the equation:
+        - h_0: water depth
+        - v: ship velocity relative to the water
+        - 150: Here we use the standard width 150 m as the waterway width
+
+        """
 
         max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
 
         return max_sinkage
-
+    
     def calculate_h_squat(self, v, h_0):
-        if self.h_squat is not None:
-            h_squat = self.h_squat
-        else:
+        if self.h_squat is "No":
+            h_squat = h_0
+        elif self.h_squat is "Yes":
             h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
 
         return h_squat
@@ -383,8 +392,8 @@ class ConsumesEnergy:
             L_w,
             current_year, # current_year
             C_year,
-            P_tot_given=None,  # the actual power engine setting
             bulbous_bow,
+            P_tot_given=None,  # the actual power engine setting            
             nu=1 * 10 ** (-6),
             rho=1000,
             g=9.81,
@@ -405,8 +414,8 @@ class ConsumesEnergy:
         """
 
         self.P_installed = P_installed
-        self.P_tot_given=P_tot_given
         self.bulbous_bow=bulbous_bow
+        self.P_tot_given=P_tot_given        
         self.L_w = L_w
         self.year = current_year
         self.nu = nu
@@ -489,7 +498,7 @@ class ConsumesEnergy:
 
         self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
         # calculation for A_BT (cross-sectional area of the bulb at still water level [m^2]) depends on whether a ship has a bulb       
-        if bulbous_bow is None:
+        if self.bulbous_bow is None:
             self.A_BT = 0     # most inland ships do not have a bulb. So we assume A_BT=0.
         else:         
             self.A_BT = self.C_BB * self.B * self.T * self.C_M  # calculate A_BT for seagoing ships having a bulb
@@ -511,7 +520,7 @@ class ConsumesEnergy:
         """Frictional resistance
 
         - 1st resistance component defined by Holtrop and Mennen (1982)
-        - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water                 effects
+        - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects
         """
 
         self.R_e = v * self.L / self.nu  # Reynolds number
@@ -770,7 +779,7 @@ class ConsumesEnergy:
         self.F_ni = (self.V_2 / np.sqrt( self.g * (self.T_F - self.h_B - 0.25 * np.sqrt(self.A_BT) + 0.15 * self.V_2**2)))
         
         self.P_B = (0.56 * np.sqrt(self.A_BT)) / (self.T_F - 1.5 * self.h_B) #P_B is coefficient for the emergence of bulbous bow
-        if self.bulbous_bow = None:
+        if self.bulbous_bow is None:
             self.R_B = 0
         else:            
             self.R_B = ((0.11 * np.exp(-3 * self.P_B**2) * self.F_ni**3 * self.A_BT**1.5 * self.rho * self.g) / (1+ self.F_ni**2)) / 1000
@@ -1050,7 +1059,7 @@ class ConsumesEnergy:
     def calculate_fuel_use_g_m(self,v):
         """Total fuel use in g/m:
 
-        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing           distance (v * delt_t)
+        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing distance (v * delt_t)
         """
         self.fuel_use_g_m = (self.P_given * self.total_factor_FU / v ) / 3600
         return self.fuel_use_g_m
@@ -1059,7 +1068,7 @@ class ConsumesEnergy:
     def calculate_fuel_use_g_s(self):
         """Total fuel use in g/s:
 
-       - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing            duration (delt_t)
+       - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing duration (delt_t)
        """
         self.fuel_use_g_m = self.P_given * self.total_factor_FU / 3600
         return self.fuel_use_g_s
@@ -1068,7 +1077,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_m(self,v):
         """CO2, PM10, NOX emission rates in g/m:
 
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by           the sailing distance (v * delt_t)
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
         self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
@@ -1081,7 +1090,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
 
-        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by           the sailing duration (delt_t)
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
@@ -1089,9 +1098,6 @@ class ConsumesEnergy:
 
         return self.emission_g_s_CO2, self.emission_g_s_PM10, self.emission_g_s_NOX
 
-
-
-        # TODO: add & modify seagoing shipping related functions, it should be able to switch between inland and seagoing shipping                         calculation (involve Resistance components R_B and choose suitable velocity).
 
 
 class Routeable:
