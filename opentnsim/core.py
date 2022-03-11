@@ -236,7 +236,7 @@ class VesselProperties:
         There are 3 ways to get actual draught
         - by directly providing actual draught values in the notebook
         - Or by providing ship draughts in fully loaded state and empty state, the actual draught will be computed based on filling degree
-        - Or by giving vessel type with its payload (van Dorsser et al, 2020)
+        
 
         """
         if self._T is not None:
@@ -245,9 +245,11 @@ class VesselProperties:
         elif self.T_f is not None and self.T_e is not None:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
-        elif self.payload is not None and self.vessel_type is not None:
-            T = opentnsim.strategy.Payload2T(self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40))  # this need to be tested
-
+        # elif self.payload is not None and self.vessel_type is not None:
+        # else:    
+        #     T = opentnsim.strategy.Payload2T(self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40))  # this need to be tested
+        # todo: for later possibly include payload2T 
+        
         return T
 
     @property
@@ -395,6 +397,8 @@ class ConsumesEnergy:
             C_year,
             current_year=None,  # current_year
             bulbous_bow=False,
+            P_hotel_perc=0.05,
+            P_hotel=None,
             P_tot_given=None,  # the actual power engine setting
             nu=1 * 10 ** (-6),
             rho=1000,
@@ -417,6 +421,11 @@ class ConsumesEnergy:
 
         self.P_installed = P_installed
         self.bulbous_bow=bulbous_bow
+        self.P_hotel_perc=P_hotel_perc
+        if P_hotel: # if P_hotel is specified as None calculate it from P_hotel_percentage
+            self.P_hotel=P_hotel    
+        else: # otherwise use the given value
+            self.P_hotel = self.P_hotel_perc * self.P_installed
         self.P_tot_given=P_tot_given
         self.L_w = L_w
         self.year = current_year
@@ -816,7 +825,7 @@ class ConsumesEnergy:
         """
 
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011):Walstrom versus generators troom
-        self.P_hotel = 0.05 * self.P_installed
+        # self.P_hotel = 0.05 * self.P_installed
 
         # Required power for propulsion
         # Effective Horse Power (EHP), P_e

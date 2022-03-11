@@ -139,8 +139,12 @@ def energy_vessel():
         "H_e": None,
         "H_f": None,
         "T": 2.2,
+        "h_squat": True, # if consider the ship squatting while moving, set to True, otherwise set to False
         "P_installed": 1750.0,
         "P_tot_given": 396,  # kW
+        "bulbous_bow": False, # if a vessel has no bulbous_bow, set to False; otherwise set to True.
+        "P_hotel_perc": 0.05,
+        "P_hotel": None, # None: calculate P_hotel from percentage
         "L_w": 3.0,
         "C_B": 0.85,
         "C_year": 1990,
