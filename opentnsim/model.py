@@ -36,15 +36,19 @@ class VesselGenerator:
         self.vessel_type = vessel_type
         self.vessel_database = vessel_database
         self.loaded = loaded
-
         random.seed(random_seed)
 
-    def generate(self, environment, vessel_name, scenario=None):
+    def generate(self, environment, vessel_name, fleet_distribution=None, scenario=None):
         """ Generate a vessel """
 
-        vessel_info = self.vessel_database.sample(
-            n=1, random_state=int(1000 * random.random())
-        )
+        if fleet_distribution == None:
+            vessel_info = self.vessel_database.sample(
+                n=1, random_state=int(1000 * random.random())
+            )
+        else:
+            vessel_info = self.vessel_database.sample(
+                n=1, weights=fleet_distribution,random_state=int(1000 * random.random())
+            )
         vessel_data = {}
 
         vessel_data["env"] = environment
@@ -66,10 +70,9 @@ class VesselGenerator:
                 vessel_data["level"] = vessel_data["capacity"]
             else:
                 vessel_data["level"] = 0
-
         vessel_data["route"] = None
         vessel_data["geometry"] = None
-
+        self.vessel_type(**vessel_data)
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
@@ -80,6 +83,7 @@ class VesselGenerator:
         arrival_distribution,
         scenario,
         arrival_process,
+        fleet_distribution,
     ):
         """ 
         Make arrival process
@@ -130,16 +134,18 @@ class VesselGenerator:
                 )
 
             # Create a vessel
-            vessel = self.generate(environment, "Vessel", scenario)
+            vessel = self.generate(environment, "Vessel", fleet_distribution, scenario)
+            vessel.output = {}
+            core.Output.vessel_dependent_output(vessel)
             vessel.env = environment
             vessel.route = nx.dijkstra_path(environment.FG, origin, destination)
             vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
                 vessel.route[0]
             ]
-            
             environment.vessels.append(vessel)
             # Move on path
-            environment.process(vessel.move())
+            process = environment.process(vessel.move())
+            vessel.process = process
 
 
 class Simulation(core.Identifiable):
@@ -170,11 +176,13 @@ class Simulation(core.Identifiable):
         self.scenario = scenario
 
         self.environment.vessels = []
+        self.output = {}
 
     def add_vessels(
         self,
         origin,
         destination,
+        fleet_distribution,
         vessel = None,
         vessel_generator = None,
         arrival_distribution=1,
@@ -190,7 +198,8 @@ class Simulation(core.Identifiable):
         
         if vessel_generator == None:
             self.environment.vessels.append(vessel)
-            self.environment.process(vessel.move())
+            process = self.environment.process(vessel.move())
+            vessel.process = process
             
         else:
             self.environment.process(
@@ -201,6 +210,7 @@ class Simulation(core.Identifiable):
                     arrival_distribution,
                     self.scenario,
                     arrival_process,
+                    fleet_distribution,
                 )
             )
 

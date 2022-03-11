@@ -5,22 +5,21 @@
 # package(s) related to time, space and id
 import json
 import logging
-import math
-import os
 import uuid
+import os
 
+# you need these dependencies (you can get these from anaconda)
+# package(s) related to the simulation
+import simpy
 import networkx as nx
-import numpy as np
 
 # spatial libraries
 import pyproj
 import shapely.geometry
 
 # matplotlib
+import math
 import matplotlib.pyplot as plt
-
-# package(s) related to the simulation
-import simpy
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +37,7 @@ class Graph:
 
     def from_shape(self, file_location, shapefile, simplify=True, strict=True):
         """Generate nx.Graph() from shapefile
-
+        
         file_location: location on server of the shapefile
         shapefile: name of the shapefile (including .shp)
         """
@@ -157,20 +156,3 @@ class Graph:
             nx.draw(self.graph)
 
         plt.show()
-
-
-def get_minimum_depth(graph, route):
-    """return the minimum depth on the route based on the GeneralDepth in the Info dictionary"""
-    # loop over the route
-    depths = []
-    # loop over all node pairs (e: edge numbers)
-    for e in zip(route[:-1], route[1:]):
-        # get the properties
-        edge = graph.get_edge_data(e[0], e[1])
-        # lookup the depth
-        depth = edge['Info']['GeneralDepth']
-        # remember
-        depths.append(depth)
-        # find the minimum
-    h_min = np.min(depths)
-    return h_min
