@@ -56,6 +56,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
         """function to optimize"""
         # water depth from the edge
         h_0 = edge['Info']['GeneralDepth']
+        h_0 = vessel.calculate_h_squat(v, h_0)
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_0)
         # compute total power given
@@ -71,7 +72,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
     # fill in some of the parameters that we already know
     fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
     # lookup a minimum
-    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded', tol=0.0000001)
 
     # check if we found a minimum
     if not fit.success:
