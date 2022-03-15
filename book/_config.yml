@@ -2,7 +2,7 @@
 # Learn more at https://jupyterbook.org/customize/config.html
 
 title: OpenTNSim
-author: Mark van Koningsveld, Fedor Baart, Tenzin Frijlink
+author: Mark van Koningsveld, Fedor Baart, Tenzin Frijlink, Max van Gijn
 logo: logo.png
 
 # Force re-execution of notebooks on each build.
