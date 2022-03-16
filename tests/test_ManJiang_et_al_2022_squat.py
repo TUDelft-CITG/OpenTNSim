@@ -64,7 +64,7 @@ def test_simulation():
                    "C_year": 1990,
                    }
     # input
-    V_s = [3]         # ship sailing speeds to water, (m/s)
+    V_s = [0.1, 1, 2, 3, 4]         # ship sailing speeds to water, (m/s)
     h_0 = [5]                 # water depths,(m)
 
 
@@ -104,6 +104,9 @@ def test_simulation():
     plot_df = pd.DataFrame(results)
 
 
-    np.testing.assert_almost_equal(4.967975,  plot_df.h_squat[0], decimal=3, err_msg='not almost equal', verbose=True)
-
+    np.testing.assert_almost_equal(4.999973,  plot_df.h_squat[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.996741,  plot_df.h_squat[1], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.986221,  plot_df.h_squat[2], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.967975,  plot_df.h_squat[3], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.941741,  plot_df.h_squat[4], decimal=3, err_msg='not almost equal', verbose=True)
 

@@ -66,7 +66,7 @@ def test_simulation():
                    "C_year": 1990,
                    }
     # input
-    V_s = [3]         # ship sailing speeds to water, (m/s)
+    V_s = [0.1, 1, 2, 3, 4]         # ship sailing speeds to water, (m/s)
     h_0 = [5]                 # water depths,(m)
     C_year = [2000]   # engine construction years
 
@@ -126,8 +126,32 @@ def test_simulation():
     plot_df['V_s_km'] = plot_df['V_s'] * ms_to_kmh
 
 
-    np.testing.assert_almost_equal(19.148343,  plot_df.R_f_one_k1[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(2.042422,  plot_df.R_APP[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(0.413577,  plot_df.R_W[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(9.804647,  plot_df.R_res[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(31.408989,  plot_df.R_T[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(0.037092,  plot_df.R_f_one_k1[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(0.003956,  plot_df.R_APP[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(2.423886e-88,  plot_df.R_W[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(0.012012,  plot_df.R_res[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(0.053060,  plot_df.R_T[0], decimal=3, err_msg='not almost equal', verbose=True)
+    
+    np.testing.assert_almost_equal(2.501556,  plot_df.R_f_one_k1[1], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(0.266824,  plot_df.R_APP[1], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(2.008034e-08,  plot_df.R_W[1], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(1.152490,  plot_df.R_res[1], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(3.920870,  plot_df.R_T[1], decimal=3, err_msg='not almost equal', verbose=True)
+    
+    np.testing.assert_almost_equal(9.0165463,  plot_df.R_f_one_k1[2], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(0.961733,  plot_df.R_APP[2], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.679582e-03,  plot_df.R_W[2], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.433315,  plot_df.R_res[2], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(14.416273,  plot_df.R_T[2], decimal=3, err_msg='not almost equal', verbose=True)
+    
+    np.testing.assert_almost_equal(19.148343,  plot_df.R_f_one_k1[3], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(2.042422,  plot_df.R_APP[3], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(0.413577,  plot_df.R_W[3], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(9.804647,  plot_df.R_res[3], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(31.408989,  plot_df.R_T[3], decimal=3, err_msg='not almost equal', verbose=True)
+    
+    np.testing.assert_almost_equal(32.728008,  plot_df.R_f_one_k1[4], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(3.490872,  plot_df.R_APP[4], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(6.645577e+00,  plot_df.R_W[4], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(19.317616,  plot_df.R_res[4], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(62.182073,  plot_df.R_T[4], decimal=3, err_msg='not almost equal', verbose=True)

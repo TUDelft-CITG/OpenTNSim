@@ -27,10 +27,6 @@ import pytest
 
 # Creating the test objects
 
-# Actual testing starts here
-# - tests 3 fixed velocities to return the right P_tot
-# - tests 3 fixed power to return indeed the same P_tot
-# - tests 3 fixed power to return indeed the same v
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
 def test_simulation():
 
