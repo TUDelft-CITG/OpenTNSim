@@ -112,10 +112,11 @@ def test_simulation():
     path = nx.dijkstra_path(FG, nodes[0].name, nodes[3].name)
 
     # Actual testing starts here
-    def run_simulation(V_s, P_tot_given):
+    def run_simulation(C_year):
+
         # Start simpy environment
         simulation_start = datetime.datetime.now()
-        env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
+        env = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
         env.epoch = time.mktime(simulation_start.timetuple())
 
         # Add graph to environment
@@ -124,12 +125,11 @@ def test_simulation():
         # Add environment and path to the vessel
         # create a fresh instance of vessel
         vessel = TransportResource(**data_vessel)
-        vessel.name = 'Vessel No.1'
-        vessel.env = env  # the created environment
-        vessel.route = path  # the route (the sequence of nodes, as stored as the second column in the path)
-        vessel.geometry = env.FG.nodes[path[0]]['geometry']  # a shapely.geometry.Point(lon,lat) (here taken as the starting node of the vessel)
-        vessel.v = V_s
-        vessel.P_tot_given = P_tot_given
+        vessel.env = env                                        #the created environment
+        vessel.name = 'Vessel No.1'                     
+        vessel.route = path                                     #the route (the sequence of nodes, as stored as the second column in the path)
+        vessel.geometry = env.FG.nodes[path[0]]['geometry']     #a shapely.geometry.Point(lon,lat) (here taken as the starting node of the vessel)
+        vessel.C_year = C_year
 
         # Start the simulation
         env.process(vessel.move())
@@ -140,7 +140,7 @@ def test_simulation():
     # prepare input data to loop through
     input_data = {'C_year': [1970, 1980, 1990, 2000, 2010, 2020]}
 
-    # create empty plot data
+    
     plot_data = {}
 
     # loop through the various input data
@@ -159,39 +159,19 @@ def test_simulation():
         # add/modify some comlums to suit our plotting needs
         df['total_fuel_consumption_600km']=df['total_fuel_consumption']*6/1000  #kg, a round trip is 600km in total
         df['total_emission_CO2_600km']=df['total_emission_CO2']*6/1000          #kg
-        df['total_emission_PM10_600km']=df['total_emission_PM10']*6/1000        #kg# create empty plot data
-plot_data = {}
-
-# loop through the various input data
-for index, value in enumerate(input_data['C_year']):
-    
-    # Run a basic simulation with V_s and P_tot_given combi
-    vessel = run_simulation(input_data['C_year'][index])
-    
-    # create an EnergyCalculation object and perform energy consumption calculation
-    energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)
-    energycalculation.calculate_energy_consumption()
-    
-    # create dataframe from energy calculation computation
-    df = pd.DataFrame.from_dict(energycalculation.energy_use)
-    
-    # add/modify some comlums to suit our plotting needs
-    df['total_fuel_consumption_600km']=df['total_fuel_consumption']*6/1000  #kg, a round trip is 600km in total
-    df['total_emission_CO2_600km']=df['total_emission_CO2']*6/1000          #kg
-    df['total_emission_PM10_600km']=df['total_emission_PM10']*6/1000        #kg
-    df['total_emission_NOX_600km']=df['total_emission_NOX']*6/1000          #kg
-
-   
-    # Note that we make a dict to collect all plot data. 
-    # We use labels like ['c_year = 1970'] organise the data in the dict
-
-    label = 'C_year = ' + str(input_data['C_year'][index]) 
-    plot_data[label + ', total_fuel_consumption_600km']   = list(df.total_fuel_consumption_600km[[0]])
-    plot_data[label + ', total_emission_CO2_600km']   = list(df.total_emission_CO2_600km[[0]])
-    plot_data[label + ', total_emission_PM10_600km']   = list(df.total_emission_PM10_600km[[0]])
-    plot_data[label + ', total_emission_NOX_600km']   = list(df.total_emission_NOX_600km[[0]])
-    
+        df['total_emission_PM10_600km']=df['total_emission_PM10']*6/1000        #kg
         df['total_emission_NOX_600km']=df['total_emission_NOX']*6/1000          #kg
+
+
+        # Note that we make a dict to collect all plot data. 
+        # We use labels like ['c_year = 1970'] organise the data in the dict
+
+        label = 'C_year = ' + str(input_data['C_year'][index]) 
+        plot_data[label + ', total_fuel_consumption_600km']   = list(df.total_fuel_consumption_600km[[0]])
+        plot_data[label + ', total_emission_CO2_600km']   = list(df.total_emission_CO2_600km[[0]])
+        plot_data[label + ', total_emission_PM10_600km']   = list(df.total_emission_PM10_600km[[0]])
+        plot_data[label + ', total_emission_NOX_600km']   = list(df.total_emission_NOX_600km[[0]])
+
 
 
         # Note that we make a dict to collect all plot data. 
@@ -209,23 +189,23 @@ for index, value in enumerate(input_data['C_year']):
     np.testing.assert_almost_equal(14238.2793, plot_data['C_year = 1970, total_emission_CO2_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(11.7683, plot_data['C_year = 1970, total_emission_PM10_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(195.1241, plot_data['C_year = 1970, total_emission_NOX_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)    
-        np.testing.assert_almost_equal(4237.5831, plot_data['C_year = 1980, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4237.5831, plot_data['C_year = 1980, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(13447.2638, plot_data['C_year = 1980, total_emission_CO2_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(11.7683, plot_data['C_year = 1980, total_emission_PM10_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(187.8973, plot_data['C_year = 1980, total_emission_NOX_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)   
-        np.testing.assert_almost_equal(4143.4146, plot_data['C_year = 1990, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(13447.2638, plot_data['C_year = 1990, total_emission_CO2_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4143.4146, plot_data['C_year = 1990, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(13145.9245, plot_data['C_year = 1990, total_emission_CO2_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(7.8455, plot_data['C_year = 1990, total_emission_PM10_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(182.4772, plot_data['C_year = 1990, total_emission_NOX_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)   
-        np.testing.assert_almost_equal(3860.9090, plot_data['C_year = 2000, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(3860.9090, plot_data['C_year = 2000, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(12241.9068, plot_data['C_year = 2000, total_emission_CO2_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(5.8841, plot_data['C_year = 2000, total_emission_PM10_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(169.8303, plot_data['C_year = 2000, total_emission_NOX_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)   
-        np.testing.assert_almost_equal(3766.7405, plot_data['C_year = 2010, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(3766.7405, plot_data['C_year = 2010, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(11959.4013, plot_data['C_year = 2010, total_emission_CO2_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(3.9227, plot_data['C_year = 2010, total_emission_PM10_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(136.85467, plot_data['C_year = 2010, total_emission_NOX_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)   
-        np.testing.assert_almost_equal(3578.4035, plot_data['C_year = 2020, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(3578.4035, plot_data['C_year = 2020, total_fuel_consumption_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(11356.7228, plot_data['C_year = 2020, total_emission_CO2_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(0.2942, plot_data['C_year = 2020, total_emission_PM10_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(61.9660, plot_data['C_year = 2020, total_emission_NOX_600km'][0], decimal=2, err_msg='not almost equal', verbose=True)   
