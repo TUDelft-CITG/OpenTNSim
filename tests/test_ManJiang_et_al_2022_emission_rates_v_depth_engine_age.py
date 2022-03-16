@@ -1,6 +1,4 @@
-'''Here we test the total resistance with all its resistance components for inland ships, which includes R_f, R_f_one_k1, R_APP, R_W, R_res. With input Vs=3 m/s, h_0 = 5 m, C_year = 2000, consider squat.
-
-In the future it is nice to include another test-- resistance component R_B for seagoing ships which has a bulbous bow, and test the switching between inland ship and seagoing ship resistance calculation''' 
+'''Here we test the emission rates with input Vs=3 m/s, h_0 = 5 m, C_year = 2000, consider squat ''' 
 
 # Importing libraries
 
@@ -99,23 +97,18 @@ def test_simulation():
         h_0 = row['h_0']
         vessel.calculate_properties()  # L is used here in the computation of L_R
         h_0 = vessel.calculate_h_squat(v=V_s, h_0=h_0)
-
-        R_f = vessel.calculate_frictional_resistance(V_s, h_0)
-        R_f_one_k1 = vessel.calculate_viscous_resistance()
-        R_APP = vessel.calculate_appendage_resistance(V_s)
-        R_W = vessel.calculate_wave_resistance(V_s, h_0)
-        R_res = vessel.calculate_residual_resistance(V_s, h_0)
         R_T = vessel.calculate_total_resistance(V_s, h_0)
-
+        P_tot = vessel.calculate_total_power_required(V_s)
+        vessel.emission_factors_general()
+        vessel.correction_factors(V_s)
+        vessel.calculate_emission_factors_total(V_s)
+        [emission_g_m_CO2, emission_g_m_PM10, emission_g_m_NOX] = vessel.calculate_emission_rates_g_m(V_s)
 
         result = {}
         result.update(row)
-        result['h_0'] = h_0        
-        result['R_f_one_k1'] = R_f_one_k1
-        result['R_APP'] = R_APP
-        result['R_W'] = R_W
-        result['R_res'] = R_res
-        result['R_T'] = R_T
+        result['emission_g_km_CO2'] = emission_g_m_CO2 * 1000
+        result['emission_g_km_PM10'] = emission_g_m_PM10 * 1000
+        result['emission_g_km_NOX'] = emission_g_m_NOX * 1000
         results.append(result)
 
     # collect info dataframe
@@ -126,8 +119,8 @@ def test_simulation():
     plot_df['V_s_km'] = plot_df['V_s'] * ms_to_kmh
 
 
-    np.testing.assert_almost_equal(19.148343,  plot_df.R_f_one_k1[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(2.042422,  plot_df.R_APP[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(0.413577,  plot_df.R_W[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(9.804647,  plot_df.R_res[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(31.408989,  plot_df.R_T[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(19860.901487,  plot_df.emission_g_km_CO2[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(11.291062,  plot_df.emission_g_km_PM10[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(301.269457,  plot_df.emission_g_km_NOX[0], decimal=3, err_msg='not almost equal', verbose=True)
+
+

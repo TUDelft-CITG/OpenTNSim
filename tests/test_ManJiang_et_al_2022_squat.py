@@ -1,6 +1,4 @@
-'''Here we test the total resistance with all its resistance components for inland ships, which includes R_f, R_f_one_k1, R_APP, R_W, R_res. With input Vs=3 m/s, h_0 = 5 m, C_year = 2000, consider squat.
-
-In the future it is nice to include another test-- resistance component R_B for seagoing ships which has a bulbous bow, and test the switching between inland ship and seagoing ship resistance calculation''' 
+'''Here we test the ship squat by calculating h_squat. With input Vs=3 m/s, h_0 = 5 m.''' 
 
 # Importing libraries
 
@@ -68,18 +66,17 @@ def test_simulation():
     # input
     V_s = [3]         # ship sailing speeds to water, (m/s)
     h_0 = [5]                 # water depths,(m)
-    C_year = [2000]   # engine construction years
 
 
 
     # prepare the work to be done
     # create a list of all combinations
-    work = list(itertools.product(C_year, h_0, V_s))
+    work = list(itertools.product(h_0, V_s))
 
     # prepare a list of dictionaries for pandas
     rows = []
     for item in work:
-        row = {"C_year": item[0], "h_0": item[1], "V_s": item[2]}
+        row = { "h_0": item[0], "V_s": item[1]}
         rows.append(row)
 
     # these are all the simulations that we want to run
@@ -90,44 +87,23 @@ def test_simulation():
 
     for i, row in tqdm.tqdm(work_df.iterrows()):
         # create a new vessel, like the one above (so that it also has L)
-        C_year = row['C_year']
+
         data_vessel_i = data_vessel.copy()
-        data_vessel_i['C_year'] = C_year
         vessel = TransportResource(**data_vessel_i)
 
         V_s = row['V_s']
         h_0 = row['h_0']
-        vessel.calculate_properties()  # L is used here in the computation of L_R
-        h_0 = vessel.calculate_h_squat(v=V_s, h_0=h_0)
-
-        R_f = vessel.calculate_frictional_resistance(V_s, h_0)
-        R_f_one_k1 = vessel.calculate_viscous_resistance()
-        R_APP = vessel.calculate_appendage_resistance(V_s)
-        R_W = vessel.calculate_wave_resistance(V_s, h_0)
-        R_res = vessel.calculate_residual_resistance(V_s, h_0)
-        R_T = vessel.calculate_total_resistance(V_s, h_0)
-
+        h_squat = vessel.calculate_h_squat(v=V_s, h_0=h_0)
 
         result = {}
         result.update(row)
-        result['h_0'] = h_0        
-        result['R_f_one_k1'] = R_f_one_k1
-        result['R_APP'] = R_APP
-        result['R_W'] = R_W
-        result['R_res'] = R_res
-        result['R_T'] = R_T
+        result['h_squat'] = h_squat       
         results.append(result)
 
     # collect info dataframe
     plot_df = pd.DataFrame(results)
 
-    # convert from meters per second to km per hour
-    ms_to_kmh = 3.6
-    plot_df['V_s_km'] = plot_df['V_s'] * ms_to_kmh
+
+    np.testing.assert_almost_equal(4.967975,  plot_df.h_squat[0], decimal=3, err_msg='not almost equal', verbose=True)
 
 
-    np.testing.assert_almost_equal(19.148343,  plot_df.R_f_one_k1[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(2.042422,  plot_df.R_APP[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(0.413577,  plot_df.R_W[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(9.804647,  plot_df.R_res[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(31.408989,  plot_df.R_T[0], decimal=3, err_msg='not almost equal', verbose=True)
