@@ -183,7 +183,7 @@ def test_simulation():
    
  # test the estimation of fuel consumption with and without current influence for section 2
     np.testing.assert_almost_equal(1279.964075, df['total_fuel_consumption_kg'][1], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(1493.291421	, df['total_fuel_consumption_up_kg'][1], decimal=2, err_msg='not almost equal', verbose=True)  
+    np.testing.assert_almost_equal(1493.291421, df['total_fuel_consumption_up_kg'][1], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(1119.968566, df['total_fuel_consumption_down_kg'][1], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(2559.928150, df['total_fuel_consumption_round_no_current_kg'][1], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(2613.259986, df['total_fuel_consumption_round_current_kg'][1], decimal=2, err_msg='not almost equal', verbose=True)   
