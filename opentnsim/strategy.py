@@ -26,17 +26,11 @@ import simpy
 
 logger = logging.getLogger(__name__)
 
-# To do before OpenTNSim releasing:
 
-# 1) orgnize the strategy example notebook,consistant name using, (giving strategies for T,V_max,payload, max_sinkage, remaining space,fuel use and emissions for bottleneck section; giving strategies for T,V_strategy, max_sinkage, remaining space,fuel use and emissions for whole 3 sections; ). (Man Jiang)
 
-# 3) update all tests (Man Jiang)
+# 6) make the functions elegant (explicy name, dry code, etc.) in strategy.py and "optimal sailing stratigies notebook", then test again.
 
-# 5) discussion strategy.py, core.py, strategy notebook, fig notebooks.  (Mark)
-
-# 6) make the functions elegant (explicy name, dry code, etc.) in strategy.py and "optimal sailing stratigies notebook", then test again. (Fedor)
-
-# 8)fix error of payload_2_T functions in strategy.py (Fedor)
+# 8)fix error of payload_2_T functions in strategy.py 
 
 
 
