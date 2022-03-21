@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def load_partial_engine_load_correction_factors():
     """read correction factor from package directory
     """
-    
+
     # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent / 'data'
     correctionfactors_path = data_dir / 'Correctionfactors.csv'
@@ -22,7 +22,7 @@ def load_partial_engine_load_correction_factors():
 def karpov_smooth_curves():
     """read correction factor from package directory
     """
-    
+
     # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent / 'data'
     karpov_smooth_curves_path = data_dir / 'KarpovSmoothCurves.csv'
@@ -46,7 +46,7 @@ def find_closest_node(G, point):
 
 def power2v(vessel, edge, bounds=(0, 10)):
     """Compute vessel velocity given an edge and power (P_tot_given)
-    
+
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
     """
@@ -72,7 +72,7 @@ def power2v(vessel, edge, bounds=(0, 10)):
     # fill in some of the parameters that we already know
     fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
     # lookup a minimum
-    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded', tol=0.0000001)
+    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded', options=dict(xatol=0.0000001))
 
     # check if we found a minimum
     if not fit.success:
@@ -119,7 +119,7 @@ class EnergyCalculation:
         def calculate_distance(geom_start, geom_stop):
             """method to calculate the distance in meters between two geometries
             """
-            
+
             wgs84 = pyproj.Geod(ellps='WGS84')
 
             # distance between two points
@@ -129,7 +129,7 @@ class EnergyCalculation:
         def calculate_depth(geom_start, geom_stop):
             """method to calculate the depth of the waterway in meters between two geometries
             """
-            
+
             depth = 0
 
             #The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
@@ -142,7 +142,7 @@ class EnergyCalculation:
                 depth = self.FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
             except:
                 depth = np.nan     #When there is no data of the depth available of this edge, it gives a message
-           
+
             h_0 = depth
 
             # depth of waterway between two points
@@ -205,7 +205,7 @@ class EnergyCalculation:
                     #Energy consumed per time step delta_t in the stationary stage
                     energy_delta = self.vessel.P_hotel * delta_t / 3600  # kJ/3600 = kWh
 
-                    # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t, 
+                    # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
                     # consuming 'energy_delta' kWh
                     P_hotel_delta = self.vessel.P_hotel   # in kW
                     P_installed_delta = self.vessel.P_installed   # in kW
@@ -232,7 +232,7 @@ class EnergyCalculation:
                     #Energy consumed per time step delta_t in the propulsion stage
                     energy_delta = self.vessel.P_tot * delta_t / 3600  # kJ/3600 = kWh
 
-                    # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t, 
+                    # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t,
                     # consuming 'energy_delta' kWh
                     P_tot_delta = self.vessel.P_tot   # in kW
                     P_installed_delta = self.vessel.P_installed   # in kW
@@ -258,9 +258,9 @@ class EnergyCalculation:
         #   vessel database ook nog een speed_loaded en een speed_unloaded worden toegevoegd.
         # - er zou nog eens goed gekeken moeten worden wat er gedaan kan worden rond kustwerken
         # - en er is nog iets mis met de snelheid rond een sluis
-       
+
         # - add HasCurrent Class or def
-        # - add HasSquat 
+        # - add HasSquat
 
     def plot(self):
 
