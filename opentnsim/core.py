@@ -274,7 +274,7 @@ class VesselProperties:
 
         """
 
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
+        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v*1.94) ** 2.08) / 20
 
         return max_sinkage
 
@@ -282,9 +282,10 @@ class VesselProperties:
 
         if self.h_squat:
             h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
+
         else:
             h_squat = h_0
-
+        
         return h_squat
 
 
@@ -2122,7 +2123,7 @@ class Movable(Locatable, Routeable, Log):
             if getattr(self, 'P_tot_given', None) is not None:
                 edge = self.env.FG.edges[origin, destination]
                 # use power2v on self so that you can override it from outside
-                v = self.power2v(self, edge)
+                v = self.power2v(self, edge, upperbound)
                 # use computed power
                 value = self.P_given
 

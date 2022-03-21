@@ -74,9 +74,89 @@ def T2v(vessel, h_min, bounds=(0, 10)):
 
     return v_T2v
 
+def get_upperbound_for_power2v():
+    ''' for each eage with a water depth, it computes a maximum installed power allowed velocity, considering squat. this velocity is set as upperbound in the power2v function in energy.py 
+    "upperbound" is the maximum value in velocity searching range.'''
+    # Start simpy environment
+    simulation_start = datetime.datetime.now()
+    env = simpy.Environment(initial_time = time.mktime(simulation_start.timetuple()))
+    env.epoch = time.mktime(simulation_start.timetuple())
+    # Add graph to environment
+    env.FG = FG
+    # get vessel 
+    data_vessel_i = data_vessel.copy()
+    vessel = TransportResource(**data_vessel_i)
+    # vessel.route = path_bottleneck
+    vessel.route = path
+    v = vessel.v
+    depths = []
+    for e in zip(vessel.route[:-1], vessel.route[1:]):
+        edge = env.FG.edges[e]
+        depth = edge['Info']['GeneralDepth']
+        depths.append(depth)
+    for depth in depths:
+        h_0 = depth
+       
+    def get_grounding_v(vessel,h_0,bounds=(0, 10)):
+        def seek_v_given_z(v, vessel, h_0):
+            h_0 = depth
+            z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (150 * h_0)) ** 0.81) * ((v*1.94) ** 2.08) / 20
+            z_given = h_0 - vessel._T
+            # compute difference between a given draught (T_strategy) and a computed draught (T_computed)
+
+            diff = z_given - z_computed
+
+            return diff ** 2
+        fun = functools.partial(seek_v_given_z, vessel=vessel, h_0 = h_0)
+        fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+        # check if we found a minimum
+        if not fit.success:
+            raise ValueError(fit)
+
+        # the value of fit.x within the bound (0,10) is the velocity we find where the diff**2 reach a minimum (zero).
+        grounding_v =  fit.x
+        print(grounding_v)
+        return grounding_v    
+                  
+    # prepare the task to be done
+    # create a large velocity[m/s] range for both inland shipping and seagoing shipping
+    grounding_v = get_grounding_v(vessel,h_0,bounds=(0, 10))
+    velocity = np.linspace(0.01, grounding_v, 1000)
+    task = list(itertools.product(velocity[0:-1]))
+
+    # prepare a list of dictionaries for pandas
+    rows = []
+    for item in task:
+        row = {"velocity": item[0]}
+        rows.append(row)
+
+    # these are all the simulations that we want to run
+    # convert them to dataframe, so that we can apply a function and monitor progress
+    task_df = pd.DataFrame(rows)
+    
+    # creat a results empty list to collect the below results
+    results = []   
+    for i, row in tqdm.tqdm(task_df.iterrows()):
+        h_0 = depth      
+        velocity = row['velocity']
+        z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (150 * h_0)) ** 0.81) * ((velocity*1.94) ** 2.08) / 20
+        h_0 = h_0 - z_computed
+        vessel.calculate_total_resistance(v=velocity, h_0=h_0)
+        P_tot = vessel.calculate_total_power_required(v=velocity)
+        result = {}
+        result.update(row)
+        result['Powerallowed_v'] = velocity
+        result['P_tot'] = P_tot
+        result['P_installed'] = vessel.P_installed
+        results.append(result)
+    
+    results_df = pd.DataFrame(results)
+    selected = results_df.query('P_tot < P_installed')
+    upperbound = max(selected['Powerallowed_v'])
+    return upperbound
 
 
-def P2v(vessel, h_min, bounds=(0, 10)):
+def P2v(vessel, h_min, upperbound):
     """Compute the maximum vessel velocity limited by the installed engine power (P_installed) in the bottleneck section
 
     bounds is the limits where to look for a solution for the velocity [m/s]
@@ -91,6 +171,7 @@ def P2v(vessel, h_min, bounds=(0, 10)):
         # to get vessel.P_tot, we need to comupute total resistance and total power required first
         # compute total resistance with the minimum water depth
         h_min = vessel.h_min
+        h_min = vessel.calculate_h_squat(v, h_min)
         vessel.calculate_total_resistance(v, h_min)
         # compute total power given
         vessel.calculate_total_power_required(v=v)
@@ -106,7 +187,7 @@ def P2v(vessel, h_min, bounds=(0, 10)):
     # fill in some of the parameters that we already know
     fun = functools.partial(seek_v_given_P_installed, vessel=vessel, h_min = vessel.h_min)
     # lookup a minimum
-    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+    fit = scipy.optimize.minimize_scalar(fun, bounds=(0, upperbound), method='bounded')
 
     # the value of fit.x within the bound (0,10) is the velocity we find where the diff**2 reach a minimum (zero).
     v_P2v = fit.x
