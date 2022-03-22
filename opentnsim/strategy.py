@@ -23,7 +23,7 @@ import logging
 import numpy as np
 import scipy.optimize
 import simpy
-
+import opentnsim
 logger = logging.getLogger(__name__)
 
 
@@ -159,7 +159,7 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0,20)):
 
 
 
-def P2v(vessel, h_min, upperbound):
+def P2v(vessel, h_min , upperbound):
     """Compute the maximum vessel velocity limited by the installed engine power (P_installed) in the bottleneck section
 
     bounds is the limits where to look for a solution for the velocity [m/s]
@@ -232,7 +232,8 @@ def get_v_max_for_bottleneck(FG, path, vessel, T_strategy):
     # get v_T2v in the bottleneck section
     v_T2v  = T2v(vessel, h_min = vessel.h_min)
     # get v_P2v in the bottleneck section
-    v_P2v = P2v(vessel, h_min = vessel.h_min)
+    upperbound = opentnsim.energy.get_upperbound_for_power2v(vessel, width=150, depth=2.5)
+    v_P2v = P2v(vessel, h_min = vessel.h_min, upperbound = upperbound)
     # get final maximum velocity in the bottleneck section
     v_max_final = min(v_T2v, v_P2v)
 
