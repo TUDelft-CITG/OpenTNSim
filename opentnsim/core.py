@@ -2123,6 +2123,7 @@ class Movable(Locatable, Routeable, Log):
             if getattr(self, 'P_tot_given', None) is not None:
                 edge = self.env.FG.edges[origin, destination]
                 # use power2v on self so that you can override it from outside
+                upperbound = opentnsim.energy.get_upperbound_for_power2v(self, width=150, depth=2.5)
                 v = self.power2v(self, edge, upperbound)
                 # use computed power
                 value = self.P_given
