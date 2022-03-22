@@ -3,26 +3,43 @@
 
 format: jb-book
 root: intro
-chapters:
-- file: markdown
-- file: notebooks
-- file: api.rst
-- file: Example 00 - Basic simulation.ipynb
-- file: Example 01 - Defining a basic graph.ipynb
-- file: Example 02 - Defining a basic vessel.ipynb
-- file: Example 03 - Defining a basic simulation.ipynb
-- file: Example 04 - Create a graph from shapefile.ipynb
-- file: Example 05 - Defining a basic simulation on a real graph.ipynb
-- file: Example 06 - Visualizing the sailed path.ipynb
-- file: Example 07 - Using actual graphs and graph_module.py.ipynb
-- file: Example 08 - Multiple vessels.ipynb
-- file: Example 09 - Multiple vessels - edge constraints.ipynb
-- file: Example 10 - Lock.ipynb
-- file: Example 11 - Multiple vessels - from database.ipynb
-- file: Example 12 - Use model simulation.ipynb
-- file: Example 13 - Path selection by vessel limits.ipynb
-- file: Example 14 - Emission footprint of IWT.ipynb
-- file: Example 15 - Emission footprint of IWT (2 vessels).ipynb
-- file: Example 16 - Energy use in package.ipynb
-- file: Example 17 - Lock.ipynb
+parts:
+- caption: Intro
+  chapters:
+    - file: markdown
+    - file: notebooks
+    - file: api.rst
+- caption:  Basics of OpenTNSim 
+  chapters: 
+    - file: Example 00 - Basic simulation.ipynb
+    - file: Example 01 - Defining a basic graph.ipynb
+    - file: Example 02 - Defining a basic vessel.ipynb
+    - file: Example 03 - Defining a basic simulation.ipynb
+- caption: Real-world
+  chapters:
+    - file: Example 04 - Create a graph from shapefile.ipynb
+    - file: Example 05 - Defining a basic simulation on a real graph.ipynb
+    - file: Example 06 - Visualizing the sailed path.ipynb
+    - file: Example 07 - Using actual graphs and graph_module.py.ipynb  
+- caption: Advanced simulation
+  chapters: 
+    - file: Example 08 - Multiple vessels.ipynb
+    - file: Example 09 - Multiple vessels - edge constraints.ipynb
+    - file: Example 10 - Lock.ipynb
+    - file: Example 11 - Multiple vessels - from database.ipynb
+    - file: Example 12 - Use model simulation.ipynb
+    - file: Example 13 - Path selection by vessel limits.ipynb
+- caption: Energy Usage & Emissions
+  chapters:
+    - file: Example 14 - Emission footprint of IWT.ipynb
+    - file: Example 15 - Emission footprint of IWT (2 vessels).ipynb
+    - file: Example 16 - Energy use in package.ipynb
+    - file: Example 17 - Lock.ipynb
+
+
+
+
+
+
+
 
