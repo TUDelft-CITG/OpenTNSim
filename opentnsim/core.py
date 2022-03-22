@@ -2122,9 +2122,21 @@ class Movable(Locatable, Routeable, Log):
             # This is the case if we are sailing on power
             if getattr(self, 'P_tot_given', None) is not None:
                 edge = self.env.FG.edges[origin, destination]
-                # use power2v on self so that you can override it from outside
-                upperbound = opentnsim.energy.get_upperbound_for_power2v(self, width=150, depth=2.5)
-                v = self.power2v(self, edge, upperbound)
+                depth = self.env.FG.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+
+                # estimate 'grounding speed' as a useful upperbound
+                upperbound, selected, results_df = opentnsim.strategy.get_upperbound_for_power2v(self, width=150,
+                                                                              depth=depth, margin=0)
+                print('upperbound {} m/s'.format(upperbound))
+                # calculate the velocity that belongs to the T_strategy (while leaving the margin)
+                v, depth, depth_squat, z_computed, margin = opentnsim.strategy.get_v(self, width=150, depth=depth,
+                                                                  margin=self.safety_margin, bounds=(0, upperbound))
+                # upperbound, selected, results_df = get_upperbound_for_power2v(self, width=150,
+                #                                                               depth=depth, margin=self.safety_margin)
+                #
+                # # use power2v on self so that you can override it from outside
+                # upperbound = opentnsim.energy.get_upperbound_for_power2v(self, width=150, depth=2.5)
+                # v = self.power2v(self, edge, upperbound)
                 # use computed power
                 value = self.P_given
 
