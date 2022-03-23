@@ -14,9 +14,6 @@ import simpy
 import tqdm
 # package(s) for data handling
 
-
-import tqdm
-
 # OpenTNSim
 import opentnsim
 import opentnsim.strategy
@@ -115,7 +112,7 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0,20)):
     
     # creat a results empty list to collect the below results
     results = []   
-    for i, row in tqdm.tqdm(task_df.iterrows()):
+    for i, row in tqdm.tqdm(task_df.iterrows(), disable=true):
         h_0 = depth      
         velocity = row['velocity']
         

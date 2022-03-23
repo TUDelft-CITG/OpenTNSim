@@ -485,7 +485,7 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
 
     # creat a results empty list to collect the below results
     results = []
-    for i, row in tqdm.tqdm(task_df.iterrows()):
+    for i, row in tqdm.tqdm(task_df.iterrows(), disable=True):
         # calculate squat and the waterdepth after squat
         # todo: check if we can replace this with a squat method
         z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (width * depth)) ** 0.81) * (
