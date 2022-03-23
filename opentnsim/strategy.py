@@ -14,18 +14,14 @@ This package combine with "optimal sailing stratigies notebook" provides stratig
 # 6) consider writting the "fix power or fix speed" example which is in the paper as a function into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it benefit if adds this function?
 
 
-import datetime
 import functools
 import itertools
 
-import time
 import logging
 
 import pandas as pd
 import numpy as np
 import scipy.optimize
-import simpy
-import opentnsim
 
 import tqdm
 
@@ -104,7 +100,6 @@ def T2Payload(vessel, T_strategy, vessel_type):
                 "c7": -2.1354295627*10**-1,
                 })
 
-
     if vessel_type == "Container":
         [dum_container, dum_dry,
         dum_barge, dum_tanker] = [1,0,0,0]
@@ -136,7 +131,6 @@ def T2Payload(vessel, T_strategy, vessel_type):
 
     #Capacity indexes, refer to Table 3 and eq 2
     CI_coefs = dict({"intercept": 2.0323139721 * 10**1,
-
             "c1": -7.8577991460 * 10**1,
             "c2": -7.0671612519 * 10**0,
             "c3": 2.7744056480 * 10**1,
@@ -160,7 +154,6 @@ def T2Payload(vessel, T_strategy, vessel_type):
      capacity_coefs['c2'] * vessel.L * vessel.B * T_empty) # designed DWT
     DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
 
-
     if T_strategy < T_design:
         consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                           # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
@@ -170,50 +163,10 @@ def T2Payload(vessel, T_strategy, vessel_type):
                           # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
 
     fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
-    Payload_comupted = DWT_actual-fuel_weight # payload=DWT-fuel_weight
+    Payload_computed = DWT_actual-fuel_weight # payload=DWT-fuel_weight
 
+    return Payload_computed
 
-    return Payload_comupted
-
-
-# def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 40)):
-#     """ Calculate the corresponding draught (T_Payload2T) for each Payload_strategy
-#     the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
-
-
-#     input:
-#     - Payload_strategy: user given payload
-#     - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
-
-#     output:
-#     - T_Payload2T: corresponding draught for each payload for different vessel types
-
-#     """
-
-#     def seek_T_given_Payload(Payload_strategy, vessel, vessel_type):
-#         """function to optimize"""
-
-#         Payload_computed = T2Payload(vessel, T_strategy, vessel_type)
-#         # compute difference between a given payload (Payload_strategy) and a computed payload (Payload_computed)
-#         diff = Payload_strategy - Payload_computed
-
-#         return diff ** 2
-
-#     # fill in some of the parameters that we already know
-#     fun = functools.partial(seek_T_given_Payload, vessel=vessel)
-
-#     # lookup a minimum
-#     fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
-
-#     # check if we found a minimum
-#     if not fit.success:
-#         raise ValueError(fit)
-
-#     # the value of fit.x within the bound (0,10) is the velocity we find where the diff**2 reach a minimum (zero).
-#         T_Payload2T =  fit.x
-
-
-#     return T_Payload2T
 
 def get_v(vessel, width, depth, margin, bounds):
     ''' for a waterway section with a given width and depth, compute the velocity that can be
