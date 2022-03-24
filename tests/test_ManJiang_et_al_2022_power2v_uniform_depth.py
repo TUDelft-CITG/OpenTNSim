@@ -141,7 +141,7 @@ def test_simulation():
         return vessel
 
     # prepare input data to loop through
-    input_data = {'V_s': [3.0, 3.5, 4.0, None, None, None], 'P_tot_given': [None, None, None, 251, 343, 494]}
+    input_data = {'V_s': [3.0, 3.5, 4.0, None, None, None], 'P_tot_given': [None, None, None, 251, 344, 500]}
 
     # create empty plot data
     plot_data = {}
@@ -167,6 +167,7 @@ def test_simulation():
         plot_data[label + ' v'] = list(df.distance[[0, 0, 1, 1, 2, 2]]/df.delta_t[[0, 0, 1, 1, 2, 2]])
 
     # test power calculation with three given v in section 1, because later on we will use these calculated power values as input (P_tot_given) for three sections: 
+    # todo: should we not use 251.0, 344.2 and 500.1 as powersettings?
     np.testing.assert_almost_equal(251.0869, plot_data['V_s = 3.0 P_tot_given = None P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(344.2121, plot_data['V_s = 3.5 P_tot_given = None P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(500.1850, plot_data['V_s = 4.0 P_tot_given = None P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
@@ -174,15 +175,15 @@ def test_simulation():
     # test if power2v actually results in the right power and the right velocity in section 1
     np.testing.assert_almost_equal(251, plot_data['V_s = None P_tot_given = 251 P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(3.0, plot_data['V_s = None P_tot_given = 251 v'][0], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(343, plot_data['V_s = None P_tot_given = 343 P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(3.5, plot_data['V_s = None P_tot_given = 343 v'][0], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(494, plot_data['V_s = None P_tot_given = 494 P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.0, plot_data['V_s = None P_tot_given = 494 v'][0], decimal=2, err_msg='not almost equal', verbose=True)
- 
+    np.testing.assert_almost_equal(344, plot_data['V_s = None P_tot_given = 344 P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(3.5, plot_data['V_s = None P_tot_given = 344 v'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(500, plot_data['V_s = None P_tot_given = 500 P_tot'][0], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.0, plot_data['V_s = None P_tot_given = 500 v'][0], decimal=2, err_msg='not almost equal', verbose=True)
+
     # test if power2v actually results in the right power and the right velocity in section 2
     np.testing.assert_almost_equal(251, plot_data['V_s = None P_tot_given = 251 P_tot'][1], decimal=2, err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(3.0, plot_data['V_s = None P_tot_given = 251 v'][1], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(343, plot_data['V_s = None P_tot_given = 343 P_tot'][1], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(3.5, plot_data['V_s = None P_tot_given = 343 v'][1], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(494, plot_data['V_s = None P_tot_given = 494 P_tot'][1], decimal=2, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.0, plot_data['V_s = None P_tot_given = 494 v'][1], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(344, plot_data['V_s = None P_tot_given = 344 P_tot'][1], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(3.5, plot_data['V_s = None P_tot_given = 344 v'][1], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(500, plot_data['V_s = None P_tot_given = 500 P_tot'][1], decimal=2, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.0, plot_data['V_s = None P_tot_given = 500 v'][1], decimal=2, err_msg='not almost equal', verbose=True)
