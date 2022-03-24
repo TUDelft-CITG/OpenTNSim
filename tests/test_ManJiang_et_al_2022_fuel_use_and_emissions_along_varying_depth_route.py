@@ -39,7 +39,7 @@ def test_simulation():
         [2.6949, 0]]
 
     # for each edge (between above coordinates) specify the depth (m)
-    depths = [6, 4, 6]
+    depths = [6, 4.5, 6]
 
     # check of nr of coords and nr of depths align
     assert len(coords) == len(depths) + 1, 'nr of depths does not correspond to nr of coords'
@@ -181,99 +181,115 @@ def test_simulation():
     # test the estimation of fuel consumption and emission rates of CO2, PM10 and NOx in section 1
     np.testing.assert_almost_equal(6.0553, plot_data['V_s = 3.0 P_tot_given = None fuel_kg_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(6.9234, plot_data['V_s = 3.5 P_tot_given = None fuel_kg_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(8.5256, plot_data['V_s = 4.0 P_tot_given = None fuel_kg_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(19212.1325, plot_data['V_s = 3.0 P_tot_given = None CO2_g_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(12.6513, plot_data['V_s = 3.0 P_tot_given = None PM10_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)       
+    np.testing.assert_almost_equal(279.9376, plot_data['V_s = 3.0 P_tot_given = None NOx_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    
+    
+    np.testing.assert_almost_equal(6.9234, plot_data['V_s = 3.5 P_tot_given = None fuel_kg_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(21966.3411, plot_data['V_s = 3.5 P_tot_given = None CO2_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(13.0975, plot_data['V_s = 3.5 P_tot_given = None PM10_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(304.7852, plot_data['V_s = 3.5 P_tot_given = None NOx_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)
+    
+    
+    np.testing.assert_almost_equal(8.5256, plot_data['V_s = 4.0 P_tot_given = None fuel_kg_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(27049.5591, plot_data['V_s = 4.0 P_tot_given = None CO2_g_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(12.6513, plot_data['V_s = 3.0 P_tot_given = None PM10_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(13.0975, plot_data['V_s = 3.5 P_tot_given = None PM10_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(15.1631, plot_data['V_s = 4.0 P_tot_given = None PM10_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(279.9376, plot_data['V_s = 3.0 P_tot_given = None NOx_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(304.7852, plot_data['V_s = 3.5 P_tot_given = None NOx_g_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(366.8470, plot_data['V_s = 4.0 P_tot_given = None NOx_g_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
+    
     np.testing.assert_almost_equal(6.0545, plot_data['V_s = None P_tot_given = 251 fuel_kg_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(19209.3969, plot_data['V_s = None P_tot_given = 251 CO2_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(12.6521, plot_data['V_s = None P_tot_given = 251 PM10_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(279.9304, plot_data['V_s = None P_tot_given = 251 NOx_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)
+    
     np.testing.assert_almost_equal(6.9214, plot_data['V_s = None P_tot_given = 344 fuel_kg_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(8.5237, plot_data['V_s = None P_tot_given = 500 fuel_kg_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(19209.3969, plot_data['V_s = None P_tot_given = 251 CO2_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(21959.9431, plot_data['V_s = None P_tot_given = 344 CO2_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)   
+    np.testing.assert_almost_equal(13.0963, plot_data['V_s = None P_tot_given = 344 PM10_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(304.7241, plot_data['V_s = None P_tot_given = 344 NOx_g_per_km'][0], decimal=2,
+                                   err_msg='not almost equal', verbose=True)   
+    
+    
+    np.testing.assert_almost_equal(8.5237, plot_data['V_s = None P_tot_given = 500 fuel_kg_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(27043.5067, plot_data['V_s = None P_tot_given = 500 CO2_g_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(12.6521, plot_data['V_s = None P_tot_given = 251 PM10_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(13.0963, plot_data['V_s = None P_tot_given = 344 PM10_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(15.1603, plot_data['V_s = None P_tot_given = 500 PM10_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(279.9304, plot_data['V_s = None P_tot_given = 251 NOx_g_per_km'][0], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(304.7241, plot_data['V_s = None P_tot_given = 344 NOx_g_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
     np.testing.assert_almost_equal(366.7659, plot_data['V_s = None P_tot_given = 500 NOx_g_per_km'][0], decimal=2,
                                    err_msg='not almost equal', verbose=True)
 
     # test the estimation of fuel consumption and emission rates of CO2, PM10 and NOx in section 2
-    np.testing.assert_almost_equal(7.1172, plot_data['V_s = 3.0 P_tot_given = None fuel_kg_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(6.3190, plot_data['V_s = 3.0 P_tot_given = None fuel_kg_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(9.3115, plot_data['V_s = 3.5 P_tot_given = None fuel_kg_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(20048.5052, plot_data['V_s = 3.0 P_tot_given = None CO2_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(15.0263, plot_data['V_s = 4.0 P_tot_given = None fuel_kg_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(12.8477, plot_data['V_s = 3.0 P_tot_given = None PM10_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)       
+    np.testing.assert_almost_equal(287.5943, plot_data['V_s = 3.0 P_tot_given = None NOx_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    
+    
+    np.testing.assert_almost_equal(7.6432, plot_data['V_s = 3.5 P_tot_given = None fuel_kg_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(22580.9831, plot_data['V_s = 3.0 P_tot_given = None CO2_g_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(24249.8789, plot_data['V_s = 3.5 P_tot_given = None CO2_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(14.1527, plot_data['V_s = 3.5 P_tot_given = None PM10_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(333.2068, plot_data['V_s = 3.5 P_tot_given = None NOx_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(29543.1132, plot_data['V_s = 3.5 P_tot_given = None CO2_g_per_km'][2], decimal=0,
+    
+    
+    np.testing.assert_almost_equal(10.7100, plot_data['V_s = 4.0 P_tot_given = None fuel_kg_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(47674.5628, plot_data['V_s = 4.0 P_tot_given = None CO2_g_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(33980.1853, plot_data['V_s = 4.0 P_tot_given = None CO2_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(14.0261, plot_data['V_s = 3.0 P_tot_given = None PM10_g_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(18.7529, plot_data['V_s = 4.0 P_tot_given = None PM10_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(16.6476, plot_data['V_s = 3.5 P_tot_given = None PM10_g_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(466.2638, plot_data['V_s = 4.0 P_tot_given = None NOx_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(26.5256, plot_data['V_s = 4.0 P_tot_given = None PM10_g_per_km'][2], decimal=0,
+    
+    np.testing.assert_almost_equal(6.1961, plot_data['V_s = None P_tot_given = 251 fuel_kg_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(319.2381, plot_data['V_s = 3.0 P_tot_given = None NOx_g_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(19658.7256, plot_data['V_s = None P_tot_given = 251 CO2_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(12.9480, plot_data['V_s = None P_tot_given = 251 PM10_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)    
+    np.testing.assert_almost_equal(286.4782, plot_data['V_s = None P_tot_given = 251 NOx_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(400.7991, plot_data['V_s = 3.5 P_tot_given = None NOx_g_per_km'][2], decimal=0,
+    
+    np.testing.assert_almost_equal(7.1904, plot_data['V_s = None P_tot_given = 344 fuel_kg_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(669.1229, plot_data['V_s = 4.0 P_tot_given = None NOx_g_per_km'][2], decimal=0,
+    np.testing.assert_almost_equal(22813.2717, plot_data['V_s = None P_tot_given = 344 CO2_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)   
+    np.testing.assert_almost_equal(13.6052, plot_data['V_s = None P_tot_given = 344 PM10_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(6.5478, plot_data['V_s = None P_tot_given = 251 fuel_kg_per_km'][2], decimal=2,
+    np.testing.assert_almost_equal(316.5651, plot_data['V_s = None P_tot_given = 344 NOx_g_per_km'][2], decimal=2,
+                                   err_msg='not almost equal', verbose=True)   
+    
+    
+    np.testing.assert_almost_equal(9.0167, plot_data['V_s = None P_tot_given = 500 fuel_kg_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(7.6520, plot_data['V_s = None P_tot_given = 344 fuel_kg_per_km'][2], decimal=2,
+    np.testing.assert_almost_equal(28607.5595, plot_data['V_s = None P_tot_given = 500 CO2_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(9.6166, plot_data['V_s = None P_tot_given = 500 fuel_kg_per_km'][2], decimal=2,
+    np.testing.assert_almost_equal(16.0371, plot_data['V_s = None P_tot_given = 500 PM10_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(20774.4673, plot_data['V_s = None P_tot_given = 251 CO2_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(24277.9202, plot_data['V_s = None P_tot_given = 344 CO2_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(30510.8896, plot_data['V_s = None P_tot_given = 500 CO2_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(13.6829, plot_data['V_s = None P_tot_given = 251 PM10_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(14.4787, plot_data['V_s = None P_tot_given = 344 PM10_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(17.1041, plot_data['V_s = None P_tot_given = 500 PM10_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(302.7375, plot_data['V_s = None P_tot_given = 251 NOx_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(336.8891, plot_data['V_s = None P_tot_given = 344 NOx_g_per_km'][2], decimal=2,
-                                   err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(413.7908, plot_data['V_s = None P_tot_given = 500 NOx_g_per_km'][2], decimal=2,
+    np.testing.assert_almost_equal(387.9777, plot_data['V_s = None P_tot_given = 500 NOx_g_per_km'][2], decimal=2,
                                    err_msg='not almost equal', verbose=True)
