@@ -112,7 +112,7 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0,20)):
     
     # creat a results empty list to collect the below results
     results = []   
-    for i, row in tqdm.tqdm(task_df.iterrows(), disable=true):
+    for i, row in tqdm.tqdm(task_df.iterrows(), disable=True):
         h_0 = depth      
         velocity = row['velocity']
         
