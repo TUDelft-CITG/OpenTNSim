@@ -241,7 +241,7 @@ class VesselProperties:
         There are 3 ways to get actual draught
         - by directly providing actual draught values in the notebook
         - Or by providing ship draughts in fully loaded state and empty state, the actual draught will be computed based on filling degree
-        
+
 
         """
         if self._T is not None:
@@ -251,10 +251,10 @@ class VesselProperties:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
         # elif self.payload is not None and self.vessel_type is not None:
-        # else:    
+        # else:
         #     T = opentnsim.strategy.Payload2T(self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40))  # this need to be tested
-        # todo: for later possibly include payload2T 
-        
+        # todo: for later possibly include payload2T
+
         return T
 
     @property
@@ -279,7 +279,7 @@ class VesselProperties:
 
         """
 
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * (v ** 2.08) / 20
+        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v*1.94) ** 2.08) / 20
 
         return max_sinkage
 
@@ -287,6 +287,7 @@ class VesselProperties:
 
         if self.h_squat:
             h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
+
         else:
             h_squat = h_0
 
@@ -428,7 +429,7 @@ class ConsumesEnergy:
         self.bulbous_bow=bulbous_bow
         self.P_hotel_perc=P_hotel_perc
         if P_hotel: # if P_hotel is specified as None calculate it from P_hotel_percentage
-            self.P_hotel=P_hotel    
+            self.P_hotel=P_hotel
         else: # otherwise use the given value
             self.P_hotel = self.P_hotel_perc * self.P_installed
         self.P_tot_given=P_tot_given
@@ -2086,13 +2087,19 @@ class Movable(Locatable, Routeable, Log):
 
         v = self.current_speed
 
+        # TODO: move this to on_pass_edge
         # This is the case if we are sailing on power, compute the speed
         if getattr(self, 'P_tot_given', None) is not None:
             edge = self.env.FG.edges[origin, destination]
-            # use power2v on self so that you can override it from outside
-            v = self.power2v(self, edge)
+            depth = self.env.FG.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+
+            # estimate 'grounding speed' as a useful upperbound
+            upperbound, selected, results_df = opentnsim.strategy.get_upperbound_for_power2v(self, width=150,
+                                                                          depth=depth, margin=0)
+            v = self.power2v(self, edge, upperbound)
             # use computed power
             value = self.P_given
+
 
         # determine time to pass edge
         timeout = distance / v
@@ -2105,6 +2112,8 @@ class Movable(Locatable, Routeable, Log):
         # keep track of sailed distance
         self.distance += distance
         self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, value, dest,)
+
+
 
     @property
     def current_speed(self):

@@ -26,7 +26,8 @@ book/_build
 __pycache__/*
 .cache/*
 .*.swp
-*/.ipynb_checkpoints/*
+**/*.ipynb_checkpoints/
+*htmlcov*
 
 # Project files
 .ropeproject

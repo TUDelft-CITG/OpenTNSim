@@ -52,7 +52,7 @@ def test_simulation():
                    "H_e": None,
                    "H_f": None,
                    "T": 2.75,
-                   "safety_margin": 0.3,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
+                   "safety_margin": 0.2,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
                    "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False
                    "P_installed": 2200.0,
                    "P_tot_given": None,  # kW
@@ -64,10 +64,8 @@ def test_simulation():
                    "C_year": 1990,
                    }
     # input
-    V_s = [0.1, 1, 2, 3, 4]         # ship sailing speeds to water, (m/s)
-    h_0 = [5]                 # water depths,(m)
-
-
+    V_s = [0.1, 1, 2, 3, 4]  # ship sailing speeds to water, (m/s)
+    h_0 = [5]  # water depths,(m)
 
     # prepare the work to be done
     # create a list of all combinations
@@ -76,7 +74,7 @@ def test_simulation():
     # prepare a list of dictionaries for pandas
     rows = []
     for item in work:
-        row = { "h_0": item[0], "V_s": item[1]}
+        row = {"h_0": item[0], "V_s": item[1]}
         rows.append(row)
 
     # these are all the simulations that we want to run
@@ -85,7 +83,7 @@ def test_simulation():
 
     results = []
 
-    for i, row in tqdm.tqdm(work_df.iterrows()):
+    for i, row in tqdm.tqdm(work_df.iterrows(), disable=True):
         # create a new vessel, like the one above (so that it also has L)
 
         data_vessel_i = data_vessel.copy()
@@ -97,16 +95,14 @@ def test_simulation():
 
         result = {}
         result.update(row)
-        result['h_squat'] = h_squat       
+        result['h_squat'] = h_squat
         results.append(result)
 
     # collect info dataframe
     plot_df = pd.DataFrame(results)
 
-
-    np.testing.assert_almost_equal(4.999973,  plot_df.h_squat[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.996741,  plot_df.h_squat[1], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.986221,  plot_df.h_squat[2], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.967975,  plot_df.h_squat[3], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.941741,  plot_df.h_squat[4], decimal=3, err_msg='not almost equal', verbose=True)
-
+    np.testing.assert_almost_equal(4.9999, plot_df.h_squat[0], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.9870, plot_df.h_squat[1], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.9453, plot_df.h_squat[2], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.8729, plot_df.h_squat[3], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(4.7687, plot_df.h_squat[4], decimal=3, err_msg='not almost equal', verbose=True)
