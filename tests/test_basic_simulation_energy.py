@@ -33,7 +33,7 @@ import pytest
 
 
 def test_correction_factors():
-    corf = opentnsim.energy.correction_factors()
+    corf = opentnsim.energy.load_partial_engine_load_correction_factors()
     assert corf.shape[0] > 10, "Correction factors are not available"
 
 
@@ -138,12 +138,16 @@ def energy_vessel():
         "level": 2500,  # actual payload
         "H_e": None,
         "H_f": None,
-        "T": 3.5,
+        "T": 2.2,
+        "h_squat": True, # if consider the ship squatting while moving, set to True, otherwise set to False
         "P_installed": 1750.0,
         "P_tot_given": 396,  # kW
+        "bulbous_bow": False, # if a vessel has no bulbous_bow, set to False; otherwise set to True.
+        "P_hotel_perc": 0.05,
+        "P_hotel": None, # None: calculate P_hotel from percentage
         "L_w": 3.0,
-        "C_b": 0.85,
-        "c_year": 1990,
+        "C_B": 0.85,
+        "C_year": 1990,
         "current_year": None,
     }
 
@@ -234,7 +238,7 @@ def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
 
     # 4. Run simulation
     # Start simpy environment
-    simulation_start = datetime.datetime.now()
+    simulation_start = datetime.datetime(2000, 1, 1)
     env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
     env.epoch = time.mktime(simulation_start.timetuple())
 
@@ -257,3 +261,25 @@ def test_fixed_power_varying_depth(graph, energy_vessel, nodes):
     dt_1 = df.loc[2]["Timestamp"] - df.loc[0]["Timestamp"]
     dt_2 = df.loc[4]["Timestamp"] - df.loc[2]["Timestamp"]
     assert dt_2 > dt_1, f"second edge {dt_2} should take longer than first edge {dt_1}"
+
+
+def test_power2v(graph, energy_vessel, nodes):
+    """test a basic simulation on the graph"""
+
+    # get the graph from the fixtures
+    FG = graph
+    # here we'll use a vessel with energy mixed in
+    vessel = energy_vessel
+
+    # set the middle edge to a different waterdepth
+    middle_e = (nodes[1].name, nodes[2].name)
+    edge = FG.edges[middle_e]
+    edge["Info"]["GeneralDepth"] = 2.5
+
+    # Add environment and path to the vessel
+    simulation_start = datetime.datetime(2000, 1, 1)
+    env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
+    env.epoch = time.mktime(simulation_start.timetuple())
+
+    v = opentnsim.energy.power2v(vessel, edge)
+    assert v < 5, "power should be low"
