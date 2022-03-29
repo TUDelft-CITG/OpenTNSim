@@ -12,7 +12,7 @@
 Documentation can be found: [here](https://opentnsim.readthedocs.io/)
 
 ## Installation
- 
+
 To install OpenTNSim, run this command in your terminal:
 
 ``` bash
@@ -48,3 +48,7 @@ pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup
 ## Examples
 
 The benefit of OpenTNSim is the generic set-up. A number of examples are presented in a seperate [Jupyter Notebook repository](https://github.com/TUDelft-CITG/OpenTNSim-Notebooks). Information on how to use the notebooks is presented in that repository as well.
+
+## Book
+
+Based on the examples and docs a book can be generated using the commands `make book` and cleaned up using `make clean-book`. These commands are unix only.
