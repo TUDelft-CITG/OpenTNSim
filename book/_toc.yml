@@ -4,11 +4,13 @@
 format: jb-book
 root: Intro_draft
 parts:
-- caption: Intro
+- caption: Context
   chapters:
     - file: markdown
     - file: notebooks
     - file: api.rst
+    - file: CL2022-02-script-to-program
+      title: Creating a program like OpenTNSim
 - caption:  Basics of OpenTNSim 
   chapters: 
     - file: Example 00 - Basic simulation.ipynb
