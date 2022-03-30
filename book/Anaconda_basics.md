@@ -82,3 +82,14 @@ When you begin using conda, you already have a default environment named `base`.
 `conda list --explicit > spec-file.txt`
 
 `conda create --name copied_env --file spec-file.txt`
+
+
+### Mamba (instead of Conda)
+In case you notice that your computer is slow when using Anaconda, it could be beneficial to install Mamba. Mamba is package manager which can be used with Conda simultaneously. The link listed below takes you to a page where everything from installation to advanced usage of Mamba is explained.
+---
+
+https://mamba.readthedocs.io/en/latest/index.html
+
+---
+
+
