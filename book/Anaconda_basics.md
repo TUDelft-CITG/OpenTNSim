@@ -22,18 +22,20 @@ A few basic commands are:
 
 When you begin using conda, you already have a default environment named `base`. You don't want to put programs into your base environment, though. Create separate environments to keep your programs isolated from each other.
 
+*The video below shows how to install Anaconda on Windows. On the same Youtube channel, videos are available for MacOS users.*
+
 <p align="center">
 <iframe width="560" height="315" src="https://www.youtube.com/embed/QLDm2aQcyG8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 ### Creating and checking environments
 
-- To create a new environment named `codinglabenv`, that uses python version 3.5 specifically (if you leave out `python=3.5` conda installs the same Python version you used when you downloaded and installed Anaconda):
+- To create a new environment named `opentnsimenv`, that uses python version 3.5 specifically (if you leave out `python=3.5` conda installs the same Python version you used when you downloaded and installed Anaconda):
 
-`conda create --name codinglabenv python=3.5`
+`conda create --name opentnsimenv python=3.5`
 
-- To activate the environment named `codinglabenv`:
+- To activate the environment named `opentnsimenv`:
 
-`conda activate codinglabenv`
+`conda activate opentnsimenv`
 
 - Verify which version of Python is in your current environment:
 
@@ -46,6 +48,8 @@ When you begin using conda, you already have a default environment named `base`.
 - To display a list of all environments (the artrisk* indicates the active environment):
 
 `conda info --envs`
+
+*The video below shows how to install Anaconda on Windows. On the same Youtube channel, videos are available for MacOS users.*
 
 <p align="center">
 <iframe width="560" height="315" src="https://www.youtube.com/embed/hSh256fmIHY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
@@ -83,6 +87,19 @@ When you begin using conda, you already have a default environment named `base`.
 
 `conda create --name copied_env --file spec-file.txt`
 
+### Activating an environment and starting Jupyter Notebook
+
+- To work on notebooks in an environment name `opentnsimenv`, after just opening the Anaconda Prompt, first activate the `opentnsimenv` environment:
+
+`conda activate opentnsimenv`
+
+- Navigate to the correct directory in which you want to save your work. Save yourself some work by copying the correct directory in the Windows file explorer (Google this if you don't know how) and pasting it after `cd`:
+
+`cd C:/Users/correct/directory/...`
+
+- When in the correct directory, `Jupyter Notebook` can be booted up by:
+
+`jupyter notebook`
 
 ### Mamba (instead of Conda)
 

@@ -5,7 +5,7 @@ Below, two different beginner's guides are linked to for both Windows and MacOS.
 
 ## Windows
 
-https://www.makeuseof.com/tag/a-beginners-guide-to-the-windows-command-line/
+https://www.computerhope.com/issues/chusedos.htm
 
 ## MacOS
 
