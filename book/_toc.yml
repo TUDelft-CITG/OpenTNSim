@@ -11,6 +11,10 @@ parts:
     - file: docs/AUTHORS.rst
     - file: CL2022-02-script-to-program
       title: Creating a program like OpenTNSim
+- caption: Environment set-up Anaconda
+  chapters:
+    - file: CL2022-01-20_Environments
+      title: Setting up an environment in Anaconda
 - caption:  Basics of OpenTNSim
   chapters:
     - file: examples/Example 00 - Basic simulation.ipynb
