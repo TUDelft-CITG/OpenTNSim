@@ -13,8 +13,8 @@ parts:
       title: Creating a program like OpenTNSim
 - caption: Basics of Anaconda
   chapters:
-    - file: CL2022-01-20_Environments
-      title: Setting up an environment
+    - file: Anaconda_basics
+      title: Tutorial - Set up enviroments
 - caption:  Basics of OpenTNSim
   chapters:
     - file: examples/Example 00 - Basic simulation.ipynb
