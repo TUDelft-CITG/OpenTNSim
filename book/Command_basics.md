@@ -11,7 +11,3 @@ https://www.makeuseof.com/tag/a-beginners-guide-to-the-windows-command-line/
 
 https://www.makeuseof.com/tag/beginners-guide-mac-terminal/
 
-
-```python
-
-```
