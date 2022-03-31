@@ -1,5 +1,15 @@
 # Tutorial - Set up Environments
 
+The following section explains how you get from nothing to launching Jupyter Notebook through Anaconda. The explaination below is supported by two videos showing how to do certain steps in Windows. The following Youtube playlists visualize the key steps of this tutorial:
+
+### Windows
+
+- https://www.youtube.com/watch?v=QLDm2aQcyG8&list=PLQ6E4F0YWxJn3-lGxFg6j7IkShzy69WDc
+
+### OSX
+
+- https://www.youtube.com/watch?v=_0gQh7JDHIE&list=PLQ6E4F0YWxJkOzPUq0XavFBZfFksrtXDX
+
 ### Virtual environments
 An environment is a directory that contains a specific collection of packages that you have installed. 
 
@@ -22,7 +32,6 @@ A few basic commands are:
 
 When you begin using conda, you already have a default environment named `base`. You don't want to put programs into your base environment, though. Create separate environments to keep your programs isolated from each other.
 
-*The video below shows how to install Anaconda on Windows. On the same Youtube channel, videos are available for MacOS users.*
 
 <p align="center">
 <iframe width="560" height="315" src="https://www.youtube.com/embed/QLDm2aQcyG8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
@@ -49,7 +58,6 @@ When you begin using conda, you already have a default environment named `base`.
 
 `conda info --envs`
 
-*The video below shows how to install Anaconda on Windows. On the same Youtube channel, videos are available for MacOS users.*
 
 <p align="center">
 <iframe width="560" height="315" src="https://www.youtube.com/embed/hSh256fmIHY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
