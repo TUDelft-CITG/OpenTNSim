@@ -2,11 +2,11 @@
 
 The following section explains how you get from nothing to launching Jupyter Notebook through Anaconda. The explaination below is supported by two videos showing how to do certain steps in Windows. The following Youtube playlists visualize the key steps of this tutorial:
 
-### Windows
+**Windows**
 
 - https://www.youtube.com/watch?v=QLDm2aQcyG8&list=PLQ6E4F0YWxJn3-lGxFg6j7IkShzy69WDc
 
-### OSX
+**OSX**
 
 - https://www.youtube.com/watch?v=_0gQh7JDHIE&list=PLQ6E4F0YWxJkOzPUq0XavFBZfFksrtXDX
 
@@ -38,7 +38,7 @@ When you begin using conda, you already have a default environment named `base`.
 
 ### Creating and checking environments
 
-- To create a new environment named `opentnsimenv`, that uses python version 3.5 specifically (if you leave out `python=3.5` conda installs the same Python version you used when you downloaded and installed Anaconda):
+- To create a new environment named `opentnsimenv`, that uses python version 3.5 specifically (This is just an example, if you leave out `python=3.5` conda installs the same Python version you used when you downloaded and installed Anaconda. This is recommended when you've just downloaded Anaconda):
 
 `conda create --name opentnsimenv python=3.5`
 
