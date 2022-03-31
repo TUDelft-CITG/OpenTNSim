@@ -4,7 +4,7 @@ This section is for people that are beginners to using a command prompt. The com
 Below, two different beginner's guides are linked to for both Windows and MacOS. For the use of Python, Anaconda and other programs you'll encounter in the following chapters, it is beneficial to have a basic understanding of the Command Prompt. Especially, accessing the Command Prompt, basic commands and changing directories are of relevance for the following chapters.
 
 <p align="center">
-<img src="figures/prompt.JPG" width="600", height="400">
+<img src="file:///C:/Users/maxva/Desktop/TU/TA%20Work/OpenTNSim/GitHub/book/figures/prompt.JPG" width="600", height="400">
 
 ## Windows
 
