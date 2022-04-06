@@ -39,10 +39,10 @@ parts:
     - file: examples/Example 13 - Path selection by vessel limits.ipynb
 - caption: Energy Usage & Emissions
   chapters:
+    - file: examples/Example 17 - Lock.ipynb
     - file: examples/Example 14 - Emission footprint of IWT.ipynb
     - file: examples/Example 15 - Emission footprint of IWT (2 vessels).ipynb
     - file: examples/Example 16 - Energy use in package.ipynb
-    - file: examples/Example 17 - Lock.ipynb
 - caption: API
   chapters:
     - file: docs/opentnsim.rst
