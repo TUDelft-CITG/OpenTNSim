@@ -91,6 +91,6 @@ setup(
         'testing': tests_require
     },
     url="https://github.com/TUDelft-CITG/OpenTNSim",
-    version="1.1.1",
+    version="1.1.2",
     zip_safe=False,
 )

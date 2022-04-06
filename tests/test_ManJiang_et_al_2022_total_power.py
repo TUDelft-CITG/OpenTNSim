@@ -1,4 +1,4 @@
-'''Here we test the total power required with input Vs=3 m/s, h_0 = 5 m, C_year = 2000, consider squat ''' 
+'''Here we test the total power required with input Vs= [0.1, 1, 2, 3, 4] m/s, h_0 = 5 m, C_year = 2000, do not consider squat ''' 
 
 # Importing libraries
 
@@ -53,15 +53,16 @@ def test_simulation():
 		       "H_f": None,
 		       "T": 2.75,
 		       "safety_margin": 0.3,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
-		       "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False
+		       "h_squat": False,  # if consider the ship squatting while moving, set to True, otherwise set to False
 		       "P_installed": 2200.0,
 		       "P_tot_given": None,  # kW
 		       "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
 		       "P_hotel_perc": 0.05,
 		       "P_hotel": None,  # None: calculate P_hotel from percentage
+               "x": 2,
 		       "L_w": 3.0,
 		       "C_B": 0.85,
-		       "C_year": 1990,
+		       "C_year": 2000,
 		       }
 
 	# input
@@ -111,9 +112,9 @@ def test_simulation():
 	ms_to_kmh = 3.6
 	plot_df['V_s_km'] = plot_df['V_s'] * ms_to_kmh
 
-	np.testing.assert_almost_equal(110.009360,  plot_df.P_tot[0], decimal=2, err_msg='not almost equal', verbose=True)
-	np.testing.assert_almost_equal(116.916770,  plot_df.P_tot[1], decimal=2, err_msg='not almost equal', verbose=True)
-	np.testing.assert_almost_equal(160.922910,  plot_df.P_tot[2], decimal=2, err_msg='not almost equal', verbose=True)
-	np.testing.assert_almost_equal(276.656104,  plot_df.P_tot[3], decimal=2, err_msg='not almost equal', verbose=True)
-	np.testing.assert_almost_equal(612.704817,  plot_df.P_tot[4], decimal=2, err_msg='not almost equal', verbose=True)
+	np.testing.assert_almost_equal(110.014040,  plot_df.P_tot[0], decimal=2, err_msg='not almost equal', verbose=True)
+	np.testing.assert_almost_equal(120.374178,  plot_df.P_tot[1], decimal=2, err_msg='not almost equal', verbose=True)
+	np.testing.assert_almost_equal(186.265457,  plot_df.P_tot[2], decimal=2, err_msg='not almost equal', verbose=True)
+	np.testing.assert_almost_equal(359.139047,  plot_df.P_tot[3], decimal=2, err_msg='not almost equal', verbose=True)
+	np.testing.assert_almost_equal(764.420507,  plot_df.P_tot[4], decimal=2, err_msg='not almost equal', verbose=True)
 
