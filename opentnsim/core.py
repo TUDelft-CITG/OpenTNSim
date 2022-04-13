@@ -892,6 +892,15 @@ class ConsumesEnergy:
         Please note: later on a correction factor has to be applied to get the total emission factor
         """
 
+        # The SFC for alternatives, calculated by energy density (kWh/kg for fuel, kWh for battery) multiplying energy efficiency of the energy conversion system on board, energy efficiency for alternative fuels is 40%-60%, for battery is 70-95%, here we use the upper boundary (60% for alternative fuel and 95% for battery) considering the technique development along the time. 
+        # To do: To make two lists for energy density (net) and energy efficiency, respectively.
+        self.SFC_LH2 = 1 /((33.3/1000)* 0.6)    # g/kWh
+        self.SFC_eLNG = 1 /((14.4/1000) * 0.6)         # g/kWh
+        self.SFC_eMethanol = 1 / ((5.53/1000) * 0.6)    # g/kWh
+        self.SFC_eNH3 = 1 / ((5.17/1000) * 0.6)         # g/kWh
+        self.SFC_Battery2000kWh = 1/(2000 * 0.95)       # kWh
+        
+        
         # The general emission factors of CO2, PM10 and NOX, and SFC are based on the construction year of the engine
 
         if self.C_year < 1974:
@@ -951,6 +960,8 @@ class ConsumesEnergy:
         logger.debug(f'The general emission factor CO2 is {self.EF_NOX} g/kWh')
         logger.debug(f'The general fuel consumption factor for diesel is {self.SFC} g/kWh')
 
+        
+        
     def correction_factors(self, v):
         """ Partial engine load correction factors (C_partial_load):
 
@@ -1060,6 +1071,13 @@ class ConsumesEnergy:
         self.total_factor_PM10 = self.EF_PM10 * self.C_partial_load_PM10
         self.total_factor_NOX = self.EF_NOX * self.C_partial_load_NOX
         self.total_factor_FU = self.SFC * self.C_partial_load_fuel
+        # To do: update load factor (C_partial_load) for ICE engine and fuel cell engine, now we use the same factor        
+        self.total_factor_LH2 = self.SFC_LH2 * self.C_partial_load_fuel 
+        self.total_factor_eLNG = self.SFC_eLNG * self.C_partial_load_fuel
+        self.total_factor_eMethanol = self.SFC_eMethanol * self.C_partial_load_fuel
+        self.total_factor_eNH3 = self.SFC_eNH3 * self.C_partial_load_fuel
+        self.total_factor_Battery2000kWh = self.SFC_Battery2000kWh * self.C_partial_load_fuel
+        
 
         logger.debug(f'The total emission factor of CO2 is {self.total_factor_CO2} g/kWh')
         logger.debug(f'The total emission factor of PM10 is {self.total_factor_PM10} g/kWh')

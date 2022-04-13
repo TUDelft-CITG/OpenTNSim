@@ -204,6 +204,11 @@ class EnergyCalculation:
                            "P_installed": [],
                            "total_energy": [],
                            "total_fuel_consumption": [],
+                           "total_LH2_consumption": [],
+                           "total_eLNG_consumption": [],
+                           "total_eMethanol_consumption": [],
+                           "total_eNH3_consumption": [],
+                           "total_Battery2000kWh_consumption": [],                         
                            "total_emission_CO2": [],
                            "total_emission_PM10": [],
                            "total_emission_NOX": [],
@@ -315,7 +320,14 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
+                    #To do: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors 
                     emission_delta_fuel = self.vessel.total_factor_FU * energy_delta # in g
+                    emission_delta_LH2 = self.vessel.total_factor_LH2 * energy_delta # in g
+                    emission_delta_eLNG = self.vessel.total_factor_eLNG * energy_delta # in g
+                    emission_delta_eMethanol = self.vessel.total_factor_eMethanol * energy_delta # in g
+                    emission_delta_eNH3 = self.vessel.total_factor_eNH3 * energy_delta # in g
+                    emission_delta_Battery2000kWh = self.vessel.total_factor_Battery2000kWh * energy_delta # in ZESpack number
+                    
 
                     self.energy_use["P_tot"].append(P_hotel_delta)
                     self.energy_use["P_installed"].append(P_installed_delta)
@@ -324,7 +336,15 @@ class EnergyCalculation:
                     self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
                     self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
                     self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
+                    #To do: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
                     self.energy_use["total_fuel_consumption"].append(emission_delta_fuel)
+                    self.energy_use["total_LH2_consumption"].append(emission_delta_LH2)
+                    self.energy_use["total_eLNG_consumption"].append(emission_delta_eLNG)
+                    self.energy_use["total_eMethanol_consumption"].append(emission_delta_eMethanol)
+                    self.energy_use["total_eNH3_consumption"].append(emission_delta_eNH3)
+                    self.energy_use["total_Battery2000kWh_consumption"].append(emission_delta_Battery2000kWh)
+                    
+                    
 
                     if not np.isnan(h_0):
                         self.energy_use["water depth"].append(h_0)
@@ -342,7 +362,13 @@ class EnergyCalculation:
                     emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta #Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta # in g
+                    #To do: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors 
                     emission_delta_fuel=self.vessel.total_factor_FU * energy_delta # in g
+                    emission_delta_LH2 = self.vessel.total_factor_LH2 * energy_delta # in g
+                    emission_delta_eLNG = self.vessel.total_factor_eLNG * energy_delta # in g
+                    emission_delta_eMethanol = self.vessel.total_factor_eMethanol * energy_delta # in g
+                    emission_delta_eNH3 = self.vessel.total_factor_eNH3 * energy_delta # in g
+                    emission_delta_Battery2000kWh = self.vessel.total_factor_Battery2000kWh * energy_delta # in ZESpack number
 
                     self.energy_use["P_tot"].append(P_tot_delta)
                     self.energy_use["P_installed"].append(P_installed_delta)
@@ -351,7 +377,14 @@ class EnergyCalculation:
                     self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
                     self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
                     self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
+                    #To do: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
                     self.energy_use["total_fuel_consumption"].append(emission_delta_fuel)
+                    self.energy_use["total_LH2_consumption"].append(emission_delta_LH2)
+                    self.energy_use["total_eLNG_consumption"].append(emission_delta_eLNG)
+                    self.energy_use["total_eMethanol_consumption"].append(emission_delta_eMethanol)
+                    self.energy_use["total_eNH3_consumption"].append(emission_delta_eNH3)
+                    self.energy_use["total_Battery2000kWh_consumption"].append(emission_delta_Battery2000kWh)
+                
                     self.energy_use["water depth"].append(h_0)
                     #self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
 
@@ -363,7 +396,7 @@ class EnergyCalculation:
         # - en er is nog iets mis met de snelheid rond een sluis
 
         # - add HasCurrent Class or def
-        # - add HasSquat
+
 
     def plot(self):
 
