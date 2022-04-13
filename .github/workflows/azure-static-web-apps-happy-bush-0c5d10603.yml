@@ -30,6 +30,8 @@ jobs:
           pip install -e .
       - name: Copy examples and build the book
         run: |
+          ls -alh
+          pwd
           ./build-book.sh
       - name: Build And Deploy
         id: builddeploy
