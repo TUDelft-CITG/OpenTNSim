@@ -1,4 +1,4 @@
-'''Here we test the emission rates with input Vs=3 m/s, h_0 = 5 m, C_year = 2000, consider squat ''' 
+'''Here we test the emission rates with input Vs=3 m/s, h_0 = 5 m, C_year = 2000, do not consider squat ''' 
 
 # Importing libraries
 
@@ -53,15 +53,16 @@ def test_simulation():
                    "H_f": None,
                    "T": 2.75,
                    "safety_margin": 0.2,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
-                   "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False
+                   "h_squat": False,  # if consider the ship squatting while moving, set to True, otherwise set to False
                    "P_installed": 2200.0,
                    "P_tot_given": None,  # kW
                    "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
                    "P_hotel_perc": 0.05,
                    "P_hotel": None,  # None: calculate P_hotel from percentage
+                   "x": 2,
                    "L_w": 3.0,
                    "C_B": 0.85,
-                   "C_year": 1990,
+                   "C_year": 2000,
                    }
 
     # input
@@ -117,33 +118,33 @@ def test_simulation():
     ms_to_kmh = 3.6
     plot_df['V_s_km'] = plot_df['V_s'] * ms_to_kmh
 
-    np.testing.assert_almost_equal(248284.3383, plot_df.emission_g_km_CO2[0], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(248294.562972, plot_df.emission_g_km_CO2[0], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(223.6793, plot_df.emission_g_km_PM10[0], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(223.685737, plot_df.emission_g_km_PM10[0], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(5256.4941, plot_df.emission_g_km_NOX[0], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(5256.657899, plot_df.emission_g_km_NOX[0], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(26334.7930, plot_df.emission_g_km_CO2[1], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(27085.792509, plot_df.emission_g_km_CO2[1], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(23.2768, plot_df.emission_g_km_PM10[1], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(23.709784, plot_df.emission_g_km_PM10[1], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(549.2677, plot_df.emission_g_km_NOX[1], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(560.662961, plot_df.emission_g_km_NOX[1], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(17890.6867, plot_df.emission_g_km_CO2[2], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(20553.193316, plot_df.emission_g_km_CO2[2], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(13.8462, plot_df.emission_g_km_PM10[2], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(14.578446, plot_df.emission_g_km_PM10[2], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(336.8143, plot_df.emission_g_km_NOX[2], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(362.404213, plot_df.emission_g_km_NOX[2], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(19889.9452, plot_df.emission_g_km_CO2[3], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(25333.749547, plot_df.emission_g_km_CO2[3], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(11.2993, plot_df.emission_g_km_PM10[3], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(12.824885, plot_df.emission_g_km_PM10[3], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(301.5792, plot_df.emission_g_km_NOX[3], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(359.927008, plot_df.emission_g_km_NOX[3], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(30936.8886, plot_df.emission_g_km_CO2[4], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(37645.554426, plot_df.emission_g_km_CO2[4], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(14.0053, plot_df.emission_g_km_PM10[4], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(16.745932, plot_df.emission_g_km_PM10[4], decimal=3, err_msg='not almost equal',
                                    verbose=True)
-    np.testing.assert_almost_equal(419.3977, plot_df.emission_g_km_NOX[4], decimal=3, err_msg='not almost equal',
+    np.testing.assert_almost_equal(514.219726, plot_df.emission_g_km_NOX[4], decimal=3, err_msg='not almost equal',
                                    verbose=True)

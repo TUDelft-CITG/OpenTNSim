@@ -410,7 +410,7 @@ class ConsumesEnergy:
             rho=1000,
             g=9.81,
             x=2,
-            eta_o=0.6,
+            eta_o=0.4,
             eta_r=1.00,
             eta_t=0.98,
             eta_g=0.96,
