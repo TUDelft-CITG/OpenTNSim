@@ -56,7 +56,6 @@ tests_require = [
     "colorcet",
     "notebook",
     "jupyter",
-    "gdal",
     "jupyter-book"
 ]
 
