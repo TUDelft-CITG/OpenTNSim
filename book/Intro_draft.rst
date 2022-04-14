@@ -5,47 +5,50 @@ Open source Transport Network Simulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 OpenTNSim is a python package for the investigation of traffic behaviour
-on networks. It can be used to compare the consequences of different traffic scenarios
-and network configurations.
+on networks. It can be used to investigate how water transport chains
+interact with the waterway network and its infrastructure. Simulations
+can be used  to compare the consequences of traffic scenarios and network
+configurations.
 
 Book overview
 ~~~~~~~~~~~~~
 
-For the design and optimization of ports, waterways and inland
-waterways, simulation can be a helpful tool. While simulations aren’t
-the same are real life data, they do often save time and money. They
-also allow you to explore the unknown. You can simulate unseen
-extremes (incidents, climate) and variants of the real world (with
-changes to the fairway or the infrastructure).
+For the design and optimization of port water areas and inland
+waterways, simulation can be a helpful tool. While simulations are not
+the same as real life data, they still can save time and money since they
+allow us to explore the unknown. You can simulate unseen
+events (incidents, low/high water extremes) and variants of the real world
+(possible changes to the waterway and/or its infrastructure).
 
-OpenTNSIm is an open source python package that can be used to
-simulate vessels and (existing) maritime networks. Some of the
-possibilities of OpenTNSim are the visualisation of sailed paths, the
-generation (random) vessels, the use of real-world data and
-determining energy usage and emissions of vessels. With the increasing
-demand in the maritime and inland shipping market and the changes due
-to climate change, OpenTNSim and its possibilities can be of great
-help.
+OpenTNSIm simulates vessels navigating (existing or planned) waterway networks.
+Useful features are visualisation of sailed paths (route selection, traffic
+intensities, transport capacity), analysis of the behaviour and interaction
+of (random) generated vessels, integration of real-world data (water levels,
+currents) and estimation of energy consumption, fuel use and emissions of vessels.
+With the increasing demand for sea-going and inland shipping and societal changes
+related to digitalisation, sustainability, and climate change, OpenTNSim can help
+researchers and practitioners to investigate the complexity of water transport
+networks and support decision making under conditions of uncertainty.
 
 This book provides an introduction to the use and application of the
 OpenTNSim package. The goal of this book is to introduce the basics of
-the package by explaining the how to setup your first simulation. The
+the package by explaining how to setup your first simulation. The
 book will guide you through the use of real-life data and the
 simulation of more complex systems by explaining the use of shape
 files, multiple vessel generators and the visualization of sailed
-paths. Finally, it will be adressed how to retrieve emissions and
-energy usage data from the simulations.
+paths. Finally, it addresses how to estimate energy consumption, fuel use and
+emissions from the simulations.
 
 This book intends to serve researchers, engineers and students that
-want to simulate vessel traffic on inland and marine waterways. The
-OpenTNSim has grown into a community effort to collect algorithms that
-can represent sailing strategies, engines, and structures
+want to simulate vessel traffic on marine and inland waterways. OpenTNSim
+has grown into a community effort to collect algorithms that
+can represent sailing strategies, engines choices/setting, and structures
 (e.g. locks). Using discrete event simulations (schematized using an
-event log, using queuing an asynchronous tasks), the model is well
+event log, using queuing and asynchronous tasks), the model is well
 suited to be integrated into the logistical chain of ports and
 waterways. Due to its open-source nature, OpenTNSim facilitates an
 environment where connections with external data, models and tools can
-be made, such as digital twins..
+be made, such as digital twins.
 
 
 Goals
