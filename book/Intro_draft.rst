@@ -66,8 +66,8 @@ OpenTNSim is an open-source Python package which is an adaptation of
 the OpenCLSim package. OpenCLSim was developed by the Ports and
 Waterways (P&W) department of TU Delft, Van Oord and Deltares. The
 development of the tool was started by the P&W department for the
-analysis of maritime transport. Van Oord, Deltares and P&W joined efforts to
-increase the adaptability and workability of the tool.
+analysis of maritime transport. Van Oord, Deltares and P&W joined
+efforts to increase the adaptability and workability of the tool.
 
 Simulation of real-world processes requires a representation of the
 real-world system and a way to represent the different processes in such
@@ -78,19 +78,19 @@ SimPy package for this kind of event simulation. SimPy revolves around
 the passing fixed periods of time that represent different processes
 [ref Team Simpy]. The outcome of a such a process can be either a
 triggered event or a non-triggered event. When an event is triggered and
-completed, the procces can be a succes or a failure. The failure can be
-inherent (caused by the process itself) or caused by the interuption of
+completed, the process can be a success or a failure. The failure can be
+inherent (caused by the process itself) or caused by the interruption of
 a different process [ref OpenCLSim article]. In SimPy it is possible to
-create interdepencies between different processes and thus create a
+create interdependencies between different processes and thus create a
 schematisation of a real-world chain of events.
 
 OpenCLSim builds on SimPy by the addition of maritime-specific
-activities: e.g. loading and unloading of items and the moving and
-storing of items. Furthemore, the addition of components such as, ports,
+activities: e.g. loading and unloading of items and the moving and
+storing of items. Furthermore, the addition of components such as, ports,
 terminals, storage, quays, cranes and vessels, allow for a real-world
 maritime system to be simulated. To increase the usability of these
-maritime components and acitivities, OpenCLSim utilises so-called *mixin
-classes*. These *mixins* respresent a certain set of parameters that
+maritime components and activities, OpenCLSim utilises so-called *mixin
+classes*. These *mixins* represent a certain set of parameters that
 apply to a type of activity or component. This makes it easier to
 configure complex supply chains. An example of such a mixin is the mixin
 *Processor*. This class has loading and unloading functions and can be
