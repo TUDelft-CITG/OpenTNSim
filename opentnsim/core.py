@@ -2009,7 +2009,7 @@ class IsLock(HasResource, HasLength, Identifiable, Log):
         wlev_dif, #a float or list of floats which resembles the water level difference over the lock
         disch_coeff, #a float which contains the discharge coefficient of filling system
         opening_area, #a float which contains the cross-sectional area of filling system
-        opening_depth, #a float which contains the depth at which filling system is located
+        opening_time, #a float which contains the time for the filling system to gradually open
         simulation_start, #a datetime which contains the simulation start time
         operating_time,
         grav_acc = 9.81, #a float which contains the gravitational acceleration
@@ -2025,7 +2025,7 @@ class IsLock(HasResource, HasLength, Identifiable, Log):
         self.disch_coeff = disch_coeff
         self.grav_acc = grav_acc
         self.opening_area = opening_area
-        self.opening_depth = opening_depth
+        self.opening_time = opening_time
         self.operating_time = operating_time
         self.simulation_start = simulation_start.timestamp()
 
@@ -2050,12 +2050,14 @@ class IsLock(HasResource, HasLength, Identifiable, Log):
 
             Input:
                 - environment: see init function"""
-
+        h_dif = 0
         if type(self.wlev_dif) == list: #picks the wlev_dif from measurement signal closest to the discrete time
-            operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif[1][np.abs(self.wlev_dif[0]-(environment.now-self.simulation_start)).argmin()]))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
-
+            h_dif = abs(self.wlev_dif[1][np.abs(self.wlev_dif[0]-(environment.now-self.simulation_start)).argmin()])
+            
         elif type(self.wlev_dif) == float or type(self.wlev_dif) == int: #constant water level difference
-            operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+            h_dif = abs(self.wlev_dif)
+
+        operating_time = (self.opening_time / 2) + (2 * self.lock_width * self.lock_length * h_dif) / (self.disch_coeff * self.opening_area * math.sqrt(2 * self.grav_acc * h_dif))
 
         return operating_time
 
@@ -3242,7 +3244,7 @@ class Movable(Locatable, Routeable, Log):
     geometry: point used to track its current location
     v: speed"""
 
-    def __init__(self, v=4, *args, **kwargs):
+    def __init__(self, v, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.v = v
@@ -3250,10 +3252,12 @@ class Movable(Locatable, Routeable, Log):
         self.on_look_ahead_to_node = []
         self.on_pass_edge = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
+        self.metadata['v0'] = self.v
 
     def initial_timeout(self):
         yield self.env.timeout(self.metadata['start_time'])
         self.metadata['start_time'] = 0
+        self.metadata['v0'] = self.v
 
     def move(self):
         """determine distance between origin and destination, and
@@ -3457,14 +3461,16 @@ class HasAnchorage(Movable):
             raise simpy.exceptions.Interrupt('New route determined')
 
 class HasLock(Movable):
-    def __init__(self,*args, **kwargs):
+    def __init__(self, lock_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.lock_name = lock_name
         self.on_pass_node.append(self.leave_lock_chamber)
 
     def leave_lock_chamber(self,origin):
         if "Lock" in self.env.FG.nodes[origin].keys():  # if vessel in lock
             yield from lock_module.PassLock.leave_lock(self, origin)
-            self.v = 4 * self.v
+            #self.v = 4 * self.v
+            self.v = self.metadata['v0']
 
 class HasWaitingArea(Movable):
     def __init__(self,*args, **kwargs):

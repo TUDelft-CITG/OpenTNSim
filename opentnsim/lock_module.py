@@ -265,7 +265,7 @@ class PassLock():
                  lineup_area.line_up_area[node_lineup_area].users[-1].lineup_pos_lon] = [vessel.lineup_pos_lat, vessel.lineup_pos_lon]
                 lineup_area.line_up_area[node_lineup_area].users[-1].lineup_dist = vessel.lineup_dist
                 lineup_area.line_up_area[node_lineup_area].users[-1].n = len(lineup_area.line_up_area[node_lineup_area].users) #(the number of vessels in the line-up area at the moment)
-                lineup_area.line_up_area[node_lineup_area].users[-1].v = 0.5*vessel.v
+                lineup_area.line_up_area[node_lineup_area].users[-1].v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
                 lineup_area.line_up_area[node_lineup_area].users[-1].wait_for_next_cycle = False #(a boolean which indicates if the vessel has to wait for a next lock cycle)
                 lineup_area.line_up_area[node_lineup_area].users[-1].waited_in_waiting_area = False #(a boolean which indicates if the vessel had to wait in the waiting area)
 
@@ -274,7 +274,8 @@ class PassLock():
                 yield vessel.enter_lineup_length
 
                 #Speed reduction in the approach to the line-up area
-                vessel.v = 0.5*vessel.v
+                vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
+                #vessel.v = 0.5 * vessel.v
 
                 #Calculates and reports the total waiting time in the waiting area
                 if wait_for_lineup_area != vessel.env.now:
@@ -285,7 +286,7 @@ class PassLock():
                                      nx.get_node_attributes(vessel.env.FG, "geometry")[node_waiting_area])
 
                     #Speed reduction in the approach to the line-up area, as the vessel had to lay still in the waiting area
-                    vessel.v = 0.5*vessel.v
+                    vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
 
                     #Changes boolean of the vessel which indicates that it had to wait in the waiting area
                     for line_up_user in range(len(lineup_area.line_up_area[node_lineup_area].users)):
@@ -429,7 +430,8 @@ class PassLock():
                     for line_up_user in range(len(lineup_area.line_up_area[node_lineup_area].users)):
                         if (lineup_area.line_up_area[node_lineup_area].users[line_up_user].id == vessel.id and not
                             lineup_area.line_up_area[node_lineup_area].users[line_up_user].waited_in_waiting_area):
-                            vessel.v = 0.5*vessel.v
+                            vessel.v = vessel.metadata['speed_reduction'][1] * vessel.metadata['v0']
+                            #vessel.v = vessel.v
                             break
 
                     #Imports position of the vessel in the line-up area
@@ -570,7 +572,10 @@ class PassLock():
                                 yield from request_empty_lock_conversion()
 
                             # Request to start the lock cycle
-                            if not lock.resource.users[-1].converting:
+                            if lock.resource.users == []:
+                                yield from request_approach_lock_chamber(priority=-1)
+
+                            elif not lock.resource.users[-1].converting:
                                 yield from request_approach_lock_chamber()
                             else:
                                 yield from request_approach_lock_chamber(priority=-1)
@@ -756,6 +761,15 @@ class PassLock():
                         yield from waiting_for_other_lock_users(vessel,lock,node_lock,lineup_area,node_lineup_area,lock.doors_1[lock.node_1])
                     if not direction and first_user_in_lineup_length < lock.length.level:
                         yield from waiting_for_other_lock_users(vessel,lock,node_lock,lineup_area,node_lineup_area,lock.doors_2[lock.node_3])
+
+                    #Add a waiting time in the lock. Waiting called by the lock operator to wait for coming ship.
+                    def waiting_time_by_operator(vessel, position_in_lock):
+                        vessel.log_entry("Waiting in chamber, called by operator", vessel.env.now, vessel.metadata['operator_waiting'],
+                                         position_in_lock)
+                        yield vessel.env.timeout(vessel.metadata['operator_waiting'])
+
+                    if vessel.metadata['operator_waiting'] is not None:
+                        yield from waiting_time_by_operator(vessel, position_in_lock)
 
                     #Determines if the vessel explicitely has to request the conversion of the lock chamber (only the last entered vessel) or can go with a previously made request
                     if lock.resource.users[-1].id == vessel.id + '_' + str(vessel.lock_dist):
