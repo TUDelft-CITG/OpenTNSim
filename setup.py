@@ -56,7 +56,8 @@ tests_require = [
     "colorcet",
     "notebook",
     "jupyter",
-    "jupyter-book"
+    "jupyter-book",
+    "tqdm"
 ]
 
 with open("README.md", "r") as des:

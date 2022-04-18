@@ -20,7 +20,7 @@ allow us to explore the unknown. You can simulate unseen
 events (incidents, low/high water extremes) and variants of the real world
 (possible changes to the waterway and/or its infrastructure).
 
-OpenTNSIm simulates vessels navigating (existing or planned) waterway networks.
+OpenTNSim simulates vessels navigating (existing or planned) waterway networks.
 Useful features are visualisation of sailed paths (route selection, traffic
 intensities, transport capacity), analysis of the behaviour and interaction
 of (random) generated vessels, integration of real-world data (water levels,
