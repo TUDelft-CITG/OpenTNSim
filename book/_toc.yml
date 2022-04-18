@@ -20,8 +20,8 @@ parts:
 - caption:  Basics of OpenTNSim
   chapters:
     - file: examples/Example 00 - Basic simulation.ipynb
-    - file: examples/Example 01 - Defining a basic graph.ipynb
     - file: examples/Example 02 - Defining a basic vessel.ipynb
+    - file: examples/Example 01 - Defining a basic graph.ipynb
     - file: examples/Example 03 - Defining a basic simulation.ipynb
 - caption: Real-world
   chapters:
