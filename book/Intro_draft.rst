@@ -15,7 +15,7 @@ Book overview
 
 For the design and optimization of port water areas and inland
 waterways, simulation can be a helpful tool. While simulations are not
-the same as real life data, they still can save time and money since they
+the same as real life data, they still can save time and money as they
 allow us to explore the unknown. You can simulate unseen
 events (incidents, low/high water extremes) and variants of the real world
 (possible changes to the waterway and/or its infrastructure).
