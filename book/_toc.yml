@@ -31,7 +31,7 @@ parts:
     - file: examples/Example 07 - Using actual graphs and graph_module.py.ipynb
 - caption: Advanced simulation
   chapters:
-    - file: examples/Energy consumption, fuel use and emissions.ipynb
+    - file: examples/Example 14 - Energy consumption, fuel use and emissions.ipynb
     - file: examples/Example 08 - Multiple vessels.ipynb
     - file: examples/Example 09 - Multiple vessels - edge constraints.ipynb
     - file: examples/Example 11 - Multiple vessels - from database.ipynb
