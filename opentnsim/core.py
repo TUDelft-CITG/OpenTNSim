@@ -859,7 +859,8 @@ class ConsumesEnergy:
         self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP), P_b
-        self.P_b = self.P_d / (self.eta_t * self.eta_g)
+        # self.P_b = self.P_d / (self.eta_t * self.eta_g)
+        self.P_b = self.P_d / 1
         self.P_propulsion = self.P_b    # propulsion power is brake horse power
 
         self.P_tot = self.P_hotel + self.P_propulsion
@@ -894,12 +895,24 @@ class ConsumesEnergy:
 
         # The SFC for alternatives, calculated by energy density (kWh/kg for fuel, kWh for battery) multiplying energy efficiency of the energy conversion system on board, energy efficiency for alternative fuels is 40%-60%, for battery is 70-95%, here we use the upper boundary (60% for alternative fuel and 95% for battery) considering the technique development along the time. 
         # To do: To make two lists for energy density (net) and energy efficiency, respectively.
-        self.SFC_LH2 = 1 /((33.3/1000)* 0.6)    # g/kWh
-        self.SFC_eLNG = 1 /((14.4/1000) * 0.6)         # g/kWh
-        self.SFC_eMethanol = 1 / ((5.53/1000) * 0.6)    # g/kWh
-        self.SFC_eNH3 = 1 / ((5.17/1000) * 0.6)         # g/kWh
-        self.SFC_Battery2000kWh = 1/(2000 * 0.95)       # kWh
-        
+        self.SFC_LH2 = 1 /((33.3/1000)* 0.45)    # g/kWh
+        self.SFC_eLNG = 1 /((14.4/1000) * 0.45)         # g/kWh
+        self.SFC_eMethanol = 1 / ((5.53/1000) * 0.45)    # g/kWh
+        self.SFC_eNH3 = 1 / ((5.17/1000) * 0.45)         # g/kWh
+        self.SFC_Battery2000kWh = 1/(2000 * 0.73)       # kWh
+        self.SFC_diesel = 1 /((12.89/1000) * 0.34)         # g/kWh
+        # volume pure fuel        
+        self.SFC_LH2_vol = 1 /((2.556)* 0.45)    # l/kWh
+        self.SFC_eLNG_vol = 1 /(5.8 * 0.45)         # L/kWh
+        self.SFC_eMethanol_vol = 1 / (4.389 * 0.45)    # L/kWh
+        self.SFC_eNH3_vol = 1 / (3.917* 0.45)         # L/kWh
+        self.SFC_diesel_vol = 1 /(9.4* 0.34)         # L/kWh
+        # use effective energy density
+        # self.SFC_LH2_vol = 1 /((1.064)* 0.45)    # l/kWh
+        # self.SFC_eLNG_vol = 1 /(1.003 * 0.45)         # L/kWh
+        # self.SFC_eMethanol_vol = 1 / (1.95 * 0.45)    # L/kWh
+        # self.SFC_eNH3_vol = 1 / (1.439* 0.45)         # L/kWh
+        # self.SFC_diesel_vol = 1 /(4.25* 0.34)         # L/kWh
         
         # The general emission factors of CO2, PM10 and NOX, and SFC are based on the construction year of the engine
 
@@ -1070,13 +1083,20 @@ class ConsumesEnergy:
         self.total_factor_CO2 = self.EF_CO2 * self.C_partial_load_CO2
         self.total_factor_PM10 = self.EF_PM10 * self.C_partial_load_PM10
         self.total_factor_NOX = self.EF_NOX * self.C_partial_load_NOX
-        self.total_factor_FU = self.SFC * self.C_partial_load_fuel
+        # self.total_factor_FU = self.SFC * self.C_partial_load_fuel
+        self.total_factor_FU = self.SFC_diesel * self.C_partial_load_fuel
         # To do: update load factor (C_partial_load) for ICE engine and fuel cell engine, now we use the same factor        
         self.total_factor_LH2 = self.SFC_LH2 * self.C_partial_load_fuel 
         self.total_factor_eLNG = self.SFC_eLNG * self.C_partial_load_fuel
         self.total_factor_eMethanol = self.SFC_eMethanol * self.C_partial_load_fuel
         self.total_factor_eNH3 = self.SFC_eNH3 * self.C_partial_load_fuel
         self.total_factor_Battery2000kWh = self.SFC_Battery2000kWh * self.C_partial_load_fuel
+        #VOLUME
+        self.total_factor_FU_vol = self.SFC_diesel_vol * self.C_partial_load_fuel
+        self.total_factor_LH2_vol = self.SFC_LH2_vol * self.C_partial_load_fuel 
+        self.total_factor_eLNG_vol = self.SFC_eLNG_vol * self.C_partial_load_fuel
+        self.total_factor_eMethanol_vol = self.SFC_eMethanol_vol * self.C_partial_load_fuel
+        self.total_factor_eNH3_vol = self.SFC_eNH3_vol * self.C_partial_load_fuel
         
 
         logger.debug(f'The total emission factor of CO2 is {self.total_factor_CO2} g/kWh')

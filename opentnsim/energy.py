@@ -208,6 +208,11 @@ class EnergyCalculation:
                            "total_eLNG_consumption": [],
                            "total_eMethanol_consumption": [],
                            "total_eNH3_consumption": [],
+                           "total_fuel_consumption_vol": [],
+                           "total_LH2_consumption_vol": [],
+                           "total_eLNG_consumption_vol": [],
+                           "total_eMethanol_consumption_vol": [],
+                           "total_eNH3_consumption_vol": [],
                            "total_Battery2000kWh_consumption": [],                         
                            "total_emission_CO2": [],
                            "total_emission_PM10": [],
@@ -327,7 +332,13 @@ class EnergyCalculation:
                     emission_delta_eMethanol = self.vessel.total_factor_eMethanol * energy_delta # in g
                     emission_delta_eNH3 = self.vessel.total_factor_eNH3 * energy_delta # in g
                     emission_delta_Battery2000kWh = self.vessel.total_factor_Battery2000kWh * energy_delta # in ZESpack number
-                    
+                    # volume
+                    emission_delta_fuel_vol = self.vessel.total_factor_FU_vol * energy_delta # in L
+                    emission_delta_LH2_vol = self.vessel.total_factor_LH2_vol * energy_delta # in L
+                    emission_delta_eLNG_vol = self.vessel.total_factor_eLNG_vol * energy_delta # in L
+                    emission_delta_eMethanol_vol = self.vessel.total_factor_eMethanol_vol * energy_delta # in L
+                    emission_delta_eNH3_vol = self.vessel.total_factor_eNH3_vol * energy_delta # in L
+
 
                     self.energy_use["P_tot"].append(P_hotel_delta)
                     self.energy_use["P_installed"].append(P_installed_delta)
@@ -343,7 +354,13 @@ class EnergyCalculation:
                     self.energy_use["total_eMethanol_consumption"].append(emission_delta_eMethanol)
                     self.energy_use["total_eNH3_consumption"].append(emission_delta_eNH3)
                     self.energy_use["total_Battery2000kWh_consumption"].append(emission_delta_Battery2000kWh)
-                    
+                    # volume
+                    self.energy_use["total_fuel_consumption_vol"].append(emission_delta_fuel_vol)
+                    self.energy_use["total_LH2_consumption_vol"].append(emission_delta_LH2_vol)
+                    self.energy_use["total_eLNG_consumption_vol"].append(emission_delta_eLNG_vol)
+                    self.energy_use["total_eMethanol_consumption_vol"].append(emission_delta_eMethanol_vol)
+                    self.energy_use["total_eNH3_consumption_vol"].append(emission_delta_eNH3_vol)
+
                     
 
                     if not np.isnan(h_0):
@@ -369,6 +386,12 @@ class EnergyCalculation:
                     emission_delta_eMethanol = self.vessel.total_factor_eMethanol * energy_delta # in g
                     emission_delta_eNH3 = self.vessel.total_factor_eNH3 * energy_delta # in g
                     emission_delta_Battery2000kWh = self.vessel.total_factor_Battery2000kWh * energy_delta # in ZESpack number
+                    # volume
+                    emission_delta_fuel_vol = self.vessel.total_factor_FU_vol * energy_delta # in L
+                    emission_delta_LH2_vol = self.vessel.total_factor_LH2_vol * energy_delta # in L
+                    emission_delta_eLNG_vol = self.vessel.total_factor_eLNG_vol * energy_delta # in L
+                    emission_delta_eMethanol_vol = self.vessel.total_factor_eMethanol_vol * energy_delta # in L
+                    emission_delta_eNH3_vol = self.vessel.total_factor_eNH3_vol * energy_delta # in L
 
                     self.energy_use["P_tot"].append(P_tot_delta)
                     self.energy_use["P_installed"].append(P_installed_delta)
@@ -384,6 +407,14 @@ class EnergyCalculation:
                     self.energy_use["total_eMethanol_consumption"].append(emission_delta_eMethanol)
                     self.energy_use["total_eNH3_consumption"].append(emission_delta_eNH3)
                     self.energy_use["total_Battery2000kWh_consumption"].append(emission_delta_Battery2000kWh)
+                
+                    # volume
+                    self.energy_use["total_fuel_consumption_vol"].append(emission_delta_fuel_vol)
+                    self.energy_use["total_LH2_consumption_vol"].append(emission_delta_LH2_vol)
+                    self.energy_use["total_eLNG_consumption_vol"].append(emission_delta_eLNG_vol)
+                    self.energy_use["total_eMethanol_consumption_vol"].append(emission_delta_eMethanol_vol)
+                    self.energy_use["total_eNH3_consumption_vol"].append(emission_delta_eNH3_vol)
+                    
                 
                     self.energy_use["water depth"].append(h_0)
                     #self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
