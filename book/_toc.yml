@@ -25,7 +25,6 @@ parts:
     - file: examples/Example 03 - Defining a basic simulation.ipynb
 - caption: Real-world
   chapters:
-    - file: examples/Example 04 - Create a graph from shapefile.ipynb
     - file: examples/Example 05 - Defining a basic simulation on a real graph.ipynb
     - file: examples/Example 06 - Visualizing the sailed path.ipynb
     - file: examples/Example 07 - Using actual graphs and graph_module.py.ipynb
