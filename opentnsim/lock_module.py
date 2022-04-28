@@ -8,6 +8,7 @@ import shapely.geometry
 class PassLock():
     """ Mixin class: a collection of functions which are used to pass a lock complex consisting of a waiting area, line-up areas, and lock chambers"""
     @staticmethod
+
     def approach_waiting_area(vessel,node_waiting_area):
         """ Processes vessels which are approaching a waiting area of a lock complex: 
                 if the waiting area is full, vessels will be waiting outside the waiting area for a spot, otherwise if the vessel
@@ -27,6 +28,9 @@ class PassLock():
         for node_lineup_area in vessel.route[index_node_waiting_area:]:
             if 'Line-up area' not in vessel.env.FG.nodes[node_lineup_area].keys():
                 continue
+
+            # Speed reduction in the approach to the waiting area
+            vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
 
             #Imports the properties of the line-up areas
             lineup_areas = vessel.env.FG.nodes[node_lineup_area]["Line-up area"]
@@ -50,6 +54,27 @@ class PassLock():
                                      nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node_waiting_area)-1]],)
                 break
             break
+
+    def speed_reduction(vessel, node_speed_reduction):
+        """ Node to start speed reduction when approaching lock
+
+                    Input:
+                        - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                        - node_waiting_area: a string which includes the name of the node the waiting area is located in the network """
+
+        yield vessel.env.timeout(0)
+
+        index_node_speed_reduction = vessel.route.index(node_speed_reduction)
+
+        for node_waiting_area in vessel.route[index_node_speed_reduction:]:
+
+            if 'Waiting area' not in vessel.env.FG.nodes[node_waiting_area].keys():
+                vessel.v = vessel.metadata['v0']
+                continue
+
+            vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
+            break
+
 
     def leave_waiting_area(vessel,node_waiting_area):
         """ Processes vessels which are waiting in the waiting area of the lock complex and requesting access to preceding the line-up area:
@@ -166,7 +191,8 @@ class PassLock():
 
                             #Calculates the total length of vessels assigned to this lock cycle
                             for q2 in range(q,len(lineup_area.length.get_queue)):
-                                total_length_waiting_vessels += lineup_area.length.get_queue[q2].length
+                                print(lineup_area.length.get_queue[q2].amount)
+                                total_length_waiting_vessels += lineup_area.length.get_queue[q2].amount
 
                             #If the vessels does not fit in this lock cycle, it will start a new lock cycle
                             if vessel.L > lineup_area.length.capacity - total_length_waiting_vessels:
@@ -239,6 +265,7 @@ class PassLock():
                 #- Else, if the line-up area is empty
                 else:
                     vessel.lineup_dist = lineup_area.length.capacity - 0.5*vessel.L
+                    print(vessel.lineup_dist)
 
                 #Calculation of the (lat,lon)-coordinates of the assigned position in the line-up area
                 vessel.wgs84 = pyproj.Geod(ellps="WGS84")
@@ -254,7 +281,6 @@ class PassLock():
                  vessel.lineup_pos_lon,_] = pyproj.Geod(ellps="WGS84").fwd(vessel.env.FG.nodes[vessel.route[vessel.route.index(node_lineup_area)]]['geometry'].x,
                                                                            vessel.env.FG.nodes[vessel.route[vessel.route.index(node_lineup_area)]]['geometry'].y,
                                                                            fwd_azimuth,vessel.lineup_dist)
-
                 #Formal request of the vessel to access the line-up area assigned to the vessel (always granted)
                 vessel.access_lineup_area = lineup_area.line_up_area[node_lineup_area].request()
 
@@ -265,7 +291,7 @@ class PassLock():
                  lineup_area.line_up_area[node_lineup_area].users[-1].lineup_pos_lon] = [vessel.lineup_pos_lat, vessel.lineup_pos_lon]
                 lineup_area.line_up_area[node_lineup_area].users[-1].lineup_dist = vessel.lineup_dist
                 lineup_area.line_up_area[node_lineup_area].users[-1].n = len(lineup_area.line_up_area[node_lineup_area].users) #(the number of vessels in the line-up area at the moment)
-                lineup_area.line_up_area[node_lineup_area].users[-1].v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
+                lineup_area.line_up_area[node_lineup_area].users[-1].v = vessel.metadata['speed_reduction'][1] * vessel.metadata['v0']
                 lineup_area.line_up_area[node_lineup_area].users[-1].wait_for_next_cycle = False #(a boolean which indicates if the vessel has to wait for a next lock cycle)
                 lineup_area.line_up_area[node_lineup_area].users[-1].waited_in_waiting_area = False #(a boolean which indicates if the vessel had to wait in the waiting area)
 
@@ -274,7 +300,7 @@ class PassLock():
                 yield vessel.enter_lineup_length
 
                 #Speed reduction in the approach to the line-up area
-                vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
+                vessel.v = vessel.metadata['speed_reduction'][1] * vessel.metadata['v0']
                 #vessel.v = 0.5 * vessel.v
 
                 #Calculates and reports the total waiting time in the waiting area
@@ -286,7 +312,7 @@ class PassLock():
                                      nx.get_node_attributes(vessel.env.FG, "geometry")[node_waiting_area])
 
                     #Speed reduction in the approach to the line-up area, as the vessel had to lay still in the waiting area
-                    vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
+                    vessel.v = vessel.metadata['speed_reduction'][1] * vessel.metadata['v0']
 
                     #Changes boolean of the vessel which indicates that it had to wait in the waiting area
                     for line_up_user in range(len(lineup_area.line_up_area[node_lineup_area].users)):
@@ -308,6 +334,8 @@ class PassLock():
         #Imports the properties of the line-up area the vessel is assigned to
         lineup_areas = vessel.env.FG.nodes[node_lineup_area]["Line-up area"]
         [vessel.lineup_pos_lat,vessel.lineup_pos_lon] = [vessel.env.FG.nodes[node_lineup_area]['geometry'].x,vessel.env.FG.nodes[node_lineup_area]['geometry'].y]
+
+
         for lineup_area in lineup_areas:
             if lineup_area.name != vessel.lock_name:
                 continue
@@ -315,6 +343,13 @@ class PassLock():
             #Identifies the index of the node of the waiting area within the route of the vessel
             index_node_lineup_area = vessel.route.index(node_lineup_area)
             yield vessel.env.timeout(0)
+
+            # Checks whether the line-up area is the second encountered line-up area of the lock complex
+            for node_lock in reversed(vessel.route[:(index_node_lineup_area - 1)]):
+                if 'Lock' in vessel.env.FG.nodes[node_lock].keys():
+                    vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
+                else:
+                    continue
 
             #Checks whether the line-up area is the first encountered line-up area of the lock complex
             for node_lock in vessel.route[index_node_lineup_area:]:
@@ -341,7 +376,7 @@ class PassLock():
                                          the new first in line (q=0) will be processed"""
 
                             if q == 0 and lineup_area.line_up_area[node_lineup_area].users[q].n != (lineup_area.line_up_area[node_lineup_area].users[q].n-len(lock.resource.users)):
-                                lineup_dist = lock.length.capacity - 0.5*vessel.L
+                                lineup_dist = lineup_area.length.capacity - 0.5*vessel.L
                             return lineup_dist
 
                         #Checks the need to change the position of the vessel within the line-up area
@@ -396,6 +431,7 @@ class PassLock():
                 else:
                     continue
             break
+
 
     def leave_lineup_area(vessel,node_lineup_area):
         """ Processes vessels which are waiting in the line-up area of the lock complex:
@@ -543,6 +579,7 @@ class PassLock():
                                 yield vessel.access_lock_door2
                             door2.users[0].id = vessel.id
 
+
                         def wait_for_next_lockage():
                             """ Vessels will wait for the next lockage by requesting access to the second pair of lock doors without priority. If
                                     granted, the request will immediately be released.
@@ -561,6 +598,7 @@ class PassLock():
                         #- If there is a lock cycle being prepared or going on in the same direction of the vessel
                         if lock_door_2_user_priority == -1:
                             #If vessel does not fit in next lock cycle or locking has already started
+
                             if lock.resource.users != [] and (vessel.L > (lock.resource.users[-1].lock_dist-0.5*lock.resource.users[-1].length) or lock.resource.users[-1].converting):
                                 yield from wait_for_next_lockage()
 
@@ -793,6 +831,7 @@ class PassLock():
                 #Adjusts position of the vessel in line-up area, apart from the first line-up area also used to position the vessel in the next line-up area, to the origin of the next line-up area
                 [vessel.lineup_pos_lat,vessel.lineup_pos_lon] = [vessel.env.FG.nodes[vessel.route[vessel.route.index(node_opposing_lineup_area)]]['geometry'].x,
                                                                  vessel.env.FG.nodes[vessel.route[vessel.route.index(node_opposing_lineup_area)]]['geometry'].y]
+
                 break
             break
 
@@ -815,6 +854,9 @@ class PassLock():
             for node_lock in reversed(vessel.route[:(index_node_lineup_area-1)]):
                 if 'Lock' not in vessel.env.FG.nodes[node_lock].keys():
                     continue
+
+                #Adjust vessel speed
+                vessel.v = vessel.metadata['speed_reduction'][0] * vessel.metadata['v0']
 
                 #Imports the properties of the lock chamber the vessel was assigned to
                 locks = vessel.env.FG.nodes[node_lock]["Lock"]

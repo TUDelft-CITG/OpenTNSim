@@ -3411,13 +3411,13 @@ class Movable(Locatable, Routeable, Log):
                     ukc = VesselTrafficService.provide_ukc_clearance(self, origin)
                 else:
                     ukc = []
-                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, ukc, orig,)
+                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, self.current_speed, orig,)
                 yield self.env.timeout(distance / self.current_speed)
                 if 'Info' in self.env.FG.nodes[destination]:
                     ukc = VesselTrafficService.provide_ukc_clearance(self, destination)
                 else:
                     ukc = []
-                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
+                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, self.current_speed, dest,)
             self.geometry = dest
 
     @property
@@ -3470,12 +3470,14 @@ class HasLock(Movable):
         if "Lock" in self.env.FG.nodes[origin].keys():  # if vessel in lock
             yield from lock_module.PassLock.leave_lock(self, origin)
             #self.v = 4 * self.v
-            self.v = self.metadata['v0']
+            #self.v = self.metadata['v0']
+            self.v = self.metadata['speed_reduction'][1] * self.metadata['v0']
 
 class HasWaitingArea(Movable):
     def __init__(self,*args, **kwargs):
         super().__init__(*args, **kwargs)
         self.on_pass_node.append(self.leave_waiting_area)
+        #self.on_pass_node.append(self.speed_reduction)
         self.on_look_ahead_to_node.append(self.approach_waiting_area)
 
     def approach_waiting_area(self,destination):
@@ -3485,6 +3487,21 @@ class HasWaitingArea(Movable):
     def leave_waiting_area(self, origin):
         if "Waiting area" in self.env.FG.nodes[origin].keys():  # if vessel is in waiting area
             yield from lock_module.PassLock.leave_waiting_area(self, origin)
+
+'''    def speed_reduction(self, origin):
+        if "Speed reduction" in self.env.FG.nodes[origin].keys():  # if vessel is in waiting area
+            yield from lock_module.PassLock.test(self, origin)
+            #self.v = 100
+            #yield from lock_module.PassLock.leave_waiting_area(self, origin)'''
+
+class HasSpeedReduction(Movable):
+    def __init__(self,*args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_pass_node.append(self.speed_reduction)
+    
+    def speed_reduction(self, origin):
+        if "Speed reduction" in self.env.FG.nodes[origin].keys():
+            yield from lock_module.PassLock.speed_reduction(self, origin)
 
 class HasLineUpArea(Movable):
     def __init__(self,*args, **kwargs):
