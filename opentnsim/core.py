@@ -185,7 +185,10 @@ class VesselProperties:
     - H_f: vessel height loaded
     - T_e: draught unloaded
     - T_f: draught loaded
-
+    - renewable_fuel_mass: renewable fuel mass on board
+    - renewable_fuel_volume: renewable fuel volume on board
+    - renewable_fuel_inc_ESS_mass: renewable fuel(include energy storage system) mass on board
+    - renewable_fuel_inc_ESS_volume: renewable fuel(include energy storage system) volume on board
     """
         # TODO: add blockage factor S to vessel properties
 
@@ -205,6 +208,8 @@ class VesselProperties:
             h_squat=None,
             payload=None,
             vessel_type=None,
+            renewable_fuel_mass=None,
+            renewable_fuel_volume=None,
             *args,
             **kwargs
     ):
@@ -228,7 +233,10 @@ class VesselProperties:
         self.h_squat = h_squat
         self.payload = payload
         self.vessel_type = vessel_type
-
+        self.renewable_fuel_mass = renewable_fuel_mass
+        self.renewable_fuel_volume = renewable_fuel_volume
+        self.renewable_fuel_inc_ESS_mass = renewable_fuel_inc_ESS_mass
+        self.renewable_fuel_inc_ESS_volume = renewable_fuel_inc_ESS_volume       
     @property
     def T(self):
         """Compute the actual draught

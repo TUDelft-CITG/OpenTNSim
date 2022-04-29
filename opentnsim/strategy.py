@@ -152,21 +152,68 @@ def T2Payload(vessel, T_strategy, vessel_type):
 
     DWT_design = capacity_coefs['intercept'] + (capacity_coefs['c1'] * vessel.L * vessel.B * T_design) + (
      capacity_coefs['c2'] * vessel.L * vessel.B * T_empty) # designed DWT
-    DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
+    DWT_actual = (Capindex_1/Capindex_2)* DWT_design # actual DWT of shallow water
 
     if T_strategy < T_design:
+        DWT_final = DWT_actual
         consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                           # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
 
     else:
+        DWT_final = DWT_design
         consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                           # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
 
-    fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
-    Payload_computed = DWT_actual-fuel_weight # payload=DWT-fuel_weight
+    fuel_weight = DWT_design * consumables #(Van Dosser et al. Chapter 8, pp.68).
+    
+    Payload_computed = DWT_final-fuel_weight # payload=DWT-fuel_weight
 
-    return Payload_computed
+    # DWT_final covers the situations of the DWT at maximum draught and and the DWT at adjusted draught
+    # We include DWT_final for calculating cargo-fuel trade off by function 'get_adjusted_cargo_amount'.
+    return Payload_computed, DWT_final  
 
+
+def get_ESS_mass_volume():
+    '''For now, we assume the mass and volume of Energy Strorage System on board is proportional to installed engine power'''    
+    ESS_mass = 1 * vessel.P_install
+    ESS_volume = 2 * vessel.P_install
+    
+    return ESS_mass, ESS_volume  
+
+def get_renewable_fuel_amount_on_board(renewable_fuel_mass, volume_factor, packing_factor):
+    ''' besides ton, m3, include battery container, include equvlent TEU  '''
+    if vessel.renewable_fuel_mass:
+        renewable_fuel_mass = vessel.renewable_fuel_mass
+    elif energy.py  :
+       # to do get renewable_fuel_mass form energy.py
+        energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)       
+        renewable_fuel_mass = energycalculation.calculate_energy_consumption()
+    elif input the times diesel mass or volume:     
+#       set several suitable mass choices, e.g. same as diesel, 2*diesel, 3*diesel ,can set as input times diesel
+        renewable_fuel_mass = 
+
+#   do the same for volume
+
+    renewable_fuel_mass = 
+        
+    renewable_fuel_and_ESS_mass = renewable_fuel_mass + ESS_mass
+    renewable_fuel_volume = 
+    renewable_fuel_and_storage_volume =  
+    
+    return renewable_fuel_mass 
+
+def get_adjusted_cargo_amount(volume_factor, packing_factor):
+    ''' we can either use packing factor or use ESS mass& volume,or combine both，'''
+    
+    packing_factor
+    
+    adjusted_cargo_mass = DWT_final - renewable_fuel_mass
+    
+    reduced_cargo_volume = renewable_fuel_volume
+    
+    
+    return cargo_loss_perc_mass, cargo_loss_perc_vol, cargo_loss_mass, cargo_loss_vol 
+ 
 
 def get_v(vessel, width, depth, margin, bounds):
     ''' for a waterway section with a given width and depth, compute the velocity that can be
