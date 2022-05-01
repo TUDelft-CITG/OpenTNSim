@@ -12,9 +12,11 @@
 Documentation can be found: [here](https://opentnsim.readthedocs.io/)
 
 ## Book
+
 <a href="https://happy-bush-0c5d10603.1.azurestaticapps.net"><img src="docs/_static/book.png" style="max-width: 50vw;"></a>
 
-You can find the opentnsim book, based on the examples in the `notebooks` folder on the [opentsim-book](https://happy-bush-0c5d10603.1.azurestaticapps.net/) website.
+You can find the opentnsim book, based on the examples in the `notebooks` folder on the [opentnsim-book](https://happy-bush-0c5d10603.1.azurestaticapps.net/) website.
+
 
 ## Installation
 
