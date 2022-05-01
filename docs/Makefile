@@ -8,8 +8,8 @@ PAPER         =
 BUILDDIR      = _build
 AUTODOCDIR    = api
 AUTODOCBUILD  = sphinx-apidoc
-PROJECT       = transport-network-analysis
-MODULEDIR     = ../src/transport_network_analysis
+PROJECT       = opentnsim
+MODULEDIR     = ../opentnsim
 
 # User-friendly check for sphinx-build
 ifeq ($(shell which $(SPHINXBUILD) >/dev/null 2>&1; echo $?), 1)
