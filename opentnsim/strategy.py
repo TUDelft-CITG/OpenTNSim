@@ -173,46 +173,87 @@ def T2Payload(vessel, T_strategy, vessel_type):
     return Payload_computed, DWT_final  
 
 
-def get_ESS_mass_volume():
-    '''For now, we assume the mass and volume of Energy Strorage System on board is proportional to installed engine power'''    
-    ESS_mass = 1 * vessel.P_install
-    ESS_volume = 2 * vessel.P_install
+def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
+    """ Calculate the corresponding draught (T_Payload2T) for each Payload_strategy
+    the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+
+
+    input:
+    - Payload_strategy: user given payload
+    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+    - bounds: the searching range for draught. As this method which based on Van Dorsser et al (2020) is for inland vessels, of which the draughts are no larger than 5 meter, we set the upper bound as 5 m as default value. 
+
+    output:
+    - T_Payload2T: corresponding draught for each payload for different vessel types
+
+    """
+
+    def seek_T_given_Payload(T_Payload2T, vessel, vessel_type):
+        """function to optimize"""
+
+        Payload_computed, DWT_final = T2Payload(vessel=vessel, T_strategy=T_Payload2T, vessel_type= vessel_type)
+        # compute difference between a given payload (Payload_strategy) and a computed payload (Payload_computed)
+        diff = Payload_strategy - Payload_computed
+        print(Payload_strategy,Payload_computed,T_Payload2T,vessel_type)
+
+        return diff ** 2
+
+    # fill in some of the parameters that we already know
+    fun = functools.partial(seek_T_given_Payload, vessel=vessel,vessel_type=vessel_type)
+
+    # lookup a minimum
+    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+
+    # check if we found a minimum
+    if not fit.success:
+        raise ValueError(fit)
+
+    # the value of fit.x within the bound (0,5) is the draught we find where the diff**2 reach a minimum (zero).
+    T_Payload2T =  fit.x
+
+
+    return T_Payload2T
+
+# def get_ESS_mass_volume():
+#     '''For now, we assume the mass and volume of Energy Strorage System on board is proportional to installed engine power'''    
+#     ESS_mass = 1 * vessel.P_install
+#     ESS_volume = 2 * vessel.P_install
     
-    return ESS_mass, ESS_volume  
+#     return ESS_mass, ESS_volume  
 
-def get_renewable_fuel_amount_on_board(renewable_fuel_mass, volume_factor, packing_factor):
-    ''' besides ton, m3, include battery container, include equvlent TEU  '''
-    if vessel.renewable_fuel_mass:
-        renewable_fuel_mass = vessel.renewable_fuel_mass
-    elif energy.py  :
-       # to do get renewable_fuel_mass form energy.py
-        energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)       
-        renewable_fuel_mass = energycalculation.calculate_energy_consumption()
-    elif input the times diesel mass or volume:     
-#       set several suitable mass choices, e.g. same as diesel, 2*diesel, 3*diesel ,can set as input times diesel
-        renewable_fuel_mass = 
+# def get_renewable_fuel_amount_on_board(renewable_fuel_mass, volume_factor, packing_factor):
+#     ''' besides ton, m3, include battery container, include equvlent TEU  '''
+#     if vessel.renewable_fuel_mass:
+#         renewable_fuel_mass = vessel.renewable_fuel_mass
+#     elif energy.py  :
+#        # to do get renewable_fuel_mass form energy.py
+#         energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)       
+#         renewable_fuel_mass = energycalculation.calculate_energy_consumption()
+#     elif input the times diesel mass or volume:     
+# #       set several suitable mass choices, e.g. same as diesel, 2*diesel, 3*diesel ,can set as input times diesel
+#         renewable_fuel_mass = 
 
-#   do the same for volume
+# #   do the same for volume
 
-    renewable_fuel_mass = 
+#     renewable_fuel_mass = 
         
-    renewable_fuel_and_ESS_mass = renewable_fuel_mass + ESS_mass
-    renewable_fuel_volume = 
-    renewable_fuel_and_storage_volume =  
+#     renewable_fuel_and_ESS_mass = renewable_fuel_mass + ESS_mass
+#     renewable_fuel_volume = 
+#     renewable_fuel_and_storage_volume =  
     
-    return renewable_fuel_mass 
+#     return renewable_fuel_mass 
 
-def get_adjusted_cargo_amount(volume_factor, packing_factor):
-    ''' we can either use packing factor or use ESS mass& volume,or combine both，'''
+# def get_adjusted_cargo_amount(volume_factor, packing_factor):
+#     ''' we can either use packing factor or use ESS mass& volume,or combine both，'''
     
-    packing_factor
+#     packing_factor
     
-    adjusted_cargo_mass = DWT_final - renewable_fuel_mass
+#     adjusted_cargo_mass = DWT_final - renewable_fuel_mass
     
-    reduced_cargo_volume = renewable_fuel_volume
+#     reduced_cargo_volume = renewable_fuel_volume
     
     
-    return cargo_loss_perc_mass, cargo_loss_perc_vol, cargo_loss_mass, cargo_loss_vol 
+#     return cargo_loss_perc_mass, cargo_loss_perc_vol, cargo_loss_mass, cargo_loss_vol 
  
 
 def get_v(vessel, width, depth, margin, bounds):
@@ -308,3 +349,6 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     upperbound = selected.Powerallowed_v.max()
 
     return upperbound, selected, results_df
+
+
+
