@@ -14,7 +14,7 @@ from pkg_resources import require, VersionConflict
 from setuptools import setup, find_packages
 
 try:
-    require('setuptools>=38.3')
+    require("setuptools>=38.3")
 except VersionConflict:
     print("Error: version of setuptools is too old (<38.3)!")
     sys.exit(1)
@@ -36,7 +36,7 @@ requires = [
     "Flask>=1.0",
     "Flask-cors",
     "sphinx_rtd_theme",
-    "Dill"
+    "Dill",
 ]
 
 setup_requirements = [
@@ -48,6 +48,7 @@ tests_require = [
     "pytest-cov",
     "pytest-timeout",
     "pytest-datadir",
+    "cython",
     "nbmake",
     # extra dpendencies used by nontebooks
     "pyyaml",
@@ -57,7 +58,7 @@ tests_require = [
     "notebook",
     "jupyter",
     "jupyter-book",
-    "tqdm"
+    "tqdm",
 ]
 
 with open("README.md", "r") as des:
@@ -67,15 +68,15 @@ setup(
     author="Mark van Koningsveld",
     author_email="m.vankoningsveld@tudelft.nl",
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
-        'Intended Audience :: Developers',
-        'Natural Language :: English',
-        'Programming Language :: Python :: 3',
+        "Development Status :: 2 - Pre-Alpha",
+        "Intended Audience :: Developers",
+        "Natural Language :: English",
+        "Programming Language :: Python :: 3",
     ],
     description="The OpenTNSim package aims to facilitate the analysis of network performance for different network configurations, fleet compositions and traffic rules.",
     entry_points={
-        'console_scripts': [
-            'opentnsim=opentnsim.cli:cli',
+        "console_scripts": [
+            "opentnsim=opentnsim.cli:cli",
         ],
     },
     install_requires=requires,
@@ -88,9 +89,7 @@ setup(
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
-    extras_require={
-        'testing': tests_require
-    },
+    extras_require={"testing": tests_require},
     url="https://github.com/TUDelft-CITG/OpenTNSim",
     version="1.1.2",
     zip_safe=False,
