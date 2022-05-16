@@ -63,6 +63,9 @@ test: ## run tests quickly with the default Python
 test-nb:
 	pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore  ./notebooks/cleanup  --ignore ./notebooks/students   --verbose
 
+test-examples:
+	pytest --nbmake ./notebooks/Example*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students
+
 test-all: ## run tests on every Python version with tox
 	tox
 
