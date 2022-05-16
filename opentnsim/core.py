@@ -185,10 +185,9 @@ class VesselProperties:
     - H_f: vessel height loaded
     - T_e: draught unloaded
     - T_f: draught loaded
-    - renewable_fuel_mass: renewable fuel mass on board
-    - renewable_fuel_volume: renewable fuel volume on board
-    - renewable_fuel_inc_ESS_mass: renewable fuel(include energy storage system) mass on board
-    - renewable_fuel_inc_ESS_volume: renewable fuel(include energy storage system) volume on board
+    - renewable_fuel_mass: renewable fuel mass on board [kg]
+    - renewable_fuel_volume: renewable fuel volume on board [m3]
+    - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
     """
         # TODO: add blockage factor S to vessel properties
 
@@ -210,6 +209,7 @@ class VesselProperties:
             vessel_type=None,
             renewable_fuel_mass=None,
             renewable_fuel_volume=None,
+            renewable_fuel_required_space=None,
             *args,
             **kwargs
     ):
@@ -235,8 +235,7 @@ class VesselProperties:
         self.vessel_type = vessel_type
         self.renewable_fuel_mass = renewable_fuel_mass
         self.renewable_fuel_volume = renewable_fuel_volume
-        self.renewable_fuel_inc_ESS_mass = renewable_fuel_inc_ESS_mass
-        self.renewable_fuel_inc_ESS_volume = renewable_fuel_inc_ESS_volume       
+        self.renewable_fuel_required_space = renewable_fuel_required_space      
     @property
     def T(self):
         """Compute the actual draught
@@ -981,6 +980,17 @@ class ConsumesEnergy:
         logger.debug(f'The general emission factor CO2 is {self.EF_NOX} g/kWh')
         logger.debug(f'The general fuel consumption factor for diesel is {self.SFC} g/kWh')
 
+    # def SFC_alternatives(self):
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
         
     def correction_factors(self, v):
