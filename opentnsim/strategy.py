@@ -152,21 +152,192 @@ def T2Payload(vessel, T_strategy, vessel_type):
 
     DWT_design = capacity_coefs['intercept'] + (capacity_coefs['c1'] * vessel.L * vessel.B * T_design) + (
      capacity_coefs['c2'] * vessel.L * vessel.B * T_empty) # designed DWT
-    DWT_actual = (Capindex_1/Capindex_2)*DWT_design # actual DWT of shallow water
+    DWT_actual = (Capindex_1/Capindex_2)* DWT_design # actual DWT of shallow water
 
     if T_strategy < T_design:
+        DWT_final = DWT_actual
         consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                           # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
 
     else:
+        DWT_final = DWT_design
         consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                           # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
 
-    fuel_weight=DWT_design*consumables #(Van Dosser et al. Chapter 8, pp.68).
-    Payload_computed = DWT_actual-fuel_weight # payload=DWT-fuel_weight
+    fuel_weight = DWT_design * consumables #(Van Dosser et al. Chapter 8, pp.68).
+    
+    Payload_computed = DWT_final-fuel_weight # payload=DWT-fuel_weight
 
-    return Payload_computed
+    # DWT_final covers the situations of the DWT at maximum draught and and the DWT at adjusted draught
+    # We include DWT_final for calculating cargo-fuel trade off by function 'get_adjusted_cargo_amount'.
+    return Payload_computed, DWT_final  
 
+
+def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
+    """ Calculate the corresponding draught (T_Payload2T) for each Payload_strategy
+    the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+
+
+    input:
+    - Payload_strategy: user given payload
+    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+    - bounds: the searching range for draught. As this method which based on Van Dorsser et al (2020) is for inland vessels, of which the draughts are no larger than 5 meter, we set the upper bound as 5 m as default value. 
+
+    output:
+    - T_Payload2T: corresponding draught for each payload for different vessel types
+
+    """
+
+    def seek_T_given_Payload(T_Payload2T, vessel, vessel_type):
+        """function to optimize"""
+
+        Payload_computed, DWT_final = T2Payload(vessel=vessel, T_strategy=T_Payload2T, vessel_type= vessel_type)
+        # compute difference between a given payload (Payload_strategy) and a computed payload (Payload_computed)
+        diff = Payload_strategy - Payload_computed
+        print(Payload_strategy,Payload_computed,T_Payload2T,vessel_type)
+
+        return diff ** 2
+
+    # fill in some of the parameters that we already know
+    fun = functools.partial(seek_T_given_Payload, vessel=vessel,vessel_type=vessel_type)
+
+    # lookup a minimum
+    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+
+    # check if we found a minimum
+    if not fit.success:
+        raise ValueError(fit)
+
+    # the value of fit.x within the bound (0,5) is the draught we find where the diff**2 reach a minimum (zero).
+    T_Payload2T =  fit.x
+
+
+    return T_Payload2T
+
+class Cost:
+    """Mixin class: calculates the costs for emissions, the use of diesel fuel and alternative energy sources, ship refits concering changing engines.
+
+    Keyword arguments:
+    
+    
+    
+    """
+    def __init__(
+                self,        
+                carbon_price_euro_per_ton=None,
+                diesel_price_euro_per_liter=None,
+                E_LNG_price_euro_per_liter=None,
+                E_methonal_price_euro_per_liter=None,
+                E_NH3_price_euro_per_liter=None,
+                LH2_price_euro_per_liter=None,
+        
+        
+        
+                *args,
+                **kwargs
+        ):
+            super().__init__(*args, **kwargs)
+
+            """Initialization
+            """
+
+
+            if carbon_price_euro_per_ton: # if carbon_price_euro_per_ton is specified in the notebook input, use the specified input value
+                self.carbon_price_euro_per_ton = carbon_price_euro_per_ton    
+            else: # otherwise use the default value
+                self.carbon_price_euro_per_ton = 60
+            if diesel_price_euro_per_liter: 
+                self.diesel_price_euro_per_liter = diesel_price_euro_per_liter    
+            else: 
+                self.diesel_price_euro_per_liter = 2 
+            
+
+    
+    def calculate_cost_of_diesel_fuel_use(self, ):
+        """This function calculates the cost of diesel fuel use per km, and the total fuel cost for the whole sailing distance. 
+        """    
+        return 0
+
+    def calculate_cost_of_carbon_price(self, ):
+        """This function calculates the cost of emitting Green House Gases (GHG) per km, and the total GHG cost for the whole sailing distance. Here we assume the GHG emissions equal to CO2 emissions (OECD,2021).
+        The carbon price is set default as EUR 60 per ton between 2020 and 2030 based on OECD (2021) with OECD.STAT dataset (links provided below)
+        Effective Carbon Rates 2021 : Pricing Carbon Emissions through Taxes and Emissions Trading(https://www.oecd-ilibrary.org/sites/0e8e24f5-en/index.html?itemId=/content/publication/0e8e24f5-en)
+        OECD.STAT dataset(https://stats.oecd.org/Index.aspx?DataSetCode=ECR&_ga=2.239026048.189649954.1652882731-920876655.1652882731)
+        """
+
+        return 0 
+
+    def calculate_costs_of_sailing_by_diesel(self,):
+        """This function calculates the total costs of both carbon price and diesel fuel use per km and for the whole sailing distance. 
+        """
+
+        return 0
+
+
+
+    def calculate_costs_of_alternative_energy_sources_use(self, ):    
+        """This function calculates the cost of the use of alternative energy sources on board.
+        """
+
+        return 0        
+
+    def calculate_costs_of_ship_refits(self,):    
+        """This function calculates the cost for ship refits, including the fuel cell engine price per kW, battery container price, etc.  add ref.              
+        """
+
+        return 0
+
+class cargo_fuel_tradeoff:
+    """Mixin class:
+    
+    The amount of fuel carried on a container ship varies based on the engine capacity and size of the ship, which themselves are a function of the particular trading route the ship operates in and the optimal speed of the ship’s engine.
+   
+   """
+
+    
+    
+    
+# def get_ESS_mass_volume():
+#     '''For now, we assume the mass and volume of Energy Strorage System on board is proportional to installed engine power'''    
+#     ESS_mass = 1 * vessel.P_install
+#     ESS_volume = 2 * vessel.P_install
+    
+#     return ESS_mass, ESS_volume  
+
+# def get_renewable_fuel_amount_on_board(renewable_fuel_mass, volume_factor, packing_factor):
+#     ''' besides ton, m3, include battery container, include equvlent TEU  '''
+#     if vessel.renewable_fuel_mass:
+#         renewable_fuel_mass = vessel.renewable_fuel_mass
+#     elif energy.py  :
+#        # to do get renewable_fuel_mass form energy.py
+#         energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)       
+#         renewable_fuel_mass = energycalculation.calculate_energy_consumption()
+#     elif input the times diesel mass or volume:     
+# #       set several suitable mass choices, e.g. same as diesel, 2*diesel, 3*diesel ,can set as input times diesel
+#         renewable_fuel_mass = 
+
+# #   do the same for volume
+
+#     renewable_fuel_mass = 
+        
+#     renewable_fuel_and_ESS_mass = renewable_fuel_mass + ESS_mass
+#     renewable_fuel_volume = 
+#     renewable_fuel_and_storage_volume =  
+    
+#     return renewable_fuel_mass 
+
+# def get_adjusted_cargo_amount(volume_factor, packing_factor):
+#     ''' we can either use packing factor or use ESS mass& volume,or combine both，'''
+    
+#     packing_factor
+    
+#     adjusted_cargo_mass = DWT_final - renewable_fuel_mass
+    
+#     reduced_cargo_volume = renewable_fuel_volume
+    
+    
+#     return cargo_loss_perc_mass, cargo_loss_perc_vol, cargo_loss_mass, cargo_loss_vol 
+ 
 
 def get_v(vessel, width, depth, margin, bounds):
     ''' for a waterway section with a given width and depth, compute the velocity that can be
@@ -261,3 +432,6 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     upperbound = selected.Powerallowed_v.max()
 
     return upperbound, selected, results_df
+
+
+
