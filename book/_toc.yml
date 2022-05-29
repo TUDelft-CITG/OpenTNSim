@@ -6,11 +6,8 @@ root: Intro_draft.rst
 parts:
 - caption: Context
   chapters:
-    - file: markdown
     - file: notebooks
     - file: docs/AUTHORS.rst
-    - file: CL2022-02-script-to-program
-      title: Creating a program like OpenTNSim
 - caption: Basics
   chapters:
     - file: Command_basics
@@ -34,6 +31,10 @@ parts:
     - file: examples/Example 10 - Lock.ipynb
     - file: examples/Example 14 - Energy consumption, fuel use and emissions.ipynb
     - file: examples/Example 11 - Multiple vessels - from database.ipynb
+- caption: Advanced programming concepts
+  chapters:
+    - file: CL2022-02-script-to-program
+      title: Creating a program like OpenTNSim
 - caption: API
   chapters:
     - file: docs/opentnsim.rst
