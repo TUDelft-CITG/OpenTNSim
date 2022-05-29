@@ -3,11 +3,11 @@ name: Azure Static Web Apps CI/CD
 on:
   push:
     branches:
-      - feature/notebooks-integration
+      - master
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
-      - feature/notebooks-integration
+      - master
 
 jobs:
   build_and_deploy_job:
