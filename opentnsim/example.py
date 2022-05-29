@@ -160,7 +160,7 @@ def plot_locations(graph, locations, center, zoom):
     ]
 
     map = ipyleaflet.Map(
-        basemap=ipyleaflet.basemaps.OpenStreetMap.BlackAndWhite,
+        basemap=ipyleaflet.basemaps.OpenStreetMap.Mapnik,
         center=center,
         zoom=zoom,
     )
