@@ -1,4 +1,4 @@
-'''Here we test the ship squat by calculating h_squat. With input Vs=3 m/s, h_0 = 5 m.''' 
+"""Here we test the ship squat by calculating h_squat. With input Vs=3 m/s, h_0 = 5 m."""
 
 # Importing libraries
 
@@ -34,35 +34,36 @@ def test_simulation():
             opentnsim.core.Identifiable,
             opentnsim.core.Movable,
             opentnsim.core.VesselProperties,
-            opentnsim.core.ConsumesEnergy,
+            opentnsim.energy.ConsumesEnergy,
             opentnsim.core.ExtraMetadata,
         ),
         {},
     )
 
     # Create a dict with all important settings
-    data_vessel = {"env": None,
-                   "name": 'Vessel M9',
-                   "route": None,
-                   "geometry": None,
-                   "v": None,  # m/s
-                   "type": None,
-                   "B": 11.45,
-                   "L": 135,
-                   "H_e": None,
-                   "H_f": None,
-                   "T": 2.75,
-                   "safety_margin": 0.2,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
-                   "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False
-                   "P_installed": 2200.0,
-                   "P_tot_given": None,  # kW
-                   "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
-                   "P_hotel_perc": 0.05,
-                   "P_hotel": None,  # None: calculate P_hotel from percentage
-                   "L_w": 3.0,
-                   "C_B": 0.85,
-                   "C_year": 1990,
-                   }
+    data_vessel = {
+        "env": None,
+        "name": "Vessel M9",
+        "route": None,
+        "geometry": None,
+        "v": None,  # m/s
+        "type": None,
+        "B": 11.45,
+        "L": 135,
+        "H_e": None,
+        "H_f": None,
+        "T": 2.75,
+        "safety_margin": 0.2,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
+        "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False
+        "P_installed": 2200.0,
+        "P_tot_given": None,  # kW
+        "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
+        "P_hotel_perc": 0.05,
+        "P_hotel": None,  # None: calculate P_hotel from percentage
+        "L_w": 3.0,
+        "C_B": 0.85,
+        "C_year": 1990,
+    }
     # input
     V_s = [0.1, 1, 2, 3, 4]  # ship sailing speeds to water, (m/s)
     h_0 = [5]  # water depths,(m)
@@ -89,20 +90,30 @@ def test_simulation():
         data_vessel_i = data_vessel.copy()
         vessel = TransportResource(**data_vessel_i)
 
-        V_s = row['V_s']
-        h_0 = row['h_0']
+        V_s = row["V_s"]
+        h_0 = row["h_0"]
         h_squat = vessel.calculate_h_squat(v=V_s, h_0=h_0)
 
         result = {}
         result.update(row)
-        result['h_squat'] = h_squat
+        result["h_squat"] = h_squat
         results.append(result)
 
     # collect info dataframe
     plot_df = pd.DataFrame(results)
 
-    np.testing.assert_almost_equal(4.9999, plot_df.h_squat[0], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.9870, plot_df.h_squat[1], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.9453, plot_df.h_squat[2], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.8729, plot_df.h_squat[3], decimal=3, err_msg='not almost equal', verbose=True)
-    np.testing.assert_almost_equal(4.7687, plot_df.h_squat[4], decimal=3, err_msg='not almost equal', verbose=True)
+    np.testing.assert_almost_equal(
+        4.9999, plot_df.h_squat[0], decimal=3, err_msg="not almost equal", verbose=True
+    )
+    np.testing.assert_almost_equal(
+        4.9870, plot_df.h_squat[1], decimal=3, err_msg="not almost equal", verbose=True
+    )
+    np.testing.assert_almost_equal(
+        4.9453, plot_df.h_squat[2], decimal=3, err_msg="not almost equal", verbose=True
+    )
+    np.testing.assert_almost_equal(
+        4.8729, plot_df.h_squat[3], decimal=3, err_msg="not almost equal", verbose=True
+    )
+    np.testing.assert_almost_equal(
+        4.7687, plot_df.h_squat[4], decimal=3, err_msg="not almost equal", verbose=True
+    )
