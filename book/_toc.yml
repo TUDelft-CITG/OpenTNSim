@@ -6,7 +6,6 @@ root: Intro_draft.rst
 parts:
 - caption: Context
   chapters:
-    - file: notebooks
     - file: docs/AUTHORS.rst
 - caption: Basics
   chapters:
