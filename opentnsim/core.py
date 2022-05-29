@@ -648,10 +648,10 @@ class Movable(Locatable, Routeable, Log):
             logger.debug("Destination: {dest}")
 
             self.distance += self.wgs84.inv(
-                shapely.geometry.asShape(orig).x,
-                shapely.geometry.asShape(orig).y,
-                shapely.geometry.asShape(dest).x,
-                shapely.geometry.asShape(dest).y,
+                shapely.geometry.shape(orig).x,
+                shapely.geometry.shape(orig).y,
+                shapely.geometry.shape(dest).x,
+                shapely.geometry.shape(dest).y,
             )[2]
 
             yield self.env.timeout(self.distance / self.current_speed)
@@ -2506,10 +2506,10 @@ class Movable(Locatable, Routeable, Log):
                 )
 
                 distance = self.wgs84.inv(
-                    shapely.geometry.asShape(sub_orig).x,
-                    shapely.geometry.asShape(sub_orig).y,
-                    shapely.geometry.asShape(sub_dest).x,
-                    shapely.geometry.asShape(sub_dest).y,
+                    shapely.geometry.shape(sub_orig).x,
+                    shapely.geometry.shape(sub_orig).y,
+                    shapely.geometry.shape(sub_dest).x,
+                    shapely.geometry.shape(sub_dest).y,
                 )[2]
                 self.distance += distance
                 self.log_entry(
@@ -2609,6 +2609,7 @@ class Movable(Locatable, Routeable, Log):
                 value,
                 dest,
             )
+        self.geometry = dest
 
     @property
     def current_speed(self):
