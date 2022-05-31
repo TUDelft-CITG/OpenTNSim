@@ -1,9 +1,210 @@
 # package(s) related to the simulation
 import networkx as nx
 
+from opentnsim import core
+
 # spatial libraries
 import pyproj
 import shapely.geometry
+
+class HasLock(core.Movable):
+    def __init__(self,*args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_pass_node.append(self.leave_lock_chamber)
+
+    def leave_lock_chamber(self,origin):
+        if "Lock" in self.env.FG.nodes[origin].keys():  # if vessel in lock
+            yield from lock_module.PassLock.leave_lock(self, origin)
+            self.v = 4 * self.v
+
+class HasWaitingArea(core.Movable):
+    def __init__(self,*args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_pass_node.append(self.leave_waiting_area)
+        self.on_look_ahead_to_node.append(self.approach_waiting_area)
+
+    def approach_waiting_area(self,destination):
+        if "Waiting area" in self.env.FG.nodes[destination].keys():  # if waiting area is located at next node
+            yield from lock_module.PassLock.approach_waiting_area(self, destination)
+
+    def leave_waiting_area(self, origin):
+        if "Waiting area" in self.env.FG.nodes[origin].keys():  # if vessel is in waiting area
+            yield from lock_module.PassLock.leave_waiting_area(self, origin)
+
+class HasLineUpArea(core.Movable):
+    def __init__(self,*args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_pass_node.append(self.leave_lineup_area)
+        self.on_look_ahead_to_node.append(self.approach_lineup_area)
+
+    def approach_lineup_area(self,destination):
+        if "Line-up area" in self.env.FG.nodes[destination].keys():  # if vessel is approaching the line-up area
+            yield from lock_module.PassLock.approach_lineup_area(self, destination)
+
+    def leave_lineup_area(self,origin):
+        if "Line-up area" in self.env.FG.nodes[origin].keys():  # if vessel is located in the line-up
+            lineup_areas = self.env.FG.nodes[origin]["Line-up area"]
+            for lineup_area in lineup_areas:
+                if lineup_area.name != self.lock_name:  # picks the assigned parallel lock chain
+                    continue
+
+                index_node_lineup_area = self.route.index(origin)
+                for node_lock in self.route[index_node_lineup_area:]:
+                    if 'Lock' in self.env.FG.nodes[node_lock].keys():
+                        yield from lock_module.PassLock.leave_lineup_area(self, origin)
+                        break
+
+                    elif 'Waiting area' in self.env.FG.nodes[node_lock].keys():  # if vessel is leaving the lock complex
+                        yield from lock_module.PassLock.leave_opposite_lineup_area(self, origin)
+                        break
+
+class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log):
+    """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
+            creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
+
+    def __init__(
+        self,
+        node, #a string which indicates the location of the start of the waiting area
+        *args,
+        **kwargs):
+
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+
+        waiting_area_resources = 100
+        self.waiting_area = {node: simpy.PriorityResource(self.env, capacity=waiting_area_resources),}
+
+class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core.Log):
+    """Mixin class: Something has line-up area object properties as part of the lock complex [in SI-units]:
+            creates a line-up area with the following resources:
+                - enter_line_up_area: resource used when entering the line-up area (assures one-by-one entry of the line-up area by vessels)
+                - line_up_area: resource with unlimited capacity used to formally request access to the line-up area
+                - converting_while_in_line_up_area: resource used when requesting for an empty conversion of the lock chamber
+                - pass_line_up_area: resource used to pass the second encountered line-up area"""
+
+    def __init__(
+        self,
+        node, #a string which indicates the location of the start of the line-up area
+        lineup_length, #a float which contains the length of the line-up area
+        *args,
+        **kwargs):
+
+        super().__init__(length = lineup_length, remaining_length = lineup_length, *args, **kwargs)
+
+        """Initialization"""
+        # Lay-Out
+        self.enter_line_up_area = {node: simpy.PriorityResource(self.env, capacity=1),} #used to regulate one by one entering of line-up area, so capacity must be 1
+        self.line_up_area = {node: simpy.PriorityResource(self.env, capacity=100),} #line-up area itself, infinite capacity, as this is regulated by the HasLength, so capacity = inf
+        self.converting_while_in_line_up_area = {node: simpy.PriorityResource(self.env, capacity=1),} #used to minimize the number of empty convertion requests by one by multiple waiting vessels, so capacity must be 1
+        self.pass_line_up_area = {node: simpy.PriorityResource(self.env, capacity=1),} #used to prevent vessel from entering the lock before all previously locked vessels have passed the line-up area one by one, so capacity must be 1
+
+class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log):
+    """Mixin class: Something which has lock chamber object properties as part of a lock complex [in SI-units] """
+
+    def __init__(
+        self,
+        node_1, #a string which indicates the location of the first pair of lock doors
+        node_2, #a string which indicates the center of the lock chamber
+        node_3, #a string which indicates the location of the second pair of lock doors
+        lock_length, #a float which contains the length of the lock chamber
+        lock_width, #a float which contains the width of the lock chamber
+        lock_depth, #a float which contains the depth of the lock chamber
+        doors_open, #a float which contains the time it takes to open the doors
+        doors_close, #a float which contains the time it takes to close the doors
+        wlev_dif, #a float or list of floats which resembles the water level difference over the lock
+        disch_coeff, #a float which contains the discharge coefficient of filling system
+        opening_area, #a float which contains the cross-sectional area of filling system
+        opening_depth, #a float which contains the depth at which filling system is located
+        simulation_start, #a datetime which contains the simulation start time
+        operating_time,
+        grav_acc = 9.81, #a float which contains the gravitational acceleration
+        *args,
+        **kwargs):
+
+        """Initialization"""
+        # Properties
+        self.lock_length = lock_length
+        self.lock_width = lock_width
+        self.lock_depth = lock_depth
+        self.wlev_dif = wlev_dif
+        self.disch_coeff = disch_coeff
+        self.grav_acc = grav_acc
+        self.opening_area = opening_area
+        self.opening_depth = opening_depth
+        self.operating_time = operating_time
+        self.simulation_start = simulation_start.timestamp()
+
+        super().__init__(length = lock_length, remaining_length = lock_length, *args, **kwargs)
+
+        self.doors_1 = {node_1: simpy.PriorityResource(self.env, capacity = 1),} #Only one ship can pass at a time: capacity = 1, request can have priority
+        self.doors_2 = {node_3: simpy.PriorityResource(self.env, capacity = 1),} #Only one ship can pass at a time: capacity = 1, request can have priority
+
+        # Operating
+        self.doors_open = doors_open
+        self.doors_close = doors_close
+
+        # Water level
+        assert node_1 != node_3
+
+        self.node_1 = node_1
+        self.node_3 = node_3
+        self.water_level = random.choice([node_1, node_3])
+
+    def operation_time(self, environment):
+        """ Function which calculates the operation time: based on the constant or nearest in the signal of the water level difference
+
+            Input:
+                - environment: see init function"""
+
+        if type(self.wlev_dif) == list: #picks the wlev_dif from measurement signal closest to the discrete time
+            operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif[1][np.abs(self.wlev_dif[0]-(environment.now-self.simulation_start)).argmin()]))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+
+        elif type(self.wlev_dif) == float or type(self.wlev_dif) == int: #constant water level difference
+            operating_time = (2*self.lock_width*self.lock_length*abs(self.wlev_dif))/(self.disch_coeff*self.opening_area*math.sqrt(2*self.grav_acc*self.opening_depth))
+
+        return operating_time
+
+    def convert_chamber(self, environment, new_level, number_of_vessels):
+        """ Function which converts the lock chamber and logs this event.
+
+            Input:
+                - environment: see init function
+                - new_level: a string which represents the node and indicates the side at which the lock is currently levelled
+                - number_of_vessels: the total number of vessels which are levelled simultaneously"""
+
+        # Close the doors
+        self.log_entry("Lock doors closing start", environment.now, number_of_vessels, self.water_level)
+        yield environment.timeout(self.doors_close)
+        self.log_entry("Lock doors closing stop", environment.now, number_of_vessels, self.water_level)
+
+        # Convert the chamber
+        self.log_entry("Lock chamber converting start", environment.now, number_of_vessels, self.water_level)
+
+        # Water level will shift
+        yield environment.timeout(self.operation_time(environment))
+        self.change_water_level(new_level)
+        self.log_entry("Lock chamber converting stop", environment.now, number_of_vessels, self.water_level)
+        # Open the doors
+        self.log_entry("Lock doors opening start", environment.now, number_of_vessels, self.water_level)
+        yield environment.timeout(self.doors_open)
+        self.log_entry("Lock doors opening stop", environment.now, number_of_vessels, self.water_level)
+
+    def change_water_level(self, side):
+        """ Function which changes the water level in the lock chamber and priorities in queue """
+
+        self.water_level = side
+
+        for request in self.resource.queue:
+            request.priority = -1 if request.priority == 0 else 0
+
+            if request.priority == -1:
+                self.resource.queue.insert(
+                    0, self.resource.queue.pop(self.resource.queue.index(request))
+                )
+            else:
+                self.resource.queue.insert(
+                    -1, self.resource.queue.pop(self.resource.queue.index(request))
+                )
 
 class PassLock():
     """ Mixin class: a collection of functions which are used to pass a lock complex consisting of a waiting area, line-up areas, and lock chambers"""
@@ -709,7 +910,6 @@ class PassLock():
                 lock.doors_2[lock.node_3].release(vessel.access_lock_door1)
 
             #Imports the properties of the line-up area the vessel was assigned to
-
             for node_lineup_area in reversed(vessel.route[:(index_node_lock-1)]):
                 if "Line-up area" not in vessel.env.FG.nodes[node_lineup_area].keys():
                     continue
