@@ -158,6 +158,13 @@ def power2v(vessel, edge, upperbound):
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
     """
+
+    assert isinstance(
+        vessel, opentnsim.core.VesselProperties
+    ), "vessel should be an instance of VesselProperties"
+
+    assert vessel.C_B is not None, "C_B cannot be None"
+
     # upperbound = get_upperbound_for_power2v()
     # bounds > 10 gave an issue...
     # TODO: check what the origin of this is.
@@ -165,7 +172,11 @@ def power2v(vessel, edge, upperbound):
         """function to optimize"""
         # water depth from the edge
         h_0 = edge["Info"]["GeneralDepth"]
-        h_0 = vessel.calculate_h_squat(v, h_0)
+        try:
+            h_0 = vessel.calculate_h_squat(v, h_0)
+        except AttributeError:
+            # no squat available
+            pass
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_0)
         # compute total power given
@@ -496,6 +507,7 @@ class ConsumesEnergy:
         # plugin function that computes velocity based on power
         self.power2v = opentnsim.energy.power2v
 
+        # TODO: C_year is obligatory, so why is this code here?
         if C_year:
             self.C_year = C_year
         else:
@@ -530,6 +542,7 @@ class ConsumesEnergy:
             self.lmb = 18.6
 
         # The age of the engine
+        # TODO: I would not expect a random distribution if the function is cal
         self.age = int(np.random.weibull(self.k) * self.lmb)
 
         # Construction year of the engine
