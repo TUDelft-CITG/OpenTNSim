@@ -59,3 +59,7 @@ The benefit of OpenTNSim is the generic set-up. A number of examples are present
 ## Book
 
 Based on the examples and docs a book can be generated using the commands `make book` and cleaned up using `make clean-book`. These commands are unix only.
+
+## Code quality
+Code quality is checked using sonarcloud. You can see results in the across
+Actions section. 
