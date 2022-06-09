@@ -65,26 +65,44 @@ def geom_to_node(geom: shapely.geometry.Point, properties: dict):
 
 def gdf_to_nx(gdf):
     """Convert a geopandas dataframe to a networkx DiGraph"""
+    # TODO: consider using an id instead of cooridnates
     FG = nx.DiGraph()
     for _, feature in gdf.iterrows():
-        geom = feature.geometry
-        if geom is None:
+        # we also want to store the feature geometry
+        geometry = feature.geometry
+        if geometry is None:
             raise nx.NetworkXError("Bad data: feature missing geometry")
+
+        # add geometry back later
         properties = feature.drop(labels=["geometry"])
+
         # in case we have single points in the geometry, add them as nodes
-        if geom.geom_type == "Point":
-            node_idx = geom.coords[0]
-            FG.add_node(node_idx, **properties)
+        if geometry.geom_type == "Point":
+            node_idx = geometry.coords[0]
+            node_properties = properties.copy()
+            # make a copy so we don't share data
+            node_properties["geometry"] = geometry
+            FG.add_node(node_idx, **node_properties)
             continue
-        if geom.geom_type in ["LineString", "MultiLineString"]:
-            for edge_id, edge_properties in geom_to_edges(geom, properties):
+        if geometry.geom_type in ["LineString", "MultiLineString"]:
+            for edge_id, edge_properties in geom_to_edges(geometry, properties):
+                # make sure we also have the nodes (source, target) in the network
                 node_source, node_target = edge_properties["e"]
-                source_geom = shapely.geometry.Point(*node_source)
-                node_id, node_properties = geom_to_node(source_geom, {})
+
+                # make and add the source node
+                source_geometry = shapely.geometry.Point(*node_source)
+                node_id, node_properties = geom_to_node(source_geometry, {})
+                node_properties["geometry"] = source_geometry
                 FG.add_node(edge_id[0], **node_properties)
-                target_geom = shapely.geometry.Point(*node_target)
-                node_id, node_properties = geom_to_node(source_geom, {})
+
+                # and the target node
+                target_geometry = shapely.geometry.Point(*node_target)
+                node_id, node_properties = geom_to_node(target_geometry, {})
+                node_properties["geometry"] = target_geometry
                 FG.add_node(edge_id[1], **node_properties)
+
+                # now also add the edge
+                edge_properties["geometry"] = geometry
                 FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
     return FG
 
