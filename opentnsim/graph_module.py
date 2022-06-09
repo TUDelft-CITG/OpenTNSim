@@ -28,6 +28,86 @@ logger = logging.getLogger(__name__)
 wgs84 = pyproj.Geod(ellps="WGS84")
 
 
+def geom_to_edges(geom, properties):
+    """Generate edges from a geometry, yielding an edge id and edge properties. The edge_id consists of a tuple of coordinates"""
+    if geom.geom_type not in ["LineString", "MultiLineString"]:
+        msg = "Only ['LineString', 'MultiLineString'] are supported, got {}".format(
+            geom.geom_type
+        )
+        raise ValueError(msg)
+    if geom.geom_type == "MultiLineString":
+        for geom in geom.geoms:
+            yield from geom_to_edges(geom, properties)
+    elif geom.geom_type == "LineString":
+        edge_properties = properties.copy()
+        edge_source_coord = geom.coords[0]
+        edge_target_coord = geom.coords[-1]
+        edge_properties["Wkt"] = shapely.wkt.dumps(geom)
+        edge_properties["Wkb"] = shapely.wkb.dumps(geom)
+        edge_properties["Json"] = shapely.geometry.mapping(geom)
+        edge_properties["e"] = [edge_source_coord, edge_target_coord]
+        edge_id = (edge_source_coord, edge_target_coord)
+        yield edge_id, edge_properties
+
+
+def geom_to_node(geom: shapely.geometry.Point, properties: dict):
+    if geom.geom_type != "Point":
+        msg = "Only 'Point' is supported, got {}".format(geom.geom_type)
+        raise ValueError(msg)
+    node_properties = properties.copy()
+    node_properties["Wkt"] = shapely.wkt.dumps(geom)
+    node_properties["Wkb"] = shapely.wkb.dumps(geom)
+    node_properties["Json"] = shapely.geometry.mapping(geom)
+    node_properties["n"] = geom.coords[0]
+    node_id = geom.coords[0]
+    return node_id, node_properties
+
+
+def gdf_to_nx(gdf):
+    """Convert a geopandas dataframe to a networkx DiGraph"""
+    # on the next update consider using an id instead of coordinates
+    # coordinates are floating points and can cause issues when used as id
+    FG = nx.DiGraph()
+    for _, feature in gdf.iterrows():
+        # we also want to store the feature geometry
+        geometry = feature.geometry
+        if geometry is None:
+            raise nx.NetworkXError("Bad data: feature missing geometry")
+
+        # add geometry back later
+        properties = feature.drop(labels=["geometry"])
+
+        # in case we have single points in the geometry, add them as nodes
+        if geometry.geom_type == "Point":
+            node_idx = geometry.coords[0]
+            node_properties = properties.copy()
+            # make a copy so we don't share data
+            node_properties["geometry"] = geometry
+            FG.add_node(node_idx, **node_properties)
+            continue
+        if geometry.geom_type in ["LineString", "MultiLineString"]:
+            for edge_id, edge_properties in geom_to_edges(geometry, properties):
+                # make sure we also have the nodes (source, target) in the network
+                node_source, node_target = edge_properties["e"]
+
+                # make and add the source node
+                source_geometry = shapely.geometry.Point(*node_source)
+                node_id, node_properties = geom_to_node(source_geometry, {})
+                node_properties["geometry"] = source_geometry
+                FG.add_node(edge_id[0], **node_properties)
+
+                # and the target node
+                target_geometry = shapely.geometry.Point(*node_target)
+                node_id, node_properties = geom_to_node(target_geometry, {})
+                node_properties["geometry"] = target_geometry
+                FG.add_node(edge_id[1], **node_properties)
+
+                # now also add the edge
+                edge_properties["geometry"] = geometry
+                FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
+    return FG
+
+
 class Graph:
     """General networkx object
 
@@ -171,7 +251,7 @@ def get_minimum_depth(graph, route):
         # get the properties
         edge = graph.get_edge_data(e[0], e[1])
         # lookup the depth
-        depth = edge['Info']['GeneralDepth']
+        depth = edge["Info"]["GeneralDepth"]
         # remember
         depths.append(depth)
         # find the minimum
@@ -181,7 +261,7 @@ def get_minimum_depth(graph, route):
 
 def compute_distance(edge, orig, dest):
     """compute distance over edge, or if edge does not have a geometry over orig-dest"""
-    if 'geometry' not in edge:
+    if "geometry" not in edge:
         distance = wgs84.inv(
             shapely.geometry.shape(orig).x,
             shapely.geometry.shape(orig).y,
@@ -190,29 +270,31 @@ def compute_distance(edge, orig, dest):
         )[2]
         return distance
 
-    edge_route = np.array(edge['geometry'].coords)
+    edge_route = np.array(edge["geometry"].coords)
 
     # check if edge is in the sailing direction, otherwise flip it
     distance_from_start = wgs84.inv(
-            orig.x,
-            orig.y,
-            edge_route[0][0],
-            edge_route[0][1],
-        )[2]
+        orig.x,
+        orig.y,
+        edge_route[0][0],
+        edge_route[0][1],
+    )[2]
     distance_from_stop = wgs84.inv(
-            orig.x,
-            orig.y,
-            edge_route[-1][0],
-            edge_route[-1][1],
-        )[2]
-    if distance_from_start>distance_from_stop:
+        orig.x,
+        orig.y,
+        edge_route[-1][0],
+        edge_route[-1][1],
+    )[2]
+    if distance_from_start > distance_from_stop:
         # when the distance from the starting point is greater than from the end point
-        edge_route = np.flipud(np.array(edge['geometry'].coords))
+        edge_route = np.flipud(np.array(edge["geometry"].coords))
 
     distance = 0
     for index, pt in enumerate(edge_route[:-1]):
         sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
-        sub_dest = shapely.geometry.Point(edge_route[index+1][0], edge_route[index+1][1])
+        sub_dest = shapely.geometry.Point(
+            edge_route[index + 1][0], edge_route[index + 1][1]
+        )
 
         distance += wgs84.inv(
             shapely.geometry.asShape(sub_orig).x,
