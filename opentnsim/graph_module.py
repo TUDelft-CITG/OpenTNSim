@@ -30,7 +30,7 @@ wgs84 = pyproj.Geod(ellps="WGS84")
 
 def geom_to_edges(geom, properties):
     """Generate edges from a geometry, yielding an edge id and edge properties. The edge_id consists of a tuple of coordinates"""
-    if not geom.geom_type in ["LineString", "MultiLineString"]:
+    if geom.geom_type not in ["LineString", "MultiLineString"]:
         msg = "Only ['LineString', 'MultiLineString'] are supported, got {}".format(
             geom.geom_type
         )
@@ -51,7 +51,7 @@ def geom_to_edges(geom, properties):
 
 
 def geom_to_node(geom: shapely.geometry.Point, properties: dict):
-    if not geom.geom_type == "Point":
+    if geom.geom_type != "Point":
         msg = "Only 'Point' is supported, got {}".format(geom.geom_type)
         raise ValueError(msg)
     node_properties = properties.copy()
@@ -65,7 +65,8 @@ def geom_to_node(geom: shapely.geometry.Point, properties: dict):
 
 def gdf_to_nx(gdf):
     """Convert a geopandas dataframe to a networkx DiGraph"""
-    # TODO: consider using an id instead of cooridnates
+    # on the next update consider using an id instead of coordinates
+    # coordinates are floating points and can cause issues when used as id
     FG = nx.DiGraph()
     for _, feature in gdf.iterrows():
         # we also want to store the feature geometry
