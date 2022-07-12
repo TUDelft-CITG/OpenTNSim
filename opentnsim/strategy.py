@@ -28,13 +28,6 @@ import tqdm
 logger = logging.getLogger(__name__)
 
 
-
-# 6) make the functions elegant (explicy name, dry code, etc.) in strategy.py and "optimal sailing stratigies notebook", then test again.
-
-# 8)fix error of payload_2_T functions in strategy.py 
-
-
-
 # To know the corresponding Payload for each T_strategy
 def T2Payload(vessel, T_strategy, vessel_type):
     """ Calculate the corresponding payload for each T_strategy
@@ -168,9 +161,9 @@ def T2Payload(vessel, T_strategy, vessel_type):
     
     Payload_computed = DWT_final-fuel_weight # payload=DWT-fuel_weight
 
-    # DWT_final covers the situations of the DWT at maximum draught and and the DWT at adjusted draught
+    # DWT_final covers the situations of the DWT at maximum draught and the DWT at adjusted draught
     # We include DWT_final for calculating cargo-fuel trade off by function 'get_adjusted_cargo_amount'.
-    return Payload_computed, DWT_final  
+    return Payload_computed 
 
 
 def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):

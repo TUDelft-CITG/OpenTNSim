@@ -1,33 +1,29 @@
 """Main module."""
 
 # package(s) related to time, space and id
-import json
-import logging
-import uuid
-import pathlib
 import datetime
-import time
-
-# you need these dependencies (you can get these from anaconda)
-# package(s) related to the simulation
-import simpy
+import logging
 import random
+import uuid
+
 import networkx as nx
 import numpy as np
-import math
-import pandas as pd
 
 # spatial libraries
 import pyproj
 import shapely.geometry
 
-# additional packages
+# you need these dependencies (you can get these from anaconda)
+# package(s) related to the simulation
+import simpy
 
 import opentnsim.energy
 import opentnsim.graph_module
 
-logger = logging.getLogger(__name__)
+# additional packages
 
+
+logger = logging.getLogger(__name__)
 
 
 class SimpyObject:
@@ -51,9 +47,7 @@ class HasResource(SimpyObject):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.resource = (
-            simpy.PriorityResource(self.env, capacity=nr_resources)
-            if priority
-            else simpy.Resource(self.env, capacity=nr_resources)
+            simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
         )
 
 
@@ -96,6 +90,7 @@ class Neighbours:
         """Initialization"""
         self.neighbours = travel_to
 
+
 class HasLength(SimpyObject):
     """Mixin class: Something with a storage capacity
 
@@ -107,8 +102,9 @@ class HasLength(SimpyObject):
     def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.length = simpy.Container(self.env, capacity = length, init=remaining_length)
-        self.pos_length = simpy.Container(self.env, capacity = length, init=remaining_length)
+        self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
+        self.pos_length = simpy.Container(self.env, capacity=length, init=remaining_length)
+
 
 class HasContainer(SimpyObject):
     """Mixin class: Something with a storage capacity
@@ -160,10 +156,34 @@ class Log(SimpyObject):
             self.log["Value"],
             self.log["Geometry"],
         ):
-            json.append(
-                dict(message=msg, time=t, value=value, geometry_log=geometry_log)
-            )
+            json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
         return json
+
+
+class HasLoad:
+    """Mixin class with load dependent height (H) and draught (T). The filling
+    degree (filling_degree: fraction) will interpolate between empty and full
+    height and draught."""
+
+    def __init__(self, H_e, H_f, T_e, T_f, filling_degree=0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.H_e = H_e
+        self.H_f = H_f
+        self.T_e = T_e
+        self.T_f = T_f
+        self.filling_degree = filling_degree
+
+    @property
+    def T(self):
+        # base draught on filling degree
+        T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
+        return T
+
+    @property
+    def H(self):
+        """Calculate current height based on filling degree"""
+
+        return self.filling_degree * (self.H_f - self.H_e) + self.H_e
 
 
 class VesselProperties:
@@ -173,45 +193,43 @@ class VesselProperties:
     - type: can contain info on vessel type (avv class, cemt_class or other)
     - B: vessel width
     - L: vessel length
-    - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property ['Info']['GeneralDepth']
+    - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property
+      ['Info']['GeneralDepth']
     - T: actual draught
-    - C_B: block coefficient ('fullness') [-]
-    - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing, the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude of the ship captain and shipping companies.
+    - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing,
+      the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety
+      margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude
+      of the ship captain and shipping companies.
     - h_squat: the water depth considering ship squatting while the ship moving (if set to False, h_squat is disabled)
-    - payload: cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
-    - vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull), based on van Dorsser et al's paper.(https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+    - payload: cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.
+      (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+    - vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker".
+      ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull),
+      based on van Dorsser et al's paper.
+      (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
     Alternatively you can specify draught based on filling degree
     - H_e: vessel height unloaded
     - H_f: vessel height loaded
     - T_e: draught unloaded
     - T_f: draught loaded
-    - renewable_fuel_mass: renewable fuel mass on board [kg]
-    - renewable_fuel_volume: renewable fuel volume on board [m3]
-    - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
+
     """
-        # TODO: add blockage factor S to vessel properties
+
+    # TODO: add blockage factor S to vessel properties
 
     def __init__(
-            self,
-            type,
-            B,
-            L,
-            h_min=None,
-            T=None,
-            C_B=None,
-            H_e=None,
-            H_f=None,
-            T_e=None,
-            T_f=None,
-            safety_margin=None,
-            h_squat=None,
-            payload=None,
-            vessel_type=None,
-            renewable_fuel_mass=None,
-            renewable_fuel_volume=None,
-            renewable_fuel_required_space=None,
-            *args,
-            **kwargs
+        self,
+        type,
+        B,
+        L,
+        h_min=None,
+        T=None,
+        safety_margin=None,
+        h_squat=None,
+        payload=None,
+        vessel_type=None,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -223,40 +241,33 @@ class VesselProperties:
         # hidden because these can also computed on the fly
         self._T = T
         self._h_min = h_min
-        self.C_B = C_B
         # alternative  options
-        self.H_e = H_e
-        self.H_f = H_f
-        self.T_e = T_e
-        self.T_f = T_f
         self.safety_margin = safety_margin
         self.h_squat = h_squat
         self.payload = payload
         self.vessel_type = vessel_type
-        self.renewable_fuel_mass = renewable_fuel_mass
-        self.renewable_fuel_volume = renewable_fuel_volume
-        self.renewable_fuel_required_space = renewable_fuel_required_space      
+
     @property
     def T(self):
-        """Compute the actual draught
-
-        There are 3 ways to get actual draught
-        - by directly providing actual draught values in the notebook
-        - Or by providing ship draughts in fully loaded state and empty state, the actual draught will be computed based on filling degree
-        
-
+        """Compute the actual draught.
+        This will default to using the draught passed by the constructor. If it is None it will try to find one in the super class.
         """
         if self._T is not None:
             # if we were passed a T value, use tha one
             T = self._T
-        elif self.T_f is not None and self.T_e is not None:
-            # base draught on filling degree
-            T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
-        elif self.payload is not None and self.vessel_type is not None:
-        # else:    
-            T = opentnsim.strategy.Payload2T(self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40))  # this need to be tested
-        # todo: for later possibly include Payload2T 
-        
+        else:
+            try:
+                T = super().T
+            except AttributeError:
+                raise AttributeError(f"T is not set ({self._T}) and no T found in super")
+        # TODO: do we need this? Move it to other class or inject strategy.
+        # elif self.payload is not None and self.vessel_type is not None:
+        # else:
+        #     T = opentnsim.strategy.Payload2T(
+        #       self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40)
+        #       )  # this need to be tested
+        # todo: for later possibly include payload2T
+
         return T
 
     @property
@@ -268,58 +279,17 @@ class VesselProperties:
 
         return h_min
 
-
-    def calculate_max_sinkage(self, v, h_0):
-        """Calculate the maximum sinkage of a moving ship
-
-        the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates, chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6
-
-        some explanation for the variables in the equation:
-        - h_0: water depth
-        - v: ship velocity relative to the water
-        - 150: Here we use the standard width 150 m as the waterway width
-
-        """
-
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v*1.94) ** 2.08) / 20
-
-        return max_sinkage
-
-    def calculate_h_squat(self, v, h_0):
-
-        if self.h_squat:
-            h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
-
-        else:
-            h_squat = h_0
-        
-        return h_squat
-
-
-    @property
-    def H(self):
-        """ Calculate current height based on filling degree
-        """
-
-        return (
-                self.filling_degree * (self.H_f - self.H_e)
-                + self.H_e
-        )
-
-
-
     def get_route(
-            self,
-            origin,
-            destination,
-            graph=None,
-            minWidth=None,
-            minHeight=None,
-            minDepth=None,
-            randomSeed=4,
+        self,
+        origin,
+        destination,
+        graph=None,
+        minWidth=None,
+        minHeight=None,
+        minDepth=None,
+        randomSeed=4,
     ):
-        """ Calculate a path based on vessel restrictions
-        """
+        """Calculate a path based on vessel restrictions"""
 
         graph = graph if graph else self.env.FG
         minWidth = minWidth if minWidth else 1.1 * self.B
@@ -338,11 +308,7 @@ class VesselProperties:
             nodes = []
 
             for edge in graph.edges(data=True):
-                if (
-                        edge[2]["Width"] >= minWidth
-                        and edge[2]["Height"] >= minHeight
-                        and edge[2]["Depth"] >= minDepth
-                ):
+                if edge[2]["Width"] >= minWidth and edge[2]["Height"] >= minHeight and edge[2]["Depth"] >= minDepth:
                     edges.append(edge)
 
                     nodes.append(graph.nodes[edge[0]])
@@ -364,16 +330,12 @@ class VesselProperties:
             try:
                 return nx.dijkstra_path(subGraph, origin, destination)
                 # return nx.bidirectional_dijkstra(subGraph, origin, destination)
-            except:
-                raise ValueError(
-                    "No path was found with the given boundary conditions."
-                )
+            except nx.NetworkXNoPath:
+                raise ValueError("No path was found with the given boundary conditions.")
 
         # If not, return shortest path
         else:
             return nx.dijkstra_path(graph, origin, destination)
-
-
 
 
 class Routeable:
@@ -387,6 +349,7 @@ class Routeable:
         """Initialization"""
         self.route = route
         self.complete_path = complete_path
+
 
 class Movable(Locatable, Routeable, Log):
     """Mixin class: Something can move
@@ -573,7 +536,6 @@ class Movable(Locatable, Routeable, Log):
         return self.v
 
 
-
 class ContainerDependentMovable(Movable, HasContainer):
     """ContainerDependentMovable class
     Used for objects that move with a speed dependent on the container level
@@ -592,6 +554,7 @@ class ContainerDependentMovable(Movable, HasContainer):
 
 class ExtraMetadata:
     """store all leftover keyword arguments as metadata property (use as last mixin)"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
         # store all other properties as metadata
