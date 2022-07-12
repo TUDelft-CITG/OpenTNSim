@@ -196,7 +196,6 @@ class VesselProperties:
     - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property
       ['Info']['GeneralDepth']
     - T: actual draught
-    - C_B: block coefficient ('fullness') [-]
     - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing,
       the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety
       margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude
@@ -225,7 +224,6 @@ class VesselProperties:
         L,
         h_min=None,
         T=None,
-        C_B=None,
         safety_margin=None,
         h_squat=None,
         payload=None,
@@ -243,7 +241,6 @@ class VesselProperties:
         # hidden because these can also computed on the fly
         self._T = T
         self._h_min = h_min
-        self.C_B = C_B
         # alternative  options
         self.safety_margin = safety_margin
         self.h_squat = h_squat
@@ -281,33 +278,6 @@ class VesselProperties:
             h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
 
         return h_min
-
-    def calculate_max_sinkage(self, v, h_0):
-        """Calculate the maximum sinkage of a moving ship
-
-        the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates,
-        chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6
-
-        some explanation for the variables in the equation:
-        - h_0: water depth
-        - v: ship velocity relative to the water
-        - 150: Here we use the standard width 150 m as the waterway width
-
-        """
-
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
-
-        return max_sinkage
-
-    def calculate_h_squat(self, v, h_0):
-
-        if self.h_squat:
-            h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
-
-        else:
-            h_squat = h_0
-
-        return h_squat
 
     def get_route(
         self,
@@ -427,7 +397,6 @@ class Movable(Locatable, Routeable, Log):
         for edge in zip(self.route[:-1], self.route[1:]):
             origin, destination = edge
             self.node = origin
-            # print('I am going to go to the next node {}'.format(destination))
             yield from self.pass_edge(origin, destination)
             # we arrived at destination
             self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
@@ -492,7 +461,6 @@ class Movable(Locatable, Routeable, Log):
                     sub_dest,
                 )
             self.geometry = dest
-            # print('   My new origin is {}'.format(destination))
         else:
             distance = self.wgs84.inv(
                 shapely.geometry.shape(orig).x,
