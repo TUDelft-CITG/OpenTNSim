@@ -72,11 +72,11 @@ class Locatable:
     - geometry: can be a point as well as a polygon
     """
 
-    def __init__(self, geometry, *args, **kwargs):
+    def __init__(self, geometry, node=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.geometry = geometry
-        self.node = None
+        self.node = node
 
 
 class Neighbours:
