@@ -730,7 +730,7 @@ class ConsumesEnergy:
         """
 
         
-        # The general emission factors of CO2, PM10 and NOX, and SFC are based on the construction year of the engine
+        # The general emission factors of CO2, PM10 and NOX are based on the construction year of the engine
 
         if self.C_year < 1974:
             self.EF_CO2 = 756
@@ -786,7 +786,7 @@ class ConsumesEnergy:
 
         
         Data source: 
-        Marin report 2019, Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations
+        Table 3-2 from Marin report 2019,  Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations
         
         Note: 
         net energy density can be used for calculate fuel consumption in mass and volume, but for required energy source storage space determination, the packaging factors of different energy sources also need to be considered.
@@ -829,6 +829,12 @@ class ConsumesEnergy:
         """Specific Fuel Consumption (SFC) is calculated by energy density and energy conversion efficiency. 
         The SFC calculation equation, SFC = 1 / (energy density * energy conversion efficiency), can be found in the paper of Kim et al (2020)(A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183).
         
+        for diesel SFC, there are 3 kinds of general diesel SFC 
+        - SFC_diesel_ICE_mass, calculated by net diesel gravimetric density and ICE energy-power system efficiency, without considering engine performence variation due to engine ages
+        - SFC_diesel_ICE_vol, calculated by net diesel volumetric density and ICE energy-power system efficiency, without considering engine performence variation due to engine ages
+        - SFC_diesel_C_year, a group of SFC considering ICE engine performence variation due to engine ages (C_year), based on TNO (2019)
+        
+        Please note: later on a correction factor has to be applied to get the total SFC
         """
         # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include ZES battery capacity per container here. 
         # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton, vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)        
@@ -864,7 +870,7 @@ class ConsumesEnergy:
         self.SFC_eNH3_ICE_vol = 1 /(self.Edens_eNH3_vol * self.Eeff_ICE)   # m3/kWh
         
         
-        # The general emission factors of CO2, PM10 and NOX, and SFC are based on the construction year of the engine
+        # The general diesel SFC (g/kWh) which are based on the construction year of the engine (TNO)
 
         if self.C_year < 1974:
             self.SFC_diesel_C_year = 235
@@ -888,19 +894,19 @@ class ConsumesEnergy:
             else:
                 self.SFC_diesel_C_year = 190
 
-        logger.debug(f'The general emission factor of CO2 is {self.EF_CO2} g/kWh')
-        logger.debug(f'The general emission factor of PM10 is {self.EF_PM10} g/kWh')
-        logger.debug(f'The general emission factor CO2 is {self.EF_NOX} g/kWh')
+
         logger.debug(f'The general fuel consumption factor for diesel is {self.SFC_diesel_C_year} g/kWh')        
         
        
     def correction_factors(self, v):
         """ Partial engine load correction factors (C_partial_load):
 
-        - The correction factors have to be multiplied by the general emission factors, to get the total emission factors
+        - The correction factors have to be multiplied by the general emission factors (or general SFC), to get the total emission factors (or total SFC)
         - The correction factor takes into account the effect of the partial engine load
-        - When the partial engine load is low, the correction factors are higher (engine is less efficient)
-        - Based on literature TNO (2019)
+        - When the partial engine load is low, the correction factors are higher (ICE engine is less efficient at lower enegine load)
+        - the correction factors for emissions and diesel fuel in ICE engine are based on literature TNO (2019)
+        - For fuel cell enegines(PEMFC & SOFC), the correction factors are lower when the partial engine load is low (fuel cell enegine is more efficient at lower enegine load) 
+        - the correction factors for renewable fuels are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
         #TODO: create correction factors for renewable powered ship, the factor may be 100% 
         self.calculate_total_power_required(v=v)  # You need the P_partial values
@@ -908,14 +914,17 @@ class ConsumesEnergy:
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
         self.C_partial_load = opentnsim.energy.load_partial_engine_load_correction_factors()
+        self.C_partial_load_battery = 1 # assume the battery energy consumption is not influenced by different engine load
 
         for i in range(20):
             # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
             if self.P_partial <= self.C_partial_load.iloc[0, 0]:
                 self.C_partial_load_CO2 = self.C_partial_load.iloc[0, 5]
                 self.C_partial_load_PM10 = self.C_partial_load.iloc[0, 6]
-                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
+                self.C_partial_load_fuel_ICE = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
                                                                    # correction factors are equal
+                self.C_partial_load_PEMFC = self.C_partial_load.iloc[0, 7]
+                self.C_partial_load_SOFC = self.C_partial_load.iloc[0, 8]
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.C_year < 2008:
@@ -941,9 +950,14 @@ class ConsumesEnergy:
                 self.C_partial_load_PM10 = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
                             self.C_partial_load.iloc[i + 1, 6] - self.C_partial_load.iloc[i, 6])) / (
                                 self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 6]
-                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
+                self.C_partial_load_fuel_ICE = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
                                                                    # correction factors are equal
-
+                self.C_partial_load_PEMFC = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                            self.C_partial_load.iloc[i + 1, 7] - self.C_partial_load.iloc[i, 7])) / (
+                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 7]
+                self.C_partial_load_SOFC = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
+                            self.C_partial_load.iloc[i + 1, 8] - self.C_partial_load.iloc[i, 8])) / (
+                                self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 8]
                 if self.C_year < 2008:
                     self.C_partial_load_NOX = ((self.P_partial - self.C_partial_load.iloc[i, 0]) * (
                                 self.C_partial_load.iloc[i + 1, 1] - self.C_partial_load.iloc[i, 1])) / (
@@ -966,9 +980,10 @@ class ConsumesEnergy:
             elif self.P_partial >= self.C_partial_load.iloc[19, 0]:
                 self.C_partial_load_CO2 = self.C_partial_load.iloc[19, 5]
                 self.C_partial_load_PM10 = self.C_partial_load.iloc[19, 6]
-                self.C_partial_load_fuel = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
+                self.C_partial_load_fuel_ICE = self.C_partial_load_CO2 # CO2 emission is generated from fuel consumption, so these two
                                                                    # correction factors are equal
-
+                self.C_partial_load_PEMFC = self.C_partial_load.iloc[19, 7]
+                self.C_partial_load_SOFC = self.C_partial_load.iloc[19, 8]
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.C_year < 2008:
                     self.C_partial_load_NOX = self.C_partial_load.iloc[19, 1]  # <= CCR-1 class
@@ -985,8 +1000,11 @@ class ConsumesEnergy:
         logger.debug(f'Partial engine load correction factor of CO2 is {self.C_partial_load_CO2}')
         logger.debug(f'Partial engine load correction factor of PM10 is {self.C_partial_load_PM10}')
         logger.debug(f'Partial engine load correction factor of NOX is {self.C_partial_load_NOX}')
-        logger.debug(f'Partial engine load correction factor of diesel fuel consumption is {self.C_partial_load_fuel}')
-
+        logger.debug(f'Partial engine load correction factor of diesel fuel consumption in ICE is {self.C_partial_load_fuel_ICE}')
+        logger.debug(f'Partial engine load correction factor of fuel consumption in PEMFC is {self.C_partial_load_PEMFC}')
+        logger.debug(f'Partial engine load correction factor of fuel consumption in SOFC is {self.C_partial_load_SOFC}')
+        logger.debug(f'Partial engine load correction factor of energy consumption in battery is {self.C_partial_load_battery}')
+        
     def calculate_emission_factors_total(self, v):
         """Total emission factors:
 
@@ -1002,26 +1020,11 @@ class ConsumesEnergy:
         self.total_factor_CO2 = self.EF_CO2 * self.C_partial_load_CO2
         self.total_factor_PM10 = self.EF_PM10 * self.C_partial_load_PM10
         self.total_factor_NOX = self.EF_NOX * self.C_partial_load_NOX
-        self.total_factor_diesel_C_year = self.SFC_diesel_C_year * self.C_partial_load_fuel
-        self.total_factor_diesel = self.SFC_diesel * self.C_partial_load_fuel
-        # To do: update load factor (C_partial_load) for ICE engine and fuel cell engine, now we use the same factor        
-        self.total_factor_LH2 = self.SFC_LH2 * self.C_partial_load_fuel 
-        self.total_factor_eLNG = self.SFC_eLNG * self.C_partial_load_fuel
-        self.total_factor_eMethanol = self.SFC_eMethanol * self.C_partial_load_fuel
-        self.total_factor_eNH3 = self.SFC_eNH3 * self.C_partial_load_fuel
-        self.total_factor_Battery2000kWh = self.SFC_Battery2000kWh * self.C_partial_load_fuel
-        #VOLUME
-        self.total_factor_FU_vol = self.SFC_diesel_vol * self.C_partial_load_fuel
-        self.total_factor_LH2_vol = self.SFC_LH2_vol * self.C_partial_load_fuel 
-        self.total_factor_eLNG_vol = self.SFC_eLNG_vol * self.C_partial_load_fuel
-        self.total_factor_eMethanol_vol = self.SFC_eMethanol_vol * self.C_partial_load_fuel
-        self.total_factor_eNH3_vol = self.SFC_eNH3_vol * self.C_partial_load_fuel
-        
 
         logger.debug(f'The total emission factor of CO2 is {self.total_factor_CO2} g/kWh')
         logger.debug(f'The total emission factor of PM10 is {self.total_factor_PM10} g/kWh')
         logger.debug(f'The total emission factor CO2 is {self.total_factor_NOX} g/kWh')
-        logger.debug(f'The total fuel use factor for diesel is {self.total_factor_FU} g/kWh')
+
 
     def calculate_SFC_total(self, v):
         """Total emission factors:
@@ -1029,50 +1032,77 @@ class ConsumesEnergy:
         - The total emission factors can be computed by multiplying the general emission factor by the correction factor
         """
 
-        self.SFC_general()  # You need the values of the general emission factors of CO2, PM10, NOX
-        self.correction_factors(v=v)  # You need the correction factors of CO2, PM10, NOX
+        self.SFC_general()  # You need the values of the general SFC
+        self.correction_factors(v=v)  # You need the correction factors of SFC
 
-        # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
-        # By the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
+        # The total emission factor is calculated by multiplying the general SFC (EF_CO2 / EF_PM10 / EF_NOX)
+        # By the correction factor (C_partial_load_fuel / C_partial_load_PEMFC / C_partial_load_SOFC)
 
 
-        self.total_factor_diesel_C_year = self.SFC_diesel_C_year * self.C_partial_load_fuel
-        self.total_factor_diesel = self.SFC_diesel * self.C_partial_load_fuel
-        # To do: update load factor (C_partial_load) for ICE engine and fuel cell engine, now we use the same factor        
-        self.total_factor_LH2 = self.SFC_LH2 * self.C_partial_load_fuel 
-        self.total_factor_eLNG = self.SFC_eLNG * self.C_partial_load_fuel
-        self.total_factor_eMethanol = self.SFC_eMethanol * self.C_partial_load_fuel
-        self.total_factor_eNH3 = self.SFC_eNH3 * self.C_partial_load_fuel
-        self.total_factor_Battery2000kWh = self.SFC_Battery2000kWh * self.C_partial_load_fuel
-        #VOLUME
-        self.total_factor_FU_vol = self.SFC_diesel_vol * self.C_partial_load_fuel
-        self.total_factor_LH2_vol = self.SFC_LH2_vol * self.C_partial_load_fuel 
-        self.total_factor_eLNG_vol = self.SFC_eLNG_vol * self.C_partial_load_fuel
-        self.total_factor_eMethanol_vol = self.SFC_eMethanol_vol * self.C_partial_load_fuel
-        self.total_factor_eNH3_vol = self.SFC_eNH3_vol * self.C_partial_load_fuel
+        # total SFC of fuel cell in mass        
+        self.total_factor_LH2_mass_PEMFC = self.SFC_LH2_FuelCell_mass * self.C_partial_load_PEMFC
+        self.total_factor_LH2_mass_SOFC = self.SFC_LH2_FuelCell_mass * self.C_partial_load_SOFC
+        self.total_factor_eLNG_mass_PEMFC = self.SFC_eLNG_FuelCell_mass * self.C_partial_load_PEMFC
+        self.total_factor_eLNG_mass_SOFC = self.SFC_eLNG_FuelCell_mass * self.C_partial_load_SOFC
+        self.total_factor_eMethanol_mass_PEMFC = self.SFC_eMethanol_FuelCell_mass * self.C_partial_load_PEMFC
+        self.total_factor_eMethanol_mass_SOFC = self.SFC_eMethanol_FuelCell_mass * self.C_partial_load_SOFC
+        self.total_factor_eNH3_mass_PEMFC = self.SFC_eNH3_FuelCell_mass * self.C_partial_load_PEMFC
+        self.total_factor_eNH3_mass_SOFC = self.SFC_eNH3_FuelCell_mass * self.C_partial_load_SOFC
         
+        # total SFC of fuel cell in vol
+        self.total_factor_LH2_vol_PEMFC = self.SFC_LH2_FuelCell_vol * self.C_partial_load_PEMFC
+        self.total_factor_LH2_vol_SOFC = self.SFC_LH2_FuelCell_vol * self.C_partial_load_SOFC
+        self.total_factor_eLNG_vol_PEMFC = self.SFC_eLNG_FuelCell_vol * self.C_partial_load_PEMFC
+        self.total_factor_eLNG_vol_SOFC = self.SFC_eLNG_FuelCell_vol * self.C_partial_load_SOFC
+        self.total_factor_eMethanol_vol_PEMFC = self.SFC_eMethanol_FuelCell_vol * self.C_partial_load_PEMFC
+        self.total_factor_eMethanol_vol_SOFC = self.SFC_eMethanol_FuelCell_vol * self.C_partial_load_SOFC
+        self.total_factor_eNH3_vol_PEMFC = self.SFC_eNH3_FuelCell_vol * self.C_partial_load_PEMFC
+        self.total_factor_eNH3_vol_SOFC = self.SFC_eNH3_FuelCell_vol * self.C_partial_load_SOFC       
+        
+        # total SFC of ICE in mass
+        self.total_factor_diesel_C_year_ICE_mass = self.SFC_diesel_C_year * self.C_partial_load_fuel_ICE
+        self.total_factor_diesel_ICE_mass = self.SFC_diesel_ICE_mass * self.C_partial_load_fuel_ICE
+        self.total_factor_eLNG_ICE_mass = self.SFC_eLNG_ICE_mass * self.C_partial_load_fuel_ICE
+        self.total_factor_eMethanol_ICE_mass = self.SFC_eMethanol_ICE_mass * self.C_partial_load_fuel_ICE
+        self.total_factor_eNH3_ICE_mass = self.SFC_eNH3_ICE_mass * self.C_partial_load_fuel_ICE
+        
+        # total SFC of ICE in vol
+        self.total_factor_diesel_ICE_vol = self.SFC_diesel_ICE_vol * self.C_partial_load_fuel_ICE
+        self.total_factor_eLNG_ICE_vol = self.SFC_eLNG_ICE_vol * self.C_partial_load_fuel_ICE
+        self.total_factor_eMethanol_ICE_vol = self.SFC_eMethanol_ICE_vol * self.C_partial_load_fuel_ICE
+        self.total_factor_eNH3_ICE_vol = self.SFC_eNH3_ICE_vol * self.C_partial_load_fuel_ICE
+        
+        # total SFC of battery in mass and vol
+        self.total_factor_Li_NMC_Battery_mass = self.SFC_Li_NMC_Battery_mass * self.C_partial_load_battery # g/kWh
+        self.total_factor_Li_NMC_Battery_vol = self.SFC_Li_NMC_Battery_vol * self.C_partial_load_battery # m3/kWh
+        self.total_factor_Battery2000kWh = self.SFC_Battery2000kWh * self.C_partial_load_battery
 
 
-        logger.debug(f'The total fuel use factor for diesel is {self.total_factor_FU} g/kWh')
+    
 
 
-    def calculate_fuel_use_g_m(self,v):
-        """Total fuel use in g/m:
+    def calculate_diesel_use_g_m(self,v):
+        """Total diesel fuel use in g/m:
 
-        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing distance (v * delt_t)
+        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
-        self.fuel_use_g_m = (self.P_given * self.total_factor_FU / v ) / 3600
-        return self.fuel_use_g_m
+        self.diesel_use_g_m = (self.P_given * self.total_factor_diesel_ICE_mass / v ) / 3600  # without considering C_year
+        self.diesel_use_g_m_C_year = (self.P_given * self.total_factor_diesel_C_year_ICE_mass / v ) / 3600  # considering C_year       
+        
+        return self.diesel_use_g_m, self.diesel_use_g_m_C_year
 
 
-    def calculate_fuel_use_g_s(self):
-        """Total fuel use in g/s:
+    def calculate_diesel_use_g_s(self):
+        """Total diesel fuel use in g/s:
 
-       - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_FU) diveded by the sailing duration (delt_t)
+       - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
        """
-        self.fuel_use_g_s = self.P_given * self.total_factor_FU / 3600
-        return self.fuel_use_g_s
+        self.diesel_use_g_s = self.P_given * self.total_factor_diesel_ICE_mass / 3600 # without considering C_year
+        self.diesel_use_g_s_C_year = self.P_given * self.total_factor_diesel_C_year_ICE_mass / 3600 # considering C_year
+        
+        return self.diesel_use_g_s, self.diesel_use_g_s_C_year
 
+    # TO DO: Add functions here to calculate renewable energy source use rate in g/m, g/s 
 
     def calculate_emission_rates_g_m(self,v):
         """CO2, PM10, NOX emission rates in g/m:
