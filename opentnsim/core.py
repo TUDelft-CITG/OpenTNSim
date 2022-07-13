@@ -33,6 +33,8 @@ class SimpyObject:
     """
 
     def __init__(self, env, *args, **kwargs):
+        print(super().__init__)
+        print(kwargs)
         super().__init__(*args, **kwargs)
         self.env = env
 
@@ -137,6 +139,8 @@ class Log(SimpyObject):
     geometry: value from locatable (lat, lon)"""
 
     def __init__(self, *args, **kwargs):
+        print(args)
+        print(kwargs)
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.log = {"Message": [], "Timestamp": [], "Value": [], "Geometry": []}
@@ -341,7 +345,7 @@ class VesselProperties:
 class Routeable:
     """Mixin class: Something with a route (networkx format)
 
-    - route: a networkx path
+    - route: list of node-IDs
     """
 
     def __init__(self, route, complete_path=None, *args, **kwargs):
