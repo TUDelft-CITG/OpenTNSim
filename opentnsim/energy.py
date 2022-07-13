@@ -778,52 +778,91 @@ class ConsumesEnergy:
         logger.debug(f'The general emission factor of PM10 is {self.EF_PM10} g/kWh')
         logger.debug(f'The general emission factor CO2 is {self.EF_NOX} g/kWh')
 
-    def energy_dencity(self):
-        """ net only
+    def energy_density(self):
+        """ net energy density of diesel and renewable energy sources. This will be used for calculating SFC later.
+        
+        - Edens_xx_mass: net gravimetric energy density, which is the amount of energy stored in a given energy source in mass [kWh/kg]. 
+        - Edens_xx_vol: net volumetric energy density, which is the amount of energy stored in a given energy source in volume [kWh/m3]. 
 
+        
+        Data source: 
+        Marin report 2019, Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations
+        
+        Note: 
+        net energy density can be used for calculate fuel consumption in mass and volume, but for required energy source storage space determination, the packaging factors of different energy sources also need to be considered.
         """
 
-      # gravimetric net energy density
-        self.Eden_LH2_mass = 33.3/1000  # kWh/kg
-
+      # gravimetric net energy density 
+        self.Edens_diesel_mass = 11.67/1000 # kWh/kg
+        self.Edens_LH2_mass = 33.3/1000  # kWh/kg
+        self.Edens_eLNG_mass = 13.3/1000  # kWh/kg
+        self.Edens_eMethanol_mass = 5.47/1000  # kWh/kg
+        self.Edens_eNH3_mass = 5.11/1000  # kWh/kg
+        self.Edens_Li_NMC_Battery_mass = 0.11/1000 # kWh/kg
+                
+      # volumetric net energy density       
+        self.Edens_diesel_vol = 9944   # kWh/m3
+        self.Edens_LH2_vol = 2556 # kWh/m3
+        self.Edens_eLNG_vol = 5639  # kWh/m3
+        self.Edens_eMethanol_vol = 4333  # kWh/m3
+        self.Edens_eNH3_vol = 3139  # kWh/m3
+        self.Edens_Li_NMC_Battery_vol = 139  # kWh/m3
+                
         
+    def energy_conversion_efficiency(self):        
+        """ energy efficiencies for combinations of different energy source and energy-power conversion systems, including engine and power plant, excluding propellers. This will be used for calculating SFC later.
         
-      # volumetric net energy density        
-        self.Eden_LH2_vol = 2556/1000 # kWh/L
-        
-        
-    def energy_efficiency(self):        
-        """ efficiencies
+        - Eeff_FuelCell: the efficiency of the fuel cell energy conversion system on board, includes fuel cells, AC/DC converter, electric motor and gearbox. Generally this value is between 40% - 60%, here we use 45%. 
+        - Eeff_ICE: the efficiency of the Internal Combustion Engine (ICE) energy conversion system on board, includes ICE and gearbox. This value is approximately 35%.
+        - Eeff_Battery: the efficiency of the battery energy conversion system on board. Batteries use 80% capacity to prolong life cycle, and lose efficiency in AC/DC converter, electric motor. Generally this value is between 70% - 95%, here we use 80 %.
+                
+        data source: 
+        Marin report 2019, Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations)
+        add other ref
        
         """
-        self.Eeff_LH2_FuelCell = 0.46 * 0.92 * 0.97
-        
+        self.Eeff_FuelCell = 0.45 
+        self.Eeff_ICE = 0.35
+        self.Eeff_Battery = 0.8
     
     def SFC_general(self):
         """Specific Fuel Consumption (SFC) is calculated by energy density and energy conversion efficiency. 
         The SFC calculation equation, SFC = 1 / (energy density * energy conversion efficiency), can be found in the paper of Kim et al (2020)(A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183).
         
-        - net_energy_dens_xx_vol: net volumetric energy density, which is the amount of energy stored in a given energy source in volume [kWh/m3]. 
-        - net_energy_dens_xx_mass: net gravimetric energy density, which is the amount of energy stored in a given energy source in mass [kWh/kg]. 
-        - energy_eff_FuelCell: the efficiency of the fuel cell energy conversion system on board, includes fuel cells, AC/DC converter, electric motor and gearbox.
-        - energy_eff_ICE: the efficiency of the Internal Combustion Engine (ICE) energy conversion system on board, includes ICE and gearbox.
-        - energy_eff_Battery: the efficiency of the battery energy conversion system on board. Batteries use 80% to prolong life cycle, and lose efficiency in AC/DC converter, electric motor.
         """
+        # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include ZES battery capacity per container here. 
+        # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton, vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)        
+        self.ZES_batterypack2000kWh = 2000 # kWh/pack, 
+ 
+        # SFC in mass for Fuel Cell engine and power plant
+        self.SFC_LH2_FuelCell_mass = 1 /(self.Edens_LH2_mass * self.Eeff_FuelCell) # g/kWh
+        self.SFC_eLNG_FuelCell_mass = 1 /(self.Edens_eLNG_mass * self.Eeff_FuelCell) # g/kWh
+        self.SFC_eMethanol_FuelCell_mass = 1 / (self.Edens_eMethanolG_mass * self.Eeff_FuelCell) # g/kWh
+        self.SFC_eNH3_FuelCell_mass = 1 / (self.Edens_eNH3_mass * self.Eeff_FuelCell)         # g/kWh
         
-        # The SFC for alternatives, calculated by energy density (kWh/kg for fuel, kWh for battery) multiplying energy efficiency of the energy conversion system on board, energy efficiency for alternative fuels is 40%-60%, for battery is 70-95%, here we use the upper boundary (60% for alternative fuel and 95% for battery) considering the technique development along the time. 
-        # To do: To make two lists for energy density (net) and energy efficiency, respectively.
-        self.SFC_LH2 = 1 /(self.Eden_LH2_mass * self.Eeff_LH2_FuelCell)    # g/kWh
-        self.SFC_eLNG = 1 /((13.3/1000) * 0.34)         # g/kWh
-        self.SFC_eMethanol = 1 / ((5.53/1000) * 0.45)    # g/kWh
-        self.SFC_eNH3 = 1 / ((5.17/1000) * 0.45)         # g/kWh
-        self.SFC_Battery2000kWh = 1/(2000 * 0.73)       # kWh
-        self.SFC_diesel = 1 /((11.67/1000) * 0.34)         # g/kWh
-        # volume pure fuel        
-        self.SFC_LH2_vol = 1 /(self.Eden_LH2_vol * self.Eeff_LH2_FuelCell)    # l/kWh
-        self.SFC_eLNG_vol = 1 /(5.639 * 0.34)         # L/kWh
-        self.SFC_eMethanol_vol = 1 / (4.389 * 0.45)    # L/kWh
-        self.SFC_eNH3_vol = 1 / (3.917* 0.45)         # L/kWh
-        self.SFC_diesel_vol = 1 /(9.944* 0.34)         # L/kWh
+        # SFC in mass for ICE engine and power plant
+        self.SFC_diesel_ICE_mass = 1 /(self.Edens_diesel_mass * self.Eeff_ICE)  # g/kWh       
+        self.SFC_eLNG_ICE_mass = 1 /(self.Edens_eLNG_mass * self.Eeff_ICE)  # g/kWh 
+        self.SFC_eMethanol_ICE_mass = 1 /(self.Edens_eMethanol_mass * self.Eeff_ICE)  # g/kWh
+        self.SFC_eNH3_ICE_mass = 1 /(self.Edens_eNH3_mass * self.Eeff_ICE)  # g/kWh
+                
+        # SFC in mass and volume for battery electric ships
+        self.SFC_Li_NMC_Battery_mass = 1 / (self.Edens_Li_NMC_Battery_mass *self.Eeff_Battery) # g/kWh
+        self.SFC_Li_NMC_Battery_vol = 1 / (self.Edens_Li_NMC_Battery_vol *self.Eeff_Battery) # m3/kWh
+        self.SFC_ZES_battery2000kWh = 1/(self.ZES_batterypack2000kWh * self.Eeff_Battery)       # kWh
+        
+        # SFC in volume for Fuel Cell engine and power plant
+        self.SFC_LH2_FuelCell_vol = 1 /(self.Edens_LH2_vol * self.Eeff_FuelCell) # m3/kWh
+        self.SFC_eLNG_FuelCell_vol = 1 /(self.Edens_eLNG_vols * self.Eeff_FuelCell) # m3/kWh
+        self.SFC_eMethanol_FuelCell_vol = 1 / (self.Edens_eMethanolG_vol * self.Eeff_FuelCell) # m3/kWh
+        self.SFC_eNH3_FuelCell_vol = 1 / (self.Edens_eNH3_vol * self.Eeff_FuelCell)         # m3/kWh
+        
+        # SFC in volume for ICE engine and power plant
+        self.SFC_diesel_ICE_vol = 1 /(self.Edens_diesel_vol * self.Eeff_ICE)   # m3/kWh       
+        self.SFC_eLNG_ICE_vol = 1 /(self.Edens_eLNG_vol * self.Eeff_ICE)   # m3/kWh 
+        self.SFC_eMethanol_ICE_vol = 1 /(self.Edens_eMethanol_vol * self.Eeff_ICE)   # m3/kWh
+        self.SFC_eNH3_ICE_vol = 1 /(self.Edens_eNH3_vol * self.Eeff_ICE)   # m3/kWh
+        
         
         # The general emission factors of CO2, PM10 and NOX, and SFC are based on the construction year of the engine
 
