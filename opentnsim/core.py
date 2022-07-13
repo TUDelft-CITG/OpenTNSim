@@ -33,8 +33,6 @@ class SimpyObject:
     """
 
     def __init__(self, env, *args, **kwargs):
-        print(super().__init__)
-        print(kwargs)
         super().__init__(*args, **kwargs)
         self.env = env
 
@@ -129,6 +127,12 @@ class HasContainer(SimpyObject):
     def filling_degree(self):
         return self.container.level / self.container.capacity
 
+    @property
+    def max_load(self):
+        """return the maximum cargo to load"""
+        # independent of trip
+        return self.container.capacity - self.container.level
+
 
 class Log(SimpyObject):
     """Mixin class: Something that has logging capability
@@ -139,8 +143,6 @@ class Log(SimpyObject):
     geometry: value from locatable (lat, lon)"""
 
     def __init__(self, *args, **kwargs):
-        print(args)
-        print(kwargs)
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.log = {"Message": [], "Timestamp": [], "Value": [], "Geometry": []}
