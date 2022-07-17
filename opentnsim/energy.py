@@ -838,12 +838,16 @@ class ConsumesEnergy:
         """
         # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include ZES battery capacity per container here. 
         # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton, vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)        
+        self.energy_density()
+        self.energy_conversion_efficiency()
+        
+        
         self.ZES_batterypack2000kWh = 2000 # kWh/pack, 
  
         # SFC in mass for Fuel Cell engine 
         self.SFC_LH2_FuelCell_mass = 1 /(self.Edens_LH2_mass * self.Eeff_FuelCell) # g/kWh
         self.SFC_eLNG_FuelCell_mass = 1 /(self.Edens_eLNG_mass * self.Eeff_FuelCell) # g/kWh
-        self.SFC_eMethanol_FuelCell_mass = 1 / (self.Edens_eMethanolG_mass * self.Eeff_FuelCell) # g/kWh
+        self.SFC_eMethanol_FuelCell_mass = 1 / (self.Edens_eMethanol_mass * self.Eeff_FuelCell) # g/kWh
         self.SFC_eNH3_FuelCell_mass = 1 / (self.Edens_eNH3_mass * self.Eeff_FuelCell)         # g/kWh
         
         # SFC in mass for ICE engine 
@@ -859,8 +863,8 @@ class ConsumesEnergy:
         
         # SFC in volume for Fuel Cell engine
         self.SFC_LH2_FuelCell_vol = 1 /(self.Edens_LH2_vol * self.Eeff_FuelCell) # m3/kWh
-        self.SFC_eLNG_FuelCell_vol = 1 /(self.Edens_eLNG_vols * self.Eeff_FuelCell) # m3/kWh
-        self.SFC_eMethanol_FuelCell_vol = 1 / (self.Edens_eMethanolG_vol * self.Eeff_FuelCell) # m3/kWh
+        self.SFC_eLNG_FuelCell_vol = 1 /(self.Edens_eLNG_vol * self.Eeff_FuelCell) # m3/kWh
+        self.SFC_eMethanol_FuelCell_vol = 1 / (self.Edens_eMethanol_vol * self.Eeff_FuelCell) # m3/kWh
         self.SFC_eNH3_FuelCell_vol = 1 / (self.Edens_eNH3_vol * self.Eeff_FuelCell)         # m3/kWh
         
         # SFC in volume for ICE engine 
@@ -1077,7 +1081,7 @@ class ConsumesEnergy:
         # final SFC of battery in mass and vol
         self.final_SFC_Li_NMC_Battery_mass = self.SFC_Li_NMC_Battery_mass * self.C_partial_load_battery # g/kWh
         self.final_SFC_Li_NMC_Battery_vol = self.SFC_Li_NMC_Battery_vol * self.C_partial_load_battery # m3/kWh
-        self.final_SFC_Battery2000kWh = self.SFC_Battery2000kWh * self.C_partial_load_battery  # kWh
+        self.final_SFC_Battery2000kWh = self.SFC_ZES_battery2000kWh * self.C_partial_load_battery  # kWh
 
 
     
@@ -1327,7 +1331,7 @@ class EnergyCalculation:
                     
                     delta_Li_NMC_Battery_mass = self.vessel.final_SFC_Li_NMC_Battery_mass * energy_delta # in g
                     delta_Li_NMC_Battery_vol = self.vessel.final_SFC_Li_NMC_Battery_vol * energy_delta # in m3
-                    delta_Battery2000kWh = self.vessel.total_factor_Battery2000kWh * energy_delta # in ZESpack number
+                    delta_Battery2000kWh = self.vessel.final_SFC_Battery2000kWh * energy_delta # in ZESpack number
 
                     self.energy_use["P_tot"].append(P_hotel_delta)
                     self.energy_use["P_given"].append(P_given_delta)
@@ -1416,9 +1420,9 @@ class EnergyCalculation:
                     
                     delta_Li_NMC_Battery_mass = self.vessel.final_SFC_Li_NMC_Battery_mass * energy_delta # in g
                     delta_Li_NMC_Battery_vol = self.vessel.final_SFC_Li_NMC_Battery_vol * energy_delta # in m3
-                    delta_Battery2000kWh = self.vessel.total_factor_Battery2000kWh * energy_delta # in ZESpack number
+                    delta_Battery2000kWh = self.vessel.final_SFC_Battery2000kWh * energy_delta # in ZESpack number
 
-                    self.energy_use["P_tot"].append(P_hotel_delta)
+                    self.energy_use["P_tot"].append(P_tot_delta)
                     self.energy_use["P_given"].append(P_given_delta)
                     self.energy_use["P_installed"].append(P_installed_delta)
                     self.energy_use["total_energy"].append(energy_delta)
