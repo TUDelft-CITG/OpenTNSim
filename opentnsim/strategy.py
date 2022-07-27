@@ -184,7 +184,7 @@ def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
     def seek_T_given_Payload(T_Payload2T, vessel, vessel_type):
         """function to optimize"""
 
-        Payload_computed, DWT_final = T2Payload(vessel=vessel, T_strategy=T_Payload2T, vessel_type= vessel_type)
+        Payload_computed = T2Payload(vessel=vessel, T_strategy=T_Payload2T, vessel_type= vessel_type)
         # compute difference between a given payload (Payload_strategy) and a computed payload (Payload_computed)
         diff = Payload_strategy - Payload_computed
         print(Payload_strategy,Payload_computed,T_Payload2T,vessel_type)
