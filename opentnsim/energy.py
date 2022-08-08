@@ -516,8 +516,8 @@ class ConsumesEnergy:
 
         assert self.g >= 0, f'g should be positive: {self.g}'
         assert self.L >= 0, f'L should be positive: {self.L}'
-        self.F_rL = self.V_2 / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
-
+        # self.F_rL = self.V_2 / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
+        self.F_rL = v / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
         # parameter c_7 is determined by the B/L ratio
         if self.B / self.L < 0.11:
             self.c_7 = 0.229577 * (self.B / self.L) ** 0.33333
@@ -577,6 +577,7 @@ class ConsumesEnergy:
 
         self.karpov(v, h_0)
 
+        self.V_2 = v
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nT = self.V_2 / np.sqrt(
             2 * self.g * self.A_T / (self.B + self.B * self.C_WP))  # Froude number based on transom immersion
@@ -635,7 +636,7 @@ class ConsumesEnergy:
 
         return self.R_tot
 
-    def calculate_total_power_required(self, v):
+    def calculate_total_power_required(self, v, h_0):
         """Total required power:
 
         - The total required power is the sum of the power for systems on board (P_hotel) + power required for propulsion
@@ -659,35 +660,99 @@ class ConsumesEnergy:
         # Effective Horse Power (EHP), P_e
         self.P_e = v * self.R_tot
 
-        # Calculation hull efficiency
-        dw = np.zeros(101)  # velocity correction coefficient
-        counter = 0
+#         # Calculation hull efficiency
+#         dw = np.zeros(101)  # velocity correction coefficient
+#         counter = 0
 
-        if self.F_rL < 0.2:
-            self.dw = 0
+#         if self.F_rL < 0.2:
+#             self.dw = 0
+#         else:
+#             self.dw = 0.1
+
+#         self.w = (
+#             0.11
+#             * (0.16 / self.x)
+#             * self.C_B
+#             * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
+#             - self.dw
+#         )  # wake fraction 'w'
+
+#         assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
+
+#         if self.x == 1:
+#             self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
+#         else:
+#             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
+
+#         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
+        
+        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
+        # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power 
+        # relation between eta_D and ship velocity v 
+        if h_0 >= 9:
+            if self.F_rh >= 0.36:
+                self.eta_D = 0.658               
+            elif 0.325 <= self.F_rh < 0.36:
+                self.eta_D = 0.78
+            elif 0.28 <= self.F_rh < 0.325:
+                self.eta_D = 0.5
+            elif 0.26 < self.F_rh < 0.28:
+                self.eta_D = 0.45
+            elif 0.22 < self.F_rh <= 0.26:
+                self.eta_D = 0.46
+            elif 0.2 < self.F_rh <= 0.22:
+                self.eta_D = 0.45
+            elif 0.17 < self.F_rh <= 0.2:
+                self.eta_D = 0.35
+            elif 0.15 < self.F_rh <= 0.17:
+                self.eta_D = 0.3
+            else:
+                self.eta_D = 0.25
+        
+        elif 5 <= h_0 < 9:
+            if self.F_rh > 0.62:
+                self.eta_D = 0.62
+            elif 0.58 < self.F_rh < 0.62:
+                self.eta_D = 0.58
+            elif 0.57 <self.F_rh <= 0.58:
+                self.eta_D = 0.62
+            elif 0.51 <self.F_rh <= 0.57:
+                self.eta_D = 0.57
+            elif 0.46 <self.F_rh <= 0.51:
+                self.eta_D = 0.45
+            elif 0.45 <self.F_rh <= 0.46:
+                self.eta_D = 0.33
+            elif 0.36 < self.F_rh <= 0.45:
+                self.eta_D = 0.32
+            elif 0.33 < self.F_rh <= 0.36:
+                self.eta_D = 0.3
+            elif 0.3 < self.F_rh <= 0.33:
+                self.eta_D = 0.29
+            elif 0.28 < self.F_rh <= 0.3:
+                self.eta_D = 0.28
+            else:
+                self.eta_D = 0.279
         else:
-            self.dw = 0.1
-
-        self.w = (
-            0.11
-            * (0.16 / self.x)
-            * self.C_B
-            * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
-            - self.dw
-        )  # wake fraction 'w'
-
-        assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
-
-        if self.x == 1:
-            self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
-        else:
-            self.t = 0.8 * self.w * (1 + 0.25 * self.w)
-
-        self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
-
+            if self.F_rh > 0.55:
+                self.eta_D = 0.31
+            elif 0.4 < self.F_rh <= 0.55:
+                self.eta_D = 0.27
+            elif 0.36 < self.F_rh <= 0.4:
+                self.eta_D = 0.25
+            elif 0.33 < self.F_rh <= 0.36:
+                self.eta_D = 0.232
+            elif 0.3 < self.F_rh <= 0.33:
+                self.eta_D = 0.23
+            elif 0.28 < self.F_rh <= 0.3:
+                self.eta_D = 0.22
+            else:
+                self.eta_D = 0.21
+            
+        
         # Delivered Horse Power (DHP), P_d
-
-        self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
+        self.P_d = self.P_e / self.eta_D
+        print(self.eta_D)
+        # self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above) 
         # self.P_b = self.P_d / (self.eta_t * self.eta_g)
@@ -902,7 +967,7 @@ class ConsumesEnergy:
         logger.debug(f'The general fuel consumption factor for diesel is {self.SFC_diesel_C_year} g/kWh')        
         
        
-    def correction_factors(self, v):
+    def correction_factors(self, v, h_0):
         """ Partial engine load correction factors (C_partial_load):
 
         - The correction factors have to be multiplied by the general emission factors (or general SFC), to get the total emission factors (or final SFC)
@@ -913,7 +978,7 @@ class ConsumesEnergy:
         - the correction factors for renewable fuels used in fuel cell engine are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
         #TODO: create correction factors for renewable powered ship, the factor may be 100% 
-        self.calculate_total_power_required(v=v)  # You need the P_partial values
+        self.calculate_total_power_required(v=v, h_0 = h_0)  # You need the P_partial values
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
@@ -1009,14 +1074,14 @@ class ConsumesEnergy:
         logger.debug(f'Partial engine load correction factor of fuel consumption in SOFC is {self.C_partial_load_SOFC}')
         logger.debug(f'Partial engine load correction factor of energy consumption in battery is {self.C_partial_load_battery}')
         
-    def calculate_emission_factors_total(self, v):
+    def calculate_emission_factors_total(self, v, h_0):
         """Total emission factors:
 
         - The total emission factors can be computed by multiplying the general emission factor by the correction factor
         """
 
         self.emission_factors_general()  # You need the values of the general emission factors of CO2, PM10, NOX
-        self.correction_factors(v=v)  # You need the correction factors of CO2, PM10, NOX
+        self.correction_factors(v=v, h_0 = h_0)  # You need the correction factors of CO2, PM10, NOX
 
         # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
         # By the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
@@ -1030,7 +1095,7 @@ class ConsumesEnergy:
         logger.debug(f'The total emission factor CO2 is {self.total_factor_NOX} g/kWh')
 
 
-    def calculate_SFC_final(self, v):
+    def calculate_SFC_final(self, v, h_0):
         """ The final SFC is computed by multiplying the general SFC by the partial engine load correction factor. 
         
         The calculation of final SFC below includes 
@@ -1041,7 +1106,7 @@ class ConsumesEnergy:
         """
 
         self.SFC_general()  # You need the values of the general SFC
-        self.correction_factors(v=v)  # You need the correction factors of SFC
+        self.correction_factors(v=v, h_0 = h_0)  # You need the correction factors of SFC
 
 
 
@@ -1092,8 +1157,8 @@ class ConsumesEnergy:
 
         - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
-        self.diesel_use_g_m = (self.P_given * self.total_factor_diesel_ICE_mass / v ) / 3600  # without considering C_year
-        self.diesel_use_g_m_C_year = (self.P_given * self.total_factor_diesel_C_year_ICE_mass / v ) / 3600  # considering C_year       
+        self.diesel_use_g_m = (self.P_given * self.final_SFC_diesel_ICE_mass / v ) / 3600  # without considering C_year
+        self.diesel_use_g_m_C_year = (self.P_given * self.final_SFC_diesel_C_year_ICE_mass / v ) / 3600  # considering C_year       
         
         return self.diesel_use_g_m, self.diesel_use_g_m_C_year
 
@@ -1103,8 +1168,8 @@ class ConsumesEnergy:
 
        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
        """
-        self.diesel_use_g_s = self.P_given * self.total_factor_diesel_ICE_mass / 3600 # without considering C_year
-        self.diesel_use_g_s_C_year = self.P_given * self.total_factor_diesel_C_year_ICE_mass / 3600 # considering C_year
+        self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600 # without considering C_year
+        self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600 # considering C_year
         
         return self.diesel_use_g_s, self.diesel_use_g_s_C_year
 
@@ -1282,10 +1347,10 @@ class EnergyCalculation:
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)                              
                 self.vessel.calculate_total_resistance(v, h_0)
-                self.vessel.calculate_total_power_required(v=v)
+                self.vessel.calculate_total_power_required(v=v, h_0 = h_0)
 
-                self.vessel.calculate_emission_factors_total(v=v)
-                self.vessel.calculate_SFC_final(v=v)
+                self.vessel.calculate_emission_factors_total(v=v, h_0 = h_0)
+                self.vessel.calculate_SFC_final(v=v, h_0 = h_0)
 
                 if messages[i + 1] in stationary_phase_indicator:  # if we are in a stationary stage only log P_hotel
                     #Energy consumed per time step delta_t in the stationary stage
