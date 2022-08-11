@@ -689,126 +689,66 @@ class ConsumesEnergy:
         # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
         # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power 
         # relation between eta_D and ship velocity v 
-#         if h_0 >= 9:
-#             if self.F_rh >= 0.36:
-#                 self.eta_D = 0.658               
-#             elif 0.325 <= self.F_rh < 0.36:
-#                 self.eta_D = 0.78
-#             elif 0.28 <= self.F_rh < 0.325:
-#                 self.eta_D = 0.5
-#             elif 0.26 < self.F_rh < 0.28:
-#                 self.eta_D = 0.45
-#             elif 0.22 < self.F_rh <= 0.26:
-#                 self.eta_D = 0.46
-#             elif 0.2 < self.F_rh <= 0.22:
-#                 self.eta_D = 0.45
-#             elif 0.17 < self.F_rh <= 0.2:
-#                 self.eta_D = 0.35
-#             elif 0.15 < self.F_rh <= 0.17:
-#                 self.eta_D = 0.3
-#             else:
-#                 self.eta_D = 0.25
-        
-#         elif 5 <= h_0 < 9:
-#             if self.F_rh > 0.62:
-#                 self.eta_D = 0.62
-#             elif 0.58 < self.F_rh < 0.62:
-#                 self.eta_D = 0.58
-#             elif 0.57 <self.F_rh <= 0.58:
-#                 self.eta_D = 0.62
-#             elif 0.51 <self.F_rh <= 0.57:
-#                 self.eta_D = 0.57
-#             elif 0.46 <self.F_rh <= 0.51:
-#                 self.eta_D = 0.45
-#             elif 0.45 <self.F_rh <= 0.46:
-#                 self.eta_D = 0.33
-#             elif 0.36 < self.F_rh <= 0.45:
-#                 self.eta_D = 0.32
-#             elif 0.33 < self.F_rh <= 0.36:
-#                 self.eta_D = 0.3
-#             elif 0.3 < self.F_rh <= 0.33:
-#                 self.eta_D = 0.29
-#             elif 0.28 < self.F_rh <= 0.3:
-#                 self.eta_D = 0.28
-#             else:
-#                 self.eta_D = 0.279
-#         else:
-#             if self.F_rh > 0.56:
-#                 self.eta_D = 0.31
-#             elif 0.4 < self.F_rh <= 0.56:
-#                 self.eta_D = 0.245
-#             elif 0.36 < self.F_rh <= 0.4:
-#                 self.eta_D = 0.25
-#             elif 0.33 < self.F_rh <= 0.36:
-#                 self.eta_D = 0.232
-#             elif 0.3 < self.F_rh <= 0.33:
-#                 self.eta_D = 0.23
-#             elif 0.28 < self.F_rh <= 0.3:
-#                 self.eta_D = 0.22
-#             else:
-#                 self.eta_D = 0.21
+
             
         if h_0 >= 9:
-            if self.F_rh >= 0.36:
-                self.eta_D = 0.8883               
-            elif 0.325 <= self.F_rh < 0.36:
-                self.eta_D = 1.053
+            if self.F_rh >= 0.5:
+                self.eta_D = 0.6               
+            elif 0.325 <= self.F_rh < 0.5:
+                self.eta_D = 0.7
             elif 0.28 <= self.F_rh < 0.325:
-                self.eta_D = 0.675
-            elif 0.26 < self.F_rh < 0.28:
-                self.eta_D = 0.6075
-            elif 0.22 < self.F_rh <= 0.26:
-                self.eta_D = 0.621
-            elif 0.2 < self.F_rh <= 0.22:
-                self.eta_D = 0.6075
+                self.eta_D = 0.59
+            elif 0.2 < self.F_rh < 0.28:
+                self.eta_D = 0.56
             elif 0.17 < self.F_rh <= 0.2:
-                self.eta_D = 0.4725
+                self.eta_D = 0.41
             elif 0.15 < self.F_rh <= 0.17:
-                self.eta_D = 0.405
+                self.eta_D = 0.35
             else:
-                self.eta_D = 0.3375
+                self.eta_D = 0.29
         
         elif 5 <= h_0 < 9:
             if self.F_rh > 0.62:
-                self.eta_D = 0.837
+                self.eta_D = 0.7
             elif 0.58 < self.F_rh < 0.62:
-                self.eta_D = 0.783
+                self.eta_D = 0.68
             elif 0.57 <self.F_rh <= 0.58:
-                self.eta_D = 0.837
+                self.eta_D = 0.7
             elif 0.51 <self.F_rh <= 0.57:
-                self.eta_D = 0.7695
-            elif 0.46 <self.F_rh <= 0.51:
-                self.eta_D = 0.6075
-            elif 0.45 <self.F_rh <= 0.46:
-                self.eta_D = 0.4455
+                self.eta_D = 0.68
+            elif 0.475 <self.F_rh <= 0.51:
+                self.eta_D = 0.53            
+            elif 0.45 <self.F_rh <= 0.475:
+                self.eta_D = 0.4
             elif 0.36 < self.F_rh <= 0.45:
-                self.eta_D = 0.432
+                self.eta_D = 0.37
             elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.405
+                self.eta_D = 0.35
             elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.3915
+                self.eta_D = 0.34
             elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.378
+                self.eta_D = 0.331
             else:
-                self.eta_D = 0.37665
+                self.eta_D = 0.33
         else:
             if self.F_rh > 0.56:
-                self.eta_D = 0.4185
+                self.eta_D = 0.36
             elif 0.4 < self.F_rh <= 0.56:
-                self.eta_D = 0.331
+                self.eta_D = 0.275
             elif 0.36 < self.F_rh <= 0.4:
-                self.eta_D = 0.3375
+                self.eta_D = 0.36
             elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.3132
+                self.eta_D = 0.28
             elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.3105
+                self.eta_D = 0.27
             elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.297
+                self.eta_D = 0.26
             else:
-                self.eta_D = 0.2835        
+                self.eta_D = 0.25        
         # Delivered Horse Power (DHP), P_d
         self.P_d = self.P_e / self.eta_D
-        print(self.eta_D)
+
+        print('eta_D = {:.2f}'.format(self.eta_D))
         # self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above) 
