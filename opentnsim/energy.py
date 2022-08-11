@@ -723,20 +723,20 @@ class ConsumesEnergy:
             elif 0.36 < self.F_rh <= 0.45:
                 self.eta_D = 0.37
             elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.35
+                self.eta_D = 0.36
             elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.34
+                self.eta_D = 0.35
             elif 0.28 < self.F_rh <= 0.3:
                 self.eta_D = 0.331
             else:
                 self.eta_D = 0.33
         else:
             if self.F_rh > 0.56:
-                self.eta_D = 0.36
+                self.eta_D = 0.345
             elif 0.4 < self.F_rh <= 0.56:
                 self.eta_D = 0.275
             elif 0.36 < self.F_rh <= 0.4:
-                self.eta_D = 0.36
+                self.eta_D = 0.345
             elif 0.33 < self.F_rh <= 0.36:
                 self.eta_D = 0.28
             elif 0.3 < self.F_rh <= 0.33:
