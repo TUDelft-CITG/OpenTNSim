@@ -280,7 +280,7 @@ class VesselProperties:
         - 150: Here we use the standard width 150 m as the waterway width
 
         """
-
+        
         max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v*1.94) ** 2.08) / 20
 
         return max_sinkage

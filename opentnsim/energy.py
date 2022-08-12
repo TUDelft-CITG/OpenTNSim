@@ -1342,7 +1342,8 @@ class EnergyCalculation:
 
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
-                h_0 = self.vessel.calculate_h_squat(v, h_0)                              
+                h_0 = self.vessel.calculate_h_squat(v, h_0)
+                print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0 = h_0)
 

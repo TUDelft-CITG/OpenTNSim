@@ -204,7 +204,7 @@ def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
     # the value of fit.x within the bound (0,5) is the draught we find where the diff**2 reach a minimum (zero).
     T_Payload2T =  fit.x
 
-
+    print('T_Payload2T = {:.2f}'.format(T_Payload2T))
     return T_Payload2T
 
 # def get_ESS_mass_volume():
