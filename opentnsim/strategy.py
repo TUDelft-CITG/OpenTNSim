@@ -149,12 +149,12 @@ def T2Payload(vessel, T_strategy, vessel_type):
 
     if T_strategy < T_design:
         DWT_final = DWT_actual
-        consumables=0.04 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
+        consumables=0.005 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                           # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
 
     else:
         DWT_final = DWT_design
-        consumables=0.06 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
+        consumables=0.005 #consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
                           # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
 
     fuel_weight = DWT_design * consumables #(Van Dosser et al. Chapter 8, pp.68).
@@ -319,7 +319,7 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
 
         # for the squatted water depth calculate resistance and power
         vessel.calculate_total_resistance(v=row['velocity'], h_0=h_0)
-        vessel.calculate_total_power_required(v=row['velocity'])
+        vessel.calculate_total_power_required(v=row['velocity'], h_0=h_0)
 
         # prepare a row
         result = {}
