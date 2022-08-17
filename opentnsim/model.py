@@ -136,7 +136,7 @@ class VesselGenerator:
             # Create a vessel
             vessel = self.generate(environment, "Vessel", fleet_distribution, scenario)
             vessel.output = {}
-            core.Output.vessel_dependent_output(vessel)
+            #core.Output.vessel_dependent_output(vessel)
             vessel.env = environment
             vessel.route = nx.dijkstra_path(environment.FG, origin, destination)
             vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[

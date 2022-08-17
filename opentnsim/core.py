@@ -5,7 +5,6 @@ import json
 import logging
 import uuid
 
-# you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
 import networkx as nx
@@ -44,20 +43,31 @@ class HasLength(SimpyObject): #used by IsLock and IsLineUpArea to regulate numbe
         self.length = simpy.Container(self.env, capacity = length, init=remaining_length)
         self.pos_length = simpy.Container(self.env, capacity = length, init=remaining_length)
 
+class HasCapacity(SimpyObject):
+
+    def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
+        self.pos_length = simpy.Container(self.env, capacity=length, init=remaining_length)
+
 class HasResource(SimpyObject):
     """Something that has a resource limitation, a resource request must be granted before the object can be used.
 
     nr_resources: nr of requests that can be handled simultaneously"""
 
-    def __init__(self, nr_resources=1, priority=False, *args, **kwargs):
+    def __init__(self, typ=None, number_of_independent_resources = 1, nr_resources = 1, priority=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         """Initialization"""
-        self.resource = (
-            simpy.PriorityResource(self.env, capacity=nr_resources)
-            if priority
-            else simpy.Resource(self.env, capacity=nr_resources)
-        )
+        if number_of_independent_resources <= 1:
+            if typ == 'quay':
+                self.resource = (simpy.PriorityResource(self.env, capacity=1000) if priority else simpy.Resource(self.env,capacity=1000))
+            else:
+                self.resource = (simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources))
+        else:
+            self.resource = []
+            for independent_resource in range(number_of_independent_resources):
+                self.resource.append((simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env,capacity=nr_resources)))
 
 class HasType:
     """Mixin class: Something that has a name and id
@@ -335,13 +345,13 @@ class Movable(Locatable, Routeable, Log):
                     self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
 
             else:
-                if 'Info' in self.env.FG.nodes[origin]:
+                if 'Info' in self.env.FG.nodes[origin] and 'Vertical tidal restriction' in list(self.env.FG.nodes[origin]['Info'].keys()):
                     ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, origin)
                 else:
                     ukc = []
                 self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, ukc, orig,)
                 yield self.env.timeout(distance / self.current_speed)
-                if 'Info' in self.env.FG.nodes[destination]:
+                if 'Info' in self.env.FG.nodes[destination] and 'Vertical tidal restriction' in list(self.env.FG.nodes[destination]['Info'].keys()):
                     ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, destination)
                 else:
                     ukc = []
@@ -366,4 +376,3 @@ class ContainerDependentMovable(Movable, HasContainer):
     @property
     def current_speed(self):
         return self.compute_v(self.container.level / self.container.capacity)
-

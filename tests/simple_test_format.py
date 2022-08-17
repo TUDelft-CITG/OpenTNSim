@@ -1,11 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# ## Installed packages
-
-# In[1]:
-
-
 # package(s) related to time, space and id
 import datetime, time
 import os
@@ -65,10 +57,6 @@ geod = pyproj.Geod(ellps="WGS84")
 
 location_vessel_database = "Vessels/richtlijnen-vaarwegen-2017.csv"
 
-
-# In[2]:
-
-
 Node = type('Site', (core.Identifiable, core.Log, core.Locatable, core.HasResource), {})
 nodes = []
 path = []
@@ -123,18 +111,10 @@ for node in nodes:
 for edge in path:
     FG.add_edge(edge[0].name, edge[1].name, weight = 1, Info = {})
 
-
-# In[3]:
-
-
 simulation_start = datetime.datetime.now()
 sim = model.Simulation(simulation_start,FG)
 env = sim.environment
 duration = 5*12.5*60*60 #seconds
-
-
-# In[4]:
-
 
 env.FG = FG
 
@@ -142,10 +122,6 @@ origin = core.IsOrigin(env = env, name = 'Origin')
 anchorage = core.IsAnchorage(env = env, name = 'Anchorage', node = 'Node 0', type = 'sea_going_vessels',max_capacity = 50)
 turning_basin = core.IsTurningBasin(env = env, name = 'Turning Basin', node = 'Node 5', length = 300)
 terminal = core.IsTerminal(env = env, name = 'Liquid bulk terminal',length = 700, jetty_locations = [100,200,300,400,500], jetty_lengths = [300,300,300,300,300], node_start = 'Node 6', node_end = 'Node 7', type = 'jetty')
-
-
-# In[5]:
-
 
 FG.nodes["Node 0"]["Anchorage"] = [anchorage]
 FG.nodes["Node 1"]["Origin"] = [origin]
@@ -171,7 +147,6 @@ FG.nodes["Node 4"]["Junction"].type = ['two-way_traffic','one-way_traffic']
 FG.nodes["Node 7"]["Junction"] = core.IsJunction(env = [], name = [], sections = [], type = []) #end point route
 FG.nodes["Node 7"]["Junction"].name = ['harbour_basin_access']
 FG.nodes["Node 7"]["Junction"].type = ['one-way_traffic']
-
 
 junction_nodes = []
 for node in list(FG.nodes):
@@ -204,10 +179,6 @@ for edge in enumerate(FG.edges):
     if 'Terminal' in FG.edges[edge[1]]:
         FG.edges[edge[1][1],edge[1][0]]['Terminal'] = FG.edges[edge[1]]['Terminal']
 
-
-# In[6]:
-
-
 # List 8 vessels
 vdf = pd.DataFrame()
 vdf[0] = ['Small coaster 1','Small coaster 2','Coaster','Handysize','Tanker MR','Tanker LR1','Tanker LR2 1','Tanker LR2 2']
@@ -226,19 +197,11 @@ vdf[11] = [18*60*60,18*60*60,18*60*60,18*60*60,18*60*60,18*60*60,18*60*60,18*60*
 vdf[12] = [0,0,0,0,0,0,0,0] #critical cross-current velocity in m/s
 vdf.columns = ['type','L','B','T_f','T_e','H_e','H_f','t_b','t_l','ukc','v','max_waiting_time','max_cross_current']
 
-
-# In[7]:
-
-
 ## USE THIS CELL FOR SHIP GENERATOR WITH constant ARRIVAL RATE
 Vessel = type('Vessel', 
               (core.Identifiable, core.HasOrigin, core.HasTerminal, core.HasSection, core.HasAnchorage, core.HasTurningBasin, core.Movable, core.Routeable, core.VesselProperties, core.ExtraMetadata), {})
 
 generator_sea = model.VesselGenerator(Vessel,vdf,random_seed=3)
-
-
-# In[8]:
-
 
 ### USE THIS CELL FOR SHIP GENERATOR WITH constant ARRIVAL RATE
 origin = 'Node 1' #coasters should enter empty and leave full (export) --> UPDATE SOMEWHERE
@@ -262,10 +225,6 @@ vessel = Vessel(name='LR2 1',
                  max_cross_current = vdf['max_cross_current'][6],
                  start_time = 0,)
 sim.add_vessels(origin,destination,[],vessel)
-
-
-# In[9]:
-
 
 def current_direction_calculator(delay):
     current_directions = []
@@ -295,15 +254,11 @@ def current_direction_calculator(delay):
             tidal_period_count += 1
 
         if tidal_period == 'Flood':
-            current_direction = 90/360*2*np.pi
+                current_direction = 90/360*2*np.pi
         elif tidal_period == 'Ebb':
             current_direction = 270/360*2*np.pi    
         current_directions.append(current_direction)
     return current_directions
-
-
-# In[10]:
-
 
 time = np.arange(0,duration,600)
 MBLs = [50,50,50,15,15,50,50,50]
@@ -332,10 +287,6 @@ current_direction_node_5 = current_direction_calculator(27000/10)
 current_direction_node_6 = current_direction_calculator(28000/10)
 current_direction_node_7 = current_direction_calculator(29500/10)
 current_directions = [current_direction_node_0,current_direction_node_1,current_direction_node_2,current_direction_node_3,current_direction_node_4,current_direction_node_5,current_direction_node_6,current_direction_node_7]
-
-
-# In[11]:
-
 
 #define variables
 depth = [[],[]]
@@ -377,10 +328,6 @@ for col in enumerate(current_directions): #load velocity direction
 core.NetworkProperties.append_data_to_nodes(FG,width,depth,MBL,water_level,current_velocity,current_direction)
 knots = 0.51444444444444
 
-
-# In[12]:
-
-
 class window_method(Enum):
     critical_cross_current = 'Critical cross-current'
     point_based = 'Point-based'
@@ -421,7 +368,6 @@ class vessel_type(Enum):
 class accessibility(Enum):
     non_accessible = 0
     accessible = -1
-    slack_water = 'min'
     
 class tidal_period(Enum):
     Flood = 'Flood'
@@ -469,10 +415,6 @@ class horizontal_tidal_window_input:
     condition: dict #{'Origin':node, 'Destination': node}
     data: list #Calculated input: [node,]
 
-
-# In[13]:
-
-
 for node in FG.nodes:
     vertical_tidal_window_inputs = []
 
@@ -498,10 +440,6 @@ for node in FG.nodes:
 
     core.NetworkProperties.append_vertical_tidal_restriction_to_network(FG,node,vertical_tidal_window_inputs)
 
-
-# In[14]:
-
-
 horizontal_tidal_window_inputs = []
 
 #Inbound_Vessels_Condition1
@@ -515,32 +453,25 @@ window_specification = window_specifications(window_method.critical_cross_curren
 horizontal_tidal_window_inputs.append(horizontal_tidal_window_input(vessel_specifications = vessel_specification,
                                                                     window_specifications = window_specification,
                                                                     condition = {'Origin': 'Node 3', 'Destination': 'Node 5'},
-                                                                    data = ['Node 4', current_velocity_type.CurrentVelocity.value]))
+                                                                    data = ['Node 4', current_velocity_type.CurrentVelocity.value]));
 
 #Outbound_Vessels_Condition1
 vessel_specification = vessel_specifications({vessel_characteristics.min_ge_Draught: 0},
                                               'x',vessel_direction.outbound.value)
 
 window_specification = window_specifications(window_method.critical_cross_current.value,
-                                             {tidal_period.Flood.value: 0.5,tidal_period.Ebb.value: 0.5},
+                                             {tidal_period.Flood.value: 0.6,tidal_period.Ebb.value: 0.6},
                                              {tidal_period.Flood.value: 0,tidal_period.Ebb.value:0})
 
 horizontal_tidal_window_inputs.append(horizontal_tidal_window_input(vessel_specifications = vessel_specification,
                                                                     window_specifications = window_specification,
                                                                     condition = {'Origin': 'Node 5', 'Destination': 'Node 3'},
-                                                                    data = ['Node 4', current_velocity_type.CurrentVelocity.value]))
+                                                                    data = ['Node 4', current_velocity_type.CurrentVelocity.value]));
+
 
 core.NetworkProperties.append_horizontal_tidal_restriction_to_network(FG,'Node 4',horizontal_tidal_window_inputs)
 
-
-# In[15]:
-
-
 sim.run(duration = duration) # this statement runs the simulation
-
-
-# In[16]:
-
 
 def readjust_available_quay_lengths(aql,position):
     for i in range(len(aql)):
@@ -607,47 +538,23 @@ def adjust_available_quay_lengths(aql, L, index_quay_position):
     else:
         aql.insert(index_quay_position, [1, L + aql[index_quay_position - 1][1]])
         aql.insert(index_quay_position + 1, [0, L + aql[index_quay_position - 1][1]])
-        
+
     return aql
-
-
-# In[17]:
-
 
 vessels = sim.environment.vessels #extract vessels (entitie) from environment. It collects info while it moves through the network. That info is stored in the log file. The log file has 
 env = sim.environment #extract the environment itself
 
-
-# In[18]:
-
-
-# pd.set_option('display.max_rows', 500)
 vessel = vessels[0]
 df = pd.DataFrame.from_dict(vessel.log) #creates a data frame with all the info of vessels[0].
 
-
-# In[19]:
-
-
-interp = sc.interpolate.CubicSpline(FG.nodes['Node 4']['Info']['Current velocity'][0],
-                                    [y-0.5 for y in FG.nodes['Node 4']['Info']['Current velocity'][1]])
+interp = sc.interpolate.CubicSpline(time,[y-0.5 for y in current_velocity_node_4])
 roots = interp.roots()
-crossings = []
 for root in roots:
-    if root >= FG.nodes['Node 4']['Info']['Current velocity'][0][0] and root <= FG.nodes['Node 4']['Info']['Current velocity'][0][-1]:
-        crossings.append(root-simulation_start.timestamp())
-value1 = crossings[0]-26000/4.5
-value2 = 4322.194063080682 #(df['Timestamp'][5]-df['Timestamp'][0]).total_seconds()
+    if root-26000/4.5 > 0:
+        break
+value1 = root-26000/4.5
 
-
-# In[20]:
-
+value2 = (df['Timestamp'][5]-df['Timestamp'][0]).total_seconds()
 
 np.testing.assert_almost_equal(value1, value2, decimal=-1, err_msg='', verbose=True)
-
-
-# In[ ]:
-
-
-
 

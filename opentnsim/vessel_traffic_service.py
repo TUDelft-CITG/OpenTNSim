@@ -154,7 +154,7 @@ class VesselTrafficService:
                 distance_to_next_node = 0
                 ukc = []
                 wdep_nodes = []
-                t_min_wdep = network.nodes[route[0]]['Info']['Water level'][0]
+                t_min_wdep = network.nodes[route[0]]['Info']['Times']
                 min_wdep = []
 
                 # Start of calculation by looping over the nodes of the route
@@ -171,8 +171,8 @@ class VesselTrafficService:
                     sailing_time_to_next_node = distance_to_next_node / vessel.v
 
                     # Importing some node specific data on the time series of the water levels, depth, and ukc policy (corrected for the sailing time if correction was applied)
-                    t_wlev = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Water level'][0]]
-                    wlev = network.nodes[route[nodes[0]]]['Info']['Water level'][1]
+                    t_wlev = [t - sailing_time_to_next_node for t in network.nodes[route[nodes[0]]]['Info']['Times']]
+                    wlev = network.nodes[route[nodes[0]]]['Info']['Water level']
                     depth = network.nodes[route[nodes[0]]]['Info']['MBL']
                     types = network.nodes[nodes[1]]['Info']['Vertical tidal restriction']['Type']
                     specifications = network.nodes[nodes[1]]['Info']['Vertical tidal restriction']['Specification']
@@ -311,8 +311,8 @@ class VesselTrafficService:
                     # Looping over the two nodes, one prior and one after the node at which the horizontal tidal restriction is installed, determining the direction of the vessel
                     for rep in range(2):
                         # Import current data and correct time series with sailing time, and import tidal periods
-                        t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][0]]
-                        cur = network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][1]
+                        t_ccur = [t - sailing_time_to_next_node for t in network.nodes[route[node]]['Info']['Times']]
+                        cur = network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]]
                         times_tidal_periods = [z[0] - sailing_time_to_next_node for z in network.nodes[route[node]]['Info']['Tidal periods']]
                         tidal_periods = [z[1] for z in network.nodes[route[node]]['Info']['Tidal periods']]
 
@@ -325,12 +325,12 @@ class VesselTrafficService:
                             interp_ccur = sc.interpolate.CubicSpline(t_ccur, cur)
                             # If the next tidal period is ebb, then it means that the current period is flood. Hence, append interpolated current data subtracted with the critical cross-current, and the critical cross-current itself to the predefined lists
                             ccur.append([y - crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else y - crit_ccur_ebb for x, y in enumerate(interp_ccur(t_ccur))])
-                            crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][1])])
+                            crit_ccur.append([crit_ccur_flood if t_ccur_tidal_periods[x] == 'Ebb Start' else crit_ccur_ebb for x, y in enumerate(network.nodes[route[nodes[0]]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]])])
 
                         elif method == 'Point-based':
                             point_based_method_in_restrictions = True
                             # Just append the raw current data to the predefined list
-                            ccur.append(network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]][1])
+                            ccur.append(network.nodes[route[node]]['Info']['Horizontal tidal restriction']['Data'][data_nodes[rep]])
 
                     # Take the maximum of both lists with the exceedance of the cross-current (positive values)
                     mccur = [max(idx) for idx in zip(*ccur)]
@@ -604,7 +604,7 @@ class VesselTrafficService:
                 network = vessel.env.FG
                 distance_to_next_node = 0
                 mccur_nodes = []
-                t_ccur = network.nodes[route[0]]['Info']['Current velocity'][0]
+                t_ccur = network.nodes[route[0]]['Info']['Times']
                 max_ccur = []
                 list_of_nodes = []
                 critcur_nodes = []
@@ -613,7 +613,7 @@ class VesselTrafficService:
                 list_of_list_indexes = []
                 critical_cross_current_method_in_restrictions = False
                 point_based_method_in_restrictions = False
-                t_ccur_raw = network.nodes[route[0]]['Info']['Current velocity'][0]
+                t_ccur_raw = network.nodes[route[0]]['Info']['Times']
 
                 # Start of calculation by looping over the nodes of the route
                 for nodes in enumerate(route):
@@ -840,7 +840,7 @@ class VesselTrafficService:
             if plot:
                 max_cur = []
                 for node in route:
-                    max_cur.append(np.max(network.nodes[node]['Info']['Current velocity'][1]))
+                    max_cur.append(np.max(network.nodes[node]['Info']['Current velocity']))
 
             # Set some default parameters
             times_horizontal_tidal_window = []
