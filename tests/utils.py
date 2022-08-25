@@ -16,3 +16,10 @@ def get_expected_df(path):
     path = path.with_name(name)
     df = pd.read_csv(path)
     return df
+
+
+def create_expected_df(df, path):
+    """create a  path_expected.csv file based on the dataframe df and a path of the test (based on pathlib.Path(__file__) in the test)"""
+    name = get_expected_df_name(path)
+    path = path.with_name(name)
+    df.to_csv(path, index=False)
