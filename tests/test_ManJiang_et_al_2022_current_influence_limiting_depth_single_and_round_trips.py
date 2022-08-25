@@ -6,6 +6,8 @@
 # package(s) related to time, space and id
 import datetime, time
 
+import pathlib
+
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
@@ -25,6 +27,16 @@ import networkx as nx
 
 import pytest
 
+import utils
+
+# if you wnat to make a new expected dataframe, update the expected numbers like this
+# df.to_csv("test_ManJiang_et_al_2022_current_influence_limiting_depth_single_and_round_trips_expected.csv", index=False)
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
+
+
 # Creating the test objects
 
 # Actual testing starts here
@@ -32,7 +44,7 @@ import pytest
 # - tests 3 fixed power to return indeed the same P_tot
 # - tests 3 fixed power to return indeed the same v
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
-def test_simulation():
+def test_simulation(expected_df):
     # specify a number of coordinate along your route (coords are: lon, lat)
     coords = [[0, 0], [0.8983, 0], [1.7966, 0], [2.6949, 0]]
 
@@ -176,91 +188,31 @@ def test_simulation():
     delta_t_down = df["distance"] / (df["distance"] / df["delta_t"] + U_c)
     # total emission&fuel consumption will be larger when upstream(because of longer delta_t), smaller when downstream(because of shorter delta_t)
     df["total_fuel_consumption_kg"] = (
-        df["total_fuel_consumption"] / 1000
+        df["total_diesel_consumption_C_year_ICE_mass"] / 1000
     )  # kg without current
     df["total_fuel_consumption_up_kg"] = (
-        df["total_fuel_consumption"] / 1000 * (delta_t_up / df["delta_t"])
+        df["total_diesel_consumption_C_year_ICE_mass"]
+        / 1000
+        * (delta_t_up / df["delta_t"])
     )  # kg
     df["total_fuel_consumption_down_kg"] = (
-        df["total_fuel_consumption"] / 1000 * (delta_t_down / df["delta_t"])
+        df["total_diesel_consumption_C_year_ICE_mass"]
+        / 1000
+        * (delta_t_down / df["delta_t"])
     )  # kg
     df["total_fuel_consumption_round_no_current_kg"] = (
-        df["total_fuel_consumption"] / 1000 * 2
+        df["total_diesel_consumption_C_year_ICE_mass"] / 1000 * 2
     )  # kg
     df["total_fuel_consumption_round_current_kg"] = (
         df["total_fuel_consumption_up_kg"] + df["total_fuel_consumption_down_kg"]
     )  # kg
 
     # test the estimation of fuel consumption with and without current influence for section 1
-    np.testing.assert_almost_equal(
-        778.139933,
-        df["total_fuel_consumption_kg"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        907.829922,
-        df["total_fuel_consumption_up_kg"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        680.872442,
-        df["total_fuel_consumption_down_kg"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        1556.279866,
-        df["total_fuel_consumption_round_no_current_kg"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        1588.702364,
-        df["total_fuel_consumption_round_current_kg"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
 
-    # test the estimation of fuel consumption with and without current influence for section 2
-    np.testing.assert_almost_equal(
-        2198.647969,
-        df["total_fuel_consumption_kg"][1],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        2565.089298,
-        df["total_fuel_consumption_up_kg"][1],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        1923.816973,
-        df["total_fuel_consumption_down_kg"][1],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        4397.295939,
-        df["total_fuel_consumption_round_no_current_kg"][1],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        4488.906271,
-        df["total_fuel_consumption_round_current_kg"][1],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
+    # if you wnat to make a new expected dataframe, update the expected numbers like this
+    # df.to_csv("test_ManJiang_et_al_2022_current_influence_limiting_depth_single_and_round_trips_expected.csv", index=False)
+
+    columns_to_test = [column for column in df.columns if "fuel" in column]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], df[columns_to_test], check_exact=False
     )
