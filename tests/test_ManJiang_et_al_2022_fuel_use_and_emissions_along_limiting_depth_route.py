@@ -168,9 +168,9 @@ def test_simulation():
         df = pd.DataFrame.from_dict(energycalculation.energy_use)
 
         # add/modify some comlums to suit our plotting needs
-        df["fuel_kg_per_km"] = (df["total_fuel_consumption"] / 1000) / (
-            df["distance"] / 1000
-        )
+        df["fuel_kg_per_km"] = (
+            df["total_diesel_consumption_C_year_ICE_mass"] / 1000
+        ) / (df["distance"] / 1000)
         df["CO2_g_per_km"] = (df["total_emission_CO2"]) / (df["distance"] / 1000)
         df["PM10_g_per_km"] = (df["total_emission_PM10"]) / (df["distance"] / 1000)
         df["NOx_g_per_km"] = (df["total_emission_NOX"]) / (df["distance"] / 1000)

@@ -169,7 +169,7 @@ def power2v(vessel, edge, upperbound):
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_0)
         # compute total power given
-        P_given = vessel.calculate_total_power_required(v=v)
+        P_given = vessel.calculate_total_power_required(v=v, h_0=h_0)
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
@@ -941,7 +941,7 @@ class ConsumesEnergy:
         # Delivered Horse Power (DHP), P_d
         self.P_d = self.P_e / self.eta_D
 
-        print("eta_D = {:.2f}".format(self.eta_D))
+        logger.debug("eta_D = {:.2f}".format(self.eta_D))
         # self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above)
