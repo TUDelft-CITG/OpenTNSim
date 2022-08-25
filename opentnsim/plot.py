@@ -85,17 +85,17 @@ def vessel_planning(vessels, activities, colors, web=False):
 
 
 def vessel_kml(
-        env,
-        vessels,
-        fname="vessel_movements.kml",
-        icon="http://maps.google.com/mapfiles/kml/shapes/sailing.png",
-        size=1,
-        scale=1,
-        stepsize=120,
+    env,
+    vessels,
+    fname="vessel_movements.kml",
+    icon="http://maps.google.com/mapfiles/kml/shapes/sailing.png",
+    size=1,
+    scale=1,
+    stepsize=120,
 ):
-    """Create a kml visualisation of vessels. Env variable needs to contain 
-        epoch to enable conversion of simulation time to real time. Vessels need
-        logs that contain geometries in lat, lon as a function of time."""
+    """Create a kml visualisation of vessels. Env variable needs to contain
+    epoch to enable conversion of simulation time to real time. Vessels need
+    logs that contain geometries in lat, lon as a function of time."""
 
     # create a kml file containing the visualisation
     kml = Kml()
@@ -111,7 +111,12 @@ def vessel_kml(
     # each timestep will be represented as a single point
     # todo: create a tmpvessel to log info. Do not attach it to the original vessel log!
     for vessel in vessels:
-        tmp_vessel = {"Geometry - x": [], "Geometry - y": [], "timestamps_t": [], "timestamps_x": []}
+        tmp_vessel = {
+            "Geometry - x": [],
+            "Geometry - y": [],
+            "timestamps_t": [],
+            "timestamps_x": [],
+        }
         geom_x = []
         geom_y = []
 
@@ -184,17 +189,17 @@ def vessel_kml(
 
 
 def site_kml(
-        env,
-        sites,
-        fname="site_development.kml",
-        icon="http://maps.google.com/mapfiles/kml/shapes/square.png",
-        size=1,
-        scale=3,
-        stepsize=120,
+    env,
+    sites,
+    fname="site_development.kml",
+    icon="http://maps.google.com/mapfiles/kml/shapes/square.png",
+    size=1,
+    scale=3,
+    stepsize=120,
 ):
-    """Create a kml visualisation of vessels. Env variable needs to contain 
-        epoch to enable conversion of simulation time to real time. Vessels need
-        logs that contain geometries in lat, lon as a function of time."""
+    """Create a kml visualisation of vessels. Env variable needs to contain
+    epoch to enable conversion of simulation time to real time. Vessels need
+    logs that contain geometries in lat, lon as a function of time."""
 
     # create a kml file containing the visualisation
     kml = Kml()
@@ -208,7 +213,7 @@ def site_kml(
             style.labelstyle.scale = 1
             style.iconstyle.color = "ff00ffff"  # Yellow
             style.iconstyle.scale = scale * (
-                    site.log["Value"][log_index] / site.container.capacity
+                site.log["Value"][log_index] / site.container.capacity
             )
             style.iconstyle.icon.href = icon
 
@@ -234,7 +239,7 @@ def site_kml(
         style.labelstyle.scale = 1
         style.iconstyle.color = "ff00ffff"  # Yellow
         style.iconstyle.scale = scale * (
-                site.log["Value"][log_index + 1] / site.container.capacity
+            site.log["Value"][log_index + 1] / site.container.capacity
         )
         style.iconstyle.icon.href = icon
 
@@ -258,15 +263,15 @@ def site_kml(
 
 
 def graph_kml(
-        env,
-        fname="graph.kml",
-        icon="http://maps.google.com/mapfiles/kml/shapes/donut.png",
-        size=0.5,
-        scale=0.5,
-        width=5,
+    env,
+    fname="graph.kml",
+    icon="http://maps.google.com/mapfiles/kml/shapes/donut.png",
+    size=0.5,
+    scale=0.5,
+    width=5,
 ):
-    """Create a kml visualisation of graph. Env variable needs to contain 
-        graph."""
+    """Create a kml visualisation of graph. Env variable needs to contain
+    graph."""
 
     # create a kml file containing the visualisation
     kml = Kml()
@@ -284,7 +289,7 @@ def graph_kml(
     nodes = list(env.FG.nodes)
 
     # each timestep will be represented as a single point
-    for log_index, value in enumerate(list(env.FG.nodes)[0: -1 - 1]):
+    for log_index, value in enumerate(list(env.FG.nodes)[0 : -1 - 1]):
         pnt = fol.newpoint(
             name="",
             coords=[
@@ -297,7 +302,7 @@ def graph_kml(
         pnt.style = shared_style
 
     edges = list(env.FG.edges)
-    for log_index, value in enumerate(list(env.FG.edges)[0: -1 - 1]):
+    for log_index, value in enumerate(list(env.FG.edges)[0 : -1 - 1]):
         lne = fol.newlinestring(
             name="",
             coords=[
@@ -319,12 +324,12 @@ def graph_kml(
 def energy_use(vessel, testing=False):
     energy_use_loading = 0  # concumption between loading start and loading stop
     energy_use_sailing_full = (
-        0
-    )  # concumption between sailing full start and sailing full stop
+        0  # concumption between sailing full start and sailing full stop
+    )
     energy_use_unloading = 0  # concumption between unloading  start and unloading  stop
     energy_use_sailing_empty = (
-        0
-    )  # concumption between sailing empty start and sailing empty stop
+        0  # concumption between sailing empty start and sailing empty stop
+    )
     energy_use_waiting = 0  # concumption between waiting start and waiting stop
 
     for i in range(len(vessel.log["Message"])):

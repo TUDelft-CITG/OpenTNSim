@@ -1,0 +1,38 @@
+# Table of contents
+# Learn more at https://jupyterbook.org/customize/toc.html
+
+format: jb-book
+root: Intro_draft.rst
+parts:
+- caption: Context
+  chapters:
+    - file: docs/AUTHORS.rst
+- caption: Basics
+  chapters:
+    - file: Command_basics
+      title: Command Prompt
+    - file: Anaconda_basics
+      title: Anaconda
+- caption:  Basics of OpenTNSim
+  chapters:
+    - file: examples/Example 00 - Basic simulation.ipynb
+    - file: examples/Example 02 - Defining a basic vessel.ipynb
+    - file: examples/Example 01 - Defining a basic graph.ipynb
+    - file: examples/Example 03 - Defining a basic simulation.ipynb
+- caption: Real-world
+  chapters:
+    - file: examples/Example 05 - Defining a basic simulation on a real graph.ipynb
+    - file: examples/Example 06 - Visualizing the sailed path.ipynb
+    - file: examples/Example 07 - Using actual graphs and graph_module.py.ipynb
+- caption: Advanced simulation
+  chapters:
+    - file: examples/Example 17 - Lock.ipynb
+    - file: examples/Example 14 - Energy consumption, fuel use and emissions.ipynb
+    - file: examples/Example 11 - Multiple vessels - from database.ipynb
+- caption: Advanced programming concepts
+  chapters:
+    - file: CL2022-02-script-to-program
+      title: Creating a program like OpenTNSim
+- caption: API
+  chapters:
+    - file: docs/opentnsim.rst

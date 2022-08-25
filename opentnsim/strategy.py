@@ -165,6 +165,45 @@ def T2Payload(vessel, T_strategy, vessel_type):
     # We include DWT_final for calculating cargo-fuel trade off by function 'get_adjusted_cargo_amount'.
     return Payload_computed 
 
+def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
+    """ Calculate the corresponding draught (T_Payload2T) for each Payload_strategy
+    the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships), which applyies for inland shipping.
+
+
+    input:
+    - Payload_strategy: user given payload
+    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+    - bounds: the searching range for draught. As this method which based on Van Dorsser et al (2020) is for inland vessels, of which the draughts are no larger than 5 meter, we set the upper bound as 5 m as default value. 
+
+    output:
+    - T_Payload2T: corresponding draught for each payload for different vessel types
+
+    """
+
+    def seek_T_given_Payload(T_Payload2T, vessel, vessel_type):
+        """function to optimize"""
+
+        Payload_computed, DWT_final = T2Payload(vessel=vessel, T_strategy=T_Payload2T, vessel_type= vessel_type)
+        # compute difference between a given payload (Payload_strategy) and a computed payload (Payload_computed)
+        diff = Payload_strategy - Payload_computed
+        print(Payload_strategy,Payload_computed,T_Payload2T,vessel_type)
+
+        return diff ** 2
+
+    # fill in some of the parameters that we already know
+    fun = functools.partial(seek_T_given_Payload, vessel=vessel,vessel_type=vessel_type)
+
+    # lookup a minimum
+    fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method='bounded')
+
+    # check if we found a minimum
+    if not fit.success:
+        raise ValueError(fit)
+
+    # the value of fit.x within the bound (0,5) is the draught we find where the diff**2 reach a minimum (zero).
+    T_Payload2T =  fit.x
+
+    return T_Payload2T
 
 def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
     """ Calculate the corresponding draught (T_Payload2T) for each Payload_strategy

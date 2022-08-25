@@ -29,7 +29,6 @@ import opentnsim.graph_module
 logger = logging.getLogger(__name__)
 
 
-
 class SimpyObject:
     """General object which can be extended by any class requiring a simpy environment
 
@@ -96,6 +95,7 @@ class Neighbours:
         """Initialization"""
         self.neighbours = travel_to
 
+
 class HasLength(SimpyObject):
     """Mixin class: Something with a storage capacity
 
@@ -107,8 +107,11 @@ class HasLength(SimpyObject):
     def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.length = simpy.Container(self.env, capacity = length, init=remaining_length)
-        self.pos_length = simpy.Container(self.env, capacity = length, init=remaining_length)
+        self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
+        self.pos_length = simpy.Container(
+            self.env, capacity=length, init=remaining_length
+        )
+
 
 class HasContainer(SimpyObject):
     """Mixin class: Something with a storage capacity
@@ -189,29 +192,30 @@ class VesselProperties:
     - renewable_fuel_volume: renewable fuel volume on board [m3]
     - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
     """
-        # TODO: add blockage factor S to vessel properties
+
+    # TODO: add blockage factor S to vessel properties
 
     def __init__(
-            self,
-            type,
-            B,
-            L,
-            h_min=None,
-            T=None,
-            C_B=None,
-            H_e=None,
-            H_f=None,
-            T_e=None,
-            T_f=None,
-            safety_margin=None,
-            h_squat=None,
-            payload=None,
-            vessel_type=None,
-            renewable_fuel_mass=None,
-            renewable_fuel_volume=None,
-            renewable_fuel_required_space=None,
-            *args,
-            **kwargs
+        self,
+        type,
+        B,
+        L,
+        h_min=None,
+        T=None,
+        C_B=None,
+        H_e=None,
+        H_f=None,
+        T_e=None,
+        T_f=None,
+        safety_margin=None,
+        h_squat=None,
+        payload=None,
+        vessel_type=None,
+        renewable_fuel_mass=None,
+        renewable_fuel_volume=None,
+        renewable_fuel_required_space=None,
+        *args,
+        **kwargs
     ):
         super().__init__(*args, **kwargs)
 
@@ -235,7 +239,8 @@ class VesselProperties:
         self.vessel_type = vessel_type
         self.renewable_fuel_mass = renewable_fuel_mass
         self.renewable_fuel_volume = renewable_fuel_volume
-        self.renewable_fuel_required_space = renewable_fuel_required_space      
+        self.renewable_fuel_required_space = renewable_fuel_required_space
+
     @property
     def T(self):
         """Compute the actual draught
@@ -243,7 +248,7 @@ class VesselProperties:
         There are 3 ways to get actual draught
         - by directly providing actual draught values in the notebook
         - Or by providing ship draughts in fully loaded state and empty state, the actual draught will be computed based on filling degree
-        
+
 
         """
         if self._T is not None:
@@ -253,10 +258,14 @@ class VesselProperties:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
         elif self.payload is not None and self.vessel_type is not None:
-        # else:    
-            T = opentnsim.strategy.Payload2T(self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40))  # this need to be tested
-        # todo: for later possibly include Payload2T 
-        
+            T = opentnsim.strategy.Payload2T(
+                self,
+                Payload_strategy=self.payload,
+                vessel_type=self.vessel_type,
+                bounds=(0, 40),
+            )  # this need to be tested
+        # todo: for later possibly include Payload2T
+
         return T
 
     @property
@@ -264,10 +273,11 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
+            h_min = opentnsim.graph_module.get_minimum_depth(
+                graph=self.env.FG, route=self.route
+            )
 
         return h_min
-
 
     def calculate_max_sinkage(self, v, h_0):
         """Calculate the maximum sinkage of a moving ship
@@ -280,8 +290,12 @@ class VesselProperties:
         - 150: Here we use the standard width 150 m as the waterway width
 
         """
-        
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v*1.94) ** 2.08) / 20
+
+        max_sinkage = (
+            (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81)
+            * ((v * 1.94) ** 2.08)
+            / 20
+        )
 
         return max_sinkage
 
@@ -292,34 +306,26 @@ class VesselProperties:
 
         else:
             h_squat = h_0
-        
-        return h_squat
 
+        return h_squat
 
     @property
     def H(self):
-        """ Calculate current height based on filling degree
-        """
+        """Calculate current height based on filling degree"""
 
-        return (
-                self.filling_degree * (self.H_f - self.H_e)
-                + self.H_e
-        )
-
-
+        return self.filling_degree * (self.H_f - self.H_e) + self.H_e
 
     def get_route(
-            self,
-            origin,
-            destination,
-            graph=None,
-            minWidth=None,
-            minHeight=None,
-            minDepth=None,
-            randomSeed=4,
+        self,
+        origin,
+        destination,
+        graph=None,
+        minWidth=None,
+        minHeight=None,
+        minDepth=None,
+        randomSeed=4,
     ):
-        """ Calculate a path based on vessel restrictions
-        """
+        """Calculate a path based on vessel restrictions"""
 
         graph = graph if graph else self.env.FG
         minWidth = minWidth if minWidth else 1.1 * self.B
@@ -339,9 +345,9 @@ class VesselProperties:
 
             for edge in graph.edges(data=True):
                 if (
-                        edge[2]["Width"] >= minWidth
-                        and edge[2]["Height"] >= minHeight
-                        and edge[2]["Depth"] >= minDepth
+                    edge[2]["Width"] >= minWidth
+                    and edge[2]["Height"] >= minHeight
+                    and edge[2]["Depth"] >= minDepth
                 ):
                     edges.append(edge)
 
@@ -374,8 +380,6 @@ class VesselProperties:
             return nx.dijkstra_path(graph, origin, destination)
 
 
-
-
 class Routeable:
     """Mixin class: Something with a route (networkx format)
 
@@ -387,6 +391,7 @@ class Routeable:
         """Initialization"""
         self.route = route
         self.complete_path = complete_path
+
 
 class Movable(Locatable, Routeable, Log):
     """Mixin class: Something can move
@@ -413,7 +418,10 @@ class Movable(Locatable, Routeable, Log):
         speed = self.v
 
         # Check if vessel is at correct location - if not, move to location
-        if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
+        if (
+            self.geometry
+            != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+        ):
             orig = self.geometry
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
 
@@ -441,7 +449,11 @@ class Movable(Locatable, Routeable, Log):
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
             logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
-            logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
+            logger.debug(
+                "  duration: "
+                + "%4.2f" % ((self.distance / self.current_speed) / 3600)
+                + " hrs"
+            )
         else:
             logger.debug("  current_speed:  not set")
 
@@ -474,8 +486,12 @@ class Movable(Locatable, Routeable, Log):
                 edge_route = np.flipud(np.array(edge["geometry"].coords))
 
             for index, pt in enumerate(edge_route[:-1]):
-                sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
-                sub_dest = shapely.geometry.Point(edge_route[index + 1][0], edge_route[index + 1][1])
+                sub_orig = shapely.geometry.Point(
+                    edge_route[index][0], edge_route[index][1]
+                )
+                sub_dest = shapely.geometry.Point(
+                    edge_route[index + 1][0], edge_route[index + 1][1]
+                )
 
                 distance = self.wgs84.inv(
                     shapely.geometry.shape(sub_orig).x,
@@ -485,14 +501,18 @@ class Movable(Locatable, Routeable, Log):
                 )[2]
                 self.distance += distance
                 self.log_entry(
-                    "Sailing from node {} to node {} sub edge {} start".format(origin, destination, index),
+                    "Sailing from node {} to node {} sub edge {} start".format(
+                        origin, destination, index
+                    ),
                     self.env.now,
                     0,
                     sub_orig,
                 )
                 yield self.env.timeout(distance / self.current_speed)
                 self.log_entry(
-                    "Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index),
+                    "Sailing from node {} to node {} sub edge {} stop".format(
+                        origin, destination, index
+                    ),
                     self.env.now,
                     0,
                     sub_dest,
@@ -518,14 +538,18 @@ class Movable(Locatable, Routeable, Log):
             # This is the case if we are sailing on power
             if getattr(self, "P_tot_given", None) is not None:
                 edge = self.env.FG.edges[origin, destination]
-                depth = self.env.FG.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+                depth = self.env.FG.get_edge_data(origin, destination)["Info"][
+                    "GeneralDepth"
+                ]
 
                 # estimate 'grounding speed' as a useful upperbound
                 (
                     upperbound,
                     selected,
                     results_df,
-                ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
+                ) = opentnsim.strategy.get_upperbound_for_power2v(
+                    self, width=150, depth=depth, margin=0
+                )
                 v = self.power2v(self, edge, upperbound)
                 # use computed power
                 value = self.P_given
@@ -535,18 +559,24 @@ class Movable(Locatable, Routeable, Log):
 
             # Wait for edge resources to become available
             if "Resources" in edge.keys():
-                with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+                with self.env.FG.edges[origin, destination][
+                    "Resources"
+                ].request() as request:
                     yield request
                     # we had to wait, log it
                     if arrival != self.env.now:
                         self.log_entry(
-                            "Waiting to pass edge {} - {} start".format(origin, destination),
+                            "Waiting to pass edge {} - {} start".format(
+                                origin, destination
+                            ),
                             arrival,
                             value,
                             orig,
                         )
                         self.log_entry(
-                            "Waiting to pass edge {} - {} stop".format(origin, destination),
+                            "Waiting to pass edge {} - {} stop".format(
+                                origin, destination
+                            ),
                             self.env.now,
                             value,
                             orig,
@@ -573,7 +603,6 @@ class Movable(Locatable, Routeable, Log):
         return self.v
 
 
-
 class ContainerDependentMovable(Movable, HasContainer):
     """ContainerDependentMovable class
     Used for objects that move with a speed dependent on the container level
@@ -592,6 +621,7 @@ class ContainerDependentMovable(Movable, HasContainer):
 
 class ExtraMetadata:
     """store all leftover keyword arguments as metadata property (use as last mixin)"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
         # store all other properties as metadata
