@@ -3,7 +3,7 @@
 
 # package(s) related to time, space and id
 import datetime, time
-
+import pathlib
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
@@ -22,7 +22,13 @@ import opentnsim
 import networkx as nx
 
 import pytest
+import utils
 
+
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
 # Creating the test objects
 
 # Actual testing starts here
@@ -30,7 +36,7 @@ import pytest
 # - tests 3 fixed power to return indeed the same P_tot
 # - tests 3 fixed power to return indeed the same v
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
-def test_simulation():
+def test_simulation(expected_df):
     # specify a number of coordinate along your route (coords are: lon, lat)
     coords = [[0, 0], [0.8983, 0], [1.7966, 0], [2.6949, 0]]
 
@@ -181,79 +187,15 @@ def test_simulation():
         plot_data[label + " v"] = list(
             df.distance[[0, 0, 1, 1, 2, 2]] / df.delta_t[[0, 0, 1, 1, 2, 2]]
         )
-
-    # test power calculation with three given v in section 1, because later on we will use these calculated power values as input (P_tot_given) for three sections:
-    np.testing.assert_almost_equal(
-        275.7932941138017,
-        plot_data["V_s = 3.0 P_tot_given = None P_tot"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        390.69921125268996,
-        plot_data["V_s = 3.5 P_tot_given = None P_tot"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
+    plot_df = pd.DataFrame(data=plot_data)
+    
+    
+    # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
+    columns_to_test = [
+        column
+        for column in plot_df.columns
+    ]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
     )
 
-    # test if power2v actually results in the right power and the right velocity in section 1
-    np.testing.assert_almost_equal(
-        275.9999977435798,
-        plot_data["V_s = None P_tot_given = 276 P_tot"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        3.001080747077232,
-        plot_data["V_s = None P_tot_given = 276 v"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        390.9999996583476,
-        plot_data["V_s = None P_tot_given = 391 P_tot"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        3.5010589827540057,
-        plot_data["V_s = None P_tot_given = 391 v"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-
-    # test if power2v actually results in the right power and the right velocity in section 2
-    np.testing.assert_almost_equal(
-        275.99999858503696,
-        plot_data["V_s = None P_tot_given = 276 P_tot"][2],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        2.617269058291472,
-        plot_data["V_s = None P_tot_given = 276 v"][2],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        390.9999998195995,
-        plot_data["V_s = None P_tot_given = 391 P_tot"][2],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        2.915081718818836,
-        plot_data["V_s = None P_tot_given = 391 v"][2],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )

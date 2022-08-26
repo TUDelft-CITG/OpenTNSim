@@ -7,7 +7,7 @@ In the future it is nice to include another test-- resistance component R_B for 
 # Used for mathematical functions
 # package(s) related to time, space and id
 import itertools
-
+import pathlib
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import pandas as pd
@@ -20,6 +20,13 @@ import tqdm
 import opentnsim
 
 import pytest
+import utils
+
+
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
 
 # Creating the test objects
 
@@ -28,7 +35,7 @@ import pytest
 # - tests 3 fixed power to return indeed the same P_tot
 # - tests 3 fixed power to return indeed the same v
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
-def test_simulation():
+def test_simulation(expected_df):
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
         "Vessel",
@@ -123,119 +130,14 @@ def test_simulation():
     # convert from meters per second to km per hour
     ms_to_kmh = 3.6
     plot_df["V_s_km"] = plot_df["V_s"] * ms_to_kmh
-
-    np.testing.assert_almost_equal(
-        0.037092,
-        plot_df.R_f_one_k1[0],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        0.003956, plot_df.R_APP[0], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        2.423886e-88,
-        plot_df.R_W[0],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        0.012012, plot_df.R_res[0], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        0.053060, plot_df.R_T[0], decimal=3, err_msg="not almost equal", verbose=True
+    
+    
+    # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
+    columns_to_test = [
+        column
+        for column in plot_df.columns
+    ]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
     )
 
-    np.testing.assert_almost_equal(
-        2.501222,
-        plot_df.R_f_one_k1[1],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        0.266788, plot_df.R_APP[1], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        2.008042e-08,
-        plot_df.R_W[1],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        1.152491, plot_df.R_res[1], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        3.920500, plot_df.R_T[1], decimal=3, err_msg="not almost equal", verbose=True
-    )
-
-    np.testing.assert_almost_equal(
-        9.011765,
-        plot_df.R_f_one_k1[2],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        0.961223, plot_df.R_APP[2], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        4.677742e-03,
-        plot_df.R_W[2],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        4.433054, plot_df.R_res[2], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        14.410720, plot_df.R_T[2], decimal=3, err_msg="not almost equal", verbose=True
-    )
-
-    np.testing.assert_almost_equal(
-        19.125424,
-        plot_df.R_f_one_k1[3],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        2.039978, plot_df.R_APP[3], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        4.136393e-01,
-        plot_df.R_W[3],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        9.804962, plot_df.R_res[3], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        31.384003, plot_df.R_T[3], decimal=3, err_msg="not almost equal", verbose=True
-    )
-
-    np.testing.assert_almost_equal(
-        32.657732,
-        plot_df.R_f_one_k1[4],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        3.483376, plot_df.R_APP[4], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        6.495570e00, plot_df.R_W[4], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        19.191251, plot_df.R_res[4], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        61.827928, plot_df.R_T[4], decimal=3, err_msg="not almost equal", verbose=True
-    )

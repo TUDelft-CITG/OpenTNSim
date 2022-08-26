@@ -5,7 +5,7 @@
 
 # package(s) related to time, space and id
 import datetime, time
-
+import pathlib
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
@@ -24,11 +24,18 @@ import opentnsim
 import networkx as nx
 
 import pytest
+import utils
+
+
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
 
 # Creating the test objects
 
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
-def test_simulation():
+def test_simulation(expected_df):
     # specify a number of coordinate along your route (coords are: lon, lat)
     coords = [[0, 0], [0.8983, 0], [1.7966, 0], [2.6949, 0]]
 
@@ -164,7 +171,7 @@ def test_simulation():
 
         # add/modify some comlums to suit our plotting needs
         df["total_fuel_consumption_600km"] = (
-            df["total_fuel_consumption"] * 6 / 1000
+            df["total_diesel_consumption_C_year_ICE_mass"] * 6 / 1000
         )  # kg, a round trip is 600km in total
         df["total_emission_CO2_600km"] = df["total_emission_CO2"] * 6 / 1000  # kg
         df["total_emission_PM10_600km"] = df["total_emission_PM10"] * 6 / 1000  # kg
@@ -203,174 +210,15 @@ def test_simulation():
         plot_data[label + ", total_emission_NOX_600km"] = list(
             df.total_emission_NOX_600km[[0]]
         )
-
-    # test the estimation of fuel consumption and emission rates of CO2, PM10 and NOx in section 1
-    np.testing.assert_almost_equal(
-        5933.248947194027,
-        plot_data["C_year = 1970, total_fuel_consumption_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        19087.388102462486,
-        plot_data["C_year = 1970, total_emission_CO2_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        14.905478975970432,
-        plot_data["C_year = 1970, total_emission_PM10_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        255.66480386144215,
-        plot_data["C_year = 1970, total_emission_NOX_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        5680.770268590026,
-        plot_data["C_year = 1980, total_fuel_consumption_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        18026.97765232568,
-        plot_data["C_year = 1980, total_emission_CO2_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        14.905478975970432,
-        plot_data["C_year = 1980, total_emission_PM10_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        246.19573705175915,
-        plot_data["C_year = 1980, total_emission_NOX_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        5554.530929288025,
-        plot_data["C_year = 1990, total_fuel_consumption_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        17623.01176655928,
-        plot_data["C_year = 1990, total_emission_CO2_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        9.936985983980291,
-        plot_data["C_year = 1990, total_emission_PM10_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        239.09393694449682,
-        plot_data["C_year = 1990, total_emission_NOX_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        5175.812911382024,
-        plot_data["C_year = 2000, total_fuel_consumption_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        16411.114109260074,
-        plot_data["C_year = 2000, total_emission_CO2_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        7.452739487985216,
-        plot_data["C_year = 2000, total_emission_PM10_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        222.52307002755148,
-        plot_data["C_year = 2000, total_emission_NOX_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        5049.573572080024,
-        plot_data["C_year = 2010, total_fuel_consumption_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        16032.396091354072,
-        plot_data["C_year = 2010, total_emission_CO2_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        4.9684929919901455,
-        plot_data["C_year = 2010, total_emission_PM10_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        179.88547669518584,
-        plot_data["C_year = 2010, total_emission_NOX_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
+    plot_df = pd.DataFrame(data=plot_data)
+    
+    
+    # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
+    columns_to_test = [
+        column
+        for column in plot_df.columns
+    ]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
     )
 
-    np.testing.assert_almost_equal(
-        4797.094893476022,
-        plot_data["C_year = 2020, total_fuel_consumption_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        15224.464319821269,
-        plot_data["C_year = 2020, total_emission_CO2_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        0.3726369743992608,
-        plot_data["C_year = 2020, total_emission_PM10_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        73.71465716623969,
-        plot_data["C_year = 2020, total_emission_NOX_600km"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )

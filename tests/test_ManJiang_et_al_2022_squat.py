@@ -5,7 +5,7 @@
 # Used for mathematical functions
 # package(s) related to time, space and id
 import itertools
-
+import pathlib
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import pandas as pd
@@ -18,7 +18,13 @@ import tqdm
 import opentnsim
 
 import pytest
+import utils
 
+
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
 # Creating the test objects
 
 # Actual testing starts here
@@ -26,7 +32,7 @@ import pytest
 # - tests 3 fixed power to return indeed the same P_tot
 # - tests 3 fixed power to return indeed the same v
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
-def test_simulation():
+def test_simulation(expected_df):
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
         "Vessel",
@@ -101,19 +107,13 @@ def test_simulation():
 
     # collect info dataframe
     plot_df = pd.DataFrame(results)
-
-    np.testing.assert_almost_equal(
-        4.9999, plot_df.h_squat[0], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        4.9870, plot_df.h_squat[1], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        4.9453, plot_df.h_squat[2], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        4.8729, plot_df.h_squat[3], decimal=3, err_msg="not almost equal", verbose=True
-    )
-    np.testing.assert_almost_equal(
-        4.7687, plot_df.h_squat[4], decimal=3, err_msg="not almost equal", verbose=True
+    
+    
+    # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
+    columns_to_test = [
+        column
+        for column in plot_df.columns
+    ]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
     )
