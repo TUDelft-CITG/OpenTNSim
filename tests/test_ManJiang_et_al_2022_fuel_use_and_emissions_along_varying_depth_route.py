@@ -3,7 +3,7 @@
 
 # package(s) related to time, space and id
 import datetime, time
-
+import pathlib
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
@@ -22,7 +22,13 @@ import opentnsim
 import networkx as nx
 
 import pytest
+import utils
 
+
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
 # Creating the test objects
 
 # Actual testing starts here
@@ -30,7 +36,7 @@ import pytest
 # - tests 3 fixed power to return indeed the same P_tot
 # - tests 3 fixed power to return indeed the same v
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
-def test_simulation():
+def test_simulation(expected_df):
     # specify a number of coordinate along your route (coords are: lon, lat)
     coords = [[0, 0], [0.8983, 0], [1.7966, 0], [2.6949, 0]]
 
@@ -171,7 +177,7 @@ def test_simulation():
         df = pd.DataFrame.from_dict(energycalculation.energy_use)
 
         # add/modify some comlums to suit our plotting needs
-        df["fuel_kg_per_km"] = (df["total_fuel_consumption"] / 1000) / (
+        df["fuel_kg_per_km"] = (df["total_diesel_consumption_C_year_ICE_mass"] / 1000) / (
             df["distance"] / 1000
         )
         df["CO2_g_per_km"] = (df["total_emission_CO2"]) / (df["distance"] / 1000)
@@ -197,7 +203,17 @@ def test_simulation():
 
     # todo: this test should be modified to test the fuel use and emission (looking at test name)
     # test the estimation of fuel consumption and emission rates of CO2, PM10 and NOx in section 1
-
+    plot_df = pd.DataFrame(data=plot_data)
+    
+    
+    utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
+    columns_to_test = [
+        column
+        for column in plot_df.columns
+    ]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
+    )
     # test the estimation of fuel consumption and emission rates of CO2, PM10 and NOx in section 1
     np.testing.assert_almost_equal(
         7.837832301403712,

@@ -99,7 +99,7 @@ def test_simulation():
         vessel.calculate_properties()  # L is used here in the computation of L_R
         h_0 = vessel.calculate_h_squat(v=V_s, h_0=h_0)
         R_T = vessel.calculate_total_resistance(V_s, h_0)
-        P_tot = vessel.calculate_total_power_required(V_s)
+        P_tot = vessel.calculate_total_power_required(V_s, h_0)
 
         result = {}
         result.update(row)
