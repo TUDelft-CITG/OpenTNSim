@@ -58,7 +58,7 @@ tests_require = [
     "colorcet",
     "notebook",
     "jupyter",
-    "jupyter-book",
+    "jupyter-book==0.13.1",
     "tqdm",
 ]
 
