@@ -60,6 +60,7 @@ tests_require = [
     "jupyter",
     "jupyter-book==0.13.1",
     "ipywidgets==7.7",
+    "jsonschema==3.0",
     "tqdm",
 ]
 
