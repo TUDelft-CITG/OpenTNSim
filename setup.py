@@ -65,7 +65,6 @@ tests_require = [
     "jsonschema==3.0",
     "jupyterlab_widgets==3",
     "tqdm",
-    "-e git+https://github.com/Deltares/digitaltwin-waterway.git#egg=dtv_backend&subdirectory=dtv_backend",
 ]
 
 with open("README.md", "r") as des:
