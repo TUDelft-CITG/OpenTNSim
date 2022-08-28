@@ -44,6 +44,7 @@ setup_requirements = [
 ]
 
 tests_require = [
+    "geopandas",
     "pytest<7",
     "pytest-cov",
     "pytest-timeout",
