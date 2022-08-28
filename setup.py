@@ -45,6 +45,7 @@ setup_requirements = [
 
 tests_require = [
     "geopandas",
+    "ipyleaflet",
     "pytest<7",
     "pytest-cov",
     "pytest-timeout",
