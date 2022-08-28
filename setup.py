@@ -59,6 +59,7 @@ tests_require = [
     "notebook",
     "jupyter",
     "jupyter-book==0.13.1",
+    "ipywidgets==7.7",
     "tqdm",
 ]
 
