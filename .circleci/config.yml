@@ -23,7 +23,7 @@ jobs:
       - run:
           name: Test notebooks
           command: |
-            docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks/paper_notebooks/manjiang_et_al_2022 ./notebooks/Example*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students --ignore ./notebooks/Example\ load\ digital\ twin\ scenario.ipynb --ignore ./notebooks/Example\ 16\ -\ Energy\ use\ in\ package.ipynb"
+            docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks/paper_notebooks/manjiang_et_al_2022 ./notebooks/Example*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students --ignore ./notebooks/Example*digital*twin*scenario.ipynb --ignore ./notebooks/Example*16*.ipynb"
 
       - run:
           name: Build docs
