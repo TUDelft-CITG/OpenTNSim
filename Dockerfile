@@ -7,7 +7,7 @@ RUN conda install nomkl pyproj gdal
 
 WORKDIR /OpenTNSim
 ADD . /OpenTNSim
-
+RUN pip install --upgrade pip
 # Install the application
 RUN pip install -e .
 # and the testing dependencies
