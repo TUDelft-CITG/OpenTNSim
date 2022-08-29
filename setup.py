@@ -57,7 +57,7 @@ tests_require = [
     "openpyxl",
     "folium",
     "colorcet",
-    "notebook==6.4",
+    "notebook==6.4.12",
     "nbconvert==6.4",
     "jupyter",
     "jupyter-book==0.13.1",
