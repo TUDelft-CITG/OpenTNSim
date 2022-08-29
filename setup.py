@@ -58,7 +58,7 @@ tests_require = [
     "folium",
     "colorcet",
     "notebook==6.4",
-    "nbconvert==6.4",
+    "nbconvert==6.5.1",
     "jupyter",
     "jupyter-book==0.13.1",
     "ipywidgets==7.7",
