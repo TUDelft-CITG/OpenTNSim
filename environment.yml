@@ -21,6 +21,7 @@ dependencies:
   - jupyter=1
   - notebook=6
   - jupyterlab=3
+  - ipyleaflet
   - ipython=7
   - matplotlib=3
   - pint=0.18
