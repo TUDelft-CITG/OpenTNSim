@@ -1300,6 +1300,33 @@ class ConsumesEnergy:
 
         return self.emission_g_s_CO2, self.emission_g_s_PM10, self.emission_g_s_NOX
 
+    def calculate_max_sinkage(self, v, h_0):
+        """Calculate the maximum sinkage of a moving ship
+
+        the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates,
+        chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6
+
+        some explanation for the variables in the equation:
+        - h_0: water depth
+        - v: ship velocity relative to the water
+        - 150: Here we use the standard width 150 m as the waterway width
+
+        """
+
+        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+
+        return max_sinkage
+
+    def calculate_h_squat(self, v, h_0):
+
+        if self.h_squat:
+            h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
+
+        else:
+            h_squat = h_0
+
+        return h_squat
+
 
 class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
@@ -1572,30 +1599,3 @@ class EnergyCalculation:
         folium.PolyLine(line, weight=4).add_to(m)
 
         return m
-
-    def calculate_max_sinkage(self, v, h_0):
-        """Calculate the maximum sinkage of a moving ship
-
-        the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates,
-        chapter 42. https://doi.org/10.1016/B978-0-08-097093-6.00042-6
-
-        some explanation for the variables in the equation:
-        - h_0: water depth
-        - v: ship velocity relative to the water
-        - 150: Here we use the standard width 150 m as the waterway width
-
-        """
-
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
-
-        return max_sinkage
-
-    def calculate_h_squat(self, v, h_0):
-
-        if self.h_squat:
-            h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
-
-        else:
-            h_squat = h_0
-
-        return h_squat
