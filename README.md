@@ -51,6 +51,14 @@ Or you can run the notebook tests:
 pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup ./notebooks/students
 ```
 
+Or you can run a specific test like this:
+
+``` bash
+pytest -k test_single_engine
+```
+
+`
+
 
 ## Examples
 
