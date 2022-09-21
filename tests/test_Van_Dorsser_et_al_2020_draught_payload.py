@@ -1,6 +1,6 @@
 """Here we test the payload calculation from Van Dorsser et al's method for a range of settings (for a few vessel types, and a few payload – draft combinations)"""
 # To do: add more asserts for a range of settings
-
+import pathlib
 import numpy as np
 import pandas as pd
 import opentnsim.core
@@ -9,9 +9,16 @@ import itertools
 import tqdm
 
 import pytest
+import utils
+
+
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
 
 # Make your preferred class out of available mix-ins.
-def test_simulation():
+def test_simulation(expected_df):
     TransportResource = type(
         "Vessel",
         (
@@ -76,40 +83,17 @@ def test_simulation():
         Strategies.append(Strategy)
 
     Strategies_df = pd.DataFrame(Strategies)
-
+    plot_df =  Strategies_df
     # Test if the output of "Tanker" vessel are the same as calculated by strategy.py
-    np.testing.assert_almost_equal(
-        2681.7553,
-        Strategies_df["Payload_strategy_tanker (ton)"][0],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        2152.3154,
-        Strategies_df["Payload_strategy_tanker (ton)"][1],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        1227.2542,
-        Strategies_df["Payload_strategy_tanker (ton)"][2],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        1112.7661,
-        Strategies_df["Payload_strategy_tanker (ton)"][3],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        998.5323,
-        Strategies_df["Payload_strategy_tanker (ton)"][4],
-        decimal=2,
-        err_msg="not almost equal",
-        verbose=True,
+
+
+    
+    
+    # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
+    columns_to_test = [
+        column
+        for column in plot_df.columns
+    ]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
     )

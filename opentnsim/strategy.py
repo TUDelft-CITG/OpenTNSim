@@ -28,11 +28,6 @@ import tqdm
 logger = logging.getLogger(__name__)
 
 
-# 6) make the functions elegant (explicy name, dry code, etc.) in strategy.py and "optimal sailing stratigies notebook", then test again.
-
-# 8)fix error of payload_2_T functions in strategy.py
-
-
 # To know the corresponding Payload for each T_strategy
 def T2Payload(vessel, T_strategy, vessel_type):
     """Calculate the corresponding payload for each T_strategy
@@ -179,16 +174,27 @@ def T2Payload(vessel, T_strategy, vessel_type):
     DWT_actual = (Capindex_1 / Capindex_2) * DWT_design  # actual DWT of shallow water
 
     if T_strategy < T_design:
-        consumables = 0.04  # consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
+        DWT_final = DWT_actual
+        # Consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
         # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
+        # Based on personal communication with experts we lowered this to 0.005.
+        # This should match with the current practice.
+        consumables = 0.005
 
     else:
-        consumables = 0.06  # consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
-        # 6% for deep water (Van Dosser et al. Chapter 8, pp.68).
+        DWT_final = DWT_design
+        # consumables represents the persentage of fuel weight,which is 4-6% of designed DWT
+        # 4% for shallow water (Van Dosser  et al. Chapter 8,pp.68).
+        # Based on personal communication with experts we lowered this to 0.005.
+        # This should match with the current practice.
+        consumables = 0.005
 
     fuel_weight = DWT_design * consumables  # (Van Dosser et al. Chapter 8, pp.68).
-    Payload_computed = DWT_actual - fuel_weight  # payload=DWT-fuel_weight
 
+    Payload_computed = DWT_final - fuel_weight  # payload=DWT-fuel_weight
+
+    # DWT_final covers the situations of the DWT at maximum draught and the DWT at adjusted draught
+    # We include DWT_final for calculating cargo-fuel trade off by function 'get_adjusted_cargo_amount'.
     return Payload_computed
 
 
@@ -299,7 +305,7 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
 
         # for the squatted water depth calculate resistance and power
         vessel.calculate_total_resistance(v=row["velocity"], h_0=h_0)
-        vessel.calculate_total_power_required(v=row["velocity"])
+        vessel.calculate_total_power_required(v=row["velocity"], h_0=h_0)
 
         # prepare a row
         result = {}

@@ -51,6 +51,14 @@ Or you can run the notebook tests:
 pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup ./notebooks/students
 ```
 
+Or you can run a specific test like this:
+
+``` bash
+pytest -k test_single_engine
+```
+
+`
+
 
 ## Examples
 
@@ -61,5 +69,6 @@ The benefit of OpenTNSim is the generic set-up. A number of examples are present
 Based on the examples and docs a book can be generated using the commands `make book` and cleaned up using `make clean-book`. These commands are unix only.
 
 ## Code quality
-Code quality is checked using sonarcloud. You can see results in the across
-Actions section. 
+Code quality is checked using sonarcloud. You can see results on the [sonarcloud](https://sonarcloud.io/project/overview?id=TUDelft-CITG_OpenTNSim) website. For now we have disabled coverage and duplication checks. These can be enabled when we include coverage measurements and reduce duplication by optimizing the tests.
+
+

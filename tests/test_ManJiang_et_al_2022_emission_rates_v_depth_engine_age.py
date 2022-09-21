@@ -5,6 +5,7 @@
 # Used for mathematical functions
 # package(s) related to time, space and id
 import itertools
+import pathlib
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -19,6 +20,15 @@ import opentnsim
 
 import pytest
 
+import utils
+
+
+@pytest.fixture
+def expected_df():
+    path = pathlib.Path(__file__)
+    return utils.get_expected_df(path)
+
+
 # Creating the test objects
 
 # Actual testing starts here
@@ -26,7 +36,7 @@ import pytest
 # - tests 3 fixed power to return indeed the same P_tot
 # - tests 3 fixed power to return indeed the same v
 # todo: current tests do work with vessel.h_squat=True ... issues still for False
-def test_simulation():
+def test_simulation(expected_df):
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
         "Vessel",
@@ -99,10 +109,10 @@ def test_simulation():
         vessel.calculate_properties()  # L is used here in the computation of L_R
         h_0 = vessel.calculate_h_squat(v=V_s, h_0=h_0)
         R_T = vessel.calculate_total_resistance(V_s, h_0)
-        P_tot = vessel.calculate_total_power_required(V_s)
+        P_tot = vessel.calculate_total_power_required(V_s, h_0=h_0)
         vessel.emission_factors_general()
-        vessel.correction_factors(V_s)
-        vessel.calculate_emission_factors_total(V_s)
+        vessel.correction_factors(V_s, h_0=h_0)
+        vessel.calculate_emission_factors_total(V_s, h_0=h_0)
         [
             emission_g_m_CO2,
             emission_g_m_PM10,
@@ -123,108 +133,12 @@ def test_simulation():
     ms_to_kmh = 3.6
     plot_df["V_s_km"] = plot_df["V_s"] * ms_to_kmh
 
-    np.testing.assert_almost_equal(
-        248294.562972,
-        plot_df.emission_g_km_CO2[0],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        223.685737,
-        plot_df.emission_g_km_PM10[0],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        5256.657899,
-        plot_df.emission_g_km_NOX[0],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        27085.792509,
-        plot_df.emission_g_km_CO2[1],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        23.709784,
-        plot_df.emission_g_km_PM10[1],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        560.662961,
-        plot_df.emission_g_km_NOX[1],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        20553.193316,
-        plot_df.emission_g_km_CO2[2],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        14.578446,
-        plot_df.emission_g_km_PM10[2],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        362.404213,
-        plot_df.emission_g_km_NOX[2],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        25333.749547,
-        plot_df.emission_g_km_CO2[3],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        12.824885,
-        plot_df.emission_g_km_PM10[3],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        359.927008,
-        plot_df.emission_g_km_NOX[3],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        37645.554426,
-        plot_df.emission_g_km_CO2[4],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        16.745932,
-        plot_df.emission_g_km_PM10[4],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
-    )
-    np.testing.assert_almost_equal(
-        514.219726,
-        plot_df.emission_g_km_NOX[4],
-        decimal=3,
-        err_msg="not almost equal",
-        verbose=True,
+    # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
+    columns_to_test = [
+        column
+        for column in plot_df.columns
+        if ("emission" in column) or ("fuel" in column)
+    ]
+    pd.testing.assert_frame_equal(
+        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
     )

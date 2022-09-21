@@ -218,7 +218,9 @@ class VesselProperties:
     - H_f: vessel height loaded
     - T_e: draught unloaded
     - T_f: draught loaded
-
+    - renewable_fuel_mass: renewable fuel mass on board [kg]
+    - renewable_fuel_volume: renewable fuel volume on board [m3]
+    - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
     """
 
     # TODO: add blockage factor S to vessel properties
@@ -234,8 +236,11 @@ class VesselProperties:
         h_squat=None,
         payload=None,
         vessel_type=None,
+        renewable_fuel_mass=None,
+        renewable_fuel_volume=None,
+        renewable_fuel_required_space=None,
         *args,
-        **kwargs,
+        **kwargs
     ):
         super().__init__(*args, **kwargs)
 
@@ -252,6 +257,9 @@ class VesselProperties:
         self.h_squat = h_squat
         self.payload = payload
         self.vessel_type = vessel_type
+        self.renewable_fuel_mass = renewable_fuel_mass
+        self.renewable_fuel_volume = renewable_fuel_volume
+        self.renewable_fuel_required_space = renewable_fuel_required_space
 
     @property
     def T(self):
@@ -261,18 +269,17 @@ class VesselProperties:
         if self._T is not None:
             # if we were passed a T value, use tha one
             T = self._T
-        else:
-            try:
-                T = super().T
-            except AttributeError:
-                raise AttributeError(f"T is not set ({self._T}) and no T found in super")
-        # TODO: do we need this? Move it to other class or inject strategy.
-        # elif self.payload is not None and self.vessel_type is not None:
-        # else:
-        #     T = opentnsim.strategy.Payload2T(
-        #       self, Payload_strategy = self.payload, vessel_type = self.vessel_type, bounds=(0, 40)
-        #       )  # this need to be tested
-        # todo: for later possibly include payload2T
+        elif self.T_f is not None and self.T_e is not None:
+            # base draught on filling degree
+            T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
+        elif self.payload is not None and self.vessel_type is not None:
+            T = opentnsim.strategy.Payload2T(
+                self,
+                Payload_strategy=self.payload,
+                vessel_type=self.vessel_type,
+                bounds=(0, 40),
+            )  # this need to be tested
+        # todo: for later possibly include Payload2T
 
         return T
 
