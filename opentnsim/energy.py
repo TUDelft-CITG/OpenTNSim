@@ -149,7 +149,7 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0, 20)):
 
     selected = results_df.query("P_tot < P_installed")
     upperbound = max(selected["Powerallowed_v"])
-    print("upperbound velocity {:.2f} m/s".format(upperbound))
+    print("upperb ound velocity {:.2f} m/s".format(upperbound))
     return upperbound
 
 
@@ -242,6 +242,8 @@ class ConsumesEnergy:
         c_stern=0,
         C_BB=0.2,
         one_k2=2.5,
+        winddirection=60,
+        heading = 45,
         *args,
         **kwargs,
     ):
@@ -274,6 +276,8 @@ class ConsumesEnergy:
         self.c_stern = c_stern
         self.C_BB = C_BB
         self.one_k2 = one_k2
+        self.winddirection = winddirection
+        self.heading = heading
 
         # plugin function that computes velocity based on power
         self.power2v = opentnsim.energy.power2v
@@ -631,16 +635,51 @@ class ConsumesEnergy:
         self.R_res = self.R_TR + self.R_A + self.R_B
 
         return self.R_res
+    
+    def calculate_angle_of_attack (self, self.winddirection, self.heading):
+        #phi_w_ref = angle of attack  
+        #(https://sciendo.com/pdf/10.2478/ntpe-2018-0013)
+        self.phi_w_ref = self.winddirection - self.heading  
+        
+        return self.phi_w_ref
+    
+    def calculate_C_drag(self,load):
+        # for a tanker ( ITTC: ) 
+        # cda = -cx (cx given for ships)
+        
+    cd=[[0,0.86,0.96],[10,0.76,0.93],[20,0.62,0.85],
+        [30,0.45,0.73],[40,0.32,0.62],[50,0.21,0.47],
+        [60,0.13,0.34],[70,0.06,0.17],[80,0.04,0.06],
+        [90,-0.02,-0.05],[100,-0.08,-0.14],[110,-0.19,-0.22],
+        [120,-0.29,-0.29],[130,-0.38,-0.40],[140,-0.47,-0.53],
+        [150,-0.56,-0.66],[160,-0.61,-0.75],[170,-0.66,-0.79],
+        [180,-0.63,-0.77]]
+    
+    df=pd.DataFrame(cd,columns=['AoA','loaded','unloaded'])
 
+    if load == 'loaded':
+  
+        self.C_drag = df['loaded'].where(df['AoA'] == angle_of_attack).dropna().values[0]
+    
+    elif load == 'unloaded':
+        self.C_drag = df['unloaded'].where(df['AoA'] == angle_of_attack).dropna().values[0]
+         
+        return self.C_drag
+    
+    
     def calculate_wind_influence(self):
         U_wind = 2 # m/s
+        A_xv = 150
         if self.wind_influence:
-            self.R_wind = 0.5 * self.C_drag * self.rho_air * self.A_abw * U_wind
+            self.R_wind = 0.5 * calculate_C_drag() * self.rho_air * A_xv * U_wind **2 #- 0.5 * self.rho_air * self.C_drag * A_xv * V_g **2
                     
         else:
             self.R_wind = 0
+            
 #     todo: 1) add the angle between wind force direction and vessel sailing direction to determine wind force to the vessel 2) add wind speed as input on the edge 
-    
+# Raa = 0.5 * rho_a * C_da(phiWref) * A_xv * V_wrref**2 - 0.5 * rho_a * C_da(0) * A_xv * Vg**2
+# V_g komt later pas erin.
+#loaded/unloaded
     
         return self.R_wind
     
