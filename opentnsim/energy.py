@@ -144,13 +144,12 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0, 20)):
     return upperbound
 
 
-def power2v(vessel, edge, upperbound):
+def power2v(vessel, edge, upperbound, h_0=None):
     """Compute vessel velocity given an edge and power (P_tot_given)
 
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
     """
-
     assert isinstance(vessel, opentnsim.core.VesselProperties), "vessel should be an instance of VesselProperties"
 
     assert vessel.C_B is not None, "C_B cannot be None"
@@ -158,10 +157,13 @@ def power2v(vessel, edge, upperbound):
     # upperbound = get_upperbound_for_power2v()
     # bounds > 10 gave an issue...
     # TODO: check what the origin of this is.
-    def seek_v_given_power(v, vessel, edge):
+    def seek_v_given_power(v, vessel, edge, h_0):
         """function to optimize"""
-        # water depth from the edge
-        h_0 = edge["Info"]["GeneralDepth"]
+
+        # water depth from the edge if not defined
+        if h_0 is None:
+            h_0 = edge["Info"]["GeneralDepth"]
+
         try:
             h_0 = vessel.calculate_h_squat(v, h_0)
         except AttributeError:
@@ -175,12 +177,12 @@ def power2v(vessel, edge, upperbound):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
         # compute difference between power setting by captain and power needed for velocity
-        diff = vessel.P_tot_given - vessel.P_tot
         logger.debug(f"optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}")
+        diff = vessel.P_tot_given - vessel.P_tot
         return diff**2
 
     # fill in some of the parameters that we already know
-    fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
+    fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge, h_0=h_0)
     # lookup a minimum
     fit = scipy.optimize.minimize_scalar(fun, bounds=(0, upperbound), method="bounded", options=dict(xatol=0.0000001))
 
@@ -363,7 +365,7 @@ class ConsumesEnergy:
         self.R_e = v * self.L / self.nu  # Reynolds number
 
         self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
-        assert self.D > 0, f"D should be > 0: {self.D}"
+        assert self.D > 0, f"D should be > 0: {self.D}, h_0 is {h_0}, T is {self.T}"
 
         # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
         self.Cf_deep = 0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)
