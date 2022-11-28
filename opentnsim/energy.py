@@ -207,6 +207,10 @@ class ConsumesEnergy:
     - current_year: current year
     - nu: kinematic viscosity [m^2/s]
     - rho: density of the surrounding water [kg/m^3]
+    - rho_air: density of air [kg/m3]
+    - U_wind: windspeed [m/s]
+    - load: loaded/uloaded,
+    - H: height of the ship
     - g: gravitational accelleration [m/s^2]
     - x: number of propellers [-]
     - eta_o: open water efficiency of propeller [-]
@@ -225,6 +229,7 @@ class ConsumesEnergy:
         P_installed,
         L_w,
         C_year,
+        
         current_year=None,  # current_year
         bulbous_bow=False,
         wind_influence=False,
@@ -232,7 +237,14 @@ class ConsumesEnergy:
         P_hotel=None,
         P_tot_given=None,  # the actual power engine setting
         nu=1 * 10 ** (-6),
-        rho=1000,
+        rho=1025,
+        
+        load = 'loaded',
+        rho_air = 1.225,
+        U_wind = 2, 
+        H = 4,
+        loaded_depth = 3.45 ,
+        unloaded_depth = 2.5,
         g=9.81,
         x=2,
         eta_o=0.4,
@@ -242,8 +254,7 @@ class ConsumesEnergy:
         c_stern=0,
         C_BB=0.2,
         one_k2=2.5,
-        winddirection=60,
-        heading = 45,
+
         *args,
         **kwargs,
     ):
@@ -267,6 +278,12 @@ class ConsumesEnergy:
         self.year = current_year
         self.nu = nu
         self.rho = rho
+        self.rho_air = rho_air
+        self.U_wind = U_wind
+        self.load = load
+        self.loaded_depth = loaded_depth
+        self.unloaded_depth = unloaded_depth
+        self.H = H
         self.g = g
         self.x = x
         self.eta_o = eta_o
@@ -276,8 +293,7 @@ class ConsumesEnergy:
         self.c_stern = c_stern
         self.C_BB = C_BB
         self.one_k2 = one_k2
-        self.winddirection = winddirection
-        self.heading = heading
+
 
         # plugin function that computes velocity based on power
         self.power2v = opentnsim.energy.power2v
@@ -636,18 +652,14 @@ class ConsumesEnergy:
 
         return self.R_res
     
-    def calculate_angle_of_attack (self, self.winddirection, self.heading):
-        #phi_w_ref = angle of attack  
-        #(https://sciendo.com/pdf/10.2478/ntpe-2018-0013)
-        self.phi_w_ref = self.winddirection - self.heading  
-        
-        return self.phi_w_ref
+#### wind / compensation for rudder
     
-    def calculate_C_drag(self,load):
+       
+    def calculate_C_drag(self):
         # for a tanker ( ITTC: ) 
         # cda = -cx (cx given for ships)
         
-    cd=[[0,0.86,0.96],[10,0.76,0.93],[20,0.62,0.85],
+        cd=[[0,0.86,0.96],[10,0.76,0.93],[20,0.62,0.85],
         [30,0.45,0.73],[40,0.32,0.62],[50,0.21,0.47],
         [60,0.13,0.34],[70,0.06,0.17],[80,0.04,0.06],
         [90,-0.02,-0.05],[100,-0.08,-0.14],[110,-0.19,-0.22],
@@ -655,33 +667,115 @@ class ConsumesEnergy:
         [150,-0.56,-0.66],[160,-0.61,-0.75],[170,-0.66,-0.79],
         [180,-0.63,-0.77]]
     
-    df=pd.DataFrame(cd,columns=['AoA','loaded','unloaded'])
-
-    if load == 'loaded':
-  
-        self.C_drag = df['loaded'].where(df['AoA'] == angle_of_attack).dropna().values[0]
+        df=pd.DataFrame(cd,columns=['Relative wind direction','loaded','unloaded'])
     
-    elif load == 'unloaded':
-        self.C_drag = df['unloaded'].where(df['AoA'] == angle_of_attack).dropna().values[0]
-         
+        if self.load == 'loaded':
+            self.C_drag = df['loaded'].where(df['Relative wind direction'] == self.rel_winddir).dropna().values[0]
+    
+        elif self.load == 'unloaded':
+            self.C_drag = df['unloaded'].where(df['Relative wind direction'] == self.rel_winddir).dropna().values[0]
+    
         return self.C_drag
     
+    def calculate_Cd_0(self):
+        if self.load == 'loaded':
+            self.Cd_0 = 0.86                            
+        elif self.load == 'unloaded':
+            self.Cd_0 = 0.96
+        return self.Cd_0 
     
-    def calculate_wind_influence(self):
-        U_wind = 2 # m/s
-        A_xv = 150
-        if self.wind_influence:
-            self.R_wind = 0.5 * calculate_C_drag() * self.rho_air * A_xv * U_wind **2 #- 0.5 * self.rho_air * self.C_drag * A_xv * V_g **2
-                    
-        else:
-            self.R_wind = 0
+    def calculate_H_above_water(self):
+        if self.load == 'loaded':
+            self.H_above = self.H - self.loaded_depth 
+        elif self.load == 'unloaded':
+            self.H_above = self.H - self.unloaded_depth
+        return self.H_above
+    
+    def calculate_A_xv(self):
+        #cubed barge assumed 
+        angle=0
+        if self.rel_winddir <91:
+            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(self.rel_winddir*np.pi/180) + self.L * np.sin(self.rel_winddir*np.pi/180))
+            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(self.rel_winddir*np.pi/180)
+        elif self.rel_winddir > 90:
+            angle = 90-(self.rel_winddir -90) # symmetric shape front and back. 
+            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(angle*np.pi/180) + self.L * np.sin(angle*np.pi/180))
+            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(angle*np.pi/180)
+        return self.A_xv , angle , self.A_ydir
+    
+    def calculate_wind_resistance(self):
+        self.R_wind = 0.5 * self.calculate_C_drag() * self.rho_air * self.calculate_A_xv()[0] * self.U_wind **2 - 0.5 * self.rho_air * self.calculate_Cd_0() * self.calculate_A_xv()[0] * self.V_g **2 /1000 #kN
+    # negative value is in the Cd  value. so negative winddirection gives negative value because of cd. 
+        return self.R_wind 
+    
+    # for the passive rudder: 
+    # 1. calculate the moment caused by wind and distance to centre of gravity # assume stays constant in middle
+    # 2. moment for counteraction is same, with distance to centre of gravity (assume stays constant) force fN,delta_r can be calculated. 
+    # 3. depends on angle delta_R the force as well as the moment, look at different angles so that smallest angle with R is chosen
+    # 4. print angle so that moment is the same.
+    # 5. calculate Rrx with Rrx = abs(Fn*sin(delta_r))
+    
+    def calculate_moment_wind(self):
+        self.wind_ydir = 0.5 * self.rho_air * self.calculate_A_xv()[2] * self.U_wind **2 * 1 
+        self.mom_wind = self.wind_ydir * self.L
+        # cd assumed 1, not sure if same cd as 90 deg as that is very small number.
+        return self.wind_ydir , self.mom_wind
+        
+    def calculate_Mry(self):
+        #calculate with known angle of rudder
+        self.dis_to_cog = self.L / 2
+        lamda = 2 # first assumption https://marineengineeringonline.com/tag/aspect-ratio/
+        A_R = 1/60 * self.B * self.L #https://www.marinesite.info/2021/05/aspect-ratio-force-acting-on-rudder.html
+        self.dr = 40
+        FN =   0.5 * self.rho_water * ( 6.13 * lamda/(lamda+2.25))* A_R * self.V_g **2 * np.sin(self.dr  * np.pi/180)      
+        Rry = np.cos(self.dr * np.pi/180) *  FN
+        Rrx = np.abs(FN*np.sin(self.dr * np.pi/180)) 
+        Mry = Rry * self.dis_to_cog    
+#         #alpha_r = delta_r/2 assumption
+#         #ignored hull factor ay on rudder force for now
+        
+        return Rry, Rrx, Mry, self.dr , FN 
+    
+    def calculate_angle(self):
+        # calculate angle of rudder and moments and resistance
+        lamda = 2 
+        A_R = 1/60 * self.B * self.L
+        dr = np.arange(1,41,1)
+        windmoment = self.calculate_moment_wind()[1]
+        restmoment = self.calculate_Mry()[2]-windmoment
+      #  if restmoment > 0:
+      #      Mry = self.calculate_Mry()[2]
+      #      Rrx = self.calculate_Mry()[1]
+      #      angle = self.calculate_Mry()[3]
             
-#     todo: 1) add the angle between wind force direction and vessel sailing direction to determine wind force to the vessel 2) add wind speed as input on the edge 
-# Raa = 0.5 * rho_a * C_da(phiWref) * A_xv * V_wrref**2 - 0.5 * rho_a * C_da(0) * A_xv * Vg**2
-# V_g komt later pas erin.
-#loaded/unloaded
-    
-        return self.R_wind
+        #else: # restmoment<0
+        Mry = 0
+        angle = 0
+        Rrx = 0
+        while Mry < windmoment:
+            angle += 1
+            FN =  0.5 * self.rho_water * ( 6.13 * lamda/(lamda+2.25))* A_R * self.V_g **2 * np.sin(angle  * np.pi/180) 
+            Rry = np.cos(angle * np.pi/180) *  FN
+            Mry = Rry * self.L/2
+            Rrx = np.abs(FN*np.sin(angle * np.pi/180)) /1000 #kN
+               # if  Mry > windmoment:
+               #     angle = dr[i]
+               #     Rrx = np.abs(FN*np.sin(dr[i] * np.pi/180))
+            if angle == 40:
+                break
+        
+        
+
+            
+        return angle, windmoment, Mry, Rrx, restmoment
+
+            
+
+            
+    def calculate_passive_rudder_resistance(self):
+        self.R_rudder = self.calculate_angle()[3]
+        
+        return self.R_rudder
     
     def calculate_total_resistance(self, v, h_0):
         """Total resistance:
@@ -696,6 +790,7 @@ class ConsumesEnergy:
         self.calculate_wave_resistance(v, h_0)
         self.calculate_residual_resistance(v, h_0)
         self.calculate_wind_influence()
+        self.calculate_rudder_resistance()
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = (
@@ -706,6 +801,7 @@ class ConsumesEnergy:
             + self.R_A
             + self.R_B
             + self.R_wind
+            + self.R_rudder
         )
 
         return self.R_tot
