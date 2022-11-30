@@ -384,7 +384,6 @@ class Movable(Locatable, Routeable, Log):
         """Initialization"""
 
         self.V_g_ave = V_g_ave
-        
         self.on_pass_edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
@@ -489,7 +488,7 @@ class Movable(Locatable, Routeable, Log):
                     0,
                     sub_orig,
                 )
-                yield self.env.timeout(distance / self.V_g_ave)
+                yield self.env.timeout(distance / self.v)
                 self.log_entry(
                     "Sailing from node {} to node {} sub edge {} stop".format(
                         origin, destination, index
@@ -531,13 +530,14 @@ class Movable(Locatable, Routeable, Log):
                 ) = opentnsim.strategy.get_upperbound_for_power2v(
                     self, width=150, depth=depth, margin=0
                 )
-                v = self.power2v(self, edge, upperbound)
-                
+                V_g_ave = self.power2v(self, edge, upperbound)
+                print(V_g_ave,'power2v')
                 # use computed power
                 value = self.P_given
-
+            self.V_g_ave = V_g_ave
             # determine time to pass edge
             timeout = distance / self.V_g_ave
+            # timeout = (distance / self.V_g_ave )* ( v/ self.V_g_ave)
 
             # Wait for edge resources to become available
             if "Resources" in edge.keys():
