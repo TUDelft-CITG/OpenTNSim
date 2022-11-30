@@ -21,6 +21,7 @@ except VersionConflict:
 
 requires = [
     "pandas>=0.24.0",
+    "openclsim",
     "numpy",
     "simpy",
     "networkx",
