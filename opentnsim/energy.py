@@ -19,6 +19,7 @@ import tqdm
 import opentnsim
 import opentnsim.strategy
 import opentnsim.graph_module
+from opentnsim.strategy import get_upperbound_for_power2v
 
 # Used for mathematical functions
 import math
@@ -174,6 +175,11 @@ def power2v(vessel, edge, upperbound):
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
+        if vessel.P_tot_given_profile:
+            vessel.P_tot_given = edge["Info"]["PowerApplied" ]                     
+        else:
+            vessel.P_tot_given = vessel.P_tot_given
+         
         # compute difference between power setting by captain and power needed for velocity
         diff = vessel.P_tot_given - vessel.P_tot
         logger.debug(
@@ -207,6 +213,11 @@ class ConsumesEnergy:
     - current_year: current year
     - nu: kinematic viscosity [m^2/s]
     - rho: density of the surrounding water [kg/m^3]
+    - rho_air: density of air [kg/m^3]
+    - U_wind: windspeed [m/s]
+    - rel_winddir: relative angle between wind attack and vessel sailing [degree], e.g. [0,10,20,...90,...180,...270,...360]
+    - load: loaded/uloaded,
+    - Height_ship: height of the ship [m]
     - g: gravitational accelleration [m/s^2]
     - x: number of propellers [-]
     - eta_o: open water efficiency of propeller [-]
@@ -227,12 +238,23 @@ class ConsumesEnergy:
         C_year,
         current_year=None,  # current_year
         bulbous_bow=False,
-        wind_influence=False,
+        sailing_on_power=False,
+        sailing_upstream=False,
         P_hotel_perc=0.05,
         P_hotel=None,
         P_tot_given=None,  # the actual power engine setting
         nu=1 * 10 ** (-6),
         rho=1000,
+        rho_water=1025,
+        consider_wind_influence = False,
+        consider_passive_rudder_resistance = False,
+        load = 'loaded', 
+        rho_air = 1.225,
+        U_wind = 2,
+        rel_winddir = None,
+        loaded_depth = 3.45 ,
+        unloaded_depth = 2.5,
+        Height_ship = 4,
         g=9.81,
         x=2,
         eta_o=0.4,
@@ -252,7 +274,8 @@ class ConsumesEnergy:
         self.V_g_profile = V_g_profile
         self.P_installed = P_installed
         self.bulbous_bow = bulbous_bow
-        self.wind_influence = wind_influence
+        self.sailing_on_power = sailing_on_power
+        self.sailing_upstream = sailing_upstream
         self.P_hotel_perc = P_hotel_perc
         if (
             P_hotel
@@ -265,6 +288,16 @@ class ConsumesEnergy:
         self.year = current_year
         self.nu = nu
         self.rho = rho
+        self.rho_water = rho_water 
+        self.rho_air = rho_air
+        self.consider_wind_influence = consider_wind_influence
+        self.consider_passive_rudder_resistance = consider_passive_rudder_resistance
+        self.load = load
+        self.U_wind = U_wind
+        self.rel_winddir = rel_winddir
+        self.loaded_depth = loaded_depth
+        self.unloaded_depth = unloaded_depth
+        self.Height_ship = Height_ship
         self.g = g
         self.x = x
         self.eta_o = eta_o
@@ -632,17 +665,135 @@ class ConsumesEnergy:
 
         return self.R_res
 
-    def calculate_wind_influence(self):
-        U_wind = 2 # m/s
-        if self.wind_influence:
-            self.R_wind = 0.5 * self.C_drag * self.rho_air * self.A_abw * U_wind
-                    
+#### wind / compensation for rudder
+    
+       
+    def calculate_C_drag(self):
+        # for a tanker ( ITTC: ) 
+        # cda = -cx (cx given for ships)
+        
+        cd=[[0,0.86,0.96],[10,0.76,0.93],[20,0.62,0.85],
+        [30,0.45,0.73],[40,0.32,0.62],[50,0.21,0.47],
+        [60,0.13,0.34],[70,0.06,0.17],[80,0.04,0.06],
+        [90,-0.02,-0.05],[100,-0.08,-0.14],[110,-0.19,-0.22],
+        [120,-0.29,-0.29],[130,-0.38,-0.40],[140,-0.47,-0.53],
+        [150,-0.56,-0.66],[160,-0.61,-0.75],[170,-0.66,-0.79],
+        [180,-0.63,-0.77]]
+    
+        df=pd.DataFrame(cd,columns=['Relative wind direction','loaded','unloaded'])
+    
+        if self.load == 'loaded':
+            self.C_drag = df['loaded'].where(df['Relative wind direction'] == self.rel_winddir).dropna().values[0]
+    
+        elif self.load == 'unloaded':
+            self.C_drag = df['unloaded'].where(df['Relative wind direction'] == self.rel_winddir).dropna().values[0]
+    
+        return self.C_drag
+    
+    def calculate_Cd_0(self):
+        if self.load == 'loaded':
+            self.Cd_0 = 0.86                            
+        elif self.load == 'unloaded':
+            self.Cd_0 = 0.96
+        return self.Cd_0 
+    
+    def calculate_H_above_water(self):
+        if self.load == 'loaded':
+            self.H_above = self.Height_ship - self.loaded_depth 
+        elif self.load == 'unloaded':
+            self.H_above = self.Height_ship - self.unloaded_depth
+        return self.H_above
+    
+    def calculate_A_xv(self):
+        #cubed barge assumed 
+        angle=0
+        if self.rel_winddir <91:
+            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(self.rel_winddir*np.pi/180) + self.L * np.sin(self.rel_winddir*np.pi/180))
+            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(self.rel_winddir*np.pi/180)
+        elif self.rel_winddir > 90:
+            angle = 90-(self.rel_winddir -90) # symmetric shape front and back. 
+            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(angle*np.pi/180) + self.L * np.sin(angle*np.pi/180))
+            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(angle*np.pi/180)
+        return self.A_xv , angle , self.A_ydir
+    
+    def calculate_wind_resistance(self, v):
+        if self.consider_wind_influence:
+            self.R_wind = 0.5 * self.calculate_C_drag() * self.rho_air * self.calculate_A_xv()[0] * self.U_wind **2 - 0.5 * self.rho_air * self.calculate_Cd_0() * self.calculate_A_xv()[0] * v **2 /1000 #kN
+    # negative value is in the Cd  value. so negative winddirection gives negative value because of cd. 
         else:
             self.R_wind = 0
-#     todo: 1) add the angle between wind force direction and vessel sailing direction to determine wind force to the vessel 2) add wind speed as input on the edge 
+        print(self.R_wind,'R_wind')    
+        return self.R_wind 
     
+    # for the passive rudder: 
+    # 1. calculate the moment caused by wind and distance to centre of gravity # assume stays constant in middle
+    # 2. moment for counteraction is same, with distance to centre of gravity (assume stays constant) force fN,delta_r can be calculated. 
+    # 3. depends on angle delta_R the force as well as the moment, look at different angles so that smallest angle with R is chosen
+    # 4. print angle so that moment is the same.
+    # 5. calculate Rrx with Rrx = abs(Fn*sin(delta_r))
     
-        return self.R_wind
+    def calculate_moment_wind(self):
+        self.wind_ydir = 0.5 * self.rho_air * self.calculate_A_xv()[2] * self.U_wind **2 * 1 
+        self.mom_wind = self.wind_ydir * self.L
+        # cd assumed 1, not sure if same cd as 90 deg as that is very small number.
+        return self.wind_ydir , self.mom_wind
+        
+    def calculate_Mry(self, v):
+        #calculate with known angle of rudder
+        self.dis_to_cog = self.L / 2
+        lamda = 2 # first assumption https://marineengineeringonline.com/tag/aspect-ratio/
+        A_R = 1/60 * self.B * self.L #https://www.marinesite.info/2021/05/aspect-ratio-force-acting-on-rudder.html
+        self.dr = 40 # maximum rudder turning angle
+        FN =   0.5 * self.rho_water * ( 6.13 * lamda/(lamda+2.25))* A_R * v **2 * np.sin(self.dr  * np.pi/180)      
+        Rry = np.cos(self.dr * np.pi/180) *  FN
+        Rrx = np.abs(FN*np.sin(self.dr * np.pi/180)) 
+        Mry = Rry * self.dis_to_cog    
+#         #alpha_r = delta_r/2 assumption
+#         #ignored hull factor ay on rudder force for now
+        
+        return Rry, Rrx, Mry, self.dr , FN 
+    
+    def calculate_angle(self, v):
+        # calculate angle of rudder and moments and resistance
+        lamda = 2 
+        A_R = 1/60 * self.B * self.L
+        dr = np.arange(1,41,1)
+        windmoment = self.calculate_moment_wind()[1]
+        restmoment = self.calculate_Mry(v)[2]-windmoment
+      #  if restmoment > 0:
+      #      Mry = self.calculate_Mry()[2]
+      #      Rrx = self.calculate_Mry()[1]
+      #      angle = self.calculate_Mry()[3]
+            
+        #else: # restmoment<0
+        Mry = 0
+        angle = 0
+        Rrx = 0
+        while Mry < windmoment:
+            angle += 1
+            FN =  0.5 * self.rho_water * ( 6.13 * lamda/(lamda+2.25))* A_R * v **2 * np.sin(angle  * np.pi/180) 
+            Rry = np.cos(angle * np.pi/180) *  FN
+            Mry = Rry * self.L/2
+            Rrx = np.abs(FN*np.sin(angle * np.pi/180)) /1000 #kN
+               # if  Mry > windmoment:
+               #     angle = dr[i]
+               #     Rrx = np.abs(FN*np.sin(dr[i] * np.pi/180))
+            if angle == 40:
+                break
+        
+            
+        return angle, windmoment, Mry, Rrx, restmoment
+
+            
+    def calculate_passive_rudder_resistance(self, v):
+
+        if self.consider_passive_rudder_resistance:
+            self.R_rudder = self.calculate_angle(v)[3]
+        else:
+            self.R_rudder = 0
+        print(self.R_rudder,'R_rudder')    
+        return self.R_rudder
+
     
     def calculate_total_resistance(self, v, h_0):
         """Total resistance:
@@ -656,7 +807,8 @@ class ConsumesEnergy:
         self.calculate_appendage_resistance(v)
         self.calculate_wave_resistance(v, h_0)
         self.calculate_residual_resistance(v, h_0)
-        self.calculate_wind_influence()
+        self.calculate_wind_resistance(v)
+        self.calculate_passive_rudder_resistance(v)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = (
@@ -667,6 +819,7 @@ class ConsumesEnergy:
             + self.R_A
             + self.R_B
             + self.R_wind
+            + self.R_rudder
         )
 
         return self.R_tot
@@ -756,6 +909,8 @@ class ConsumesEnergy:
                 self.eta_D = 0.26
             else:
                 self.eta_D = 0.25
+       
+        self.eta_D = 0.6 # assume the propulsion efficiency is 0.4 for the slow sailing in coastal water
         # Delivered Horse Power (DHP), P_d
         self.P_d = self.P_e / self.eta_D
 
@@ -1526,26 +1681,30 @@ class EnergyCalculation:
             """method to calculate the vessel speed relative to water in meters per second between two geometries
                 - V_w: vessel speed relative to the water
                 - U_C: current speed (water speed) with directions. sailing upstream U_c < 0; sailing downstream U_c > 0; calm still water U_c = 0
-                - V_a: vessel speed adjument during sailng. if captain increases speed, V_a > 0; if captain decreases speed, V_a < 0; if captain keeps constant speed, V_a = 0
+                
             """
 
-            V_w = 0
-
             # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
-
+            V_w = 0
             node_start = find_closest_node(self.FG, geom_start)[0]
             node_stop = find_closest_node(self.FG, geom_stop)[0]
             U_c = self.FG.get_edge_data(node_start, node_stop)["Info"][
                     "CurrentSpeed"
                 ]
-            
+
+
+
             if self.vessel.V_g_profile: 
                 V_g = self.FG.get_edge_data(node_start, node_stop)["Info"][
                     "VesselSpeedToGroundProfile" ]               
             else:               
                 V_g = self.vessel.V_g_ave 
-                        
-            V_w = V_g - U_c
+           # get the velocity to the water based on sailing directions 
+            if self.vessel.sailing_upstream: 
+                V_w = V_g - U_c   # the velocity to water when sailing upstream           
+            else:               
+                V_w = V_g + U_c   # the velocity to water when sailing downstream          
+            print(V_w,'V_w')
 
             # vessel speed relative to water between two points
             return V_w
@@ -1599,10 +1758,15 @@ class EnergyCalculation:
 
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
-                v = calculate_V_w(geometries[i], geometries[i + 1])
-                h_0 = self.vessel.calculate_h_squat(v, h_0)
+
+                # v = calculate_V_w(geometries[i], geometries[i + 1])
+                v = self.vessel.V_g_ave
+                if self.vessel.sailing_on_power is False:
+                    v = calculate_V_w(geometries[i], geometries[i + 1])
+
+                h_0 = self.vessel.calculate_h_squat(v=v, h_0=h_0)
                 print(h_0)
-                print(v)
+                print(v,'v4energy')
                 self.vessel.calculate_total_resistance(v=v, h_0=h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
@@ -1625,10 +1789,10 @@ class EnergyCalculation:
                 else:  # otherwise log P_tot
                     # Energy consumed per time step delta_t in the propulsion stage
                     energy_delta = (
-                        self.vessel.P_given * delta_t  / 3600
+                        self.vessel.P_given * delta_t * ( v/ V_g_ave) / 3600
                     )  #second/3600=hour -->kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
                     # energy_delta = (
-                    #     self.vessel.P_given * delta_t * ( v/ V_g_ave) / 3600
+                    #     self.vessel.P_given * delta_t  / 3600
                     # )  #second/3600=hour -->kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t,
                     # consuming 'energy_delta' kWh
