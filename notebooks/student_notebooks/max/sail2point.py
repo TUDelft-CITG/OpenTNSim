@@ -42,24 +42,25 @@ def heading(lon1, lat1, lon2, lat2):
                 lon1,
                 lat1,
                 lon2,
-                lat2, radians=False)[0]
+                lat2, radians=False)[1]
         return heading/180*math.pi
 
 class Sail2point():
     def __init__(self):
-        VESSEL_ID = "RAS_TN_GR"
-        self.waypoint_criteria  = 3# meters
+        VESSEL_ID = "titoneri1"
+        self.waypoint_criteria  = 0.75# meters
         self.pos = NavSatFix()
         self.FG = FG
 
         self.pub_currentwaypoint = rospy.Publisher(f"/{VESSEL_ID}/current_waypoint", NavSatFix, queue_size=10)
-        self.pub_headingref = rospy.Publisher(f"/{VESSEL_ID}/heading_ref_frank", Float32, queue_size=10)
+        self.pub_headingref = rospy.Publisher(f"/{VESSEL_ID}/heading_ref", Float32, queue_size=10)
 
         # Get geometry of nodes = Point (lon, lat) and store as waypoint
         self.waypoints = nx.get_node_attributes(self.FG, "geometry")
 
         self.currentpoint = 0
         self.currentwaypoint = self.waypoints[0]
+        print(self.waypoints[12])
 
 
 
@@ -67,7 +68,7 @@ class Sail2point():
     def update_pos(self, msg: NavSatFix()):
         self.pos.latitude  = msg.latitude
         self.pos.longitude = msg.longitude
-        print(self.pos.latitude, self.pos.longitude)
+        rospy.loginfo(f'Lat {self.pos.latitude},Lon {self.pos.longitude}')
         self.pose_update_control_func()
         
     def pose_update_control_func(self):
@@ -76,15 +77,15 @@ class Sail2point():
 
         # Calculate distance to the next waypoint
         dist = distance(shapely.geometry.shape(self.waypoints[self.currentpoint]).x, shapely.geometry.shape(self.waypoints[self.currentpoint]).y , self.pos.longitude, self.pos.latitude)
-        rospy.loginfo(f'Distance to next waypoint = {dist:.3f} meters')
+        rospy.loginfo(f'Sailing to node {self.currentpoint}. Distance to next waypoint = {dist:.3f} meters')
         #check if advance criteria is met
         if dist <= self.waypoint_criteria:
             # Go to next waypoint
-            if self.currentpoint >= len(self.waypoints):
+            # Length waypoints -1 because it's a circle and the end node is the start node again
+            if self.currentpoint >= len(self.waypoints)-1:
                 self.currentpoint = 1
             else:
                 self.currentpoint += 1
-        print(f'Index of current waypoint is {self.currentpoint}')
 
         self.publishCurrentWaypoint()
         self.publishHeadingRef()
@@ -111,12 +112,13 @@ class Sail2point():
         self.heading_ref = heading(shapely.geometry.shape(self.waypoints[self.currentpoint]).x, shapely.geometry.shape(self.waypoints[self.currentpoint]).y , self.pos.longitude, self.pos.latitude)
 
         pub_msg.data = self.heading_ref
+        rospy.loginfo(f"Heading_ref: {pub_msg}")
 
         self.pub_headingref.publish(pub_msg)
     
 
 def main():
-    VESSEL_ID = "RAS_TN_GR" #what topic to subscribe to
+    VESSEL_ID = "titoneri1" #what topic to subscribe to
 
     # initialize ROS node and subscribers
     rospy.init_node(f"{VESSEL_ID}_sail_2_point", anonymous=False, log_level= rospy.INFO)
@@ -129,7 +131,7 @@ def main():
     #print(read_network())
     
     s2p = Sail2point()
-    rospy.Subscriber(f"/{VESSEL_ID}/geopos_est", NavSatFix, callback=s2p.update_pos)
+    rospy.Subscriber(f"/{VESSEL_ID}/geoPos_est", NavSatFix, callback=s2p.update_pos)
     rospy.spin()
 
 if __name__ == '__main__':
