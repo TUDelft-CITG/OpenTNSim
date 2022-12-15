@@ -21,6 +21,7 @@ except VersionConflict:
 
 requires = [
     "pandas>=0.24.0",
+    "tqdm",
     "numpy",
     "simpy",
     "networkx",
