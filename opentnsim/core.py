@@ -5,6 +5,9 @@ import datetime
 import logging
 import random
 import uuid
+import warnings
+
+import deprecated
 
 import networkx as nx
 import numpy as np
@@ -12,6 +15,8 @@ import numpy as np
 # spatial libraries
 import pyproj
 import shapely.geometry
+import shapely
+
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -27,6 +32,9 @@ import opentnsim.graph_module
 
 
 logger = logging.getLogger(__name__)
+
+
+Geometry = shapely.Geometry
 
 
 class HasResource(SimpyObject):
@@ -252,7 +260,7 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.env.FG, route=self.route)
+            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.graph, route=self.route)
 
         return h_min
 
@@ -268,7 +276,7 @@ class VesselProperties:
     ):
         """Calculate a path based on vessel restrictions"""
 
-        graph = graph if graph else self.env.FG
+        graph = graph if graph else self.graph
         minWidth = minWidth if minWidth else 1.1 * self.B
         minHeight = minHeight if minHeight else 1.1 * self.H
         minDepth = minDepth if minDepth else 1.1 * self.T
@@ -315,21 +323,44 @@ class VesselProperties:
             return nx.dijkstra_path(graph, origin, destination)
 
 
-class Routeable:
+class Routable(SimpyObject):
     """Mixin class: Something with a route (networkx format)
 
     - route: list of node-IDs
     """
 
     def __init__(self, route, complete_path=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         """Initialization"""
+        super().__init__(*args, **kwargs)
+        if "env" in kwargs:
+            has_fg = hasattr(kwargs["env"], "FG")
+            has_graph = hasattr(kwargs["env"], "graph")
+            if has_fg and not has_graph:
+                warnings.warn(".FG attribute has been renamed to .graph, please update your code", warnings.DeprecationWarning)
+            assert (
+                has_fg or has_graph
+            ), "Routable expects `.graph` (a networkx graph) to be present as an attribute on the environment"
+        super().__init__(*args, **kwargs)
         self.route = route
         self.complete_path = complete_path
 
+    @property
+    def graph(self):
+        if hasattr(self.env, "graph"):
+            return self.env.graph
+        elif hasattr(self.env, "FG"):
+            return self.env.FG
+        else:
+            raise ValueError("Routable expects .graph to be present on env")
 
-class Movable(Locatable, Routeable, Log):
-    """Mixin class: Something can move
+
+@deprecated.deprecated(reason="Use Routable instead of Routeable")
+class Routeable(Routable):
+    """Old name for Mixin class: renamed to Routable."""
+
+
+class Movable(Locatable, Routable, Log):
+    """Mixin class: Something can move.
 
     Used for object that can move with a fixed speed
 
@@ -337,25 +368,26 @@ class Movable(Locatable, Routeable, Log):
     - v: speed
     """
 
-    def __init__(self, v, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, v: float, *args, **kwargs):
         """Initialization"""
         self.v = v
+        super().__init__(*args, **kwargs)
         self.on_pass_edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    def move(self):
+    def move(self, destination: Geometry = None, engine_order: float = 1.0, duration: float = None):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
+
         self.distance = 0
         speed = self.v
 
         # Check if vessel is at correct location - if not, move to location
-        if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
+        if self.geometry != nx.get_node_attributes(self.graph, "geometry")[self.route[0]]:
             orig = self.geometry
-            dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+            dest = nx.get_node_attributes(self.graph, "geometry")[self.route[0]]
 
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
@@ -376,7 +408,7 @@ class Movable(Locatable, Routeable, Log):
             self.node = origin
             yield from self.pass_edge(origin, destination)
             # we arrived at destination
-            self.geometry = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[destination]
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
@@ -386,9 +418,9 @@ class Movable(Locatable, Routeable, Log):
             logger.debug("  current_speed:  not set")
 
     def pass_edge(self, origin, destination):
-        edge = self.env.FG.edges[origin, destination]
-        orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
-        dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
+        edge = self.graph.edges[origin, destination]
+        orig = nx.get_node_attributes(self.graph, "geometry")[origin]
+        dest = nx.get_node_attributes(self.graph, "geometry")[destination]
 
         for on_pass_edge_function in self.on_pass_edge_functions:
             on_pass_edge_function(origin, destination)
@@ -457,8 +489,8 @@ class Movable(Locatable, Routeable, Log):
 
             # This is the case if we are sailing on power
             if getattr(self, "P_tot_given", None) is not None:
-                edge = self.env.FG.edges[origin, destination]
-                depth = self.env.FG.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+                edge = self.graph.edges[origin, destination]
+                depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
 
                 # estimate 'grounding speed' as a useful upperbound
                 (
@@ -475,7 +507,7 @@ class Movable(Locatable, Routeable, Log):
 
             # Wait for edge resources to become available
             if "Resources" in edge.keys():
-                with self.env.FG.edges[origin, destination]["Resources"].request() as request:
+                with self.graph.edges[origin, destination]["Resources"].request() as request:
                     yield request
                     # we had to wait, log it
                     if arrival != self.env.now:
