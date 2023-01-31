@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import pickle
 import math
+
+
 import matplotlib.pyplot as plt
-
 import rospy
-
 import pyproj
-
 import numpy as np
 import networkx as nx
 import geopandas as gpd
@@ -15,12 +14,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from std_msgs.msg import Float32
+from std_msgs.msg import Float32MultiArray
 from sensor_msgs.msg import NavSatFix
+import sail2point
 from network_gdf import network_FG
 
 FG = network_FG()
 
-
+SLOW_RPM = 1000
+FAST_RPM = 2000
 
 def read_network():
     filename = '/home/gijn/catkin_ws/src/my_robot_controller/scripts/FG_pond.gpickle'
@@ -44,19 +46,18 @@ def heading(lon1, lat1, lon2, lat2):
                 lat1,
                 lon2,
                 lat2, radians=False)[1]
-        heading_rad = heading/180*math.pi
-        heading_0_2pi = np.mod(heading_rad, np.pi * 2)
-        return heading_0_2pi
+        return heading/180*math.pi
 
 class Sail2point():
     def __init__(self):
         VESSEL_ID = "RAS_TN_DB"
-        self.waypoint_criteria  = 3# meters
+        self.waypoint_criteria  = 1.5# meters
         self.pos = NavSatFix()
         self.FG = FG
         
         self.pub_currentwaypoint = rospy.Publisher(f"/{VESSEL_ID}/current_waypoint", NavSatFix, queue_size=10)
         self.pub_headingref = rospy.Publisher(f"/{VESSEL_ID}/heading_ref", Float32, queue_size=10)
+        self.pub_u_ref = rospy.Publisher(f"/{VESSEL_ID}/u_ref", Float32MultiArray, queue_size=10)
 
         # Get geometry of nodes = Point (lon, lat) and store as waypoint
         self.waypoints = nx.get_node_attributes(self.FG, "geometry")
@@ -64,6 +65,7 @@ class Sail2point():
         self.lap_counter = 0
         self.currentpoint = 0
         self.currentwaypoint = self.waypoints[0]
+        self.current_rpm = [FAST_RPM, FAST_RPM, np.nan, np.nan, np.nan] #[rpm_left, rpm_right, ..., alpha1, alpha2]
         print(self.waypoints[0])
 
 
@@ -74,6 +76,7 @@ class Sail2point():
         self.pos.longitude = msg.longitude
         rospy.loginfo(f'Lat {self.pos.latitude},Lon {self.pos.longitude}')
         self.pose_update_control_func()
+        
         
     def pose_update_control_func(self):
         """Calculate distance to the next waypoint and check if it needs to be
@@ -91,8 +94,23 @@ class Sail2point():
                 self.currentpoint = 1
             else:
                 self.currentpoint += 1
+        if self.currentpoint > 6:
+            self.current_rpm = [SLOW_RPM, SLOW_RPM, np.nan, np.nan, np.nan]
+        else: 
+            self.current_rpm = [FAST_RPM, FAST_RPM, np.nan, np.nan, np.nan]
         self.publishCurrentWaypoint()
         self.publishHeadingRef()
+        self.publish_u_ref()
+
+    def publish_u_ref(self):
+        """Publish current RPM to topic"""
+
+        pub_msg = Float32MultiArray()
+
+        pub_msg.data = self.current_rpm
+
+        self.pub_u_ref.publish(pub_msg)
+
 
 
     def publishCurrentWaypoint(self):
@@ -119,7 +137,7 @@ class Sail2point():
         rospy.loginfo(f"Heading_ref: {pub_msg}")
 
         self.pub_headingref.publish(pub_msg)
-    
+
 
 def main():
     VESSEL_ID = "RAS_TN_DB" #what topic to subscribe to
@@ -127,10 +145,6 @@ def main():
     # initialize ROS node and subscribers
     rospy.init_node(f"{VESSEL_ID}_sail_2_point", anonymous=False, log_level= rospy.INFO)
 
-    #waypoints = []
-    #waypoints.append(("Back of the boat", 52.00162378864698, 4.371862804893368))
-    #waypoints.append(("Middle of the boat", 52.001605624642195, 4.371874204281952))
-    #waypoints.append(("Front of the boat", 52.00158126835151, 4.371891638640965))
 
     #print(read_network())
     
@@ -140,7 +154,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-    
-
-
