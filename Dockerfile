@@ -1,10 +1,12 @@
 # Start with pyramid app image
 FROM continuumio/miniconda3
+ENV DEBIAN_FRONTEND noninteractive
+RUN apt update
+RUN apt install -y build-essential python3-dev
 
 # Install conda stuff first
 # install gdal library
-RUN conda install nomkl pyproj
-RUN conda install -c conda-forge gdal nomkl
+RUN conda install -c conda-forge gdal nomkl pyproj
 
 WORKDIR /OpenTNSim
 ADD . /OpenTNSim
