@@ -38,6 +38,7 @@ requires = [
     "Flask-cors",
     "sphinx_rtd_theme",
     "Dill",
+    "Deprecated"
 ]
 
 setup_requirements = [
