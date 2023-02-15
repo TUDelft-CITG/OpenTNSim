@@ -10,13 +10,11 @@ import simpy
 import networkx as nx
 import numpy as np
 
-# OpenTNSim
-from opentnsim import vessel_traffic_service
-
 # spatial libraries
 import pyproj
 import shapely.geometry
 
+from shapely.ops import transform
 # additional packages
 import datetime
 
@@ -28,8 +26,20 @@ class SimpyObject:
     """
 
     def __init__(self, env, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.env = env
+        super().__init__(*args, **kwargs)
+
+class IsDetectorNode:
+
+    def __init__(
+        self,
+        infrastructure,
+        *args,
+        **kwargs
+    ):
+
+        self.infrastructure = infrastructure
+        super().__init__(*args, **kwargs)
 
 class HasLength(SimpyObject): #used by IsLock and IsLineUpArea to regulate number of vessels in each lock cycle and calculate repsective position in lock chamber/line-up area
     """Mixin class: Something with a storage capacity
@@ -41,7 +51,6 @@ class HasLength(SimpyObject): #used by IsLock and IsLineUpArea to regulate numbe
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.length = simpy.Container(self.env, capacity = length, init=remaining_length)
-        self.pos_length = simpy.Container(self.env, capacity = length, init=remaining_length)
 
 class HasCapacity(SimpyObject):
 
@@ -56,18 +65,16 @@ class HasResource(SimpyObject):
 
     nr_resources: nr of requests that can be handled simultaneously"""
 
-    def __init__(self, typ=None, number_of_independent_resources = 1, nr_resources = 1, priority=False, *args, **kwargs):
+    def __init__(self, capacity = 1, independent_resources = {}, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        if number_of_independent_resources <= 1:
-            if typ == 'quay':
-                self.resource = (simpy.PriorityResource(self.env, capacity=1000) if priority else simpy.Resource(self.env,capacity=1000))
-            else:
-                self.resource = (simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources))
+        if not independent_resources:
+            self.resource = simpy.PriorityResource(self.env, capacity=capacity)
+
         else:
-            self.resource = []
-            for independent_resource in range(number_of_independent_resources):
-                self.resource.append((simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env,capacity=nr_resources)))
+            self.resource = {}
+            for resource_name,capacity in independent_resources.items():
+                self.resource[resource_name] = simpy.PreemptiveResource(self.env, capacity=capacity)
 
 class HasType:
     """Mixin class: Something that has a name and id
@@ -104,7 +111,7 @@ class Locatable:
         self.geometry = geometry
         self.node = None
 
-class Log(SimpyObject):
+class Log:
     """Mixin class: Something that has logging capability
 
     log: log message [format: 'start activity' or 'stop activity']
@@ -191,11 +198,12 @@ class Movable(Locatable, Routeable, Log):
         self.on_pass_node = []
         self.on_look_ahead_to_node = []
         self.on_pass_edge = []
+        self.on_complete_pass_edge = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     def initial_timeout(self):
-        yield self.env.timeout(self.metadata['start_time'])
-        self.metadata['start_time'] = 0
+        yield self.env.timeout(self.metadata['delay'])
+        self.metadata['delay'] = 0
 
     def move(self):
         """determine distance between origin and destination, and
@@ -203,7 +211,7 @@ class Movable(Locatable, Routeable, Log):
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
         self.distance = 0
-        if self.metadata['start_time'] != 0: yield from Movable.initial_timeout(self)
+        if self.metadata['delay'] != 0: yield from Movable.initial_timeout(self)
 
         # Check if vessel is at correct location - if not, move to location
         if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
@@ -226,11 +234,6 @@ class Movable(Locatable, Routeable, Log):
                 destination = self.route[node[0] + 1]
 
             try:
-                yield from self.look_ahead_to_node(destination)
-            except simpy.exceptions.Interrupt as e:
-                break
-
-            try:
                 yield from self.pass_node(origin)
             except simpy.exceptions.Interrupt as e:
                 break
@@ -239,6 +242,17 @@ class Movable(Locatable, Routeable, Log):
                 yield from self.pass_edge(origin, destination)
             except simpy.exceptions.Interrupt as e:
                 break
+
+            try:
+                self.complete_pass_edge(destination)
+            except simpy.exceptions.Interrupt as e:
+                break
+
+            try:
+                yield from self.look_ahead_to_node(destination)
+            except simpy.exceptions.Interrupt as e:
+                break
+
 
             if node[0] + 2 == len(self.route):
                 break
@@ -267,6 +281,13 @@ class Movable(Locatable, Routeable, Log):
 
     def pass_edge(self, origin, destination):
         edge = self.env.FG.edges[origin, destination]
+        previous_node = None
+        if self.route[0] != origin:
+            previous_node = self.route[self.route.index(origin)-1]
+        next_node = None
+        if self.route[-1] != destination:
+            next_node = self.route[self.route.index(destination)+1]
+
         orig = nx.get_node_attributes(self.env.FG, "geometry")[origin]
         dest = nx.get_node_attributes(self.env.FG, "geometry")[destination]
 
@@ -276,87 +297,89 @@ class Movable(Locatable, Routeable, Log):
             except simpy.exceptions.Interrupt as e:
                 logger.debug("Re-routing", exc_info=True)
                 raise simpy.exceptions.Interrupt('Re-routing')
-                break
 
-        if "Lock" in self.env.FG.nodes[origin].keys():
-            orig = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
+        if next_node and ("Line-up area" in self.env.FG.edges[destination,next_node].keys() or "Line-up area" in self.env.FG.edges[next_node,destination].keys()):
+            dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
 
-        if "Lock" in self.env.FG.nodes[destination].keys():
-            dest = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
-
-        if "Line-up area" in self.env.FG.nodes[origin].keys():
+        if "Line-up area" in self.env.FG.edges[origin,destination].keys() or "Line-up area" in self.env.FG.edges[destination,origin].keys():
             orig = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
 
-        if "Line-up area" in self.env.FG.nodes[destination].keys():
-            dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
+        if next_node and ("Lock" in self.env.FG.edges[destination,next_node].keys() or "Lock" in self.env.FG.edges[next_node,destination].keys()):
+            dest = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
+
+        if "Lock" in self.env.FG.edges[origin,destination].keys() or "Lock" in self.env.FG.edges[destination,origin].keys():
+            orig = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
 
         if "Terminal" in self.env.FG.edges[origin,destination].keys():
             orig = shapely.geometry.Point(self.terminal_pos_lat, self.terminal_pos_lon)
 
-        if 'geometry' in edge:
-            edge_route = np.array(edge['geometry'])
+        edge_route = np.array(edge['geometry'])
 
-            # check if edge is in the sailing direction, otherwise flip it
-            distance_from_start = self.wgs84.inv(orig.x,orig.y,edge_route[0][0],edge_route[0][1],)[2]
-            distance_from_stop = self.wgs84.inv(orig.x,orig.y,edge_route[-1][0],edge_route[-1][1],)[2]
-            if distance_from_start>distance_from_stop:
-                # when the distance from the starting point is greater than from the end point
-                edge_route = np.flipud(np.array(edge['geometry']))
+        # check if edge is in the sailing direction, otherwise flip it
+        distance_from_start = self.wgs84.inv(orig.x,orig.y,edge_route[0][0],edge_route[0][1],)[2]
+        distance_from_stop = self.wgs84.inv(orig.x,orig.y,edge_route[-1][0],edge_route[-1][1],)[2]
 
-            for index, pt in enumerate(edge_route[:-1]):
-                sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
-                sub_dest = shapely.geometry.Point(edge_route[index+1][0], edge_route[index+1][1])
+        if distance_from_start>distance_from_stop:
+            # when the distance from the starting point is greater than from the end point
+            edge_route = np.flipud(np.array(edge['geometry']))
 
-                distance = self.wgs84.inv(shapely.geometry.asShape(sub_orig).x,
+        edge_route[0] = orig
+        edge_route[-1] = dest
+        self.distance = 0
+
+        for index, pt in enumerate(edge_route[:-1]):
+            sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
+            sub_dest = shapely.geometry.Point(edge_route[index+1][0], edge_route[index+1][1])
+
+            sub_distance = self.wgs84.inv(shapely.geometry.asShape(sub_orig).x,
                                           shapely.geometry.asShape(sub_orig).y,
                                           shapely.geometry.asShape(sub_dest).x,
                                           shapely.geometry.asShape(sub_dest).y,)[2]
-                self.distance += distance
-                ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, origin)
-                self.log_entry("Sailing from node {} to node {} sub edge {} start".format(origin, destination, index), self.env.now, ukc, sub_orig,)
-                yield self.env.timeout(distance / self.current_speed)
-                ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, destination)
-                self.log_entry("Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index), self.env.now, ukc, sub_dest,)
-            self.geometry = dest
 
-        else:
-            distance = self.wgs84.inv(shapely.geometry.asShape(orig).x,
-                                      shapely.geometry.asShape(orig).y,
-                                      shapely.geometry.asShape(dest).x,
-                                      shapely.geometry.asShape(dest).y,)[2]
+            self.distance = sub_distance
 
-            self.distance += distance
-            arrival = self.env.now
-
-            # Act based on resources
-            if "Resources" in edge.keys():
-                ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, origin)
-                with self.env.FG.edges[origin, destination]["Resources"].request() as request:
-                    yield request
-
-                    if arrival != self.env.now:
-                        self.log_entry("Waiting to pass edge {} - {} start".format(origin, destination), arrival, ukc, orig,)
-                        ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, origin)
-                        self.log_entry("Waiting to pass edge {} - {} stop".format(origin, destination), self.env.now, ukc, orig,)
-
-                    self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, 0, orig,)
-                    yield self.env.timeout(distance / self.current_speed)
-                    ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, destination)
-                    self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
-
+            if 'Vertical tidal restriction' in self.env.FG.nodes[origin]:
+                ukc = self.env.vessel_traffic_service.provide_ukc_clearance(self, origin)
             else:
-                if 'Info' in self.env.FG.nodes[origin] and 'Vertical tidal restriction' in list(self.env.FG.nodes[origin]['Info'].keys()):
-                    ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, origin)
+                ukc = 0
+
+            if len(edge_route) > 2:
+                if index == 0:
+                    self.log_entry("Sailing from node {} to node {} sub edge {} start".format(origin, destination, index), self.env.now, ukc, sub_orig,)
+                elif index == len(edge_route[:-1])-1:
+                    self.log_entry("Sailing from node {} sub edge {} to node {} start".format(origin, index, destination), self.env.now, ukc,sub_orig, )
                 else:
-                    ukc = []
-                self.log_entry("Sailing from node {} to node {} start".format(origin, destination), self.env.now, ukc, orig,)
-                yield self.env.timeout(distance / self.current_speed)
-                if 'Info' in self.env.FG.nodes[destination] and 'Vertical tidal restriction' in list(self.env.FG.nodes[destination]['Info'].keys()):
-                    ukc = vessel_traffic_service.VesselTrafficService.provide_ukc_clearance(self, destination)
+                    self.log_entry("Sailing from node {} sub edge {} to node {} sub edge {} start".format(origin, index, destination,index + 1), self.env.now, ukc,sub_orig, )
+            else:
+                self.log_entry("Sailing from node {} to node {} start".format(origin, destination),self.env.now, ukc, sub_orig, )
+
+            yield self.env.timeout(self.distance / self.current_speed)
+
+            if 'Vertical tidal restriction' in self.env.FG.nodes[destination]:
+                ukc = self.env.vessel_traffic_service.provide_ukc_clearance(self, destination)
+            else:
+                ukc = 0
+
+            if len(edge_route) > 2:
+                if index == 0:
+                    self.log_entry("Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index),self.env.now, ukc, sub_dest, )
+                elif index == len(edge_route[:-1])-1:
+                    self.log_entry("Sailing from node {} sub edge {} to node {} stop".format(origin, index, destination),self.env.now, ukc, sub_dest, )
                 else:
-                    ukc = []
-                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination), self.env.now, ukc, dest,)
-            self.geometry = dest
+                    self.log_entry("Sailing from node {} sub edge {} to node {} sub edge {} stop".format(origin, index, destination, index+1), self.env.now, ukc, sub_dest,)
+            else:
+                self.log_entry("Sailing from node {} to node {} stop".format(origin, destination, index),self.env.now, ukc, sub_dest, )
+
+        self.geometry = dest
+
+    def complete_pass_edge(self,destination):
+        for gen in self.on_complete_pass_edge:
+            try:
+                gen(destination)
+            except simpy.exceptions.Interrupt as e:
+                logger.debug("Completed", exc_info=True)
+                raise simpy.exceptions.Interrupt('Completed')
+                break
 
     @property
     def current_speed(self):

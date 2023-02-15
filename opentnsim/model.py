@@ -21,6 +21,7 @@ import random
 
 # import core from self
 import opentnsim.core as core
+import opentnsim.vessel_traffic_service as vessel_traffic_service
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ class Simulation(core.Identifiable):
     A class to generate vessels from a database
     """
 
-    def __init__(self, simulation_start, graph, scenario=None):
+    def __init__(self, simulation_start, graph, hydrodynamic_data=None, scenario=None):
         """ 
         Initialization 
         
@@ -178,13 +179,16 @@ class Simulation(core.Identifiable):
         self.environment.vessels = []
         self.output = {}
 
+        if hydrodynamic_data != None:
+            self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data)
+
     def add_vessels(
         self,
         origin,
         destination,
-        fleet_distribution,
-        vessel = None,
+        vessel=None,
         vessel_generator = None,
+        fleet_distribution=None,
         arrival_distribution=1,
         arrival_process="Markovian",
     ):

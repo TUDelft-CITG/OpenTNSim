@@ -8,6 +8,9 @@ import pandas as pd
 import hatyan
 import sys
 import os
+import time as timepy
+
+import matplotlib.pyplot as plt
 
 from datetime import timedelta
 
@@ -125,7 +128,7 @@ class NetworkProperties:
                 if t[index_range_min] - prev_root < deltat / 2: index_range_min = index_range_min - 1
                 index_range_max = bisect.bisect_right(t, root[1])
                 if index_range_max == len(t) or t[index_range_max] - root[1] < deltat / 2: index_range_max = index_range_max - 1
-                if index_range_min == index_range_max: continue
+                if index_range_min >= index_range_max: continue
                 max_index.append(np.argmax(wlev[index_range_min:index_range_max]) + index_range_min)
                 max_t.append(t[max_index[-1]])
                 max_wlev.append(wlev[max_index[-1]])
@@ -179,7 +182,6 @@ class NetworkProperties:
                     - network: a graph constructed with the DiGraph class of the networkx package
 
             """
-
             #Function that is used in the calculation of info that needs to be appended to the edges
             def lag_finder(time_signal, signal1, signal2):
                 nsamples = len(signal2)
@@ -211,13 +213,15 @@ class NetworkProperties:
                 network.edges[edge[1]]['Info']['MBL'] = []
 
                 #Appends data to the edges
-                network.edges[edge[1]]['Info']['Width'] = np.min([network.nodes[edge[1][0]]['Info']['Width'], network.nodes[edge[1][1]]['Info']['Width']])
+                if 'Width' in list(network.nodes[node[1]]['Info'].keys()):
+                    network.edges[edge[1]]['Info']['Width'] = np.min([network.nodes[edge[1][0]]['Info']['Width'], network.nodes[edge[1][1]]['Info']['Width']])
 
                 if simulation_type == 'Accessibility':
-                    network.edges[edge[1]]['Info']['Tidal phase lag'] = []
-                    network.edges[edge[1]]['Info']['Tidal phase lag'] = lag_finder(network.nodes[edge[1][0]]['Info']['Astronomical tide'][0],
-                                                                                   network.nodes[edge[1][0]]['Info']['Astronomical tide'][1],
-                                                                                   network.nodes[edge[1][1]]['Info']['Astronomical tide'][1])
+                    if 'Tidal phase lag' not in list(network.nodes[node[1]]['Info'].keys()):
+                        network.edges[edge[1]]['Info']['Tidal phase lag'] = []
+                        network.edges[edge[1]]['Info']['Tidal phase lag'] = lag_finder(network.nodes[edge[1][0]]['Info']['Astronomical tide'][0],
+                                                                                       network.nodes[edge[1][0]]['Info']['Astronomical tide'][1],
+                                                                                       network.nodes[edge[1][1]]['Info']['Astronomical tide'][1])
 
                 #If there is a terminal in the edge, the greatest value for the MBL or depth of the two nodes creating the edge are used
                 if 'Terminal' in network.edges[edge[1]]:
@@ -235,7 +239,6 @@ class NetworkProperties:
                 Input:
                     - network: a graph constructed with the DiGraph class of the networkx package
             """
-
             #Loops over the nodes of the network and finds the edges attached to this node by a second loop over the nodes
             for node1 in network.nodes:
                 nodes = []
@@ -271,9 +274,8 @@ class NetworkProperties:
                         course = 360 + course
 
                     #Calculation of the current velocity components
-                    for t in range(len(network.nodes[node1]['Info']['Times'])):
-                        network.nodes[node1]['Info']['Cross-current'][node2].append(abs(current_velocity[t] * np.sin((current_direction[t] - course) / 180 * math.pi)))
-                        network.nodes[node1]['Info']['Longitudinal current'][node2].append(abs(current_velocity[t] * np.cos((current_direction[t] - course) / 180 * math.pi)))
+                    # network.nodes[node1]['Info']['Cross-current'][node2] = [([abs(current_velocity[l][t] * np.sin((current_direction[l][t] - course) / 180 * math.pi)) for t in range(len(network.nodes[node1]['Info']['Times']))]) for l in range(len(network.nodes[node1]['Info']['Layers']))]
+                    # network.nodes[node1]['Info']['Longitudinal current'][node2] = [([abs(current_velocity[l][t] * np.cos((current_direction[l][t] - course) / 180 * math.pi)) for t in range(len(network.nodes[node1]['Info']['Times']))]) for l in range(len(network.nodes[node1]['Info']['Layers']))]
 
         #Continuation of the append_data_to_nodes function by looping over all the nodes
         for node in enumerate(network.nodes):
@@ -286,14 +288,31 @@ class NetworkProperties:
             for data_name in list(data.keys()):
                 network.nodes[node[1]]['Info'][data_name] = []
 
-            if 'Times' in list(network.nodes[node[1]]['Info'].keys()):
-                network.nodes[node[1]]['Info']['Times'] = list(data['Times'].values)
-            if 'MBL' in list(network.nodes[node[1]]['Info'].keys()):
-                network.nodes[node[1]]['Info']['MBL'] = float(data['MBL'][node[0]].values)
+            #network.nodes[node[1]]['Info']['Times'] = [(time - np.datetime64('1970-01-01T00:00:00.000000')) / np.timedelta64(1, 's') for time in list(data['Times'].values)]
+            network.nodes[node[1]]['Info']['Times'] = list(data['Times'].values)
+            if 'Relative layer height' in list(network.nodes[node[1]]['Info'].keys()):
+                network.nodes[node[1]]['Info']['Layers'] = list(data['Relative layer height'].values)
+            else:
+                network.nodes[node[1]]['Info']['Layers'] = [1]
+
             if 'Width' in list(network.nodes[node[1]]['Info'].keys()):
                 network.nodes[node[1]]['Info']['Width'] = float(data['Width'][node[0]].values)
             if 'Depth' in list(network.nodes[node[1]]['Info'].keys()):
                 network.nodes[node[1]]['Info']['Depth'] = float(data['Depth'][node[0]].values)
+            if 'MBL' in list(network.nodes[node[1]]['Info'].keys()):
+                if node[1] == '8867980' or node[1] == '8861158' or node[1] == '8867547':
+                    network.nodes[node[1]]['Info']['MBL'] = 16.4
+                elif node[1] == '8866999' or node[1] == '8866859':
+                    network.nodes[node[1]]['Info']['MBL'] = 25.0
+                else:
+                    network.nodes[node[1]]['Info']['MBL'] = float(data['MBL'][node[0]].values)
+            else:
+                if node[1] == '8867980' or node[1] == '8861158' or node[1] == '8867547':
+                    network.nodes[node[1]]['Info']['MBL'] = 16.4
+                elif node[1] == '8866999' or node[1] == '8866859':
+                    network.nodes[node[1]]['Info']['MBL'] = 25.0
+                else:
+                    network.nodes[node[1]]['Info']['MBL'] = float(data['Depth'][node[0]].values)
             if 'Water level' in list(network.nodes[node[1]]['Info'].keys()):
                 network.nodes[node[1]]['Info']['Water level'] = list(data['Water level'][node[0]].values)
             if 'Current velocity' in list(network.nodes[node[1]]['Info'].keys()):
@@ -302,14 +321,24 @@ class NetworkProperties:
                 network.nodes[node[1]]['Info']['Current direction'] = list(data['Current direction'][node[0]].values) #.transpose('STATION', 'TIME', 'LAYER')
             if 'Salinity' in list(network.nodes[node[1]]['Info'].keys()):
                 network.nodes[node[1]]['Info']['Salinity'] = list(data['Salinity'][node[0]].values) #.transpose('STATION', 'TIME', 'LAYER')
+            if 'Tidal phase lag' in list(network.nodes[node[1]]['Info'].keys()):
+                network.nodes[node[1]]['Info']['Tidal phase lag'] = float(data['Phase lag'][node[0]].values)
 
             if simulation_type == 'Accessibility':
                 # Calculation of the water level which is exceeded 99% of the tides
                 network.nodes[node[1]]['Info']['Vertical tidal restriction'] = {}
                 network.nodes[node[1]]['Info']['Horizontal tidal restriction'] = {}
-                network.nodes[node[1]]['Info']['Astronomical tide'] = astronomical_tide(network.nodes[node[1]]['Info']['Times'],network.nodes[node[1]]['Info']['Water level'])
+                if 'Astronomic water level' not in dir(data):
+                    network.nodes[node[1]]['Info']['Astronomical tide'] = astronomical_tide(network.nodes[node[1]]['Info']['Times'],network.nodes[node[1]]['Info']['Water level'])
+                else:
+                    network.nodes[node[1]]['Info']['Astronomical tide'] = [network.nodes[node[1]]['Info']['Times'],list(data['Astronomic water level'][node[0]].values)]
+
                 network.nodes[node[1]]['Info']['H_99%'] = H99(network.nodes[node[1]]['Info']['Astronomical tide'][0],network.nodes[node[1]]['Info']['Astronomical tide'][1],node[1])
-                network.nodes[node[1]]['Info']['Tidal periods'] = tidal_periods(network.nodes[node[1]]['Info']['Astronomical tide'][0],network.nodes[node[1]]['Info']['Astronomical tide'][1])
+
+                if 'Observed horizontal tidal periods' not in dir(data):
+                    network.nodes[node[1]]['Info']['Tidal periods'] = tidal_periods(network.nodes[node[1]]['Info']['Astronomical tide'][0],network.nodes[node[1]]['Info']['Astronomical tide'][1])
+                else:
+                    network.nodes[node[1]]['Info']['Tidal periods'] = list(data['Observed horizontal tidal periods'][node[0]].values)
 
         # Appending longitudinal and cross-current velocity components to the nodes of the network
         if simulation_type == 'Accessibility':
@@ -317,134 +346,3 @@ class NetworkProperties:
 
         # Appending static data to the edges
         append_info_to_edges(network,simulation_type)
-
-    def append_vertical_tidal_restriction_to_network(network,node,vertical_tidal_window_input):
-        """ Function: appends vertical tidal restrictions to the node of the network
-
-            Input:
-                - network: a graph constructed with the DiGraph class of the networkx package
-                - node: the name string of the node in the given network
-                - vertical_tidal_window_input: assembly of specific information that defines the restriction (see specific input classes in the notebook)
-        """
-        #Specifies two parameters in the dictionary with a corresponding data structure of lists
-        network.nodes[node]['Info']['Vertical tidal restriction']['Type'] = [[], [], []]
-        network.nodes[node]['Info']['Vertical tidal restriction']['Specification'] = [[], [], [], [], [], []]
-
-        #Loops over the number of types of restrictions that may hold for different classes of vessels
-        for input_data in vertical_tidal_window_input:
-            # Unpacks the data for flood and ebb and appends it to a list
-            ukc_p = []
-            ukc_s = []
-            fwa = []
-            for info in input_data.window_specifications.ukc_p:
-                ukc_p.append(input_data.window_specifications.ukc_p[info])
-            for info in input_data.window_specifications.ukc_s:
-                ukc_s.append(input_data.window_specifications.ukc_s[info])
-            for info in input_data.window_specifications.fwa:
-                fwa.append(input_data.window_specifications.fwa[info])
-
-            # Appends the specific data regarding the type of the restriction to data structure
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][0].append(ukc_s)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][1].append(ukc_p)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][2].append(fwa)
-
-            # Unpacks the data for the different vessel criteria and appends it to a list
-            vessel_characteristics_type = []
-            vessel_characteristics_spec = []
-            vessel_characteristics_value = []
-            vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
-            for info in vessel_characteristics:
-                vessel_characteristics_type.append(info)
-                vessel_characteristics_spec.append(vessel_characteristics[info][0])
-                vessel_characteristics_value.append(vessel_characteristics[info][1])
-
-            # Unravels the boolean operators between the restrictions and appends it to a list
-            vessel_method_list = []
-            sign_list = input_data.vessel_specifications.vessel_method.split()
-            for sign in sign_list:
-                if sign[0] != '(' and sign[-1] != ')' and sign != 'x':
-                    vessel_method_list.append(sign)
-
-            # Appends the specific data regarding the properties for which the restriction holds to data structure
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][0].append(vessel_characteristics_type)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][1].append(vessel_characteristics_value)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][4].append(vessel_method_list)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][5].append([])
-
-    def append_horizontal_tidal_restriction_to_network(network,node,horizontal_tidal_window_input):
-        """ Function: appends horizontal tidal restrictions to the node of the network
-
-            Input:
-                - network: a graph constructed with the DiGraph class of the networkx package
-                - node: the name string of the node in the given network
-                - horizontal_tidal_window_input: assembly of specific information that defines the restriction (see specific input classes in the notebook)
-        """
-        # Specifies two parameters in the dictionary with a corresponding data structure of lists
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Type'] = [[], [], []]
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = {}
-        network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'] = [[], [], [], [], [], []]
-
-        # Loops over the number of types of restrictions that may hold for different classes of vessels
-        for input_data in enumerate(horizontal_tidal_window_input):
-            # Unpacks the data for flood and ebb and appends it to a list
-            current_velocity_value = []
-            for info in input_data[1].window_specifications.current_velocity_values:
-                current_velocity_value.append(input_data[1].window_specifications.current_velocity_values[info])
-
-            # Dependent on the type of restriction, additional information should be unpacked and appended to a list
-            current_velocity_range = []
-            # - if no necessary:
-            if input_data[1].window_specifications.current_velocity_ranges == dict:
-                current_velocity_range = []
-            # - elif necessary:
-            else:
-                for info in input_data[1].window_specifications.current_velocity_ranges:
-                    current_velocity_range.append(input_data[1].window_specifications.current_velocity_ranges[info])
-
-            # Appends the specific data regarding the type of the restriction to data structure
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][0].append(input_data[1].window_specifications.window_method)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][1].append(current_velocity_value)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'][2].append(current_velocity_range)
-
-            # Unpacks the data for the different vessel criteria and appends it to a list
-            vessel_characteristics_type = []
-            vessel_characteristics_spec = []
-            vessel_characteristics_value = []
-            vessel_characteristics = input_data[1].vessel_specifications.characteristic_dicts()
-            for info in vessel_characteristics:
-                vessel_characteristics_type.append(info)
-                vessel_characteristics_spec.append(vessel_characteristics[info][0])
-                vessel_characteristics_value.append(vessel_characteristics[info][1])
-
-            # Unravels the boolean operators between the restrictions and appends it to a list
-            vessel_method_list = []
-            sign_list = input_data[1].vessel_specifications.vessel_method.split()
-            for sign in sign_list:
-                if sign[0] != '(' and sign[-1] != ')' and sign != 'x':
-                    vessel_method_list.append(sign)
-
-            # Appends the specific data regarding the properties for which the restriction holds to data structure
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][0].append(vessel_characteristics_type)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][1].append(vessel_characteristics_value)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][2].append(input_data[1].vessel_specifications.vessel_direction)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][4].append(vessel_method_list)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][5].append([input_data[1].condition['Origin'], input_data[1].condition['Destination']])
-            # Unpacks the specific current velocity data used for the restriction and appends it to the data structure
-            # - if pre-calculated data from the model should be used:
-            if type(input_data[1].data[1]) == str:
-                # - if raw current velocity data should be used:
-                if input_data[1].data[1] == 'Current velocity':
-                    for n in network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][5][input_data[0]]:
-                        network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][n] = network.nodes[input_data[1].data[0]]['Info'][input_data[1].data[1]]
-                # - elif longitudinal or cross-current velocity should be used:
-                else:
-                    network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = network.nodes[input_data[1].data[0]]['Info'][input_data[1].data[1]]
-            # - elif manual data should be used:
-            else:
-                for n in nodes:
-                    network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][n][0] = input_data[1].data[node][0]
-                    network.nodes[node]['Info']['Horizontal tidal restriction']['Data'][n][1] = input_data[1].data[node][1]

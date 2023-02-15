@@ -11,6 +11,7 @@ class ExtraMetadata:
         super().__init__(*args)
         # store all other properties as metadata
         self.metadata = kwargs
+        self.metadata['start_time'] = self.env.now
 
 class VesselProperties:
     """Mixin class: Something that has vessel properties
@@ -48,7 +49,7 @@ class VesselProperties:
         self.L = L
 
         self.H_e = H_e
-        self.H_f = H_e
+        self.H_f = H_f
 
         self.T_e = T_e
         self.T_f = T_f
