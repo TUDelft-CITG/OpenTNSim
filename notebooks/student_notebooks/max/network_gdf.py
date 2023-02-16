@@ -117,8 +117,8 @@ def geoDataFrames():
     edges_gdf = gpd.GeoDataFrame(edges_df)
 
     #Used RD-coordinates (epsg:28992) to define nodes so set this for geopandas to know
-    nodes_gdf = nodes_gdf.set_crs('epsg:28992')
-    edges_gdf = edges_gdf.set_crs('epsg:28992')
+    nodes_gdf.crs = 'epsg:28992'
+    edges_gdf.crs = 'epsg:28992'
 
     #Change to lat lon (epsg:4326)
     nodes_gdf = nodes_gdf.to_crs('epsg:4326')
