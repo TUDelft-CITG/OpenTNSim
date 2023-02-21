@@ -132,6 +132,9 @@ def network_FG():
     edges_gdf, nodes_gdf = geoDataFrames()
 
     FG = nx.from_pandas_edgelist(edges_gdf, edge_attr=True)
+    for e, edge in FG.edges.items():
+        # make all edges 6m deep
+        edge['Info'] = {"GeneralDepth": 6}
     
     # Update all nodes with info from the nodes table
     nodes_gdf.apply(lambda row: FG.nodes[row.n].update(row), axis= 1)
