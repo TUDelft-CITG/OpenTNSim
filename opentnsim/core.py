@@ -327,6 +327,7 @@ class Routable(SimpyObject):
     """Mixin class: Something with a route (networkx format)
 
     - route: list of node-IDs
+    - position_on_route: index of position
     """
 
     def __init__(self, route, complete_path=None, *args, **kwargs):
@@ -342,6 +343,8 @@ class Routable(SimpyObject):
             ), "Routable expects `.graph` (a networkx graph) to be present as an attribute on the environment"
         super().__init__(*args, **kwargs)
         self.route = route
+        # start at start of route
+        self.position_on_route = 0
         self.complete_path = complete_path
 
     @property
@@ -366,6 +369,7 @@ class Movable(Locatable, Routable, Log):
 
     - geometry: point used to track its current location
     - v: speed
+    - on_pass_edge_functions can contain a list of generators in the form of on_pass_edge(source: Point, destination: Point) -> yield event
     """
 
     def __init__(self, v: float, *args, **kwargs):
@@ -375,7 +379,7 @@ class Movable(Locatable, Routable, Log):
         self.on_pass_edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    def move(self, destination: Geometry = None, engine_order: float = 1.0, duration: float = None):
+    def move(self, destination: Union[Geometry, str] = None, engine_order: float = 1.0, duration: float = None):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
@@ -403,12 +407,24 @@ class Movable(Locatable, Routable, Log):
             self.log_entry("Sailing to start", self.env.now, self.distance, dest)
 
         # Move over the path and log every step
-        for edge in zip(self.route[:-1], self.route[1:]):
-            origin, destination = edge
+        for i, edge in enumerate(zip(self.route[:-1], self.route[1:])):
+            # name it a, b here, to avoid confusion with destination argument
+            a, b = edge
             self.node = origin
-            yield from self.pass_edge(origin, destination)
+            yield from self.pass_edge(a, b)
             # we arrived at destination
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[destination]
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[b]
+            # we have reached position i
+            self.position_on_route = i
+            # are we at destination?
+            if destination is not None:
+                if isinstance(destination, Geometry):
+                    if shapely.ops.equals(self.geometry, destination):
+                        break
+                else:
+                    if destination == b:
+                        break
+
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
@@ -424,6 +440,9 @@ class Movable(Locatable, Routable, Log):
 
         for on_pass_edge_function in self.on_pass_edge_functions:
             on_pass_edge_function(origin, destination)
+
+
+        # TODO: there is an issue here. If geometry is available, resources and power are ignored.
 
         if "geometry" in edge:
             edge_route = np.array(edge["geometry"].coords)
