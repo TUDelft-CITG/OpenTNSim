@@ -6,24 +6,21 @@ import logging
 import random
 import uuid
 import warnings
+from typing import Union
 
 import deprecated
-
 import networkx as nx
 import numpy as np
-
 # spatial libraries
 import pyproj
-import shapely.geometry
 import shapely
-
-
+import shapely.geometry
+import shapely.ops
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
-
 # Use OpenCLSim objects for core objects
-from openclsim.core import SimpyObject, Identifiable, Locatable
+from openclsim.core import Identifiable, Locatable, SimpyObject
 
 import opentnsim.energy
 import opentnsim.graph_module
@@ -379,17 +376,25 @@ class Movable(Locatable, Routable, Log):
         self.on_pass_edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    def move(self, destination: Union[Geometry, str] = None, engine_order: float = 1.0, duration: float = None):
+    def move(self, destination: Union[Locatable, Geometry, str] = None, engine_order: float = 1.0, duration: float = None):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
+
+        # simplify destination to node or geometry
+        if isinstance(destination, Locatable):
+            print('getting location from', destination.name)
+            destination = destination.geometry
+        print('moving to', destination)
+
 
         self.distance = 0
         speed = self.v
 
         # Check if vessel is at correct location - if not, move to location
         if self.geometry != nx.get_node_attributes(self.graph, "geometry")[self.route[0]]:
+            print('moving to origin')
             orig = self.geometry
             dest = nx.get_node_attributes(self.graph, "geometry")[self.route[0]]
 
@@ -408,22 +413,34 @@ class Movable(Locatable, Routable, Log):
 
         # Move over the path and log every step
         for i, edge in enumerate(zip(self.route[:-1], self.route[1:])):
+            print('moving over ', edge)
             # name it a, b here, to avoid confusion with destination argument
             a, b = edge
-            self.node = origin
-            yield from self.pass_edge(a, b)
-            # we arrived at destination
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[b]
-            # we have reached position i
+
+            # update to current position
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[a]
+            self.node = a
             self.position_on_route = i
-            # are we at destination?
+
+            # are we already at destination?
             if destination is not None:
                 if isinstance(destination, Geometry):
-                    if shapely.ops.equals(self.geometry, destination):
+                    # for geometry we need to use the shapely equivalent
+                    if destination.equals(self.geometry):
                         break
                 else:
-                    if destination == b:
+                    if destination == self.node:
                         break
+
+
+            yield from self.pass_edge(a, b)
+
+            # we arrived at destination
+            # update to new position
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[b]
+            self.node = b
+            self.position_on_route = i + 1
+
 
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
