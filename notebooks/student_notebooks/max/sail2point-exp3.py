@@ -24,11 +24,11 @@ from std_msgs.msg import String
 from sensor_msgs.msg import NavSatFix
 
 from network_gdf import network_FG
+import tactics 
 
 FG = network_FG()
 
-WAYPOINT_THRESHOLD = 3 #m
-
+WAYPOINT_THRESHOLD = 3 #meters
 
 def read_network():
     filename = '/home/gijn/catkin_ws/src/my_robot_controller/scripts/FG_pond.gpickle'
@@ -127,11 +127,13 @@ def run_simulation(geometry, route, graph, engine_order=0.8):
 
         
 class Operator():
-    def __init__(self, id, controlled_vessel, observed_vessel):
+    def __init__(self, id, controlled_vessel, observed_vessel, alternatives_df):
         self.id = id
         self.controlled_vessel = controlled_vessel
         self.observed_vessel = observed_vessel
-
+        self.kpi_df = None
+        self.alternatives_df = alternatives_df
+        
         self.berth_loc =  [4.371807932569391, 52.001592043587344]
 
         self.pub_tactic = rospy.Publisher(f"/{controlled_vessel.id}/tactic", String, queue_size=10)
@@ -140,7 +142,7 @@ class Operator():
         self.berth_available = True 
 
         rospy.Timer(rospy.Duration(1), self.publish_tactic)
-        rospy.Timer(rospy.Duration(5), self.run_simulation)
+        rospy.Timer(rospy.Duration(5), self.compute_kpi)
         #self.publish_tactic()
 
     def check_berth_availability(self, msg: NavSatFix()):
@@ -160,12 +162,12 @@ class Operator():
             tactic = "GR"
         self.pub_tactic.publish(tactic)
 
-    def run_simulation(self, event):
+    def compute_kpi(self, event):
         geometry = self.controlled_vessel.geometry
         graph = FG
-        
-        duration, end, energy_df, vessel = run_simulation(geometry=geometry, route=self.controlled_vessel.route, graph=graph)
-        print(duration)
+        self.kpi_df = tactics.add_kpi(alternatives_df=self.alternatives_df, berth_available=self.berth_available, graph=FG)
+
+        print(self.kpi_df)
 
 class Vessel():
     def __init__(self, id, route=None):
@@ -286,7 +288,9 @@ def main():
 
     vessel_1 = Vessel(id=VESSEL_ID_1, route=route)
     vessel_2 = Vessel(id=VESSEL_ID_2, route=None)
-    
+
+    alternatives_df = tactics.generate_all_alternatives(FG)
+
 
     # initialize ROS node and subscribers
     
@@ -305,7 +309,7 @@ def main():
     #rospy.Subscriber(f"/{VESSEL_ID_1}/geopos_est", NavSatFix, callback=vessel_1.update_pos)
     #rospy.Subscriber(f"/{VESSEL_ID_2}/geopos_est", NavSatFix, callback=vessel_2.update_pos)
     #rospy.Subscriber(f"/{VESSEL_ID_1}/geopos_est", NavSatFix, callback=operator_1.update_pos)
-    operator_1 = Operator("Operator", controlled_vessel=vessel_1, observed_vessel=vessel_2)
+    operator_1 = Operator("Operator", controlled_vessel=vessel_1, observed_vessel=vessel_2, alternatives_df=alternatives_df)
     print('Hello')
     rospy.spin()
 

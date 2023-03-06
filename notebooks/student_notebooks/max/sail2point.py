@@ -88,7 +88,7 @@ class Sail2point():
             # Length waypoints -1 because it's a circle and the end node is the start node again
             if self.currentpoint >= len(self.waypoints)-1:
                 self.lap_counter = +1
-                self.currentpoint = 1
+                self.currentpoint = 0
             else:
                 self.currentpoint += 1
         self.publishCurrentWaypoint()
