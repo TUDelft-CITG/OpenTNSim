@@ -20,7 +20,7 @@ import shapely.ops
 # package(s) related to the simulation
 import simpy
 # Use OpenCLSim objects for core objects
-from openclsim.core import Identifiable, Locatable, SimpyObject
+from openclsim.core import Identifiable, Locatable, SimpyObject, Log
 
 import opentnsim.energy
 import opentnsim.graph_module
@@ -101,38 +101,6 @@ class HasContainer(SimpyObject):
         """return the maximum cargo to load"""
         # independent of trip
         return self.container.capacity - self.container.level
-
-
-class Log(SimpyObject):
-    """Mixin class: Something that has logging capability
-
-    log: log message [format: 'start activity' or 'stop activity']
-    t: timestamp
-    value: a value can be logged as well
-    geometry: value from locatable (lat, lon)"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.log = {"Message": [], "Timestamp": [], "Value": [], "Geometry": []}
-
-    def log_entry(self, log, t, value, geometry_log):
-        """Log"""
-        self.log["Message"].append(log)
-        self.log["Timestamp"].append(datetime.datetime.fromtimestamp(t))
-        self.log["Value"].append(value)
-        self.log["Geometry"].append(geometry_log)
-
-    def get_log_as_json(self):
-        json = []
-        for msg, t, value, geometry_log in zip(
-            self.log["Message"],
-            self.log["Timestamp"],
-            self.log["Value"],
-            self.log["Geometry"],
-        ):
-            json.append(dict(message=msg, time=t, value=value, geometry_log=geometry_log))
-        return json
 
 
 class HasLoad:
