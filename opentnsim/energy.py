@@ -257,7 +257,7 @@ class ConsumesEnergy:
         Height_ship = 4,
         g=9.81,
         x=2,
-        eta_o=0.4,
+        eta_o=0.1,
         eta_r=1.00,
         eta_t=0.98,
         eta_g=0.96,
@@ -716,13 +716,22 @@ class ConsumesEnergy:
             self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(angle*np.pi/180)
         return self.A_xv , angle , self.A_ydir
     
-    def calculate_wind_resistance(self, v):
+    def calculate_wind_resistance(self, v,rel_winddir):
+        angle=0
+        if self.rel_winddir <91:
+            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(rel_winddir*np.pi/180) + self.L * np.sin(rel_winddir*np.pi/180))
+            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(rel_winddir*np.pi/180)
+        elif self.rel_winddir > 90:
+            angle = 90-(rel_winddir -90) # symmetric shape front and back. 
+            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(angle*np.pi/180) + self.L * np.sin(angle*np.pi/180))
+            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(angle*np.pi/180)
+            
         if self.consider_wind_influence:
-            self.R_wind = 0.5 * self.calculate_C_drag() * self.rho_air * self.calculate_A_xv()[0] * self.U_wind **2 - 0.5 * self.rho_air * self.calculate_Cd_0() * self.calculate_A_xv()[0] * v **2 /1000 #kN
+            self.R_wind = (0.5 * self.calculate_C_drag() * self.rho_air * self.A_xv * self.U_wind **2 - 0.5 * self.rho_air * self.calculate_Cd_0() * self.A_xv * v **2 )/1000 #kN
     # negative value is in the Cd  value. so negative winddirection gives negative value because of cd. 
         else:
             self.R_wind = 0
-        print(self.R_wind,'R_wind')    
+        #print(self.R_wind,'R_wind')    
         return self.R_wind 
     
     # for the passive rudder: 
@@ -743,7 +752,7 @@ class ConsumesEnergy:
         self.dis_to_cog = self.L / 2
         lamda = 2 # first assumption https://marineengineeringonline.com/tag/aspect-ratio/
         A_R = 1/60 * self.B * self.L #https://www.marinesite.info/2021/05/aspect-ratio-force-acting-on-rudder.html
-        self.dr = 40 # maximum rudder turning angle
+        self.dr = 60 # maximum rudder turning angle
         FN =   0.5 * self.rho_water * ( 6.13 * lamda/(lamda+2.25))* A_R * v **2 * np.sin(self.dr  * np.pi/180)      
         Rry = np.cos(self.dr * np.pi/180) *  FN
         Rrx = np.abs(FN*np.sin(self.dr * np.pi/180)) 
@@ -778,7 +787,7 @@ class ConsumesEnergy:
                # if  Mry > windmoment:
                #     angle = dr[i]
                #     Rrx = np.abs(FN*np.sin(dr[i] * np.pi/180))
-            if angle == 40:
+            if angle == 60:
                 break
         
             
@@ -791,11 +800,11 @@ class ConsumesEnergy:
             self.R_rudder = self.calculate_angle(v)[3]
         else:
             self.R_rudder = 0
-        print(self.R_rudder,'R_rudder')    
+        #print(self.R_rudder,'R_rudder')    
         return self.R_rudder
 
     
-    def calculate_total_resistance(self, v, h_0):
+    def calculate_total_resistance(self, v, h_0, rel_winddir):
         """Total resistance:
 
         The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982)
@@ -807,13 +816,13 @@ class ConsumesEnergy:
         self.calculate_appendage_resistance(v)
         self.calculate_wave_resistance(v, h_0)
         self.calculate_residual_resistance(v, h_0)
-        self.calculate_wind_resistance(v)
+        self.calculate_wind_resistance(v,rel_winddir)
         self.calculate_passive_rudder_resistance(v)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = (
             self.R_f * self.one_k1
-            + self.R_APP
+            + self.R_APP 
             + self.R_W
             + self.R_TR
             + self.R_A
@@ -821,6 +830,14 @@ class ConsumesEnergy:
             + self.R_wind
             + self.R_rudder
         )
+        # print(self.R_f * self.one_k1 , 'R_f * k1')
+        # print(self.R_APP, 'R_app')
+        # print(self.R_W, 'R_W')
+        # print(self.R_TR, 'R_TR')
+        # print(self.R_A, 'R_A')
+        # print(self.R_B, 'R_B')
+        # print(self.R_wind, 'R_wind')
+        # print(self.R_rudder,'R_rudder')
 
         return self.R_tot
 
@@ -1599,6 +1616,7 @@ class EnergyCalculation:
             "P_given": [],
             "P_installed": [],
             "total_energy": [],
+            
             "total_diesel_consumption_C_year_ICE_mass": [],
             "total_diesel_consumption_ICE_mass": [],
             "total_diesel_consumption_ICE_vol": [],
@@ -1704,7 +1722,7 @@ class EnergyCalculation:
                 V_w = V_g - U_c   # the velocity to water when sailing upstream           
             else:               
                 V_w = V_g + U_c   # the velocity to water when sailing downstream          
-            print(V_w,'V_w')
+            #print(V_w,'V_w')
 
             # vessel speed relative to water between two points
             return V_w
@@ -1765,8 +1783,8 @@ class EnergyCalculation:
                     v = calculate_V_w(geometries[i], geometries[i + 1])
 
                 h_0 = self.vessel.calculate_h_squat(v=v, h_0=h_0)
-                print(h_0)
-                print(v,'v4energy')
+                #print(h_0)
+                #print(v,'v4energy')
                 self.vessel.calculate_total_resistance(v=v, h_0=h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
@@ -2014,3 +2032,14 @@ class EnergyCalculation:
         folium.PolyLine(line, weight=4).add_to(m)
 
         return m
+    
+    def fractions(self):
+        a = self.vessel.R_f * self.vessel.one_k1
+        b = self.vessel.R_APP 
+        c = self.vessel.R_W
+        d = self.vessel.R_TR
+        e = self.vessel.R_A
+        f = self.vessel.R_B
+        g = self.vessel.R_wind
+        h = self.vessel.R_rudder
+        return a,b,c,d,e,f,g,h
