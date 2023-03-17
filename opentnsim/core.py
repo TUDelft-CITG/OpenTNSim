@@ -352,17 +352,13 @@ class Movable(Locatable, Routable, Log):
 
         # simplify destination to node or geometry
         if isinstance(destination, Locatable):
-            print('getting location from', destination.name)
             destination = destination.geometry
-        print('moving to', destination)
-
 
         self.distance = 0
         speed = self.v
 
         # Check if vessel is at correct location - if not, move to location
         if self.geometry != nx.get_node_attributes(self.graph, "geometry")[self.route[0]]:
-            print('moving to origin')
             orig = self.geometry
             dest = nx.get_node_attributes(self.graph, "geometry")[self.route[0]]
 
@@ -381,7 +377,6 @@ class Movable(Locatable, Routable, Log):
 
         # Move over the path and log every step
         for i, edge in enumerate(zip(self.route[:-1], self.route[1:])):
-            print('moving over ', edge)
             # name it a, b here, to avoid confusion with destination argument
             a, b = edge
 
@@ -424,7 +419,7 @@ class Movable(Locatable, Routable, Log):
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
 
         for on_pass_edge_function in self.on_pass_edge_functions:
-            on_pass_edge_function(origin, destination)
+            yield from on_pass_edge_function(origin, destination)
 
 
         # TODO: there is an issue here. If geometry is available, resources and power are ignored.
