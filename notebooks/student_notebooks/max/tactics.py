@@ -92,11 +92,11 @@ def generate_route_alternatives(graph):
     route_alternatives = [
         {
             "name": "direct",
-            "waypoints": [0, 5, 11]
+            "waypoints": ['A', 'E', 'H']
         },
         {
             "name": "redirect",
-            "waypoints": [0, 11, 5]
+            "waypoints": ['A', 'H', 'E']
         },
     ]
 
@@ -116,11 +116,12 @@ def generate_route_alternatives(graph):
 
 
         alternative["route"] = route
+        alternative["og_route"] = route
     return route_alternatives
 
 
 def generate_engine_alternatives():
-    """generate a list of dictionaries, where each dictionary is a engine order setting."""
+    """generate a list of dictionaries, where each dictionary is an engine order setting."""
     engine_orders = [0.5, 0.6, 0.7, 0.8, 0.9]
     engine_alternatives = []
     for engine_order in engine_orders:
@@ -148,12 +149,12 @@ def generate_all_alternatives(graph):
     return alternatives_df
 
 
-def add_kpi(alternatives_df, berth_available, graph):
+def add_kpi(alternatives_df, berth_available, graph, geometry, waypoints=None):
 
     result = alternatives_df.copy()
     for idx, row in alternatives_df.iterrows():
-        current_node = row['route'][0]
-        geometry = graph.nodes[current_node]['geometry']
+        #current_node = row['route'][0]
+        #geometry = graph.nodes[current_node]['geometry']
         route = row['route']
         graph = graph
         engine_order = row['engine_order']

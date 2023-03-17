@@ -56,9 +56,9 @@ def RD_coordinates():
     return x_RD, y_RD
 
 
-def nodes_edges():
+def nodes_edges(as_numbers = True):
     """Create nodes and edges from the RD-coordinates"""
-
+    node_labels = ['A','B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
     edges = []
     nodes = []
 
@@ -76,15 +76,29 @@ def nodes_edges():
             end = i + 1
 
         # and edges consists of a start node and an end node
+        if as_numbers:
+            e = (start, end)
+            source = start
+            target = end
+        else:
+            source = node_labels[start]
+            target = node_labels[end]
+            e = (source, target)
+            
+
         edge = {
-            "source": start,
-            "target": end,
-            "e": (start, end),
+            "source": source,
+            "target": target,
+            "e": e,
         }
+        if as_numbers:
+            n = i
+        else:
+            n = node_labels[i]
         node = {
             "x": x_i,
             "y": y_i,
-            "n": i,
+            "n": n,
             "x_RD": x_RD_i,
             "y_RD":y_RD_i,
             "geometry": shapely.geometry.Point(x_RD_i, y_RD_i),
@@ -94,18 +108,18 @@ def nodes_edges():
 
     return edges, nodes
 
-def geoDataFrames():
+def geoDataFrames(as_numbers=True):
     """Creates a geoDataFrame from the edges and nodes and translates coordinates to lat lon
     return two geoDataframes of nodes and edges"""
-    edges, nodes = nodes_edges()
+    edges, nodes = nodes_edges(as_numbers)
     
     # Create normal DataFrame first
     edges_df = pd.DataFrame(edges)
     nodes_df = pd.DataFrame(nodes)
 
     # create two temporary columns with the start end end geometry
-    edges_df['source_geometry'] = nodes_df['geometry'][edges_df['source']].reset_index(drop=True)
-    edges_df['target_geometry'] = nodes_df['geometry'][edges_df['target']].reset_index(drop=True)
+    edges_df['source_geometry'] = nodes_df.set_index('n')['geometry'][edges_df['source']].reset_index(drop=True)
+    edges_df['target_geometry'] = nodes_df.set_index('n')['geometry'][edges_df['target']].reset_index(drop=True)
     # for each edge combine start and end geometry into a linestring (line)
     edges_df['geometry'] = edges_df.apply(
         lambda row: shapely.geometry.LineString([row['source_geometry'], row['target_geometry']]), 
@@ -126,12 +140,13 @@ def geoDataFrames():
     
     return edges_gdf, nodes_gdf
 
-def network_FG():
+def network_FG(as_numbers=True):
     """Create a FG (Fairway Graph) from geoDataFrames"""
 
-    edges_gdf, nodes_gdf = geoDataFrames()
-
+    edges_gdf, nodes_gdf = geoDataFrames(as_numbers)
+    
     FG = nx.from_pandas_edgelist(edges_gdf, edge_attr=True)
+    print(edges_gdf)
     for e, edge in FG.edges.items():
         # make all edges 6m deep
         edge['Info'] = {"GeneralDepth": 6}
@@ -146,7 +161,10 @@ def network_FG():
     return FG
 
 
-
+def load_experiment3():
+    with open('experiment3/experiment3-graph.pickle', 'rb') as f:
+        graph = pickle.load(f)
+    return graph
 
 
 

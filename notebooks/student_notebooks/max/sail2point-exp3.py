@@ -23,10 +23,10 @@ from std_msgs.msg import Float32
 from std_msgs.msg import String
 from sensor_msgs.msg import NavSatFix
 
-from network_gdf import network_FG
+from network_gdf import network_FG, load_experiment3
 import tactics 
 
-FG = network_FG()
+FG = network_FG(as_numbers=False)
 
 WAYPOINT_THRESHOLD = 3 #meters
 
@@ -136,12 +136,12 @@ class Operator():
         
         self.berth_loc =  [4.371807932569391, 52.001592043587344]
 
-        self.pub_tactic = rospy.Publisher(f"/{controlled_vessel.id}/tactic", String, queue_size=10)
+        self.pub_route = rospy.Publisher(f"/{controlled_vessel.id}/route", String, queue_size=10)
         print(self.observed_vessel.id)
         self.sub_observed_vessel = rospy.Subscriber(f"/{self.observed_vessel.id}/geopos_est", NavSatFix, callback = self.check_berth_availability)
         self.berth_available = True 
 
-        rospy.Timer(rospy.Duration(1), self.publish_tactic)
+        #rospy.Timer(rospy.Duration(5), self.publish_route)
         rospy.Timer(rospy.Duration(5), self.compute_kpi)
         #self.publish_tactic()
 
@@ -154,49 +154,128 @@ class Operator():
             self.berth_available = False
         else:
             self.berth_available = True
-            
-    def publish_tactic(self, event):
-        if not self.berth_available:
-            tactic = "GS"
-        else:
-            tactic = "GR"
-        self.pub_tactic.publish(tactic)
 
     def compute_kpi(self, event):
         geometry = self.controlled_vessel.geometry
+        # remaining waypoints for vessel
+        waypoints = self.controlled_vessel.waypoints 
         graph = FG
-        self.kpi_df = tactics.add_kpi(alternatives_df=self.alternatives_df, berth_available=self.berth_available, graph=FG)
+        self.kpi_df = tactics.add_kpi(alternatives_df=self.alternatives_df, berth_available=self.berth_available, graph=FG, geometry=geometry, waypoints=waypoints)
+        self.kpi_df.sort_values('total_emission_CO2', inplace=True)
+        time_remaining = self.kpi_df.loc[:,'duration'].iloc[0]
+        print(f'Duration of alternative with least emissions = {time_remaining} seconds')
+        self.publish_route()
 
-        print(self.kpi_df)
+    def publish_route(self):
+        msg = String()
+        msg.data =str(self.kpi_df.loc[:, 'route'].iloc[0])
+        self.pub_route.publish(msg)
+
 
 class Vessel():
-    def __init__(self, id, route=None):
+    def __init__(self, id, route=None, waypoints=None):
         self.id = id
-        self.route = route 
+        # an ordered set of nodes that we must pass
+        self.waypoints = waypoints
+        # an ordered set of nodes that we are told to sail through
+        self.route = route
+
+        self.visited_waypoints = []
+        self.visited_nodes = []
         self.pos = NavSatFix()
         self.sub = rospy.Subscriber(f"/{self.id}/geopos_est", NavSatFix, callback=self.update_pos)
-    
+        self.pub_currentwaypoint = rospy.Publisher(f"/{self.id}/current_waypoint", NavSatFix, queue_size=10)
+        self.pub_headingref = rospy.Publisher(f"/{self.id}/heading_ref", Float32, queue_size=10)   
+        self.current_waypoint = self.waypoints[0] if self.waypoints else None
+        self.current_node = self.route[0] if self.route else None
+
+    @property
+    def next_n(self):
+        return self.route[0]
+
+    @property
+    def next_node_geometry(self):
+        next_n = self.next_n
+        next_node = FG.nodes[next_n]
+        next_node_geometry = next_node['geometry']
+        return next_node_geometry
+
     def update_pos(self, msg: NavSatFix()):
         self.pos = msg
         rospy.loginfo(f'Vessel : {self.id}, Lat {self.pos.latitude},Lon {self.pos.longitude}')
         self.update_route()
-        #self.pose_update_control_func()
+        self.pose_update_control_func()
+        # self.visited
 
     def update_route(self):
+        """check if we are at a node, pop the node from the route and the waypoints"""
         if self.route is None:
             return
         if len(self.route)<1:
             return
-        next_node = self.route[0]
-        node_geometry = FG.nodes[next_node]['geometry']
         geometry = self.geometry
-        dist_to_next_node = distance(node_geometry.x, node_geometry.y, geometry.x, geometry.y)
+        dist_to_next_node = distance(self.next_node_geometry.x, self.next_node_geometry.y, geometry.x, geometry.y)
         print(f'Distance to next node {dist_to_next_node}')
         if dist_to_next_node < WAYPOINT_THRESHOLD:
+            # remove the first node from the route and remember so that we can
+            # check if it was also a waypoint
             visited_node = self.route.pop(0)
+            self.visited_nodes.append(visited_node)
             rospy.loginfo(f' Visited node: {visited_node}')
+            # safeguards for empty waypoints list
+            if self.waypoints is None:
+                return
+            if len(self.waypoints) < 1:
+                return
+            if visited_node == self.waypoints[0]:
+                visited_waypoint = self.waypoints.pop(0)
+                self.visited_waypoints.append(visited_waypoint)
 
         
+    def pose_update_control_func(self):
+        """Calculate distance to the next waypoint and check if it needs to be
+        moved to the next one in the list"""
+
+        # Calculate distance to the next waypoint
+        dist = distance(self.next_node_geometry.x, self.next_node_geometry.y , self.pos.longitude, self.pos.latitude)
+        rospy.loginfo(f'Sailing to node {self.next_n}. Distance to next waypoint = {dist:.3f} meters')
+        #check if advance criteria is met
+        if dist <= WAYPOINT_THRESHOLD:
+            # Go to next waypoint
+            # Length waypoints -1 because it's a circle and the end node is the start node again
+            if self.currentpoint >= len(self.waypoints)-1:
+                self.lap_counter = +1
+                self.currentpoint = 0
+            else:
+                self.currentpoint += 1
+        self.publish_current_waypoint()
+        self.publish_heading_ref()
+
+
+    def publish_current_waypoint(self):
+        """Publish current waypoint (as understood by ras, it is the next node geometry) to a topic"""
+
+        #Define msg type
+        pub_msg = NavSatFix()
+
+        
+
+        pub_msg.longitude = self.next_node_geometry.x
+        pub_msg.latitude =  self.next_node_geometry.y
+
+        self.pub_currentwaypoint.publish(pub_msg)
+    
+    def publish_heading_ref(self):
+        """Publish heading_ref to a topic"""
+
+        pub_msg = Float32()
+
+        self.heading_ref = heading(self.next_node_geometry.x, self.next_node_geometry.y , self.pos.longitude, self.pos.latitude)
+
+        pub_msg.data = self.heading_ref
+        rospy.loginfo(f"Heading_ref: {pub_msg}")
+
+        self.pub_headingref.publish(pub_msg)
 
 
     @property
@@ -215,14 +294,21 @@ class Sail2point():
         self.pub_headingref = rospy.Publisher(f"/{VESSEL_ID}/heading_ref", Float32, queue_size=10)
 
         # Get geometry of nodes = Point (lon, lat) and store as waypoint
-        self.waypoints = nx.get_node_attributes(self.FG, "geometry")
+        self.waypoints = ['A', 'E', 'H']
 
         self.lap_counter = 0
-        self.currentpoint = 0
-        self.currentwaypoint = self.waypoints[0]
-        print(self.waypoints[0])
+        
+        self.current_waypoint = self.waypoints[0]
+
+        self.route = nx.shortest_path(self.FG, self.waypoints[0], self.waypoints[1])
+
+        self.current_node = self.route[0]
+        print(self.current_node, self.current_waypoint)
 
 
+    @property
+    def current_waypoint_geometry(self):
+        self.current_point
 
     
     def update_pos(self, msg: NavSatFix()):
@@ -231,63 +317,19 @@ class Sail2point():
         rospy.loginfo(f'Lat {self.pos.latitude},Lon {self.pos.longitude}')
         self.pose_update_control_func()
         
-    def pose_update_control_func(self):
-        """Calculate distance to the next waypoint and check if it needs to be
-        moved to the next one in the list"""
-
-        # Calculate distance to the next waypoint
-        dist = distance(shapely.geometry.shape(self.waypoints[self.currentpoint]).x, shapely.geometry.shape(self.waypoints[self.currentpoint]).y , self.pos.longitude, self.pos.latitude)
-        rospy.loginfo(f'Sailing to node {self.currentpoint}. Distance to next waypoint = {dist:.3f} meters')
-        #check if advance criteria is met
-        if dist <= WAYPOINT_THRESHOLD:
-            # Go to next waypoint
-            # Length waypoints -1 because it's a circle and the end node is the start node again
-            if self.currentpoint >= len(self.waypoints)-1:
-                self.lap_counter = +1
-                self.currentpoint = 1
-            else:
-                self.currentpoint += 1
-        self.publishCurrentWaypoint()
-        self.publishHeadingRef()
-
-
-    def publishCurrentWaypoint(self):
-        """Publish current waypoint to a topic"""
-
-        #Define msg type
-        pub_msg = NavSatFix()
-
-        self.currentwaypoint = self.waypoints[self.currentpoint]
-
-        pub_msg.longitude = shapely.geometry.shape(self.currentwaypoint).x
-        pub_msg.latitude =  shapely.geometry.shape(self.currentwaypoint).y
-
-        self.pub_currentwaypoint.publish(pub_msg)
-    
-    def publishHeadingRef(self):
-        """Publish heading_ref to a topic"""
-
-        pub_msg = Float32()
-
-        self.heading_ref = heading(shapely.geometry.shape(self.waypoints[self.currentpoint]).x, shapely.geometry.shape(self.waypoints[self.currentpoint]).y , self.pos.longitude, self.pos.latitude)
-
-        pub_msg.data = self.heading_ref
-        rospy.loginfo(f"Heading_ref: {pub_msg}")
-
-        self.pub_headingref.publish(pub_msg)
     
 
 def main():
     node_name = 'Exp3'
     VESSEL_ID_1 = "RAS_TN_DB" #controlled
 
-    route = [0,1,2,3,4,5,6,7,8,9,10,11]
+    route = ['A','B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
     VESSEL_ID_2 = "RAS_TN_DG" #what topic to subscribe to
-    rospy.init_node(f"{node_name}", anonymous=False, log_level= rospy.INFO)
+    rospy.init_node(f"{node_name}", anonymous=False, log_level=rospy.INFO)
 
 
-    vessel_1 = Vessel(id=VESSEL_ID_1, route=route)
-    vessel_2 = Vessel(id=VESSEL_ID_2, route=None)
+    vessel_1 = Vessel(id=VESSEL_ID_1, route=route, waypoints=['A', 'C', 'F', 'I', 'L'])
+    vessel_2 = Vessel(id=VESSEL_ID_2, route=None, waypoints=None)
 
     alternatives_df = tactics.generate_all_alternatives(FG)
 
