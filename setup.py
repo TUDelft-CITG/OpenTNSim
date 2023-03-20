@@ -37,7 +37,7 @@ requires = [
     "Flask-cors",
     "sphinx_rtd_theme",
     "Dill",
-    "sklearn"
+    "sklearn",
     "hatyan @ git+https://github.com/Deltares/hatyan@d7ec39ae76004e041e50fc1fdc41e98add4cf4ab#egg=hatyan",
 ]
 
