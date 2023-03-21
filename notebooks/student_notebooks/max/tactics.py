@@ -89,6 +89,7 @@ def run_simulation(geometry, route, graph, engine_order=0.8):
 
 def generate_route_alternatives(graph):
     """generate a list of dictionaries, where each dictionary is a route alternatives with name, waypoints and a route."""
+    #Conditional toevoegen die rekening houdt met de visited nodes?
     route_alternatives = [
         {
             "name": "direct",
@@ -149,16 +150,24 @@ def generate_all_alternatives(graph):
     return alternatives_df
 
 
-def add_kpi(alternatives_df, berth_available, graph, geometry, waypoints=None):
+def add_kpi(alternatives_df, berth_available, graph, geometry, visited_nodes, waypoints=None):
 
     result = alternatives_df.copy()
+    result['remaining_route'] = None
+    result['remaining_route'] = result['remaining_route'].astype(object)
     for idx, row in alternatives_df.iterrows():
+        print(type(row['route'][0]))
+        remaining_route = copy.copy(row['route'])
+        print('Removing', visited_nodes, 'from', remaining_route)
+        for node in visited_nodes:
+            print('Node', node, 'Route', remaining_route[0])
+            if remaining_route[0] == node:
+                removed_node = remaining_route.pop(0)
+        print('Remaining route', remaining_route)
         #current_node = row['route'][0]
         #geometry = graph.nodes[current_node]['geometry']
-        route = row['route']
-        graph = graph
         engine_order = row['engine_order']
-        duration, eta, energy_df, vessel = run_simulation(geometry=geometry, route=route, graph=graph, engine_order=engine_order)
+        duration, eta, energy_df, vessel = run_simulation(geometry=geometry, route=remaining_route, graph=graph, engine_order=engine_order)
 
         energy_sum = energy_df.sum(axis=0, numeric_only=True) 
         result.at[idx, 'duration'] = duration
@@ -168,6 +177,7 @@ def add_kpi(alternatives_df, berth_available, graph, geometry, waypoints=None):
         result.at[idx, 'total_emission_NOX'] = energy_sum['total_emission_NOX']
         result.at[idx, 'total_diesel_consumption_ICE_vol'] = energy_sum['total_diesel_consumption_ICE_vol']
         result.at[idx, 'vessel'] = vessel
+        result.at[idx, 'remaining_route'] = remaining_route
     # TODO: replace with a timeout on_pass_edge 
     if not berth_available:    
         # add waiting time to direct routes

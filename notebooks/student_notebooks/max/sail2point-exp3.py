@@ -28,6 +28,8 @@ import tactics
 
 FG = network_FG(as_numbers=False)
 
+STRATEGY = 'total_emission_CO2'  #Choose kpi on which you want to sort 'total_emission_CO2', 'duration', 'total_diesel_consumption_ICE_vol'
+
 WAYPOINT_THRESHOLD = 3 #meters
 
 def read_network():
@@ -156,20 +158,32 @@ class Operator():
             self.berth_available = True
 
     def compute_kpi(self, event):
+        print('computing kpi')
         geometry = self.controlled_vessel.geometry
         # remaining waypoints for vessel
         waypoints = self.controlled_vessel.waypoints 
         graph = FG
-        self.kpi_df = tactics.add_kpi(alternatives_df=self.alternatives_df, berth_available=self.berth_available, graph=FG, geometry=geometry, waypoints=waypoints)
-        self.kpi_df.sort_values('total_emission_CO2', inplace=True)
+        self.kpi_df = tactics.add_kpi(
+            alternatives_df=self.alternatives_df,
+            berth_available=self.berth_available, 
+            graph=FG, 
+            geometry=geometry, 
+            visited_nodes=self.controlled_vessel.visited_nodes, 
+            waypoints=waypoints
+        )
+        self.kpi_df.sort_values(STRATEGY, inplace=True)
         time_remaining = self.kpi_df.loc[:,'duration'].iloc[0]
         print(f'Duration of alternative with least emissions = {time_remaining} seconds')
         self.publish_route()
 
     def publish_route(self):
         msg = String()
-        msg.data =str(self.kpi_df.loc[:, 'route'].iloc[0])
+        route = self.kpi_df.loc[:, 'route'].iloc[0]
+        if 'remaining_route' in self.kpi_df.columns:
+            route = self.kpi_df.loc[:, 'remaining_route'].iloc[0]
+        msg.data =str(route)
         self.pub_route.publish(msg)
+        self.controlled_vessel.route = route
 
 
 class Vessel():
@@ -184,7 +198,7 @@ class Vessel():
         self.visited_nodes = []
         self.pos = NavSatFix()
         self.sub = rospy.Subscriber(f"/{self.id}/geopos_est", NavSatFix, callback=self.update_pos)
-        self.pub_currentwaypoint = rospy.Publisher(f"/{self.id}/current_waypoint", NavSatFix, queue_size=10)
+        self.pub_currentwaypoint = rospy.Publisher(f"/{self.id}/next_node", NavSatFix, queue_size=10)
         self.pub_headingref = rospy.Publisher(f"/{self.id}/heading_ref", Float32, queue_size=10)   
         self.current_waypoint = self.waypoints[0] if self.waypoints else None
         self.current_node = self.route[0] if self.route else None
@@ -204,7 +218,8 @@ class Vessel():
         self.pos = msg
         rospy.loginfo(f'Vessel : {self.id}, Lat {self.pos.latitude},Lon {self.pos.longitude}')
         self.update_route()
-        self.pose_update_control_func()
+        self.publish_current_waypoint()
+        self.publish_heading_ref()
         # self.visited
 
     def update_route(self):
@@ -230,27 +245,6 @@ class Vessel():
             if visited_node == self.waypoints[0]:
                 visited_waypoint = self.waypoints.pop(0)
                 self.visited_waypoints.append(visited_waypoint)
-
-        
-    def pose_update_control_func(self):
-        """Calculate distance to the next waypoint and check if it needs to be
-        moved to the next one in the list"""
-
-        # Calculate distance to the next waypoint
-        dist = distance(self.next_node_geometry.x, self.next_node_geometry.y , self.pos.longitude, self.pos.latitude)
-        rospy.loginfo(f'Sailing to node {self.next_n}. Distance to next waypoint = {dist:.3f} meters')
-        #check if advance criteria is met
-        if dist <= WAYPOINT_THRESHOLD:
-            # Go to next waypoint
-            # Length waypoints -1 because it's a circle and the end node is the start node again
-            if self.currentpoint >= len(self.waypoints)-1:
-                self.lap_counter = +1
-                self.currentpoint = 0
-            else:
-                self.currentpoint += 1
-        self.publish_current_waypoint()
-        self.publish_heading_ref()
-
 
     def publish_current_waypoint(self):
         """Publish current waypoint (as understood by ras, it is the next node geometry) to a topic"""
