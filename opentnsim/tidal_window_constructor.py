@@ -1,5 +1,5 @@
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass,field,fields
 
 import opentnsim.vessel_traffic_service as vessel_traffic_service
 
@@ -42,9 +42,10 @@ class horizontal_tidal_window_specifications:
 
 @dataclass
 class vertical_tidal_window_specifications:
-    ukc_s: dict  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
-    ukc_p: dict  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
-    fwa: dict  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
+    ukc_s: list = field(default_factory=list)  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
+    ukc_p: list = field(default_factory=list)  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
+    ukc_r: list = field(default_factory=list)  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
+    fwa: list = field(default_factory=list)  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
 
 @dataclass
 class vertical_tidal_window_input:
@@ -68,26 +69,25 @@ class NetworkProperties:
                 - vertical_tidal_window_input: assembly of specific information that defines the restriction (see specific input classes in the notebook)
         """
         #Specifies two parameters in the dictionary with a corresponding data structure of lists
-        network.nodes[node]['Info']['Vertical tidal restriction']['Type'] = [[], [], []]
+        network.nodes[node]['Info']['Vertical tidal restriction']['Type'] = [[], [], [], []]
         network.nodes[node]['Info']['Vertical tidal restriction']['Specification'] = [[], [], [], [], [], []]
 
         #Loops over the number of types of restrictions that may hold for different classes of vessels
         for input_data in vertical_tidal_window_input:
-            # Unpacks the data for flood and ebb and appends it to a list
-            ukc_p = []
-            ukc_s = []
-            fwa = []
-            for info in input_data.window_specifications.ukc_p:
-                ukc_p.append(input_data.window_specifications.ukc_p[info])
-            for info in input_data.window_specifications.ukc_s:
-                ukc_s.append(input_data.window_specifications.ukc_s[info])
-            for info in input_data.window_specifications.fwa:
-                fwa.append(input_data.window_specifications.fwa[info])
+            for field in fields(input_data.window_specifications):
+                data = getattr(input_data.window_specifications, field.name)
+                if data:
+                    globals()[field.name] = data
+                else:
+                    globals()[field.name] = 0
+                    if field.name == 'ukc_r':
+                        globals()[field.name] = [0,0]
 
             # Appends the specific data regarding the type of the restriction to data structure
             network.nodes[node]['Info']['Vertical tidal restriction']['Type'][0].append(ukc_s)
             network.nodes[node]['Info']['Vertical tidal restriction']['Type'][1].append(ukc_p)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][2].append(fwa)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][2].append(ukc_r)
+            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][3].append(fwa)
 
             # Unpacks the data for the different vessel criteria and appends it to a list
             vessel_characteristics_type = []

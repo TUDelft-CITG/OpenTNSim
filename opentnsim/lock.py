@@ -954,19 +954,6 @@ class PassLock():
                                      the vessel, which should be supscripted to, using a string which includes the name of the node at which this
                                      lock door is located in the network and was specified as input in the IsLock class """
 
-                    def wait_for_requested_empty_conversion_by_oppositely_directed_vessel():
-                        """ Vessel will wait for the lock chamber to be converted without vessels, as it was requested by
-                                the vessel(s) waiting on the other side of the lock chamber. This is programmed by a vessel's
-                                request of the converting while_in_line_up_area-resource of the opposing line-up area with
-                                capacity = 1, yielding a timeout, and immediately releasing the request.
-
-                            No input required. """
-
-                        vessel.waiting_during_converting = opposing_lineup_area.converting_while_in_line_up_area[opposing_lineup_area.start_node].request()
-                        vessel.waiting_during_converting.obj = vessel
-                        yield vessel.waiting_during_converting
-                        opposing_lineup_area.converting_while_in_line_up_area[opposing_lineup_area.start_node].release(vessel.waiting_during_converting)
-
                     def request_approach_lock_chamber(timeout_required=True,priority=0):
                         """ Vessel will request if it can enter the lock by requesting access to the first set of lock doors. This
                                 request always has priority = 0, as vessels can only pass these doors when the doors are open (not
@@ -1060,21 +1047,17 @@ class PassLock():
                     #Request procedure of the lock doors, which is dependent on the current moment within the lock cycle:
                     #- If there is a lock cycle being prepared or going on in the same direction of the vessel
                     if lock_door_2_user_priority == -1:
-                        print(vessel.env.now,vessel.id,'-1')
                         #If vessel does not fit in next lock cycle or locking has already started
                         if lock.resource.users != [] and (vessel.L > (lock.resource.users[-1].obj.lock_dist-0.5*lock.resource.users[-1].obj.L) or lock.resource.users[-1].obj.converting):
                             yield from wait_for_next_lockage()
 
                         request_place_in_next_lockage()
-                        print(vessel.env.now,vessel.id,'door1',door1.users)
 
                         # Request to start the lock cycle
                         if lock.resource.users and ('converting' in dir(lock.resource.users[-1].obj) and not lock.resource.users[-1].obj.converting):
                             yield from request_approach_lock_chamber()
                         else:
                             yield from request_approach_lock_chamber(priority=-1)
-
-                        print(vessel.env.now,vessel.id,'door2',door2.users)
 
                         if door2.users != [] and door2.users[0].priority == -1:
                             yield from secure_lock_cycle(hold_request=True)
@@ -1087,7 +1070,6 @@ class PassLock():
 
                     #- If there is a lock cycle being prepared or going on to the direction of the vessel or if the lock chamber is empty
                     else:
-                        print(vessel.env.now,vessel.id,'door1',door1.users,door2.users)
                         request_place_in_next_lockage()
 
                         #Determining (new) situation
