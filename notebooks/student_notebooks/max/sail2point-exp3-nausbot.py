@@ -29,7 +29,7 @@ import tactics
 
 FG = network_FG(as_numbers=False)
 
-STRATEGY = 'total_emission_CO2'  #Choose kpi on which you want to sort 'total_emission_CO2', 'duration', 'total_diesel_consumption_ICE_vol'
+STRATEGY = 'duration'  #Choose kpi on which you want to sort 'total_emission_CO2', 'duration', 'total_diesel_consumption_ICE_vol'
 
 WAYPOINT_THRESHOLD = 3 #meters
 
@@ -157,6 +157,7 @@ class Operator():
             self.berth_available = False
         else:
             self.berth_available = True
+        print("BERTH AVAILABILITY:", self.berth_available)
 
     def compute_kpi(self, event):
         print('computing kpi')
@@ -174,6 +175,7 @@ class Operator():
         )
         self.kpi_df.sort_values(STRATEGY, inplace=True)
         time_remaining = self.kpi_df.loc[:,'duration'].iloc[0]
+        print(self.kpi_df)
         print(f'Duration of alternative with least emissions = {time_remaining} seconds')
         self.publish_route()
         self.publish_velocity()
@@ -200,19 +202,19 @@ class Vessel():
         # an ordered set of nodes that we must pass
         self.waypoints = waypoints
         # an ordered set of nodes that we are told to sail through
-        self.route = route
+        self.route = route  
 
         self.visited_waypoints = []
         self.visited_nodes = []
         self.pos = NavSatFix()
         self.sub = rospy.Subscriber(f"/{self.id}/state/geopos", NavSatFix, callback=self.update_pos)
         self.pub_currentwaypoint = rospy.Publisher(f"/{self.id}/next_node", NavSatFix, queue_size=10)
-        self.pub_headingref = rospy.Publisher(f"/{self.id}/heading_ref", Float32, queue_size=10)
+        self.pub_headingref = rospy.Publisher(f"/{self.id}/reference/yaw", Float32, queue_size=10)
 
         self.engine_order = 0.8 
         self.max_velocity = 0.5
     
-        self.pub_velocity = rospy.Publisher(f"/{self.id}/reference/velocity_test", Float32MultiArray, queue_size=10)   
+        self.pub_velocity = rospy.Publisher(f"/{self.id}/reference/velocity", Float32MultiArray, queue_size=10)   
         self.current_waypoint = self.waypoints[0] if self.waypoints else None
         self.current_node = self.route[0] if self.route else None
         self.publish_velocity()
@@ -308,7 +310,7 @@ class Sail2point():
         self.FG = FG
         
         self.pub_currentwaypoint = rospy.Publisher(f"/{VESSEL_ID}/current_waypoint", NavSatFix, queue_size=10)
-        self.pub_headingref = rospy.Publisher(f"/{VESSEL_ID}/heading_ref", Float32, queue_size=10)
+        self.pub_headingref = rospy.Publisher(f"/{VESSEL_ID}/reference/yaw", Float32, queue_size=10)
 
         # Get geometry of nodes = Point (lon, lat) and store as waypoint
         self.waypoints = ['A', 'E', 'H']
