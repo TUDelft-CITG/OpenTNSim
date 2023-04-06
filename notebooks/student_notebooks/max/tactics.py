@@ -93,11 +93,11 @@ def generate_route_alternatives(graph):
     route_alternatives = [
         {
             "name": "direct",
-            "waypoints": ['A', 'E', 'H']
+            "waypoints": ['A', 'F', 'H', 'L']
         },
         {
             "name": "redirect",
-            "waypoints": ['A', 'H', 'E']
+            "waypoints": ['A', 'F', 'L', 'F']
         },
     ]
 
