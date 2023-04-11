@@ -142,11 +142,11 @@ def generate_route_alternatives(graph):
     route_alternatives = [
         {
             "name": "direct",
-            "waypoints": ['A', 'E', 'H', 'L']
+            "waypoints": ['A', 'D','E', 'F', 'G', 'H']
         },
         {
             "name": "redirect",
-            "waypoints": ['A', 'F','I', 'L', 'J', 'F']
+            "waypoints": ['A', 'D','E', 'F', 'G', 'H', 'G', 'F', 'E', 'D']
         },
     ]
 
@@ -244,6 +244,7 @@ def add_kpi(alternatives_df, berth_available, graph, geometry, visited_nodes, wa
         wait_time = 20 - result.loc[direct_idx, 'c_d_t']
         result.loc[direct_idx, "wait_time"] = wait_time
         result.loc[redirect_idx, "wait_time"] = 0
+        print('BERTH SHOULD NOT BE AVAILABLE')
     else:
         result['wait_time'] = 0
     result['wait_emission_pm10'] = result['wait_time'] * WAIT_EMISSION_PM10_PER_SECOND

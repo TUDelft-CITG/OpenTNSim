@@ -25,7 +25,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import NavSatFix
 
 from network_gdf import network_FG, load_experiment3
-import tactics 
+import tactics_circle
 
 FG = network_FG(as_numbers=False)
 
@@ -159,7 +159,7 @@ class Operator():
         waypoints = self.controlled_vessel.waypoints 
         
         graph = FG
-        self.kpi_df = tactics.add_kpi(
+        self.kpi_df = tactics_circle.add_kpi(
             alternatives_df=self.alternatives_df,
             berth_available=self.berth_available, 
             graph=FG, 
@@ -318,7 +318,7 @@ def main():
     vessel_1 = Vessel(id=VESSEL_ID_1, route=route, waypoints=['A', 'C', 'F', 'I', 'L'])
     vessel_2 = Vessel(id=VESSEL_ID_2, route=None, waypoints=None)
 
-    alternatives_df = tactics.generate_all_alternatives(FG)
+    alternatives_df = tactics_circle.generate_all_alternatives(FG)
     
     operator_1 = Operator("Operator", controlled_vessel=vessel_1, observed_vessel=vessel_2, alternatives_df=alternatives_df)
     print('Hello')

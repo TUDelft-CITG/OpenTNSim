@@ -2,6 +2,7 @@
 import math
 import datetime
 import time
+import os
 
 import numpy as np
 import networkx as nx
@@ -162,7 +163,8 @@ def network_FG(as_numbers=True):
 
 
 def load_experiment3():
-    with open('experiment3/experiment3-graph.pickle', 'rb') as f:
+    print(os.getcwd())
+    with open('experiment3-graph.pickle', 'rb') as f:
         graph = pickle.load(f)
     return graph
 

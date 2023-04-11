@@ -3,6 +3,7 @@ import pickle
 import math
 import datetime
 import time
+import os
 
 import rospy
 
@@ -12,6 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 import geopandas as gpd
+import shapely
 import shapely.geometry
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -27,9 +29,12 @@ from sensor_msgs.msg import NavSatFix
 from network_gdf import network_FG, load_experiment3
 import tactics 
 
-FG = network_FG(as_numbers=False)
+#print(os.getcwd())
+with open('/home/gijn/src/OpenTNSim/notebooks/student_notebooks/max/experiment3/experiment3-graph.pickle', 'rb') as f:
+        FG = pickle.load(f)
+#FG = load_experiment3() 
 
-STRATEGY = 'strategy_duration'  #Choose kpi on which you want to sort 'strategy_duration', 'strategy_fuel', 'strategy_mca'
+STRATEGY = 'strategy_mca'  #Choose kpi on which you want to sort 'strategy_duration', 'strategy_fuel', 'strategy_mca'
 
 WAYPOINT_THRESHOLD = 3 #meters
 
@@ -144,9 +149,9 @@ class Operator():
     def check_berth_availability(self, msg: NavSatFix()):
     
         dist = distance(self.berth_loc[0], self.berth_loc[1], msg.longitude, msg.latitude)
-        print(dist)
+        rospy.loginfo(f'{self.controlled_vessel.id} is at {dist} meters from berth')
         # Add conditional statement that involves the berth availability: 'if pos is within polygon'
-        if dist <= 1:
+        if dist <= 3:
             self.berth_available = False
         else:
             self.berth_available = True
@@ -306,12 +311,12 @@ def main():
     node_name = 'Exp3'
     VESSEL_ID_1 = "RAS_TN_DB" #controlled
 
-    route = ['A','B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+    route = ['A','B', 'C', 'D', 'E', 'F', 'G', 'H']
     VESSEL_ID_2 = "RAS_TN_GR" #what topic to subscribe to
     rospy.init_node(f"{node_name}", anonymous=False, log_level=rospy.INFO)
     
 
-    vessel_1 = Vessel(id=VESSEL_ID_1, route=route, waypoints=['A', 'C', 'F', 'I', 'L'])
+    vessel_1 = Vessel(id=VESSEL_ID_1, route=route, waypoints=['A', 'D', 'H'])
     vessel_2 = Vessel(id=VESSEL_ID_2, route=None, waypoints=None)
 
     alternatives_df = tactics.generate_all_alternatives(FG)
