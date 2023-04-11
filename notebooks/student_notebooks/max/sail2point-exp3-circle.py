@@ -157,7 +157,7 @@ class Operator():
         geometry = self.controlled_vessel.geometry
         # remaining waypoints for vessel
         waypoints = self.controlled_vessel.waypoints 
-        print('WAYPOINT IS', waypoints)
+        
         graph = FG
         self.kpi_df = tactics.add_kpi(
             alternatives_df=self.alternatives_df,
