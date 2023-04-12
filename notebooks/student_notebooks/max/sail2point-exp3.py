@@ -244,7 +244,7 @@ class Vessel():
 
     def update_pos(self, msg: NavSatFix()):
         self.pos = msg
-        rospy.loginfo(f'Vessel : {self.id}, Lat {self.pos.latitude},Lon {self.pos.longitude}')
+        #rospy.loginfo(f'Vessel : {self.id}, Lat {self.pos.latitude},Lon {self.pos.longitude}')
         self.update_route()
         self.publish_current_waypoint()
         self.publish_heading_ref()
@@ -277,7 +277,9 @@ class Vessel():
     def publish_current_waypoint(self):
         """Publish current waypoint (as understood by ras, it is the next node geometry) to a topic"""
         if self.next_node_geometry is None:
-            rospy.loginfo(f'Vessel {self.id} does not have a next node geometry')
+            if self.id == 'RAS_TN_DB':
+                rospy.loginfo(f'Vessel {self.id} does not have a next node geometry')
+                return
             return 
         #Define msg type
         pub_msg = NavSatFix()
@@ -290,15 +292,15 @@ class Vessel():
     def publish_heading_ref(self):
         """Publish heading_ref to a topic"""
         if self.next_node_geometry is None:
-            rospy.loginfo(f'Vessel {self.id} does not have a next node geometry')
+            if self.id == 'RAS_TN_DB':
+                rospy.loginfo(f'Vessel {self.id} does not have a next node geometry')
+                return
             return 
         pub_msg = Float32()
 
         self.heading_ref = heading(self.next_node_geometry.x, self.next_node_geometry.y , self.pos.longitude, self.pos.latitude)
 
         pub_msg.data = self.heading_ref
-        rospy.loginfo(f"Heading_ref: {pub_msg}")
-
         self.pub_headingref.publish(pub_msg)
 
 
