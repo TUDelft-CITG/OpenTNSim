@@ -17,7 +17,7 @@ class HasWaterway(core.Movable):
     def request_access_new_section(self,origin,destination):
         # Leave and access waterway section
         if 'Junction' in self.env.FG.nodes[origin].keys():
-            PassWaterway.release_access_previous_section(self, origin)
+            yield from PassWaterway.release_access_previous_section(self, origin)
 
         if 'Detector' in self.env.FG.nodes[origin].keys():
             if destination != self.route[-1]:
@@ -25,7 +25,7 @@ class HasWaterway(core.Movable):
 
     def release_last_section(self,destination):
         if 'Junction' in self.env.FG.nodes[destination].keys() and destination == self.route[-1]:
-            PassWaterway.release_access_previous_section(self, destination)
+            yield from PassWaterway.release_access_previous_section(self, destination)
 
     def open_waterway(vessel,node):
         detector = vessel.env.FG.nodes[node]['Detector']
@@ -37,11 +37,11 @@ class HasWaterway(core.Movable):
                 continue
 
             infrastructure = detector[ahead_node].infrastructure
-            infrastructures.append(infrastructure)
 
             if isinstance(infrastructure, IsWaterwayJunction):
                 for next_node in vessel.route[vessel.route.index(ahead_node):]:
                     if [ahead_node, next_node] in infrastructure.sections:
+                        infrastructures.append(infrastructure)
                         ahead_nodes.append(ahead_node)
                         next_nodes.append(next_node)
                         break
@@ -155,7 +155,8 @@ class PassWaterway:
                 previous_junction.resource[origin].release(vessel.request_access_waterway[origin])
                 if 'request_one_way_access_waterway' in dir(vessel):
                     junction = vessel.env.FG.nodes[origin]['Junction']
-                    junction.resource[previous_node].release(vessel.request_one_way_access_waterway)
+                    yield junction.resource[previous_node].release(vessel.request_one_way_access_waterway)
+                    delattr(vessel, 'request_one_way_access_waterway')
                 break
 
         return
@@ -170,40 +171,138 @@ class PassWaterway:
 
         """
 
-        # Loop over the nodes of the route of the vessel (from the node that it is heading to onwards)
+        def check_if_request_is_in_same_direction(vessel,request,ahead_node):
+            boolean = False
+            if not request.obj.route.index(ahead_node) == len(request.obj.route)-1 and request.obj.route[request.obj.route.index(ahead_node) + 1] == vessel.route[vessel.route.index(ahead_node) + 1]:
+                boolean = True
+            elif request.obj.route[request.obj.route.index(ahead_node) - 1] == vessel.route[vessel.route.index(ahead_node) - 1]:
+                boolean = True
+
+            return boolean
 
         if 'request_access_waterway' not in dir(vessel):
             vessel.request_access_waterway = {}
+
+        if 'request_one_way_access_waterway' not in dir(vessel):
+            vessel.request_one_way_access_waterway = {}
+
+        waiting_time = 0
         junctions, ahead_nodes, next_nodes = HasWaterway.open_waterway(vessel,origin)
         for junction, ahead_node, next_node in zip(junctions, ahead_nodes, next_nodes):
+            print(vessel.name,ahead_node,next_node,waiting_time)
+            sailing_time_to_ahead_junction = vessel_traffic_service.VesselTrafficService.provide_sailing_time(vessel,vessel,vessel.route[vessel.route.index(origin):(vessel.route.index(ahead_node) + 1)])
             sailing_time_to_next_junction = vessel_traffic_service.VesselTrafficService.provide_sailing_time(vessel,vessel,vessel.route[vessel.route.index(origin):(vessel.route.index(next_node)+1)])
             vessel.estimated_time_of_leaving_waterway = vessel.env.now + sailing_time_to_next_junction
+
+            next_junction = vessel.env.FG.nodes[next_node]['Junction']
+            encounter_restriction = False
             if junction.encounter_restrictions and next_node in junction.encounter_restrictions.keys():
-                encounter_restriction = PassWaterway.rule_determinator(vessel,junction,'encounter_restrictions',next_node)
+                if junction.encounter_restrictions[next_node]:
+                    encounter_restriction = PassWaterway.rule_determinator(vessel,junction,'encounter_restrictions',next_node)
                 if encounter_restriction:
-                    next_junction = vessel.env.FG.nodes[next_node]['Junction']
-                    vessel.request_one_way_access_waterway = next_junction.resource[ahead_node].request(priority=0,) #preempt=True
-                    vessel.request_one_way_access_waterway.obj = vessel
-                    yield vessel.request_one_way_access_waterway
+                    priority = 0
+                    if next_junction.resource[ahead_node].users and not next_junction.resource[ahead_node].queue:
+                        priority = next_junction.resource[ahead_node].users[0].priority - 1
+                        user = next_junction.resource[ahead_node].users[0]
+                        if 'request_one_way_access_waterway' in dir(user) and check_if_request_is_in_same_direction(vessel, user, ahead_node):
+                            priority = 0
 
-            if junction.overtaking_restrictions and next_node in junction.overtaking_restrictions.keys():
-                overtaking_restriction = PassWaterway.rule_determinator(vessel, junction, 'overtaking_restrictions',next_node)
-                if overtaking_restriction and junction.resource[next_node].users:
-                    estimated_time_of_leaving_waterway_previous_vessel = junction.resource[next_node].users[0].obj.estimated_time_of_leaving_waterway
-                    safety_time = (10 * vessel.L) / vessel.v
-                    if vessel.estimated_time_of_leaving_waterway < (estimated_time_of_leaving_waterway_previous_vessel - safety_time):
-                        yield vessel.env.timeout((estimated_time_of_leaving_waterway_previous_vessel - safety_time)-vessel.estimated_time_of_leaving_waterway)
+                    vessel.request_one_way_access_waterway[ahead_node] = next_junction.resource[ahead_node].request(priority=priority)
+                    vessel.request_one_way_access_waterway[ahead_node].obj = vessel
+                    vessel.request_one_way_access_waterway[ahead_node].eta = vessel.env.now + sailing_time_to_ahead_junction
+                    vessel.request_one_way_access_waterway[ahead_node].etd = vessel.request_one_way_access_waterway[ahead_node].eta + (sailing_time_to_next_junction-sailing_time_to_ahead_junction)
 
-            if junction.resource[next_node].users:
-                vessel.request_access_waterway[next_node] = junction.resource[next_node].request(priority=0,) #preempt=True
-            else:
-                vessel.request_access_waterway[next_node] = junction.resource[next_node].request(priority=0,) #preempt=False
+            priority = 0
+            if junction.resource[next_node].users and not junction.resource[next_node].queue:
+                priority = junction.resource[next_node].users[0].priority - 1
+                user = junction.resource[next_node].users[0]
+                if not check_if_request_is_in_same_direction(vessel, user, ahead_node):
+                    priority = 0
 
+            vessel.request_access_waterway[next_node] = junction.resource[next_node].request(priority=priority)
             vessel.request_access_waterway[next_node].obj = vessel
+            vessel.request_access_waterway[next_node].eta = vessel.env.now + sailing_time_to_ahead_junction
+            scheduled_eta = new_eta = vessel.request_access_waterway[next_node].eta + waiting_time
+            vessel.request_access_waterway[next_node].etd = vessel.request_access_waterway[next_node].eta + (sailing_time_to_next_junction-sailing_time_to_ahead_junction)
 
-            try:
-                yield vessel.request_access_waterway[next_node]
-            except simpy.Interrupt as e:
-                continue
+            if encounter_restriction:
+                if next_junction.resource[ahead_node].queue:
+                    if len(next_junction.resource[ahead_node].queue) == 1:
+                        queued_request = next_junction.resource[ahead_node].users[0]
+                        if check_if_request_is_in_same_direction(vessel, queued_request, ahead_node):
+                            queue_index = -1
+                        else:
+                            queue_index = 0
+                    else:
+                        queue_index = len(next_junction.resource[ahead_node].queue[:-1])
+                        for index,queued_request in enumerate(reversed(next_junction.resource[ahead_node].queue[:-1])):
+                            if check_if_request_is_in_same_direction(vessel, queued_request, ahead_node):
+                                if not encounter_restriction or queued_request.eta >= vessel.env.now+sailing_time_to_ahead_junction+waiting_time:
+                                    queue_index = next_junction.resource[ahead_node].queue.index(queued_request)
+                                    break
+                                if index == len(next_junction.resource[ahead_node].queue[:-1])-1:
+                                    queued_request = next_junction.resource[ahead_node].queue[-2]
+                                    queue_index = next_junction.resource[ahead_node].queue.index(queued_request)
 
+                    print('one-way',vessel.name, vessel.env.now, next_junction.resource[ahead_node].users[0].obj.name,queue_index,queued_request.obj.name,queued_request.eta,sailing_time_to_ahead_junction)
+                    if queue_index+1:
+                        if check_if_request_is_in_same_direction(vessel, queued_request, ahead_node):
+                            new_eta = queued_request.eta
+                            queue = next_junction.resource[ahead_node].queue
+                            queue.insert(queue_index+1, vessel.request_one_way_access_waterway[ahead_node])
+                            queue.pop(-1)
+                        else:
+                            new_eta = queued_request.etd
+
+                    waiting_time += np.max([0,new_eta-scheduled_eta])
+
+            print(waiting_time)
+            scheduled_eta = new_eta = vessel.env.now + sailing_time_to_ahead_junction + waiting_time
+            if junction.resource[next_node].queue:
+                if len(junction.resource[next_node].queue) == 1:
+                    queued_request = junction.resource[next_node].users[0]
+                    if check_if_request_is_in_same_direction(vessel, queued_request, ahead_node):
+                        queue_index = -1
+                    else:
+                        queue_index = 0
+                else:
+                    queue_index = len(junction.resource[next_node].queue[:-1])
+                    for index,queued_request in enumerate(reversed(junction.resource[next_node].queue[:-1])):
+                        if check_if_request_is_in_same_direction(vessel, queued_request, ahead_node):
+                            if not encounter_restriction or queued_request.eta >= vessel.env.now+sailing_time_to_ahead_junction+waiting_time:
+                                queue_index = junction.resource[next_node].queue.index(queued_request)
+                                break
+                            if index == len(next_junction.resource[ahead_node].queue[:-1])-1:
+                                queued_request = junction.resource[next_node].queue[-2]
+                                queue_index = junction.resource[next_node].queue.index(queued_request)
+
+                print('two-way',queue_index,queued_request.obj.name,queued_request.eta,scheduled_eta)
+                if queue_index+1:
+                    if check_if_request_is_in_same_direction(vessel, queued_request, ahead_node):
+                        print('hi')
+                        new_eta = queued_request.eta
+                        queue = junction.resource[next_node].queue
+                        queue.insert(queue_index+1, vessel.request_access_waterway[next_node])
+                        queue.pop(-1)
+                    else:
+                        new_eta = queued_request.etd
+
+                waiting_time += np.max([0,new_eta-scheduled_eta])
+                print(waiting_time)
+
+        for junction, ahead_node, next_node in zip(junctions, ahead_nodes, next_nodes):
+            encounter_restriction = False
+            if junction.encounter_restrictions and next_node in junction.encounter_restrictions.keys():
+                if junction.encounter_restrictions[next_node]:
+                    encounter_restriction = PassWaterway.rule_determinator(vessel, junction, 'encounter_restrictions',next_node)
+                if encounter_restriction:
+                    vessel.request_one_way_access_waterway[ahead_node].eta += waiting_time
+                    vessel.request_one_way_access_waterway[ahead_node].etd += waiting_time
+
+            vessel.request_access_waterway[next_node].eta += waiting_time
+            vessel.request_access_waterway[next_node].etd += waiting_time
+            print(next_node,vessel.request_access_waterway[next_node].eta)
+
+        print(waiting_time)
+        yield vessel.env.timeout(waiting_time)
         return
