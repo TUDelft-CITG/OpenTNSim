@@ -290,22 +290,33 @@ class Movable(Locatable, Routeable, Log):
                 logger.debug("Re-routing", exc_info=True)
                 raise simpy.exceptions.Interrupt('Re-routing')
 
+        def calculate_distance_wgs84(vessel,coordinate,node):
+            _,_,distance = vessel.wgs84.inv(vessel.env.FG.nodes[vessel.route[vessel.route.index(node)]]['geometry'].x,
+                                            vessel.env.FG.nodes[vessel.route[vessel.route.index(node)]]['geometry'].y,
+                                            coordinate.x,coordinate.y)
+            return distance
+
+        self.distance = self.env.FG.edges[origin, destination, k]['Info']['length']
         if next_node and ("Line-up area" in self.env.FG.edges[destination,next_node,k_next_node].keys() or "Line-up area" in self.env.FG.edges[next_node,destination,k_next_node].keys()):
             dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
+            self.distance = calculate_distance_wgs84(self,dest,origin)
 
         if "Line-up area" in self.env.FG.edges[origin,destination,k].keys() or "Line-up area" in self.env.FG.edges[destination,origin,k].keys():
             orig = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
+            self.distance = calculate_distance_wgs84(self,orig,destination)
 
         if next_node and ("Lock" in self.env.FG.edges[destination,next_node,k_next_node].keys() or "Lock" in self.env.FG.edges[next_node,destination,k_next_node].keys()):
             dest = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
+            self.distance = calculate_distance_wgs84(self,dest,origin)
 
         if "Lock" in self.env.FG.edges[origin,destination,k].keys() or "Lock" in self.env.FG.edges[destination,origin,k].keys():
             orig = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
+            self.distance = calculate_distance_wgs84(self,orig,destination)
 
         if "Terminal" in self.env.FG.edges[origin,destination,k].keys():
             orig = shapely.geometry.Point(self.terminal_pos_lat, self.terminal_pos_lon)
+            self.distance = calculate_distance_wgs84(self,orig,destination)
 
-        self.distance = self.env.FG.edges[origin,destination,k]['Info']['length']
         if 'Vertical tidal restriction' in self.env.FG.nodes[origin]['Info'].keys():
             ukc = self.env.vessel_traffic_service.provide_ukc_clearance(self, origin)
         else:

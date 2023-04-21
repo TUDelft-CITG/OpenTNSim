@@ -27,18 +27,16 @@ class HasLock(core.Movable):
             yield self.env.timeout(0)
             lock = []
             for node1,node2 in zip(self.route[self.route.index(origin):-1],self.route[self.route.index(origin)+1:]):
-                if "Lock" in self.env.FG.edges[node1, node2].keys():
-                    lock = self.env.FG.edges[node1, node2]['Lock'][0]
+                k = sorted(self.env.FG[node1][node2], key=lambda x: self.env.FG[node1][node2][x]['geometry'].length)[0]
+                if "Lock" in self.env.FG.edges[node1, node2,k].keys():
+                    lock = self.env.FG.edges[node1, node2,k]['Lock'][0]
                     node_doors1 = lock.node_doors1
                     node_doors2 = lock.node_doors2
                     doors2 = lock.doors_2[node_doors2]
-
-                elif "Lock" in self.env.FG.edges[node2, node1].keys():
-                    lock = self.env.FG.edges[node2, node1]['Lock'][0]
-                    node_doors1 = lock.node_doors2
-                    node_doors2 = lock.node_doors1
-                    doors2 = lock.doors_1[node_doors2]
-
+                    if node_doors1 != node1:
+                        node_doors1 = lock.node_doors2
+                        node_doors2 = lock.node_doors1
+                        doors2 = lock.doors_1[node_doors2]
 
             if lock and lock.next_lockage_length[node_doors2].level - self.L >= 0:
                 if not lock.next_lockage_order[node_doors2].users:
@@ -59,12 +57,15 @@ class HasLock(core.Movable):
                     self.in_next_lockage.obj = self
 
     def leave_lock_chamber(self,origin,destination):
-        if "Lock" in self.env.FG.edges[origin,destination].keys():
-            yield from PassLock.leave_lock(self, origin, destination, direction=1)
-            self.v = self.v_before_lock
+        k = sorted(self.env.FG[origin][destination], key=lambda x: self.env.FG[origin][destination][x]['geometry'].length)[0]
+        if "Lock" in self.env.FG.edges[origin,destination,k].keys():
+            locks = self.env.FG.edges[origin,destination,k]["Lock"]
+            if origin == locks[0].node_doors1:
+                direction = 1
+            else:
+                direction = 0
 
-        elif "Lock" in self.env.FG.edges[destination,origin].keys():
-            yield from PassLock.leave_lock(self, destination, origin, direction=0)
+            yield from PassLock.leave_lock(self, destination, origin, direction)
             self.v = self.v_before_lock
 
 class HasWaitingArea(core.Movable):
@@ -85,15 +86,19 @@ class HasLineUpArea(core.Movable):
     def approach_lineup_area(self,destination):
         if destination != self.route[-1]:
             next_node = self.route[self.route.index(destination)+1]
-            if "Line-up area" in self.env.FG.edges[destination,next_node].keys():  # if vessel is approaching the line-up area
+            k1 = sorted(self.env.FG[destination][next_node], key=lambda x: self.env.FG[destination][next_node][x]['geometry'].length)[0]
+            k2 = sorted(self.env.FG[next_node][destination],key=lambda x: self.env.FG[next_node][destination][x]['geometry'].length)[0]
+            if "Line-up area" in self.env.FG.edges[destination,next_node,k1].keys():  # if vessel is approaching the line-up area
                 yield from PassLock.approach_lineup_area(self, destination, next_node)
-            elif "Line-up area" in self.env.FG.edges[next_node,destination].keys():
+            elif "Line-up area" in self.env.FG.edges[next_node,destination,k2].keys():
                 yield from PassLock.approach_lineup_area(self, next_node, destination)
 
     def leave_lineup_area(self,origin,destination):
-        if "Line-up area" in self.env.FG.edges[origin,destination].keys():  # if vessel is located in the line-up
+        k1 = sorted(self.env.FG[origin][destination],key=lambda x: self.env.FG[origin][destination][x]['geometry'].length)[0]
+        k2 = sorted(self.env.FG[destination][origin],key=lambda x: self.env.FG[destination][origin][x]['geometry'].length)[0]
+        if "Line-up area" in self.env.FG.edges[origin,destination,k1].keys():  # if vessel is located in the line-up
             yield from PassLock.leave_lineup_area(self, origin, destination)
-        elif "Line-up area" in self.env.FG.edges[destination, origin].keys():
+        elif "Line-up area" in self.env.FG.edges[destination,origin,k2].keys():
             yield from PassLock.leave_lineup_area(self, destination, origin)
 
 class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log):
@@ -481,7 +486,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log):
         self.log_entry("Lock doors closing start", environment.now, number_of_vessels, self.node_open)
         if timeout_required:
             yield environment.timeout(self.doors_close)
-        self.log_entry("Lock doors closing stop", environment.now, number_of_vessels, self.node_open)
+            self.log_entry("Lock doors closing stop", environment.now, number_of_vessels, self.node_open)
+        else:
+            self.log_entry("Lock doors closing stop", environment.now+self.doors_close, number_of_vessels, self.node_open)
 
         if len(self.log['Message']) != 2:
             T_door_open = (self.env.now - self.log['Timestamp'][-3].timestamp())
@@ -500,15 +507,20 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log):
         self.log_entry("Lock chamber converting start", environment.now, number_of_vessels, self.node_open)
 
         # Water level will shift
+        self.change_water_level(new_level)
         if timeout_required:
             yield environment.timeout(vessel.levelling_time)
-        self.change_water_level(new_level)
-        self.log_entry("Lock chamber converting stop", environment.now, number_of_vessels, self.node_open)
+            self.log_entry("Lock chamber converting stop", environment.now, number_of_vessels, self.node_open)
+        else:
+            self.log_entry("Lock chamber converting stop", environment.now+self.doors_close+vessel.levelling_time, number_of_vessels, self.node_open)
+
         # Open the doors
         self.log_entry("Lock doors opening start", environment.now, number_of_vessels, self.node_open)
         if timeout_required:
             yield environment.timeout(self.doors_open)
-        self.log_entry("Lock doors opening stop", environment.now, number_of_vessels, self.node_open)
+            self.log_entry("Lock doors opening stop", environment.now, number_of_vessels, self.node_open)
+        else:
+            self.log_entry("Lock doors opening stop", environment.now+self.doors_close+vessel.levelling_time+self.doors_open, number_of_vessels, self.node_open)
 
     def change_water_level(self, side):
         """ Function which changes the water level in the lock chamber and priorities in queue """
@@ -542,10 +554,9 @@ class PassLock():
         index_node_waiting_area = vessel.route.index(node_waiting_area)
         #Checks whether the waiting area is the first encountered waiting area of the lock complex
         for node1,node2 in zip(vessel.route[index_node_waiting_area:-1],vessel.route[index_node_waiting_area+1:]):
-            if 'Line-up area' in vessel.env.FG.edges[node1,node2].keys():
-                lineup_areas = vessel.env.FG.edges[node1, node2]["Line-up area"]
-            elif 'Line-up area' in vessel.env.FG.edges[node2,node1].keys():
-                lineup_areas = vessel.env.FG.edges[node2,node1]["Line-up area"]
+            k = sorted(vessel.env.FG[node1][node2],key=lambda x: vessel.env.FG[node1][node2][x]['geometry'].length)[0]
+            if 'Line-up area' in vessel.env.FG.edges[node1,node2, k].keys():
+                lineup_areas = vessel.env.FG.edges[node1, node2, k]["Line-up area"]
             else:
                 continue
 
@@ -555,11 +566,9 @@ class PassLock():
 
                 #Imports the location of the lock chamber of the lock complex
                 for approach_node,departure_node in zip(vessel.route[index_node_waiting_area:-1],vessel.route[index_node_waiting_area+1:]):
-                    if 'Lock' in vessel.env.FG.edges[approach_node,departure_node].keys():
-                        locks = vessel.env.FG.edges[approach_node,departure_node]["Lock"]
-                        break
-                    elif 'Lock' in vessel.env.FG.edges[departure_node,approach_node].keys():
-                        locks = vessel.env.FG.edges[departure_node,approach_node]["Lock"]
+                    k = sorted(vessel.env.FG[approach_node][departure_node], key=lambda x: vessel.env.FG[approach_node][departure_node][x]['geometry'].length)[0]
+                    if 'Lock' in vessel.env.FG.edges[approach_node,departure_node,k].keys():
+                        locks = vessel.env.FG.edges[approach_node,departure_node,k]["Lock"]
                         break
 
                 def choose_lock_chamber(vessel,lock,lock_position,series_number,lineup_areas,lock_queue_length):
@@ -769,7 +778,8 @@ class PassLock():
                 - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network """
 
         #Imports the properties of the line-up area the vessel is assigned to
-        lineup_areas = vessel.env.FG.edges[start_node, end_node]["Line-up area"]
+        k = sorted(vessel.env.FG[start_node][end_node],key=lambda x: vessel.env.FG[start_node][end_node][x]['geometry'].length)[0]
+        lineup_areas = vessel.env.FG.edges[start_node, end_node,k]["Line-up area"]
         for lineup_area in lineup_areas:
             if lineup_area.name != vessel.lock_name:
                 continue
@@ -781,13 +791,13 @@ class PassLock():
             #Determines corresponding lock
             locks = []
             for node1,node2 in zip(vessel.route[index_node_lineup_area:-1],vessel.route[index_node_lineup_area+1:]):
-                if 'Lock' in vessel.env.FG.edges[node1,node2].keys():
-                    direction = 1
-                    locks = vessel.env.FG.edges[node1,node2]["Lock"]
-                    break
-                elif 'Lock' in vessel.env.FG.edges[node2,node1].keys():
-                    direction = 0
-                    locks = vessel.env.FG.edges[node2,node1]["Lock"]
+                k = sorted(vessel.env.FG[node1][node2],key=lambda x: vessel.env.FG[node1][node2][x]['geometry'].length)[0]
+                if 'Lock' in vessel.env.FG.edges[node1,node2,k].keys():
+                    locks = vessel.env.FG.edges[node1,node2,k]["Lock"]
+                    if node1 == locks[0].node_doors1:
+                        direction = 1
+                    else:
+                        direction = 0
                     break
                 else:
                     continue
@@ -878,7 +888,8 @@ class PassLock():
                 - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network """
 
         #Imports the properties of the line-up area the vessel is assigned to
-        lineup_areas = vessel.env.FG.edges[start_node,end_node]["Line-up area"]
+        k = sorted(vessel.env.FG[start_node][end_node],key=lambda x: vessel.env.FG[start_node][end_node][x]['geometry'].length)[0]
+        lineup_areas = vessel.env.FG.edges[start_node,end_node,k]["Line-up area"]
         for lineup_area in lineup_areas:
             if lineup_area.name != vessel.lock_name:
                 continue
@@ -889,14 +900,15 @@ class PassLock():
             #Determines lock
             locks = []
             for approach_node,departure_node in zip(vessel.route[index_node_lineup_area:-1],vessel.route[index_node_lineup_area+1:]):
-                if 'Lock' in vessel.env.FG.edges[approach_node,departure_node].keys():
-                    direction = 1
-                    locks = vessel.env.FG.edges[approach_node,departure_node]["Lock"]
+                k = sorted(vessel.env.FG[approach_node][departure_node],key=lambda x: vessel.env.FG[approach_node][departure_node][x]['geometry'].length)[0]
+                if 'Lock' in vessel.env.FG.edges[approach_node,departure_node,k].keys():
+                    locks = vessel.env.FG.edges[approach_node, departure_node, k]["Lock"]
+                    if approach_node == locks[0].node_doors1:
+                        direction = 1
+                    else:
+                        direction = 0
                     break
-                elif 'Lock' in vessel.env.FG.edges[departure_node,approach_node].keys():
-                    direction = 0
-                    locks = vessel.env.FG.edges[departure_node,approach_node]["Lock"]
-                    break
+
                 else:
                     if departure_node != vessel.route[-1]:
                         continue
@@ -917,10 +929,9 @@ class PassLock():
 
                 #Checks whether the lock chamber is the first encountered lock chamber of the lock complex
                 for node1,node2 in zip(vessel.route[index_node_lineup_area:-1],vessel.route[index_node_lineup_area+1:]):
-                    if 'Line-up area' in vessel.env.FG.edges[node1,node2].keys():
-                        opposing_lineup_areas = vessel.env.FG.edges[node1, node2]["Line-up area"]
-                    elif 'Line-up area' in vessel.env.FG.edges[node2,node1].keys():
-                        opposing_lineup_areas = vessel.env.FG.edges[node2,node1]["Line-up area"]
+                    k = sorted(vessel.env.FG[node1][node2],key=lambda x: vessel.env.FG[node1][node2][x]['geometry'].length)[0]
+                    if 'Line-up area' in vessel.env.FG.edges[node1,node2,k].keys():
+                        opposing_lineup_areas = vessel.env.FG.edges[node1, node2,k]["Line-up area"]
                     else:
                         continue
 
@@ -1160,7 +1171,8 @@ class PassLock():
                 - node_lock: a string which includes the name of the node at which the lock chamber is located in the network """
 
         #Imports the properties of the lock chamber the vessel is assigned to
-        locks = vessel.env.FG.edges[node_doors1,node_doors2]["Lock"]
+        k = sorted(vessel.env.FG[node_doors1][node_doors2], key=lambda x: vessel.env.FG[node_doors1][node_doors2][x]['geometry'].length)[0]
+        locks = vessel.env.FG.edges[node_doors1,node_doors2,k]["Lock"]
         for lock in locks:
             if lock.name != vessel.lock_name:
                 continue
@@ -1173,10 +1185,9 @@ class PassLock():
 
             #Checks whether the lock chamber is the first encountered lock chamber of the lock complex
             for node1, node2 in zip(vessel.route[index_node_doors2:-1],vessel.route[index_node_doors2+1:]):
-                if "Line-up area" in vessel.env.FG.edges[node1,node2].keys():
-                    opposing_lineup_areas = vessel.env.FG.edges[node1,node2]["Line-up area"]
-                elif "Line-up area" in vessel.env.FG.edges[node2,node1].keys():
-                    opposing_lineup_areas = vessel.env.FG.edges[node2, node1]["Line-up area"]
+                k = sorted(vessel.env.FG[node1][node2], key=lambda x: vessel.env.FG[node1][node2][x]['geometry'].length)[0]
+                if "Line-up area" in vessel.env.FG.edges[node1,node2,k].keys():
+                    opposing_lineup_areas = vessel.env.FG.edges[node1,node2,k]["Line-up area"]
                 else:
                     continue
 
@@ -1196,10 +1207,9 @@ class PassLock():
 
             #Imports the properties of the line-up area the vessel was assigned to
             for node1,node2 in zip(reversed(vessel.route[:index_node_doors1-1]),reversed(vessel.route[1:index_node_doors1])):
-                if "Line-up area" in vessel.env.FG.edges[node1,node2].keys():
-                    lineup_areas = vessel.env.FG.edges[node1,node2]["Line-up area"]
-                elif "Line-up area" in vessel.env.FG.edges[node2,node1].keys():
-                    lineup_areas = vessel.env.FG.edges[node2,node1]["Line-up area"]
+                k = sorted(vessel.env.FG[node1][node2], key=lambda x: vessel.env.FG[node1][node2][x]['geometry'].length)[0]
+                if "Line-up area" in vessel.env.FG.edges[node1,node2,k].keys():
+                    lineup_areas = vessel.env.FG.edges[node1,node2,k]["Line-up area"]
                 else:
                     continue
 
@@ -1212,7 +1222,7 @@ class PassLock():
                     vessel.log_entry("Passing lock start", vessel.env.now, 0, position_in_lock)
 
                     #Determines if accessed vessel has to wait on accessing vessels
-                    if lock.next_lockage_order[node_doors2].users[-1].obj.id != vessel.id:
+                    if lock.next_lockage_order[node_doors2].users and lock.next_lockage_order[node_doors2].users[-1].obj != vessel:
                         yield lock.next_lockage_length[node_doors2].get(lock.length.capacity)
                         lock.next_lockage_length[node_doors2].put(lock.length.capacity)
 
@@ -1220,8 +1230,8 @@ class PassLock():
                     vessel.departure_lock = opposing_lineup_area.pass_line_up_area[opposing_lineup_area.start_node].request(priority=-1)
                     vessel.departure_lock.obj = vessel
 
-                    #Determines if the vessel explicitely has to request the conversion of the lock chamber (only the last entered vessel) or can go with a previously made request
-                    if lock.next_lockage_order[node_doors2].users[-1].obj.id == vessel.id:
+                    #Determines if the vessel explicitly has to request the conversion of the lock chamber (only the last entered vessel) or can go with a previously made request
+                    if lock.next_lockage_order[node_doors2].users and lock.next_lockage_order[node_doors2].users[-1].obj == vessel:
                         yield vessel.departure_lock
                         yield lock.next_lockage_length[node_doors2].put(lock.next_lockage_length[node_doors2].capacity-lock.next_lockage_length[node_doors2].level)
                         yield lock.next_lockage_length[node_doors2].get(vessel.L)
@@ -1239,7 +1249,7 @@ class PassLock():
                             yield vessel.departure_lock
                             break
 
-                if lock.next_lockage_order[node_doors2].users[-1].obj.id == vessel.id:
+                if lock.next_lockage_order[node_doors2].users and lock.next_lockage_order[node_doors2].users[-1].obj == vessel:
                     lock.next_lockage_length[node_doors2].put(lock.next_lockage_length[node_doors2].capacity-lock.next_lockage_length[node_doors2].level)
 
                 if 'in_lockage' in dir(vessel):
@@ -1270,7 +1280,8 @@ class PassLock():
                 - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network """
 
         #Imports the properties of the line-up area the vessel is assigned to
-        lineup_areas = vessel.env.FG.edges[start_node,end_node]["Line-up area"]
+        k = sorted(vessel.env.FG[start_node][end_node],key=lambda x: vessel.env.FG[start_node][end_node][x]['geometry'].length)[0]
+        lineup_areas = vessel.env.FG.edges[start_node,end_node,k]["Line-up area"]
         for lineup_area in lineup_areas:
             if lineup_area.name != vessel.lock_name: #assure lock chain = assigned chain
                 continue
@@ -1279,16 +1290,14 @@ class PassLock():
             #Checks whether the line-up area is the second encountered line-up area of the lock complex
             locks = []
             for approach_node, departure_node in zip(reversed(vessel.route[:index_node_lineup_area-1]),reversed(vessel.route[1:index_node_lineup_area])):
-                if 'Lock' in vessel.env.FG.edges[approach_node, departure_node].keys():
-                    direction = 1
-                    locks = vessel.env.FG.edges[approach_node, departure_node]["Lock"]
+                k = sorted(vessel.env.FG[approach_node][departure_node], key=lambda x: vessel.env.FG[approach_node][departure_node][x]['geometry'].length)[0]
+                if 'Lock' in vessel.env.FG.edges[approach_node, departure_node,k].keys():
+                    locks = vessel.env.FG.edges[approach_node, departure_node, k]["Lock"]
+                    if approach_node == locks[0].node_doors1:
+                        direction = 1
+                    else:
+                        direction = 0
                     break
-                elif 'Lock' in vessel.env.FG.edges[departure_node, approach_node].keys():
-                    direction = 0
-                    locks = vessel.env.FG.edges[departure_node, approach_node]["Lock"]
-                    break
-                else:
-                    continue
 
             #Imports the properties of the lock chamber the vessel was assigned to
             for lock in locks:

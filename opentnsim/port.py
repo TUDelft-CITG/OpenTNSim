@@ -314,10 +314,11 @@ class PassTerminal:
         anchorage = vessel.env.FG.nodes[node]['Anchorage'][0]
 
         # Set route after anchorage if not yet set
-        if 'route_after_anchorage' not in dir(vessel) or (vessel.route_after_anchorage[0] != node or vessel.destination != vessel.route_after_anchorage[-1]):
-            print(vessel.route_after_anchorage)
+        if 'route_after_anchorage' not in dir(vessel) or (vessel.bound == 'inbound' and (vessel.route_after_anchorage[0] != node or vessel.destination != vessel.route_after_anchorage[-1])):
             vessel.route_after_anchorage = nx.dijkstra_path(vessel.env.FG,node,vessel.route[-1])
-            print(vessel.route_after_anchorage)
+
+        elif vessel.bound == 'outbound' and (vessel.route_after_anchorage[0] != node or vessel.origin != vessel.route_after_anchorage[-1]):
+            vessel.route_after_anchorage = nx.dijkstra_path(vessel.env.FG, node, vessel.route[-1])
 
         # Moves the vessel to the node of the anchorage area
         if node != vessel.route[0]:
@@ -349,7 +350,7 @@ class PassTerminal:
             yield vessel.env.timeout(vessel.waiting_time_in_anchorage[node]) | vessel.env.timeout(vessel.metadata['max_waiting_time'])
             vessel.status = 'moving to terminal'
 
-        if vessel.accessibility:
+        if vessel.accessibility and 'waiting_time_after_terminal' not in dir(vessel):
             vessel.sailing_time_to_terminal = vessel.env.vessel_traffic_service.provide_sailing_time(vessel,vessel.route_after_anchorage[:-1])
             vessel.bound = 'outbound'
             vessel.waiting_time_after_terminal = PassTerminal.waiting_time_for_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel.metadata['t_t']+vessel.metadata['t_l'] + 2 * vessel.metadata['t_b'] + vessel.sailing_time_to_terminal, plot=True)

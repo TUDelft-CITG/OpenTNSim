@@ -43,8 +43,8 @@ class VesselTrafficService:
                     station_index = list(self.hydrodynamic_information['Stations']).index(node_on_route)
                     min_water_level = np.min(self.hydrodynamic_information['Water level'][station_index].values)
                     MBL = self.hydrodynamic_information['MBL'][station_index].values
-                    _, ukc_s, ukc_p, fwa = self.provide_sail_in_times_tidal_window(vessel,[node_on_route],ukc_calc=True)
-                    if min_water_level + MBL < (vessel.T_f + ukc_s + ukc_p + fwa):
+                    _, ukc_s, ukc_p, ukc_r, fwa = self.provide_sail_in_times_tidal_window(vessel,[node_on_route],ukc_calc=True)
+                    if min_water_level + MBL < (vessel.T_f + ukc_s + ukc_p + ukc_r + fwa):
                         anchorage_reachable = False
                         break
 
@@ -83,12 +83,12 @@ class VesselTrafficService:
 
         """
 
-        _, ukc_s, ukc_p, fwa = self.provide_sail_in_times_tidal_window(vessel,[node],ukc_calc=True)
+        _, ukc_s, ukc_p, ukc_r, fwa = self.provide_sail_in_times_tidal_window(vessel,[node],ukc_calc=True)
         node_index = list(self.hydrodynamic_information['Stations'].values).index(node)
         time_index = bisect.bisect_left(self.hydrodynamic_information['Times'].values,vessel.env.now)
         wlev = self.hydrodynamic_information['Water level'].values[node_index][time_index]
         depth = self.hydrodynamic_information['MBL'].values[node_index]
-        net_ukc = wlev + depth - (vessel.T_f + ukc_s + ukc_p + fwa + vessel.metadata['ukc'])
+        net_ukc = wlev + depth - (vessel.T_f + ukc_s + ukc_p + ukc_r + fwa + vessel.metadata['ukc'])
         return net_ukc
 
     def provide_governing_current_velocity(self,vessel,node,start_node,end_node,data=None,method=None):
@@ -277,44 +277,44 @@ class VesselTrafficService:
                     restriction_index, _ = tidal_window_restriction_determinator(vessel, route, types, specifications, node_name, sailing_time_to_next_node)
 
                     # Calculate ukc policy based on the applied restriction
-
                     ukc_s = types[0][restriction_index]
                     ukc_p = types[1][restriction_index] * vessel.T_f
                     ukc_r = types[2][restriction_index][0] * (vessel.T_f-types[2][restriction_index][1])
                     fwa = types[3][restriction_index] * vessel.T_f
 
                     if ukc_calc:
-                        return wdep, ukc_s, ukc_p, fwa
+                        return wdep, ukc_s, ukc_p, ukc_r, fwa
 
-                    if not starting_node_vertical_tidal_window and np.min(wdep) < vessel.T_f+ukc_s+ukc_p+fwa:
+                    if not starting_node_vertical_tidal_window and np.min(wdep) < vessel.T_f+ukc_s+ukc_p+ukc_r+fwa:
                         starting_node_vertical_tidal_window = (node_index, node_name)
 
                     twdep_nodes.append([t - time_correction_index*t_step for t in t_wlev])
-                    wdep_nodes.append([wd-(vessel.T_f+vessel.metadata['ukc']+ukc_s + ukc_p + fwa) for wd in wdep])
+                    wdep_nodes.append([wd-(vessel.T_f+vessel.metadata['ukc']+ukc_s + ukc_p + ukc_r + fwa) for wd in wdep])
 
                     # Add to axes of the plot (if plot is requested): the available water depths at all the nodes of the route
                     if plot:
-                        axis.plot(t_wlev[:-np.max([time_correction_index,1])], [wd-vessel.T_f for wd in np.array(wdep[np.max([time_correction_index,1]):])-ukc_p-ukc_s-fwa-vessel.metadata['ukc']], color='lightskyblue', alpha=0.4)
+                        axis.plot(t_wlev[:-np.max([time_correction_index,1])], [wd-vessel.T_f for wd in np.array(wdep[np.max([time_correction_index,1]):])-(ukc_p+ukc_s+ukc_r+fwa-vessel.metadata['ukc'])], color='lightskyblue', alpha=0.4)
 
                 # Pick the minimum of the water depths for each time and each node
                 for i in range(len(wdep_nodes)):
-                    index = twdep_nodes[i].index(twdep_nodes[0][0])
+                    index = twdep_nodes[i].index(t_wlev[0])
                     wdep_nodes[i] = wdep_nodes[i][index:]
 
                 min_wdep = []
                 for i in range(len(wdep_nodes[0])):
                     min_wdep.append(min(row[i] for row in wdep_nodes if i < len(row)))
+                t_wlev = t_wlev[:len(min_wdep)]
 
-                return t_wlev, min_wdep, starting_node_vertical_tidal_window, ukc_s, ukc_p, fwa
+                return t_wlev, min_wdep, starting_node_vertical_tidal_window, ukc_s, ukc_p, ukc_r, fwa
 
             #Continuation of the calculation of the windows given the vertical tidal restrictions by setting some parameters and calculation of the minimum available water depth along the route of the vessel
             if not ukc_calc:
                 times_vertical_tidal_window = []
-                new_t, min_wdep, starting_node_vertical_tidal_window, _, _, _ = minimum_available_water_depth_along_route(vessel,route,axis,plot,ukc_calc,delay)
+                new_t, min_wdep, starting_node_vertical_tidal_window, _, _, _, _ = minimum_available_water_depth_along_route(vessel,route,axis,plot,ukc_calc,delay)
 
             else:
-                interp_wdep, ukc_s, ukc_p, fwa = minimum_available_water_depth_along_route(vessel, route, ukc_calc=True)
-                return interp_wdep, ukc_s, ukc_p, fwa
+                interp_wdep, ukc_s, ukc_p, ukc_r, fwa = minimum_available_water_depth_along_route(vessel, route, ukc_calc=True)
+                return interp_wdep, ukc_s, ukc_p, ukc_r, fwa
 
             #If there is not enough available water depth over time: no tidal window
             if np.max(min_wdep) < 0:
@@ -1024,8 +1024,8 @@ class VesselTrafficService:
 
             # If just a calculation of the net_ukc is required:
             if ukc_calc:
-                interp_wdep, ukc_s, ukc_p, fwa = times_vertical_tidal_window(vessel, route, ukc_calc=ukc_calc)
-                return interp_wdep, ukc_s, ukc_p, fwa
+                interp_wdep, ukc_s, ukc_p, ukc_r, fwa = times_vertical_tidal_window(vessel, route, ukc_calc=ukc_calc)
+                return interp_wdep, ukc_s, ukc_p, ukc_r, fwa
 
             # Else: calculate the tidal window restriction for the vertical and horizontal tide respectively
             list_of_times_vertical_tidal_window, starting_node_vertical_tidal_window = times_vertical_tidal_window(vessel,route,axes[0],plot,ukc_calc,delay)
@@ -1102,8 +1102,8 @@ class VesselTrafficService:
             vessel.waiting_time_start = vessel.env.now
             axes = [[],[]]
         else:
-            interp_wdep, ukc_s, ukc_p, fwa = times_tidal_window(vessel, route, ukc_calc=ukc_calc)
-            return interp_wdep, ukc_s, ukc_p, fwa
+            interp_wdep, ukc_s, ukc_p, ukc_r, fwa = times_tidal_window(vessel, route, ukc_calc=ukc_calc)
+            return interp_wdep, ukc_s, ukc_p, ukc_r, fwa
 
         # If plot requested: create an empty figure
         if plot:
