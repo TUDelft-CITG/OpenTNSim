@@ -251,7 +251,7 @@ class ConsumesEnergy:
         load = 'loaded', 
         rho_air = 1.225,
         U_wind = 2,
-        rel_winddir = None,
+        rel_winddir = 0,
         loaded_depth = 3.45 ,
         unloaded_depth = 2.5,
         Height_ship = 4,
@@ -716,18 +716,9 @@ class ConsumesEnergy:
             self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(angle*np.pi/180)
         return self.A_xv , angle , self.A_ydir
     
-    def calculate_wind_resistance(self, v,rel_winddir):
-        angle=0
-        if self.rel_winddir <91:
-            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(rel_winddir*np.pi/180) + self.L * np.sin(rel_winddir*np.pi/180))
-            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(rel_winddir*np.pi/180)
-        elif self.rel_winddir > 90:
-            angle = 90-(rel_winddir -90) # symmetric shape front and back. 
-            self.A_xv = self.calculate_H_above_water() * (self.B * np.cos(angle*np.pi/180) + self.L * np.sin(angle*np.pi/180))
-            self.A_ydir = self.calculate_H_above_water() * self.L * np.sin(angle*np.pi/180)
-            
-        if self.consider_wind_influence:
-            self.R_wind = (0.5 * self.calculate_C_drag() * self.rho_air * self.A_xv * self.U_wind **2 - 0.5 * self.rho_air * self.calculate_Cd_0() * self.A_xv * v **2 )/1000 #kN
+    def calculate_wind_resistance(self, v):
+        if self.consider_wind_influence :
+            self.R_wind = (0.5 * self.calculate_C_drag() * self.rho_air * self.calculate_A_xv()[0] * self.U_wind **2 - 0.5 * self.rho_air * self.calculate_Cd_0() * self.calculate_A_xv()[0] * v **2 )/1000 #kN
     # negative value is in the Cd  value. so negative winddirection gives negative value because of cd. 
         else:
             self.R_wind = 0
@@ -804,7 +795,7 @@ class ConsumesEnergy:
         return self.R_rudder
 
     
-    def calculate_total_resistance(self, v, h_0, rel_winddir):
+    def calculate_total_resistance(self, v, h_0):
         """Total resistance:
 
         The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982)
@@ -816,7 +807,7 @@ class ConsumesEnergy:
         self.calculate_appendage_resistance(v)
         self.calculate_wave_resistance(v, h_0)
         self.calculate_residual_resistance(v, h_0)
-        self.calculate_wind_resistance(v,rel_winddir)
+        self.calculate_wind_resistance(v)
         self.calculate_passive_rudder_resistance(v)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
