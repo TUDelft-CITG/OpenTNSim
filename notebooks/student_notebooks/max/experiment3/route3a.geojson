@@ -1,0 +1,15 @@
+{
+"type": "FeatureCollection",
+"name": "route",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "node": "A" }, "geometry": { "type": "Point", "coordinates": [ 4.372177993831113, 52.001467384919167 ] } },
+{ "type": "Feature", "properties": { "node": "B" }, "geometry": { "type": "Point", "coordinates": [ 4.372140946349258, 52.001522438686344 ] } },
+{ "type": "Feature", "properties": { "node": "C" }, "geometry": { "type": "Point", "coordinates": [ 4.372101343868657, 52.001575919423892 ] } },
+{ "type": "Feature", "properties": { "node": "D" }, "geometry": { "type": "Point", "coordinates": [ 4.372070683883675, 52.001625467697259 ] } },
+{ "type": "Feature", "properties": { "node": "E" }, "geometry": { "type": "Point", "coordinates": [ 4.371956859740907, 52.001653955143063 ] } },
+{ "type": "Feature", "properties": { "node": "F" }, "geometry": { "type": "Point", "coordinates": [ 4.371933269962744, 52.001724104861019 ] } },
+{ "type": "Feature", "properties": { "node": "G" }, "geometry": { "type": "Point", "coordinates": [ 4.371887279985271, 52.001796460755074 ] } },
+{ "type": "Feature", "properties": { "node": "H" }, "geometry": { "type": "Point", "coordinates": [ 4.371757708481361, 52.001793962866515 ] } }
+]
+}

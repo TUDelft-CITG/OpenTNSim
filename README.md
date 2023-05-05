@@ -72,3 +72,23 @@ Based on the examples and docs a book can be generated using the commands `make 
 Code quality is checked using sonarcloud. You can see results on the [sonarcloud](https://sonarcloud.io/project/overview?id=TUDelft-CITG_OpenTNSim) website. For now we have disabled coverage and duplication checks. These can be enabled when we include coverage measurements and reduce duplication by optimizing the tests.
 
 
+## Realtime
+The simulation in realtime is intended to connect to ROS. 
+
+### Testing with ROS
+For testing  purpose we have added a Docker file that you can use to generate messages on a websocket. You can build the container like this:
+
+``` bash
+docker build -t ros-play -f Dockerfile.ros .
+```
+
+You can run the playback container to start a websocket host that replays the ros `bag` file, stored in the mounted /data:
+
+``` bash
+docker run -p9090:9090 -v $(cd ~/data/ros;pwd):/data -it ros-play
+```
+
+`
+
+
+`

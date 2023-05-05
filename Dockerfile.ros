@@ -1,0 +1,11 @@
+FROM ros:noetic
+MAINTAINER Fedor Baart <fedor.baart@deltares.nl>
+# add websocket bridge for cross domain communication
+RUN apt update -y
+RUN apt install -y ros-noetic-rosbridge-suite/focal ros-noetic-rosbridge-server/focal
+WORKDIR /root
+COPY scripts/ros_play.sh /root
+RUN chmod +x /root/ros_play.sh
+VOLUME /data
+WORKDIR /data
+CMD ["/root/ros_play.sh"]
