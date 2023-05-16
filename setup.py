@@ -21,7 +21,7 @@ except VersionConflict:
 
 requires = [
     "pandas>=0.24.0",
-    "openclsim",
+    "openclsim>=0.16",
     "numpy",
     "simpy",
     "networkx",
@@ -38,7 +38,7 @@ requires = [
     "Flask-cors",
     "sphinx_rtd_theme",
     "Dill",
-    "Deprecated"
+    "Deprecated",
 ]
 
 setup_requirements = [

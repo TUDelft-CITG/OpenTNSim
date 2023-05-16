@@ -399,7 +399,6 @@ class ConsumesEnergy:
             self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
             logger.debug(f"now i am in the deep loop")
         else:
-
             # calculate Friction coefficient C_f for shallow water:
             self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
             logger.debug(f"now i am in the shallow loop")
@@ -455,7 +454,6 @@ class ConsumesEnergy:
         self.F_rh = v / np.sqrt(self.g * h_0)
 
         if self.F_rh <= 0.4:
-
             if 0 <= h_0 / self.T < 1.75:
                 self.alpha_xx = (-4 * 10 ** (-12)) * self.F_rh**3 - 0.2143 * self.F_rh**2 - 0.0643 * self.F_rh + 0.9997
             if 1.75 <= h_0 / self.T < 2.25:
@@ -1318,7 +1316,6 @@ class ConsumesEnergy:
         return max_sinkage
 
     def calculate_h_squat(self, v, h_0):
-
         if self.h_squat:
             h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
 
@@ -1432,9 +1429,9 @@ class EnergyCalculation:
         ]
 
         # extract relevant elements from the vessel log
-        times = self.vessel.log["Timestamp"]
-        messages = self.vessel.log["Message"]
-        geometries = self.vessel.log["Geometry"]
+        times = [row["Timestamp"] for row in self.vessel.logbook]
+        messages = [row["Message"] for row in self.vessel.logbook]
+        geometries = [row["Geometry"] for row in self.vessel.logbook]
 
         # now walk past each logged event (each 'time interval' in the log corresponds to an event)
         for i in range(len(times) - 1):
@@ -1585,7 +1582,6 @@ class EnergyCalculation:
         # - add HasCurrent Class or def
 
     def plot(self):
-
         import folium
 
         df = pd.DataFrame.from_dict(self.energy_use)

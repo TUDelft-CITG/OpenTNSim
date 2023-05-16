@@ -11,14 +11,17 @@ from typing import Union
 import deprecated
 import networkx as nx
 import numpy as np
+
 # spatial libraries
 import pyproj
 import shapely
 import shapely.geometry
 import shapely.ops
+
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
+
 # Use OpenCLSim objects for core objects
 from openclsim.core import Identifiable, Locatable, SimpyObject, Log
 
@@ -298,9 +301,11 @@ class Routable(SimpyObject):
     def __init__(self, route, complete_path=None, *args, **kwargs):
         """Initialization"""
         super().__init__(*args, **kwargs)
-        if "env" in kwargs:
-            has_fg = hasattr(kwargs["env"], "FG")
-            has_graph = hasattr(kwargs["env"], "graph")
+        env = kwargs.get("env")
+        # if env is given and env is not None
+        if not env is None:
+            has_fg = hasattr(env, "FG")
+            has_graph = hasattr(env, "graph")
             if has_fg and not has_graph:
                 warnings.warn(".FG attribute has been renamed to .graph, please update your code", warnings.DeprecationWarning)
             assert (
@@ -358,9 +363,13 @@ class Movable(Locatable, Routable, Log):
         speed = self.v
 
         # Check if vessel is at correct location - if not, move to location
-        if self.geometry != nx.get_node_attributes(self.graph, "geometry")[self.route[0]]:
+        first_n = self.route[0]
+        first_node = self.graph.nodes[first_n]
+        first_geometry = first_node["geometry"]
+
+        if self.geometry != first_geometry:
             orig = self.geometry
-            dest = nx.get_node_attributes(self.graph, "geometry")[self.route[0]]
+            dest = first_geometry
 
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
@@ -395,7 +404,6 @@ class Movable(Locatable, Routable, Log):
                     if destination == self.node:
                         break
 
-
             yield from self.pass_edge(a, b)
 
             # we arrived at destination
@@ -403,8 +411,6 @@ class Movable(Locatable, Routable, Log):
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[b]
             self.node = b
             self.position_on_route = i + 1
-
-
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
@@ -420,7 +426,6 @@ class Movable(Locatable, Routable, Log):
 
         for on_pass_edge_function in self.on_pass_edge_functions:
             yield from on_pass_edge_function(origin, destination)
-
 
         # TODO: there is an issue here. If geometry is available, resources and power are ignored.
 
