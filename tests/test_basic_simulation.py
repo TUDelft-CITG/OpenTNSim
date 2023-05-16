@@ -122,16 +122,16 @@ def test_basic_simulation():
     vessel_path_x = []
     vessel_path_t = []
 
-    for t in range(0, len(vessel.log["Message"])):
-        vessel_path_x0 = (vessel.log["Geometry"][0].x, vessel.log["Geometry"][0].y)
-        vessel_path_t0 = vessel.log["Timestamp"][0].timestamp() / 60
+    vessel_path_x0 = vessel.logbook[0]["Geometry"].x, vessel.logbook[0]["Geometry"].y
+    vessel_path_t0 = vessel.logbook[0]["Timestamp"].timestamp() / 60
+    for row in vessel.logbook:
         vessel_path_x.append(
             calculate_distance(
                 vessel_path_x0,
-                (vessel.log["Geometry"][t].x, vessel.log["Geometry"][t].y),
+                (row["Geometry"].x, row["Geometry"].y),
             )
         )
-        vessel_path_t.append(vessel.log["Timestamp"][t].timestamp() / 60 - vessel_path_t0)
+        vessel_path_t.append(row["Timestamp"].timestamp() / 60 - vessel_path_t0)
 
     # Test if max distance / speed roughly is equal to simulation time (NB: should be exactly the same (bug))
     np.testing.assert_almost_equal(
