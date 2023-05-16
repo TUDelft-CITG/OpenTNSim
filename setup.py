@@ -24,7 +24,7 @@ requires = [
     "openclsim>=0.16",
     "numpy",
     "simpy",
-    "networkx",
+    "networkx<3",
     "shapely>=2",
     "scipy",
     "click",
