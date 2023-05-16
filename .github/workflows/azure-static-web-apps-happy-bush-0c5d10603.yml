@@ -33,6 +33,7 @@ jobs:
           python -m pip install --upgrade pip setuptools==57.5
           # install gdal separate
           pip install wheel gdal==3.0.4
+          pip install -e .
           pip install -e .[testing]
       - name: Copy examples and build the book
         run: |

@@ -29,15 +29,19 @@ requires = [
     "scipy",
     "click",
     "matplotlib",
-    "pint",
+    # read shapefiles
     "pyproj",
+    # unit conversions
+    "pint",
     "plotly",
     "simplekml",
     "nose",
+    # web mode
     "Flask>=1.0",
     "Flask-cors",
     "sphinx_rtd_theme",
     "Dill",
+    # deprecate old functions
     "Deprecated",
 ]
 
@@ -57,6 +61,10 @@ tests_require = [
     # extra dpendencies used by nontebooks
     "pyyaml",
     "openpyxl",
+    # geo info
+    "fiona",
+    "geopandas",
+    "momepy",
     "folium",
     "colorcet",
     "notebook==6.4",
