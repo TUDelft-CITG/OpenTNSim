@@ -31,7 +31,6 @@ To also install the extra dependencies used for testing you can use:
 pip install opentnsim[testing]
 ```
 
-
 This is the preferred method to install OpenTNSim, as it will always install the most recent stable release.
 
 If you don not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process.
@@ -72,3 +71,5 @@ Based on the examples and docs a book can be generated using the commands `make 
 Code quality is checked using sonarcloud. You can see results on the [sonarcloud](https://sonarcloud.io/project/overview?id=TUDelft-CITG_OpenTNSim) website. For now we have disabled coverage and duplication checks. These can be enabled when we include coverage measurements and reduce duplication by optimizing the tests.
 
 
+## OpenCLSim 
+OpenTNSim makes use of the [OpenCLSim](https://github.com/TUDelft-CITG/OpenCLSim) code. Both packages are maintained by the same team of developers. There are some differences between packages (e.g. in logging approaches), but you can use them together. We are working towards further integrating these two software packages.
