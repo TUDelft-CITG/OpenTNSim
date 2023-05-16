@@ -303,7 +303,7 @@ class Routable(SimpyObject):
         super().__init__(*args, **kwargs)
         env = kwargs.get("env")
         # if env is given and env is not None
-        if not env is None:
+        if env is not None:
             has_fg = hasattr(env, "FG")
             has_graph = hasattr(env, "graph")
             if has_fg and not has_graph:
@@ -396,13 +396,11 @@ class Movable(Locatable, Routable, Log):
 
             # are we already at destination?
             if destination is not None:
-                if isinstance(destination, Geometry):
-                    # for geometry we need to use the shapely equivalent
-                    if destination.equals(self.geometry):
-                        break
-                else:
-                    if destination == self.node:
-                        break
+                # for geometry we need to use the shapely equivalent
+                if isinstance(destination, Geometry) and destination.equals(self.geometry):
+                    break
+                elif destination == self.node:
+                    break
 
             yield from self.pass_edge(a, b)
 
@@ -428,7 +426,6 @@ class Movable(Locatable, Routable, Log):
             yield from on_pass_edge_function(origin, destination)
 
         # TODO: there is an issue here. If geometry is available, resources and power are ignored.
-
         if "geometry" in edge:
             edge_route = np.array(edge["geometry"].coords)
 

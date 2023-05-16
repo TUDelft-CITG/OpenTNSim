@@ -397,11 +397,11 @@ class ConsumesEnergy:
 
         if (h_0 - self.T) / self.L > 1:
             self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
-            logger.debug(f"now i am in the deep loop")
+            logger.debug("now i am in the deep loop")
         else:
             # calculate Friction coefficient C_f for shallow water:
             self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
-            logger.debug(f"now i am in the shallow loop")
+            logger.debug("now i am in the shallow loop")
         assert not isinstance(self.C_f, complex), f"C_f should not be complex: {self.C_f}"
 
         # The total frictional resistance R_f [kN]:
