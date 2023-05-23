@@ -22,6 +22,8 @@ import matplotlib.pyplot as plt
 # package(s) related to the simulation
 import simpy
 
+import opentnsim.utils
+
 logger = logging.getLogger(__name__)
 
 # Determine the wgs84 geoid
@@ -31,9 +33,7 @@ wgs84 = pyproj.Geod(ellps="WGS84")
 def geom_to_edges(geom, properties):
     """Generate edges from a geometry, yielding an edge id and edge properties. The edge_id consists of a tuple of coordinates"""
     if not geom.geom_type in ["LineString", "MultiLineString"]:
-        msg = "Only ['LineString', 'MultiLineString'] are supported, got {}".format(
-            geom.geom_type
-        )
+        msg = "Only ['LineString', 'MultiLineString'] are supported, got {}".format(geom.geom_type)
         raise ValueError(msg)
     if geom.geom_type == "MultiLineString":
         for geom in geom.geoms:
@@ -98,7 +98,7 @@ class Graph:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.graph = nx.Graph()
-        self.graph_info = nx.info(self.graph)
+        self.graph_info = opentnsim.utils.info(self.graph)
 
     def from_shape(self, file_location, shapefile, simplify=True, strict=True):
         """Generate nx.Graph() from shapefile
@@ -109,10 +109,8 @@ class Graph:
         from osgeo import ogr, osr
 
         # Create graph
-        self.graph = nx.read_shp(
-            os.path.join(file_location, shapefile), simplify=simplify, strict=strict
-        )
-        self.graph_info = nx.info(self.graph)
+        self.graph = opentnsim.utils.read_shp(os.path.join(file_location, shapefile), simplify=simplify, strict=strict)
+        self.graph_info = opentnsim.utils.info(self.graph)
 
         # Get spatial reference
         driver = ogr.GetDriverByName("ESRI Shapefile")
@@ -149,19 +147,17 @@ class Graph:
 
         # Add original nodes and edges to new graph
         for i, node in enumerate(self.graph.nodes(data=True)):
+            # TODO: depending on the coordinate transformation x, y might refer to x,y or latitude, longitude.
+            # Shapely assumes always x/lon, y/lat
             coordinates = self.change_projection(
                 transform,
-                shapely.geometry.Point(
-                    list(self.graph.nodes)[i][0], list(self.graph.nodes)[i][1]
-                ),
+                shapely.geometry.Point(list(self.graph.nodes)[i][0], list(self.graph.nodes)[i][1]),
             )
-            name = "({:f}, {:f})".format(coordinates[0], coordinates[1])
-            geometry = shapely.geometry.Point(coordinates[0], coordinates[1])
+            name = "({:f}, {:f})".format(coordinates[1], coordinates[0])
+            geometry = shapely.geometry.Point(coordinates[1], coordinates[0])
 
             nodes_dict[list(self.graph.nodes)[i]] = name
-            new_graph.add_node(
-                name, name=name, Position=coordinates, geometry=geometry, Old=node[1]
-            )
+            new_graph.add_node(name, name=name, Position=(coordinates[1], coordinates[0]), geometry=geometry, Old=node[1])
 
         for edge in self.graph.edges(data=True):
             node_1 = nodes_dict[edge[0]]
@@ -171,9 +167,9 @@ class Graph:
 
         new_graph = new_graph.to_directed()
 
-        if nx.info(new_graph) != self.graph_info:
+        if opentnsim.utils.info(new_graph) != self.graph_info:
             self.graph = new_graph
-            self.graph_info = nx.info(new_graph)
+            self.graph_info = opentnsim.utils.info(new_graph)
         else:
             print("Conversion did not create an exact similar graph")
 
@@ -183,16 +179,14 @@ class Graph:
 
             print("")
             print("New graph")
-            print(nx.info(new_graph))
+            print(opentnsim.utils.info(new_graph))
 
             self.graph = new_graph
-            self.graph_info = nx.info(new_graph)
+            self.graph_info = opentnsim.utils.info(new_graph)
 
     def add_resources(self, edges, resources, environment):
         for i, edge in enumerate(edges):
-            self.graph.edges[edge]["Resources"] = simpy.Resource(
-                environment, capacity=resources[i]
-            )
+            self.graph.edges[edge]["Resources"] = simpy.Resource(environment, capacity=resources[i])
 
     def plot(
         self,
@@ -273,9 +267,7 @@ def compute_distance(edge, orig, dest):
     distance = 0
     for index, pt in enumerate(edge_route[:-1]):
         sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
-        sub_dest = shapely.geometry.Point(
-            edge_route[index + 1][0], edge_route[index + 1][1]
-        )
+        sub_dest = shapely.geometry.Point(edge_route[index + 1][0], edge_route[index + 1][1])
 
         distance += wgs84.inv(
             shapely.geometry.asShape(sub_orig).x,
