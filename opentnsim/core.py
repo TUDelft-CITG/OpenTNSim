@@ -307,7 +307,7 @@ class Routable(SimpyObject):
             has_fg = hasattr(env, "FG")
             has_graph = hasattr(env, "graph")
             if has_fg and not has_graph:
-                warnings.warn(".FG attribute has been renamed to .graph, please update your code", warnings.DeprecationWarning)
+                warnings.warn(".FG attribute has been renamed to .graph, please update your code", DeprecationWarning)
             assert (
                 has_fg or has_graph
             ), "Routable expects `.graph` (a networkx graph) to be present as an attribute on the environment"
