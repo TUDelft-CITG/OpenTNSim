@@ -78,6 +78,8 @@ def network_check(graph):
     return ok
 
 
+# Ignore functions copied from networkx
+# START-NOSCAN
 def read_shp(path, simplify=True, geom_attrs=True, strict=True):
     """Generates a networkx.DiGraph from shapefiles.
 
@@ -390,3 +392,6 @@ def write_shp(G, outdir):
         create_feature(g, edges, attributes)
 
     nodes, edges = None, None
+
+
+# END-NOSCAN
