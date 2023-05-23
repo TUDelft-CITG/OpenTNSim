@@ -24,7 +24,7 @@ def test_simulation(expected_df):
         (
             opentnsim.core.Identifiable,
             opentnsim.core.Movable,
-            opentnsim.core.Routeable,
+            # opentnsim.core.Routable,
             opentnsim.core.VesselProperties,  # needed to add vessel properties
             opentnsim.energy.ConsumesEnergy,
             opentnsim.core.ExtraMetadata,

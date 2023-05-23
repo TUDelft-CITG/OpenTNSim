@@ -29,6 +29,7 @@ import pytest
 
 import utils
 
+
 # if you wnat to make a new expected dataframe, update the expected numbers like this
 # df.to_csv("test_ManJiang_et_al_2022_current_influence_limiting_depth_single_and_round_trips_expected.csv", index=False)
 @pytest.fixture
@@ -38,6 +39,7 @@ def expected_df():
 
 
 # Creating the test objects
+
 
 # Actual testing starts here
 # - tests 3 fixed velocities to return the right P_tot
@@ -52,12 +54,10 @@ def test_simulation(expected_df):
     depths = [6, 2.5, 6]
 
     # check of nr of coords and nr of depths align
-    assert (
-        len(coords) == len(depths) + 1
-    ), "nr of depths does not correspond to nr of coords"
+    assert len(coords) == len(depths) + 1, "nr of depths does not correspond to nr of coords"
 
     # create a graph based on coords and depths
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
     nodes = []
     path = []
 
@@ -74,7 +74,7 @@ def test_simulation(expected_df):
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
-        FG.add_node(node.name, geometry=node.geometry)
+        graph.add_node(node.name, geometry=node.geometry)
 
     # add edges
     path = [[nodes[i], nodes[i + 1]] for i in range(len(nodes) - 1)]
@@ -83,13 +83,11 @@ def test_simulation(expected_df):
         # For the energy consumption calculation we add info to the graph. We need depth info for resistance.
         # NB: the CalculateEnergy routine expects the graph to have "Info" that contains "GeneralDepth"
         #     this may not be very generic!
-        FG.add_edge(
-            edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]}
-        )
+        graph.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
 
     # toggle to undirected and back to directed to make sure all edges are two way traffic
-    FG = FG.to_undirected()
-    FG = FG.to_directed()
+    graph = graph.to_undirected()
+    graph = graph.to_directed()
 
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
@@ -133,7 +131,7 @@ def test_simulation(expected_df):
 
     vessel = TransportResource(**data_vessel)
 
-    path = nx.dijkstra_path(FG, nodes[0].name, nodes[3].name)
+    path = nx.dijkstra_path(graph, nodes[0].name, nodes[3].name)
 
     # Actual testing starts here
     def run_simulation(V_s, P_tot_given):
@@ -143,7 +141,7 @@ def test_simulation(expected_df):
         env.epoch = time.mktime(simulation_start.timetuple())
 
         # Add graph to environment
-        env.FG = FG
+        env.graph = graph
 
         # Add environment and path to the vessel
         # create a fresh instance of vessel
@@ -151,7 +149,7 @@ def test_simulation(expected_df):
         vessel.env = env  # the created environment
         vessel.name = "Vessel No.1"
         vessel.route = path  # the route (the sequence of nodes, as stored as the second column in the path)
-        vessel.geometry = env.FG.nodes[path[0]][
+        vessel.geometry = env.graph.nodes[path[0]][
             "geometry"
         ]  # a shapely.geometry.Point(lon,lat) (here taken as the starting node of the vessel)
         vessel.v = V_s
@@ -169,12 +167,10 @@ def test_simulation(expected_df):
     # loop through the various input data
     for index, value in enumerate(input_data["V_s"]):
         # Run a basic simulation with V_s and P_tot_given combi
-        vessel = run_simulation(
-            input_data["V_s"][index], input_data["P_tot_given"][index]
-        )
+        vessel = run_simulation(input_data["V_s"][index], input_data["P_tot_given"][index])
 
         # create an EnergyCalculation object and perform energy consumption calculation
-        energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)
+        energycalculation = opentnsim.energy.EnergyCalculation(graph, vessel)
         energycalculation.calculate_energy_consumption()
 
     # create dataframe from energy calculation computation
@@ -187,25 +183,13 @@ def test_simulation(expected_df):
     delta_t_up = df["distance"] / (df["distance"] / df["delta_t"] - U_c)
     delta_t_down = df["distance"] / (df["distance"] / df["delta_t"] + U_c)
     # total emission&fuel consumption will be larger when upstream(because of longer delta_t), smaller when downstream(because of shorter delta_t)
-    df["total_fuel_consumption_kg"] = (
-        df["total_diesel_consumption_C_year_ICE_mass"] / 1000
-    )  # kg without current
-    df["total_fuel_consumption_up_kg"] = (
-        df["total_diesel_consumption_C_year_ICE_mass"]
-        / 1000
-        * (delta_t_up / df["delta_t"])
-    )  # kg
+    df["total_fuel_consumption_kg"] = df["total_diesel_consumption_C_year_ICE_mass"] / 1000  # kg without current
+    df["total_fuel_consumption_up_kg"] = df["total_diesel_consumption_C_year_ICE_mass"] / 1000 * (delta_t_up / df["delta_t"])  # kg
     df["total_fuel_consumption_down_kg"] = (
-        df["total_diesel_consumption_C_year_ICE_mass"]
-        / 1000
-        * (delta_t_down / df["delta_t"])
+        df["total_diesel_consumption_C_year_ICE_mass"] / 1000 * (delta_t_down / df["delta_t"])
     )  # kg
-    df["total_fuel_consumption_round_no_current_kg"] = (
-        df["total_diesel_consumption_C_year_ICE_mass"] / 1000 * 2
-    )  # kg
-    df["total_fuel_consumption_round_current_kg"] = (
-        df["total_fuel_consumption_up_kg"] + df["total_fuel_consumption_down_kg"]
-    )  # kg
+    df["total_fuel_consumption_round_no_current_kg"] = df["total_diesel_consumption_C_year_ICE_mass"] / 1000 * 2  # kg
+    df["total_fuel_consumption_round_current_kg"] = df["total_fuel_consumption_up_kg"] + df["total_fuel_consumption_down_kg"]  # kg
 
     # test the estimation of fuel consumption with and without current influence for section 1
 
@@ -213,6 +197,4 @@ def test_simulation(expected_df):
     # df.to_csv("test_ManJiang_et_al_2022_current_influence_limiting_depth_single_and_round_trips_expected.csv", index=False)
 
     columns_to_test = [column for column in df.columns if "fuel" in column]
-    pd.testing.assert_frame_equal(
-        expected_df[columns_to_test], df[columns_to_test], check_exact=False
-    )
+    pd.testing.assert_frame_equal(expected_df[columns_to_test], df[columns_to_test], check_exact=False)

@@ -21,22 +21,28 @@ except VersionConflict:
 
 requires = [
     "pandas>=0.24.0",
+    "openclsim>=0.16",
     "numpy",
     "simpy",
-    "networkx",
-    "shapely",
+    "networkx<3",
+    "shapely>=2",
     "scipy",
     "click",
     "matplotlib",
-    "pint",
+    # read shapefiles
     "pyproj",
+    # unit conversions
+    "pint",
     "plotly",
     "simplekml",
     "nose",
+    # web mode
     "Flask>=1.0",
     "Flask-cors",
     "sphinx_rtd_theme",
     "Dill",
+    # deprecate old functions
+    "Deprecated",
 ]
 
 setup_requirements = [
@@ -55,6 +61,10 @@ tests_require = [
     # extra dpendencies used by nontebooks
     "pyyaml",
     "openpyxl",
+    # geo info
+    "fiona",
+    "geopandas",
+    "momepy",
     "folium",
     "colorcet",
     "notebook==6.4",

@@ -179,28 +179,34 @@ def test_basic_simulation():
     vessel_speed = []
     vessel_speeds = []
 
-    for v in range(len(vessels)):
-        for t in range(0, len(vessels[v].log["Message"])):
-            if "node" in vessels[v].log["Message"][t] and "stop" in vessels[v].log["Message"][t]:
+    for vessel in vessels:
+        for t, row in enumerate(vessel.logbook):
+            if t == 0:
+                continue
+            if t == len(vessel.logbook) - 1:
+                continue
+            prev_row = vessel.logbook[t - 1]
+            next_row = vessel.logbook[t + 1]
+            if "node" in row["Message"] and "stop" in row["Message"]:
                 vessel_speed.append(
                     calculate_distance(
-                        [vessels[v].log["Geometry"][t].x, vessels[v].log["Geometry"][t].y],
-                        [vessels[v].log["Geometry"][t - 1].x, vessels[v].log["Geometry"][t - 1].y],
+                        [row["Geometry"].x, row["Geometry"].y],
+                        [prev_row["Geometry"].x, prev_row["Geometry"].y],
                     )
-                    / (vessels[v].log["Timestamp"][t].timestamp() - vessels[v].log["Timestamp"][t - 1].timestamp())
+                    / (row["Timestamp"].timestamp() - prev_row["Timestamp"].timestamp())
                 )
 
-            if vessels[v].log["Message"][t] == "Passing lock start":
-                lock_cycle_start[v] = vessels[v].log["Timestamp"][t].timestamp() - simulation_start.timestamp()
-                lock_cycle_duration[v] = vessels[v].log["Value"][t + 1]
+            if row["Message"] == "Passing lock start":
+                lock_cycle_start[v] = row["Timestamp"].timestamp() - simulation_start.timestamp()
+                lock_cycle_duration[v] = next_row["Value"]
 
-            if vessels[v].log["Message"][t] == "Waiting in line-up area start":
-                waiting_in_lineup_start[v] = vessels[v].log["Timestamp"][t].timestamp() - simulation_start.timestamp()
-                waiting_in_lineup_duration[v] = vessels[v].log["Value"][t + 1]
+            if row["Message"] == "Waiting in line-up area start":
+                waiting_in_lineup_start[v] = row["Timestamp"].timestamp() - simulation_start.timestamp()
+                waiting_in_lineup_duration[v] = next_row["Value"]
 
-            if vessels[v].log["Message"][t] == "Waiting in waiting area start":
-                waiting_in_waiting_start[v] = vessels[v].log["Timestamp"][t].timestamp() - simulation_start.timestamp()
-                waiting_in_waiting_duration[v] = vessels[v].log["Value"][t + 1]
+            if row["Message"] == "Waiting in waiting area start":
+                waiting_in_waiting_start[v] = row["Timestamp"].timestamp() - simulation_start.timestamp()
+                waiting_in_waiting_duration[v] = next_row["Value"]
         vessel_speeds.append(vessel_speed)
 
     ## TESTS

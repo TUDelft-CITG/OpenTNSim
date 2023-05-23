@@ -33,10 +33,10 @@ def vessel_planning(vessels, activities, colors, web=False):
     # organise logdata into 'dataframes'
     dataframes = []
     for vessel in vessels:
-        df = pd.DataFrame(
-            {"log_value": vessel.log["Value"], "log_string": vessel.log["Message"]},
-            vessel.log["Timestamp"],
-        )
+        rename = {"Value": "log_value", "Message": "log_string"}
+        df = pd.DataFrame(vessel.logbook)
+        df = df.set_index("Timestamp").rename(columns=rename)
+
         dataframes.append(df)
     df = dataframes[0]
 
@@ -70,7 +70,7 @@ def vessel_planning(vessels, activities, colors, web=False):
         xaxis=dict(
             title="Time",
             titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
-            range=[0, vessel.log["Timestamp"][-1]],
+            range=[0, df.index[-1]],
         ),
         yaxis=dict(
             title="Vessels",
@@ -120,38 +120,33 @@ def vessel_kml(
         geom_x = []
         geom_y = []
 
-        for geom in vessel.log["Geometry"]:
+        vessel_log = pd.DataFrame(vessel.logbook)
+
+        for geom in vessel_log["Geometry"]:
             geom_x.append(geom.x)
             geom_y.append(geom.y)
 
         tmp_vessel["Geometry - x"] = geom_x
         tmp_vessel["Geometry - y"] = geom_y
 
-        time_stamp_min = min(vessel.log["Timestamp"]).timestamp()
-        time_stamp_max = max(vessel.log["Timestamp"]).timestamp()
+        time_stamp_min = min(vessel_log["Timestamp"]).timestamp()
+        time_stamp_max = max(vessel_log["Timestamp"]).timestamp()
 
         steps = int(np.floor((time_stamp_max - time_stamp_min) / stepsize))
         timestamps_t = np.linspace(time_stamp_min, time_stamp_max, steps)
 
         times = []
-        for t in vessel.log["Timestamp"]:
+        for row in vessel.logbook:
+            t = row["Timestamp"]
             times.append(t.timestamp())
 
         tmp_vessel["timestamps_t"] = timestamps_t
-        tmp_vessel["timestamps_x"] = np.interp(
-            timestamps_t, times, tmp_vessel["Geometry - x"]
-        )
-        tmp_vessel["timestamps_y"] = np.interp(
-            timestamps_t, times, tmp_vessel["Geometry - y"]
-        )
+        tmp_vessel["timestamps_x"] = np.interp(timestamps_t, times, tmp_vessel["Geometry - x"])
+        tmp_vessel["timestamps_y"] = np.interp(timestamps_t, times, tmp_vessel["Geometry - y"])
 
         for log_index, value in enumerate(tmp_vessel["timestamps_t"][:-1]):
-            begin = datetime.datetime.fromtimestamp(
-                tmp_vessel["timestamps_t"][log_index]
-            )
-            end = datetime.datetime.fromtimestamp(
-                tmp_vessel["timestamps_t"][log_index + 1]
-            )
+            begin = datetime.datetime.fromtimestamp(tmp_vessel["timestamps_t"][log_index])
+            end = datetime.datetime.fromtimestamp(tmp_vessel["timestamps_t"][log_index + 1])
 
             pnt = fol.newpoint(
                 name=vessel.name,
@@ -167,9 +162,7 @@ def vessel_kml(
             pnt.style = shared_style
 
         # include last point as well
-        begin = datetime.datetime.fromtimestamp(
-            tmp_vessel["timestamps_t"][log_index + 1]
-        )
+        begin = datetime.datetime.fromtimestamp(tmp_vessel["timestamps_t"][log_index + 1])
         # end = datetime.datetime.fromtimestamp(vessel.log["timestamps_t"][log_index + 1])
 
         pnt = fol.newpoint(
@@ -212,9 +205,7 @@ def site_kml(
             style.labelstyle.color = "ffffffff"  # White
             style.labelstyle.scale = 1
             style.iconstyle.color = "ff00ffff"  # Yellow
-            style.iconstyle.scale = scale * (
-                site.log["Value"][log_index] / site.container.capacity
-            )
+            style.iconstyle.scale = scale * (site.log["Value"][log_index] / site.container.capacity)
             style.iconstyle.icon.href = icon
 
             begin = site.log["Timestamp"][log_index]
@@ -238,9 +229,7 @@ def site_kml(
         style.labelstyle.color = "ffffffff"  # White
         style.labelstyle.scale = 1
         style.iconstyle.color = "ff00ffff"  # Yellow
-        style.iconstyle.scale = scale * (
-            site.log["Value"][log_index + 1] / site.container.capacity
-        )
+        style.iconstyle.scale = scale * (site.log["Value"][log_index + 1] / site.container.capacity)
         style.iconstyle.icon.href = icon
 
         begin = site.log["Timestamp"][log_index + 1]
@@ -323,13 +312,9 @@ def graph_kml(
 
 def energy_use(vessel, testing=False):
     energy_use_loading = 0  # concumption between loading start and loading stop
-    energy_use_sailing_full = (
-        0  # concumption between sailing full start and sailing full stop
-    )
+    energy_use_sailing_full = 0  # concumption between sailing full start and sailing full stop
     energy_use_unloading = 0  # concumption between unloading  start and unloading  stop
-    energy_use_sailing_empty = (
-        0  # concumption between sailing empty start and sailing empty stop
-    )
+    energy_use_sailing_empty = 0  # concumption between sailing empty start and sailing empty stop
     energy_use_waiting = 0  # concumption between waiting start and waiting stop
 
     for i in range(len(vessel.log["Message"])):
