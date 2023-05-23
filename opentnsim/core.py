@@ -399,7 +399,8 @@ class Movable(Locatable, Routable, Log):
                 # for geometry we need to use the shapely equivalent
                 if isinstance(destination, Geometry) and destination.equals(self.geometry):
                     break
-                elif destination == self.node:
+                # or the node equivalence
+                if destination == self.node:
                     break
 
             yield from self.pass_edge(a, b)
