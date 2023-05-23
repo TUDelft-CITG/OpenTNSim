@@ -394,4 +394,42 @@ def write_shp(G, outdir):
     nodes, edges = None, None
 
 
+def info(G, n=None):
+    """Return a summary of information for the graph G or a single node n.
+
+    The summary includes the number of nodes and edges, or neighbours for a single
+    node.
+
+    Parameters
+    ----------
+    G : Networkx graph
+       A graph
+    n : node (any hashable)
+       A node in the graph G
+
+    Returns
+    -------
+    info : str
+        A string containing the short summary
+
+    Raises
+    ------
+    NetworkXError
+        If n is not in the graph G
+
+    .. deprecated:: 2.7
+       ``info`` is deprecated and will be removed in NetworkX 3.0.
+    """
+    if n is None:
+        return str(G)
+    if n not in G:
+        raise nx.NetworkXError(f"node {n} not in graph")
+    info = ""  # append this all to a string
+    info += f"Node {n} has the following properties:\n"
+    info += f"Degree: {G.degree(n)}\n"
+    info += "Neighbors: "
+    info += " ".join(str(nbr) for nbr in G.neighbors(n))
+    return info
+
+
 # // END-NOSCAN
