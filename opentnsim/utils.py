@@ -145,7 +145,7 @@ def read_shp(path, simplify=True, geom_attrs=True, strict=True):
     try:
         from osgeo import ogr
     except ImportError as err:
-        raise ImportError("read_shp requires OGR: http://www.gdal.org/") from err
+        raise ImportError("read_shp requires OGR: https://www.gdal.org/") from err
 
     if not isinstance(path, str):
         return
