@@ -221,7 +221,7 @@ def edges_from_line(geom, attrs, simplify=True, geom_attrs=True):
     try:
         from osgeo import ogr
     except ImportError as err:
-        raise ImportError("edges_from_line requires OGR: " "http://www.gdal.org/") from err
+        raise ImportError("edges_from_line requires OGR: " "https://www.gdal.org/") from err
 
     if geom.GetGeometryType() == ogr.wkbLineString:
         if simplify:
@@ -288,7 +288,7 @@ def write_shp(G, outdir):
     try:
         from osgeo import ogr
     except ImportError as err:
-        raise ImportError("write_shp requires OGR: http://www.gdal.org/") from err
+        raise ImportError("write_shp requires OGR: https://www.gdal.org/") from err
     # easier to debug in python if ogr throws exceptions
     ogr.UseExceptions()
 
