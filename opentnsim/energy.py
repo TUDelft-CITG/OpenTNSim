@@ -134,7 +134,7 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0, 20)):
         # vessel.calculate_properties()
         # vessel.calculate_frictional_resistance(v=velocity, h_0=h_0)
         vessel.calculate_total_resistance(v=velocity, h_0=h_0)
-        P_tot = vessel.calculate_total_power_required(v=velocity)
+        P_tot = vessel.calculate_total_power_required(v=velocity, h_0=h_0)
 
         # prepare a row
         result = {}
@@ -175,10 +175,10 @@ def power2v(vessel, edge, upperbound):
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
-        if vessel.P_tot_given_profile:
-            vessel.P_tot_given = edge["Info"]["PowerApplied" ]                     
-        else:
-            vessel.P_tot_given = vessel.P_tot_given
+        # if vessel.P_tot_given_profile:
+        #     vessel.P_tot_given = edge["Info"]["PowerApplied" ]                     
+        # else:
+        #     vessel.P_tot_given = vessel.P_tot_given
          
         # compute difference between power setting by captain and power needed for velocity
         diff = vessel.P_tot_given - vessel.P_tot
@@ -232,15 +232,17 @@ class ConsumesEnergy:
 
     def __init__(
         self,
-        V_g_profile,
+        use_V_g_profile,
         P_installed,
         L_w,
         C_year,
+        narrow = False,
+        slow = False,
         current_year=None,  # current_year
-        bulbous_bow=False,
+        bulbous_bow=False,       
         sailing_on_power=False,
         sailing_upstream=False,
-        P_hotel_perc=0.05,
+        P_hotel_perc=None,
         P_hotel=None,
         P_tot_given=None,  # the actual power engine setting
         nu=1 * 10 ** (-6),
@@ -271,9 +273,11 @@ class ConsumesEnergy:
 
         """Initialization
         """
-        self.V_g_profile = V_g_profile
+        self.use_V_g_profile = use_V_g_profile
         self.P_installed = P_installed
         self.bulbous_bow = bulbous_bow
+        self.narrow = narrow
+        self.slow =slow
         self.sailing_on_power = sailing_on_power
         self.sailing_upstream = sailing_upstream
         self.P_hotel_perc = P_hotel_perc
@@ -358,6 +362,8 @@ class ConsumesEnergy:
 
         # TO DO: add properties for seagoing ships with bulbs
 
+
+
         self.C_M = 1.006 - 0.0056 * self.C_B ** (-3.56)  # Midship section coefficient
         self.C_WP = (1 + 2 * self.C_B) / 3  # Waterplane coefficient
         self.C_P = self.C_B / self.C_M  # Prismatic coefficient
@@ -395,13 +401,241 @@ class ConsumesEnergy:
         self.T_F = self.T  # Forward draught of the vessel [m]
         self.h_B = 0.2 * self.T  # Position of the centre of the transverse area [m]
 
+    def karpov_return_current(self, v, h_0):
+        """Intermediate calculation: Karpov
+
+        - The Karpov method computes a velocity correction that accounts for returen current at limited water depth (corrected velocity V1), but it also can be used for deeper water depth (h_0 / T >= 8.5).
+        - V1 has to be implemented in the frictional resistance (R_f, R_App)
+        """
+
+        # The Froude number used in the Karpov method is the depth related froude number F_rh
+
+        # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
+        # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
+        assert self.g >= 0, f"g should be positive: {self.g}"
+        assert h_0 >= 0, f"g should be positive: {h_0}"
+        self.F_rh = v / np.sqrt(self.g * h_0)
+        
+        # if h_0 / self.T < 1.2:
+            # print('h_0/T is too small to sail')
+        
+        if 1 < h_0 / self.T <= 1.7:
+            self.alpha_x = (
+                    -0.0000006 * self.F_rh**6
+                    + 0.00003 * self.F_rh**5
+                    - 0.0006 * self.F_rh**4
+                    + 0.0058 * self.F_rh**3
+                    - 0.0296 * self.F_rh**2
+                    + 0.0638 * self.F_rh
+                    + 0.9582
+                )
+
+        if 1.7 < h_0 / self.T <= 2.5:               
+            self.alpha_x = (
+                    -0.0000004 * self.F_rh**6
+                    + 0.00002 * self.F_rh**5
+                    - 0.0003 * self.F_rh**4
+                    + 0.0023 * self.F_rh**3
+                    - 0.0097 * self.F_rh**2
+                    + 0.0215 * self.F_rh
+                    + 0.9847
+                )
+
+        if 2.5 < h_0 / self.T <= 3.5:               
+            self.alpha_x = (
+                    -0.0000008 * self.F_rh**6
+                    + 0.00004 * self.F_rh**5
+                    - 0.0008 * self.F_rh**4
+                    + 0.007 * self.F_rh**3
+                    - 0.0292 * self.F_rh**2
+                    + 0.053 * self.F_rh
+                    + 0.969
+                )              
+
+        if h_0 / self.T > 3.5:
+            self.alpha_x = 1                
+                
+                
+        self.V_1 = 1 *(v / self.alpha_x)            
+        # self.V_1 = v
+        return self.V_1
+    
+    def karpov_wave_retardation(self, v, h_0):
+        """Intermediate calculation: Karpov
+
+        - The Karpov method computes a velocity correction that accounts for  wave retardation at limited water depth (corrected velocity V2), but it also can be used for deeper water depth (h_0 / T >= 9.5).
+        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance terms (R_res: R_TR, R_A, R_B)
+        """
+
+        # The Froude number used in the Karpov method is the depth related froude number F_rh
+
+        # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
+        # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
+        assert self.g >= 0, f"g should be positive: {self.g}"
+        assert h_0 >= 0, f"g should be positive: {h_0}"
+        self.F_rh = v / np.sqrt(self.g * h_0)
+
+        if self.F_rh <= 0.4:
+
+            if 0 <= h_0 / self.T < 1.75:
+                self.alpha_xx = (-4 * 10 ** (-12)) * self.F_rh**3 - 0.2143 * self.F_rh**2 - 0.0643 * self.F_rh + 0.9997
+            if 1.75 <= h_0 / self.T < 2.25:
+                self.alpha_xx = -0.8333 * self.F_rh**3 + 0.25 * self.F_rh**2 - 0.0167 * self.F_rh + 1
+            if 2.25 <= h_0 / self.T < 2.75:
+                self.alpha_xx = -1.25 * self.F_rh**4 + 0.5833 * self.F_rh**3 - 0.0375 * self.F_rh**2 - 0.0108 * self.F_rh + 1
+            if h_0 / self.T >= 2.75:
+                self.alpha_xx = 1
+
+        if self.F_rh > 0.4:
+            if 0 <= h_0 / self.T < 1.75:
+                self.alpha_xx = (
+                    -0.9274 * self.F_rh**6
+                    + 9.5953 * self.F_rh**5
+                    - 37.197 * self.F_rh**4
+                    + 69.666 * self.F_rh**3
+                    - 65.391 * self.F_rh**2
+                    + 28.025 * self.F_rh
+                    - 3.4143
+                )
+            if 1.75 <= h_0 / self.T < 2.25:
+                self.alpha_xx = (
+                    2.2152 * self.F_rh**6
+                    - 11.852 * self.F_rh**5
+                    + 21.499 * self.F_rh**4
+                    - 12.174 * self.F_rh**3
+                    - 4.7873 * self.F_rh**2
+                    + 5.8662 * self.F_rh
+                    - 0.2652
+                )
+            if 2.25 <= h_0 / self.T < 2.75:
+                self.alpha_xx = (
+                    (1.2205 * self.F_rh**6
+                    - 5.4999 * self.F_rh**5
+                    + 5.7966 * self.F_rh**4
+                    + 6.6491 * self.F_rh**3
+                    - 16.123 * self.F_rh**2
+                    + 9.2016 * self.F_rh
+                    - 0.6342)
+                )
+            if 2.75 <= h_0 / self.T < 3.25:
+                self.alpha_xx = (
+                    (-0.4085 * self.F_rh**6
+                    + 4.534 * self.F_rh**5
+                    - 18.443 * self.F_rh**4
+                    + 35.744 * self.F_rh**3
+                    - 34.381 * self.F_rh**2
+                    + 15.042 * self.F_rh
+                    - 1.3807)
+                )
+            if 3.25 <= h_0 / self.T < 3.75:
+                self.alpha_xx =  (
+                    (0.4078 * self.F_rh**6
+                    - 0.919 * self.F_rh**5
+                    - 3.8292 * self.F_rh**4
+                    + 15.738 * self.F_rh**3
+                    - 19.766 * self.F_rh**2
+                    + 9.7466 * self.F_rh
+                    - 0.6409)
+                )
+            if 3.75 <= h_0 / self.T < 4.5:
+                self.alpha_xx = (
+                    (0.3067 * self.F_rh**6
+                    - 0.3404 * self.F_rh**5
+                    - 5.0511 * self.F_rh**4
+                    + 16.892 * self.F_rh**3
+                    - 20.265 * self.F_rh**2
+                    + 9.9002 * self.F_rh
+                    - 0.6712)
+                )
+            if 4.5 <= h_0 / self.T < 5.5:
+                self.alpha_xx = (
+                    (0.3212 * self.F_rh**6
+                    - 0.3559 * self.F_rh**5
+                    - 5.1056 * self.F_rh**4
+                    + 16.926 * self.F_rh**3
+                    - 20.253 * self.F_rh**2
+                    + 10.013 * self.F_rh
+                    - 0.7196)
+                )
+            if 5.5 <= h_0 / self.T < 6.5:
+                self.alpha_xx = (
+                    (0.9252 * self.F_rh**6
+                    - 4.2574 * self.F_rh**5
+                    + 5.0363 * self.F_rh**4
+                    + 3.3282 * self.F_rh**3
+                    - 10.367 * self.F_rh**2
+                    + 6.3993 * self.F_rh
+                    - 0.2074)
+                )
+            if 6.5 <= h_0 / self.T < 7.5:
+                self.alpha_xx = (
+                    (0.8442 * self.F_rh**6
+                    - 4.0261 * self.F_rh**5
+                    + 5.313 * self.F_rh**4
+                    + 1.6442 * self.F_rh**3
+                    - 8.1848 * self.F_rh**2
+                    + 5.3209 * self.F_rh
+                    - 0.0267)
+                )
+            if 7.5 <= h_0 / self.T < 12:
+                self.alpha_xx = (
+                    (0.1211 * self.F_rh**6
+                    + 0.628 * self.F_rh**5
+                    - 6.5106 * self.F_rh**4
+                    + 16.7 * self.F_rh**3
+                    - 18.267 * self.F_rh**2
+                    + 8.7077 * self.F_rh
+                    - 0.4745)
+                )
+
+            # if 8.5 <= h_0 / self.T < 9.5:
+            #     if self.F_rh < 0.6:
+            #         self.alpha_xx = 1
+            #     if self.F_rh >= 0.6:
+            #         self.alpha_xx = (
+            #             (-6.4069 * self.F_rh**6
+            #             + 47.308 * self.F_rh**5
+            #             - 141.93 * self.F_rh**4
+            #             + 220.23 * self.F_rh**3
+            #             - 185.05 * self.F_rh**2
+            #             + 79.25 * self.F_rh
+            #             - 12.484)-0.05
+            #         )
+            # if h_0 / self.T >= 9.5:
+            #     if self.F_rh < 0.6:
+            #         self.alpha_xx = 1
+            #     if self.F_rh >= 0.6:
+            #         self.alpha_xx = (
+            #             (-6.0727 * self.F_rh**6
+            #             + 44.97 * self.F_rh**5
+            #             - 135.21 * self.F_rh**4
+            #             + 210.13 * self.F_rh**3
+            #             - 176.72 * self.F_rh**2
+            #             + 75.728 * self.F_rh
+            #             - 11.893)-0.05
+                    # )
+
+        if h_0 <= 3:
+            self.V_2 = 0.75 *(v / self.alpha_xx)    # use 75% of the corrected speed 
+        elif 3 < h_0 <= 6:
+            self.V_2 = 0.85 *(v / self.alpha_xx)    # use 85% 
+        # elif 6 < h_0 <= 9:
+        #     self.V_2 = 0.85 *(v / self.alpha_xx)    # use 85% 
+        else:
+            self.V_2 = 0.95 *(v / self.alpha_xx)    # use 95% of the corrected speed        
+        # self.V_2 = v
+        return self.V_2
+        
     def calculate_frictional_resistance(self, v, h_0):
         """Frictional resistance
 
         - 1st resistance component defined by Holtrop and Mennen (1982)
         - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects
         """
-
+        # apply correction velocity V1 for frictional_resistance calculation
+        self.karpov_return_current(v, h_0)
+        v = self.V_1
+        
         self.R_e = v * self.L / self.nu  # Reynolds number
 
         self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
@@ -461,6 +695,7 @@ class ConsumesEnergy:
 
         # The total frictional resistance R_f [kN]:
         self.R_f = (self.C_f * 0.5 * self.rho * (v**2) * self.S) / 1000
+        # self.R_f = (self.Cf_0 * 0.5 * self.rho * (v**2) * self.S) / 1000 # use ITTC1557
         assert not isinstance(
             self.R_f, complex
         ), f"R_f should not be complex: {self.R_f}"
@@ -485,19 +720,23 @@ class ConsumesEnergy:
         self.R_f_one_k1 = self.R_f * self.one_k1
         return self.R_f_one_k1
 
-    def calculate_appendage_resistance(self, v):
+    def calculate_appendage_resistance(self, v, h_0):
         """Appendage resistance
 
         - 3rd resistance component defined by Holtrop and Mennen (1982)
         - Appendages (like a rudder, shafts, skeg) result in additional frictional resistance"""
 
+        # apply correction velocity V1 for appendage_resistance calculation
+        self.karpov_return_current(v, h_0)
+        v = self.V_1
+        
         # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
         self.R_APP = (
             0.5 * self.rho * (v**2) * self.S_APP * self.one_k2 * self.C_f
         ) / 1000
 
         return self.R_APP
-
+    
 
     def calculate_wave_resistance(self, v, h_0):
         """Wave resistance
@@ -506,8 +745,9 @@ class ConsumesEnergy:
         - When the speed or the vessel size increases, the wave making resistance increases
         - In shallow water, the wave resistance shows an asymptotical behaviour by reaching the critical speed
         """
-
-
+        # apply karpov corrected velocity V2 to wave resistance
+        self.karpov_wave_retardation(v, h_0)
+        v = self.V_2
         assert self.g >= 0, f"g should be positive: {self.g}"
         assert self.L >= 0, f"L should be positive: {self.L}"
         self.F_rL = v / np.sqrt(
@@ -596,8 +836,10 @@ class ConsumesEnergy:
         - 2) Resistance due to model-ship correlation (R_A)
         - 3) Resistance due to the bulbous bow (R_B)
         """
-
-
+        # apply karpov corrected velocity V2 to residual resistance
+        self.karpov_wave_retardation(v, h_0)
+        v = self.V_2
+        
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nT = v / np.sqrt(
             2 * self.g * self.A_T / (self.B + self.B * self.C_WP)
@@ -722,7 +964,7 @@ class ConsumesEnergy:
     # negative value is in the Cd  value. so negative winddirection gives negative value because of cd. 
         else:
             self.R_wind = 0
-        print(self.R_wind,'R_wind')    
+        # print(self.R_wind,'R_wind')    
         return self.R_wind 
     
     # for the passive rudder: 
@@ -791,7 +1033,7 @@ class ConsumesEnergy:
             self.R_rudder = self.calculate_angle(v)[3]
         else:
             self.R_rudder = 0
-        print(self.R_rudder,'R_rudder')    
+        # print(self.R_rudder,'R_rudder')    
         return self.R_rudder
 
     
@@ -804,7 +1046,7 @@ class ConsumesEnergy:
         self.calculate_properties()
         self.calculate_frictional_resistance(v, h_0)
         self.calculate_viscous_resistance()
-        self.calculate_appendage_resistance(v)
+        self.calculate_appendage_resistance(v, h_0)
         self.calculate_wave_resistance(v, h_0)
         self.calculate_residual_resistance(v, h_0)
         self.calculate_wind_resistance(v)
@@ -855,79 +1097,118 @@ class ConsumesEnergy:
         
         self.F_rh = v / np.sqrt(self.g * h_0)
         
-        if h_0 >= 9:
-            if self.F_rh >= 0.5:
-                self.eta_D = 0.6
-            elif 0.325 <= self.F_rh < 0.5:
-                self.eta_D = 0.7
-            elif 0.28 <= self.F_rh < 0.325:
-                self.eta_D = 0.59
-            elif 0.2 < self.F_rh < 0.28:
-                self.eta_D = 0.56
-            elif 0.17 < self.F_rh <= 0.2:
-                self.eta_D = 0.41
-            elif 0.15 < self.F_rh <= 0.17:
-                self.eta_D = 0.35
-            else:
-                self.eta_D = 0.29
+#         if h_0 >= 9:
+#             if self.F_rh >= 0.5:
+#                 self.eta_D = 0.6
+#             elif 0.325 <= self.F_rh < 0.5:
+#                 self.eta_D = 0.7
+#             elif 0.28 <= self.F_rh < 0.325:
+#                 self.eta_D = 0.59
+#             elif 0.2 < self.F_rh < 0.28:
+#                 self.eta_D = 0.56
+#             elif 0.17 < self.F_rh <= 0.2:
+#                 self.eta_D = 0.41
+#             elif 0.15 < self.F_rh <= 0.17:
+#                 self.eta_D = 0.35
+#             else:
+#                 self.eta_D = 0.29
 
-        elif 5 <= h_0 < 9:
-            if self.F_rh > 0.62:
-                self.eta_D = 0.7
-            elif 0.58 < self.F_rh < 0.62:
-                self.eta_D = 0.68
-            elif 0.57 < self.F_rh <= 0.58:
-                self.eta_D = 0.7
-            elif 0.51 < self.F_rh <= 0.57:
-                self.eta_D = 0.68
-            elif 0.475 < self.F_rh <= 0.51:
-                self.eta_D = 0.53
-            elif 0.45 < self.F_rh <= 0.475:
-                self.eta_D = 0.4
-            elif 0.36 < self.F_rh <= 0.45:
-                self.eta_D = 0.37
-            elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.36
-            elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.35
-            elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.331
-            else:
-                self.eta_D = 0.33
-        else:
-            if self.F_rh > 0.56:
-                self.eta_D = 0.28
-            elif 0.4 < self.F_rh <= 0.56:
-                self.eta_D = 0.275
-            elif 0.36 < self.F_rh <= 0.4:
-                self.eta_D = 0.345
-            elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.28
-            elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.27
-            elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.26
-            else:
-                self.eta_D = 0.25
+#         elif 5 <= h_0 < 9:
+#             if self.F_rh > 0.62:
+#                 self.eta_D = 0.7
+#             elif 0.58 < self.F_rh < 0.62:
+#                 self.eta_D = 0.68
+#             elif 0.57 < self.F_rh <= 0.58:
+#                 self.eta_D = 0.7
+#             elif 0.51 < self.F_rh <= 0.57:
+#                 self.eta_D = 0.68
+#             elif 0.475 < self.F_rh <= 0.51:
+#                 self.eta_D = 0.53
+#             elif 0.45 < self.F_rh <= 0.475:
+#                 self.eta_D = 0.4
+#             elif 0.36 < self.F_rh <= 0.45:
+#                 self.eta_D = 0.37
+#             elif 0.33 < self.F_rh <= 0.36:
+#                 self.eta_D = 0.36
+#             elif 0.3 < self.F_rh <= 0.33:
+#                 self.eta_D = 0.35
+#             elif 0.28 < self.F_rh <= 0.3:
+#                 self.eta_D = 0.331
+#             else:
+#                 self.eta_D = 0.33
+#         else:
+#             if self.F_rh > 0.56:
+#                 self.eta_D = 0.28
+#             elif 0.4 < self.F_rh <= 0.56:
+#                 self.eta_D = 0.275
+#             elif 0.36 < self.F_rh <= 0.4:
+#                 self.eta_D = 0.345
+#             elif 0.33 < self.F_rh <= 0.36:
+#                 self.eta_D = 0.28
+#             elif 0.3 < self.F_rh <= 0.33:
+#                 self.eta_D = 0.27
+#             elif 0.28 < self.F_rh <= 0.3:
+#                 self.eta_D = 0.26
+#             else:
+#                 self.eta_D = 0.25
        
-        self.eta_D = 0.6 # assume the propulsion efficiency is 0.4 for the slow sailing in coastal water
+    # eta_D refers to MoVeIT report, range from 0.35 to 0.53
+    
+    # deep 
+        if h_0 >= 15:
+            self.eta_D = 0.53
+                        
+        elif 10 <= h_0 < 15:
+            self.eta_D = 0.49 
+    # shallower
+        elif 8 <= h_0 < 10:
+            self.eta_D = 0.48
+        
+        elif 7 <= h_0 < 8:
+            self.eta_D = 0.475                          
+
+        elif 6 <= h_0 < 7:
+            self.eta_D = 0.45
+          
+        elif 4.5 <= h_0 < 6:
+            self.eta_D = 0.425
+        
+        elif 4 <= h_0 < 4.5:
+            self.eta_D = 0.42            
+        
+        elif 3 < h_0 < 4:
+            self.eta_D = 0.4
+        
+        elif 2.5 <= h_0 <= 3:
+            self.eta_D = 0.35                
+
+        if self.narrow:
+            self.eta_D = self.eta_D * 0.65
+        elif self.slow:
+            self.eta_D = self.eta_D * 0.6
+        else:
+            self.eta_D = self.eta_D
+        # self.eta_D = 0.55
         # Delivered Horse Power (DHP), P_d
-        self.P_d = self.P_e / self.eta_D
+        self.P_d = (self.P_e / self.eta_D)
+        self.P_b = self.P_d / 0.98
 
         logger.debug("eta_D = {:.2f}".format(self.eta_D))
 
         self.P_propulsion = (
-            self.P_d
+            self.P_b
         )  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
 
         self.P_tot = self.P_hotel + self.P_propulsion
 
-        # Partial engine load (P_partial): needed in the 'Emission calculations'
+        # Partial engine load (P_partial): needed in the 'fuel and Emission calculations'
         if self.P_tot > self.P_installed:
             self.P_given = self.P_installed
             self.P_partial = 1
         else:
+            # self.P_given = self.P_propulsion
             self.P_given = self.P_tot
+            # self.P_partial = self.P_propulsion / self.P_installed
             self.P_partial = self.P_tot / self.P_installed
 
         # logger.debug(f'The total power required is {self.P_tot} kW')
@@ -942,8 +1223,11 @@ class ConsumesEnergy:
         # 1) self.P_propulsion, for the convenience of validation.  (propulsion power and fuel used for propulsion),
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
-
-        return self.P_propulsion, self.P_tot, self.P_given
+        # print(self.eta_D,'etd_D')
+        # print(self.P_d,'Pd')
+        # print(self.P_propulsion,'P_propulsion')
+        # print(self.P_tot,'Ptot')
+        return self.eta_D, self.P_d, self.P_propulsion, self.P_tot, self.P_given
 
     def emission_factors_general(self):
         """General emission factors:
@@ -1530,11 +1814,10 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
 
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
-        self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
-        self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
-        self.emission_g_m_NOX = self.P_given * self.total_factor_NOX / v / 3600
+        self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / 3600 / v
+        self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / 3600 / v
+        self.emission_g_m_NOX = self.P_given * self.total_factor_NOX  /3600 / v
 
         return self.emission_g_m_CO2, self.emission_g_m_PM10, self.emission_g_m_NOX
 
@@ -1595,6 +1878,8 @@ class EnergyCalculation:
             "time_stop": [],
             "edge_start": [],
             "edge_stop": [],
+            "sailing_duration": [],
+            "R_tot": [],     
             "P_tot": [],
             "P_given": [],
             "P_installed": [],
@@ -1606,6 +1891,10 @@ class EnergyCalculation:
             "total_LH2_consumption_SOFC_mass": [],
             "total_LH2_consumption_PEMFC_vol": [],
             "total_LH2_consumption_SOFC_vol": [],
+            'total_H2_300bar_PEMFC_mass': [],
+            'total_H2_300bar_PEMFC_40ft_containers':[],
+            'total_H2_500bar_PEMFC_mass': [],
+            'total_H2_500bar_PEMFC_40ft_containers':[],
             "total_eLNG_consumption_PEMFC_mass": [],
             "total_eLNG_consumption_SOFC_mass": [],
             "total_eLNG_consumption_PEMFC_vol": [],
@@ -1692,22 +1981,36 @@ class EnergyCalculation:
                     "CurrentSpeed"
                 ]
 
+            V_g_up = self.FG.get_edge_data(node_start, node_stop)["Info"][
+                "VesselSpeedToGroundProfile_upstream" ]
+            V_g_down = self.FG.get_edge_data(node_start, node_stop)["Info"][
+                "VesselSpeedToGroundProfile_downstream" ]
 
-
-            if self.vessel.V_g_profile: 
-                V_g = self.FG.get_edge_data(node_start, node_stop)["Info"][
-                    "VesselSpeedToGroundProfile" ]               
+            if self.vessel.use_V_g_profile: 
+                if self.vessel.sailing_upstream: 
+                    V_g = V_g_up
+                    V_w = V_g - U_c   # the velocity to water when sailing upstream           
+                else:               
+                    V_g = V_g_down
+                    V_w = V_g + U_c   # the velocity to water when sailing downstream      
+            elif self.vessel.sailing_on_power is True:
+                V_w = self.vessel.V_g_ave 
+                if self.vessel.sailing_upstream:
+                    V_g = self.vessel.V_g_ave + U_c
+                else:
+                    V_g = self.vessel.V_g_ave - U_c
             else:               
                 V_g = self.vessel.V_g_ave 
            # get the velocity to the water based on sailing directions 
-            if self.vessel.sailing_upstream: 
-                V_w = V_g - U_c   # the velocity to water when sailing upstream           
-            else:               
-                V_w = V_g + U_c   # the velocity to water when sailing downstream          
-            print(V_w,'V_w')
-
-            # vessel speed relative to water between two points
-            return V_w
+                if self.vessel.sailing_upstream: 
+                    V_w = V_g - U_c   # the velocity to water when sailing upstream           
+                else:               
+                    V_w = V_g + U_c   # the velocity to water when sailing downstream          
+            
+            # print(V_g,'V_g')
+            # print(V_w,'V_w')
+            # returen vessel speed to ground Vg and real vessel speed relative to water Vw between two points
+            return V_g, V_w
         
         
         # log messages that are related to locking
@@ -1729,6 +2032,7 @@ class EnergyCalculation:
         for i in range(len(times) - 1):
 
             # determine the time associated with the logged event (how long did it last)
+           
             delta_t = (times[i + 1] - times[i]).total_seconds()
 
             if delta_t != 0:
@@ -1742,7 +2046,8 @@ class EnergyCalculation:
 
                 # calculate the distance travelled and the associated velocity
                 distance = calculate_distance(geometries[i], geometries[i + 1])
-                V_g_ave = distance / delta_t
+                V_g_ave = self.vessel.V_g_ave
+                                
                 self.energy_use["distance"].append(distance)
 
                 # calculate the delta t
@@ -1760,13 +2065,19 @@ class EnergyCalculation:
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
 
                 # v = calculate_V_w(geometries[i], geometries[i + 1])
+                
                 v = self.vessel.V_g_ave
-                if self.vessel.sailing_on_power is False:
-                    v = calculate_V_w(geometries[i], geometries[i + 1])
-
+                # if self.vessel.sailing_on_power is False:
+                #     V_g, v = calculate_V_w(geometries[i], geometries[i + 1])
+                V_g, v = calculate_V_w(geometries[i], geometries[i + 1])
+                if self.vessel.sailing_on_power is True:
+                    v = self.vessel.V_g_ave
                 h_0 = self.vessel.calculate_h_squat(v=v, h_0=h_0)
-                print(h_0)
-                print(v,'v4energy')
+                # print(h_0)
+                # print(v,'v4energy')
+   
+                
+                
                 self.vessel.calculate_total_resistance(v=v, h_0=h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
@@ -1781,21 +2092,28 @@ class EnergyCalculation:
 
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
                     # consuming 'energy_delta' kWh
+                    sailing_duration_delta = delta_t * (V_g_ave/V_g)
+                    R_tot_delta = self.vessel.R_tot
                     P_hotel_delta = self.vessel.P_hotel  # in kW
                     P_installed_delta = self.vessel.P_installed  # in kW
                     P_tot_delta = self.vessel.P_hotel  # in kW, required power
                     P_given_delta = self.vessel.P_hotel  # in kW, actual given power
 
                 else:  # otherwise log P_tot
+          
+                    
+                    
                     # Energy consumed per time step delta_t in the propulsion stage
                     energy_delta = (
-                        self.vessel.P_given * delta_t * ( v/ V_g_ave) / 3600
+                        self.vessel.P_given * delta_t * (V_g_ave/V_g) / 3600
                     )  #second/3600=hour -->kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
                     # energy_delta = (
-                    #     self.vessel.P_given * delta_t  / 3600
+                    #     self.vessel.P_given * delta_t * ( v/ V_g_ave) / 3600
                     # )  #second/3600=hour -->kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t,
                     # consuming 'energy_delta' kWh
+                    sailing_duration_delta = delta_t * (V_g_ave/V_g)
+                    R_tot_delta = self.vessel.R_tot
                     P_tot_delta = (
                         self.vessel.P_tot
                     )  # in kW, required power, may exceed installed engine power
@@ -1815,6 +2133,7 @@ class EnergyCalculation:
                 delta_diesel_C_year = (
                     self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta
                 )  # in g
+                # print(self.vessel.final_SFC_diesel_C_year_ICE_mass,'SFC final')
                 delta_diesel_ICE_mass = (
                     self.vessel.final_SFC_diesel_ICE_mass * energy_delta
                 )  # in g
@@ -1834,7 +2153,18 @@ class EnergyCalculation:
                 delta_LH2_SOFC_vol = (
                     self.vessel.final_SFC_LH2_vol_SOFC * energy_delta
                 )  # in m3
-
+                delta_H2_500bar_PEMFC_mass = (
+                    self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta
+                )  # in g,  mass_PEMFC for LH2 and H2 gas is the same value
+                delta_H2_500bar_PEMFC_40ft_containers = (
+                    self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta / (1085000*0.9)
+                ) # one 40ft H2_500bar container contains 1085 kg H2, set residual H2 margin 10%, so maximum 90% storage for use
+                delta_H2_300bar_PEMFC_mass = (
+                    self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta
+                )  # in g,  mass_PEMFC for LH2 and H2 gas is the same value
+                delta_H2_300bar_PEMFC_40ft_containers = (
+                    self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta / (845000*0.9)
+                ) # one 40ft H2_300bar container contains 845 kg H2, set residual H2 margin 10%, so maximum 90% storage for use
                 delta_eLNG_PEMFC_mass = (
                     self.vessel.final_SFC_eLNG_mass_PEMFC * energy_delta
                 )  # in g
@@ -1902,6 +2232,8 @@ class EnergyCalculation:
                     self.vessel.final_SFC_Battery2000kWh * energy_delta
                 )  # in ZESpack number
 
+                self.energy_use["sailing_duration"].append(sailing_duration_delta)
+                self.energy_use["R_tot"].append(R_tot_delta)            
                 self.energy_use["P_tot"].append(P_tot_delta)
                 self.energy_use["P_given"].append(P_given_delta)
                 self.energy_use["P_installed"].append(P_installed_delta)
@@ -1930,6 +2262,18 @@ class EnergyCalculation:
                 )
                 self.energy_use["total_LH2_consumption_SOFC_vol"].append(
                     delta_LH2_SOFC_vol
+                )
+                self.energy_use["total_H2_500bar_PEMFC_mass"].append(
+                    delta_H2_500bar_PEMFC_mass
+                )
+                self.energy_use["total_H2_500bar_PEMFC_40ft_containers"].append(
+                    delta_H2_500bar_PEMFC_40ft_containers
+                ) 
+                self.energy_use["total_H2_300bar_PEMFC_mass"].append(
+                    delta_H2_300bar_PEMFC_mass
+                )
+                self.energy_use["total_H2_300bar_PEMFC_40ft_containers"].append(
+                    delta_H2_300bar_PEMFC_40ft_containers
                 )
                 self.energy_use["total_eLNG_consumption_PEMFC_mass"].append(
                     delta_eLNG_PEMFC_mass
