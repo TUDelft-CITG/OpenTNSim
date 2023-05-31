@@ -37,6 +37,9 @@ requires = [
     "plotly",
     "simplekml",
     "nose",
+    # downloading
+    "requests",
+    "requests-cache",
     # web mode
     "Flask>=1.0",
     "Flask-cors",
