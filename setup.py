@@ -24,7 +24,8 @@ requires = [
     "openclsim>=0.16",
     "numpy",
     "simpy",
-    "networkx<3",
+    "networkx>=3",
+    "geopandas",
     "shapely>=2",
     "scipy",
     "click",
@@ -43,6 +44,7 @@ requires = [
     "Dill",
     # deprecate old functions
     "Deprecated",
+    "tqdm",
 ]
 
 setup_requirements = [
@@ -74,7 +76,6 @@ tests_require = [
     "ipywidgets==7.7",
     "jsonschema==3.0",
     "jupyterlab_widgets==3",
-    "tqdm",
 ]
 
 with open("README.md", "r") as des:
