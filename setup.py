@@ -111,6 +111,6 @@ setup(
     tests_require=tests_require,
     extras_require={"testing": tests_require},
     url="https://github.com/TUDelft-CITG/OpenTNSim",
-    version="1.1.2",
+    version="1.3.4",
     zip_safe=False,
 )
