@@ -130,9 +130,7 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0, 20)):
         )
         h_0 = depth - z_computed
 
-        # for the squatted water depth calculate resistance and power
-        # vessel.calculate_properties()
-        # vessel.calculate_frictional_resistance(v=velocity, h_0=h_0)
+
         vessel.calculate_total_resistance(v=velocity, h_0=h_0)
         P_tot = vessel.calculate_total_power_required(v=velocity, h_0=h_0)
 
@@ -160,25 +158,17 @@ def power2v(vessel, edge, upperbound):
     bounds is the limits where to look for a solution for the velocity [m/s]
     returns velocity [m/s]
     """
-    # upperbound = get_upperbound_for_power2v()
-    # bounds > 10 gave an issue...
-    # TODO: check what the origin of this is.
+
     def seek_v_given_power(v, vessel, edge):
         """function to optimize"""
         # water depth from the edge        
         h_0 = edge["Info"]["GeneralDepth"]
         h_0 = vessel.calculate_h_squat(v, h_0)
-        # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_0)
         # compute total power given
         P_given = vessel.calculate_total_power_required(v=v, h_0=h_0)
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
-
-        # if vessel.P_tot_given_profile:
-        #     vessel.P_tot_given = edge["Info"]["PowerApplied" ]                     
-        # else:
-        #     vessel.P_tot_given = vessel.P_tot_given
          
         # compute difference between power setting by captain and power needed for velocity
         diff = vessel.P_tot_given - vessel.P_tot
@@ -232,7 +222,7 @@ class ConsumesEnergy:
 
     def __init__(
         self,
-        use_V_g_profile,
+        use_V_g_profile= False,
         P_installed,
         L_w,
         C_year,
@@ -324,10 +314,6 @@ class ConsumesEnergy:
             if P_tot_given > P_installed:
                 self.P_tot_given = self.P_installed
 
-        # # TODO: check assumption when combining move with energy
-        # if self.P_tot_given is not None and self.v is not None:
-        #     raise ValueError("please specify v or P_tot_given, but not both")
-
     # The engine age and construction year of the engine is computed with the function below.
     # The construction year of the engine is used in the emission functions (1) emission_factors_general and (2) correction_factors
 
@@ -416,8 +402,6 @@ class ConsumesEnergy:
         assert h_0 >= 0, f"g should be positive: {h_0}"
         self.F_rh = v / np.sqrt(self.g * h_0)
         
-        # if h_0 / self.T < 1.2:
-            # print('h_0/T is too small to sail')
         
         if 1 < h_0 / self.T <= 1.7:
             self.alpha_x = (
@@ -454,10 +438,8 @@ class ConsumesEnergy:
 
         if h_0 / self.T > 3.5:
             self.alpha_x = 1                
-                
-                
+                                
         self.V_1 = 1 *(v / self.alpha_x)            
-        # self.V_1 = v
         return self.V_1
     
     def karpov_wave_retardation(self, v, h_0):
@@ -588,42 +570,13 @@ class ConsumesEnergy:
                     - 0.4745)
                 )
 
-            # if 8.5 <= h_0 / self.T < 9.5:
-            #     if self.F_rh < 0.6:
-            #         self.alpha_xx = 1
-            #     if self.F_rh >= 0.6:
-            #         self.alpha_xx = (
-            #             (-6.4069 * self.F_rh**6
-            #             + 47.308 * self.F_rh**5
-            #             - 141.93 * self.F_rh**4
-            #             + 220.23 * self.F_rh**3
-            #             - 185.05 * self.F_rh**2
-            #             + 79.25 * self.F_rh
-            #             - 12.484)-0.05
-            #         )
-            # if h_0 / self.T >= 9.5:
-            #     if self.F_rh < 0.6:
-            #         self.alpha_xx = 1
-            #     if self.F_rh >= 0.6:
-            #         self.alpha_xx = (
-            #             (-6.0727 * self.F_rh**6
-            #             + 44.97 * self.F_rh**5
-            #             - 135.21 * self.F_rh**4
-            #             + 210.13 * self.F_rh**3
-            #             - 176.72 * self.F_rh**2
-            #             + 75.728 * self.F_rh
-            #             - 11.893)-0.05
-                    # )
 
         if h_0 <= 3:
             self.V_2 = 0.75 *(v / self.alpha_xx)    # use 75% of the corrected speed 
         elif 3 < h_0 <= 6:
             self.V_2 = 0.85 *(v / self.alpha_xx)    # use 85% 
-        # elif 6 < h_0 <= 9:
-        #     self.V_2 = 0.85 *(v / self.alpha_xx)    # use 85% 
         else:
             self.V_2 = 0.95 *(v / self.alpha_xx)    # use 95% of the corrected speed        
-        # self.V_2 = v
         return self.V_2
         
     def calculate_frictional_resistance(self, v, h_0):
@@ -695,7 +648,6 @@ class ConsumesEnergy:
 
         # The total frictional resistance R_f [kN]:
         self.R_f = (self.C_f * 0.5 * self.rho * (v**2) * self.S) / 1000
-        # self.R_f = (self.Cf_0 * 0.5 * self.rho * (v**2) * self.S) / 1000 # use ITTC1557
         assert not isinstance(
             self.R_f, complex
         ), f"R_f should not be complex: {self.R_f}"
@@ -1002,12 +954,6 @@ class ConsumesEnergy:
         dr = np.arange(1,41,1)
         windmoment = self.calculate_moment_wind()[1]
         restmoment = self.calculate_Mry(v)[2]-windmoment
-      #  if restmoment > 0:
-      #      Mry = self.calculate_Mry()[2]
-      #      Rrx = self.calculate_Mry()[1]
-      #      angle = self.calculate_Mry()[3]
-            
-        #else: # restmoment<0
         Mry = 0
         angle = 0
         Rrx = 0
@@ -1017,9 +963,6 @@ class ConsumesEnergy:
             Rry = np.cos(angle * np.pi/180) *  FN
             Mry = Rry * self.L/2
             Rrx = np.abs(FN*np.sin(angle * np.pi/180)) /1000 #kN
-               # if  Mry > windmoment:
-               #     angle = dr[i]
-               #     Rrx = np.abs(FN*np.sin(dr[i] * np.pi/180))
             if angle == 40:
                 break
         
@@ -1032,8 +975,7 @@ class ConsumesEnergy:
         if self.consider_passive_rudder_resistance:
             self.R_rudder = self.calculate_angle(v)[3]
         else:
-            self.R_rudder = 0
-        # print(self.R_rudder,'R_rudder')    
+            self.R_rudder = 0   
         return self.R_rudder
 
     
@@ -1097,61 +1039,7 @@ class ConsumesEnergy:
         
         self.F_rh = v / np.sqrt(self.g * h_0)
         
-#         if h_0 >= 9:
-#             if self.F_rh >= 0.5:
-#                 self.eta_D = 0.6
-#             elif 0.325 <= self.F_rh < 0.5:
-#                 self.eta_D = 0.7
-#             elif 0.28 <= self.F_rh < 0.325:
-#                 self.eta_D = 0.59
-#             elif 0.2 < self.F_rh < 0.28:
-#                 self.eta_D = 0.56
-#             elif 0.17 < self.F_rh <= 0.2:
-#                 self.eta_D = 0.41
-#             elif 0.15 < self.F_rh <= 0.17:
-#                 self.eta_D = 0.35
-#             else:
-#                 self.eta_D = 0.29
 
-#         elif 5 <= h_0 < 9:
-#             if self.F_rh > 0.62:
-#                 self.eta_D = 0.7
-#             elif 0.58 < self.F_rh < 0.62:
-#                 self.eta_D = 0.68
-#             elif 0.57 < self.F_rh <= 0.58:
-#                 self.eta_D = 0.7
-#             elif 0.51 < self.F_rh <= 0.57:
-#                 self.eta_D = 0.68
-#             elif 0.475 < self.F_rh <= 0.51:
-#                 self.eta_D = 0.53
-#             elif 0.45 < self.F_rh <= 0.475:
-#                 self.eta_D = 0.4
-#             elif 0.36 < self.F_rh <= 0.45:
-#                 self.eta_D = 0.37
-#             elif 0.33 < self.F_rh <= 0.36:
-#                 self.eta_D = 0.36
-#             elif 0.3 < self.F_rh <= 0.33:
-#                 self.eta_D = 0.35
-#             elif 0.28 < self.F_rh <= 0.3:
-#                 self.eta_D = 0.331
-#             else:
-#                 self.eta_D = 0.33
-#         else:
-#             if self.F_rh > 0.56:
-#                 self.eta_D = 0.28
-#             elif 0.4 < self.F_rh <= 0.56:
-#                 self.eta_D = 0.275
-#             elif 0.36 < self.F_rh <= 0.4:
-#                 self.eta_D = 0.345
-#             elif 0.33 < self.F_rh <= 0.36:
-#                 self.eta_D = 0.28
-#             elif 0.3 < self.F_rh <= 0.33:
-#                 self.eta_D = 0.27
-#             elif 0.28 < self.F_rh <= 0.3:
-#                 self.eta_D = 0.26
-#             else:
-#                 self.eta_D = 0.25
-       
     # eta_D refers to MoVeIT report, range from 0.35 to 0.53
     
     # deep 
@@ -1188,7 +1076,7 @@ class ConsumesEnergy:
             self.eta_D = self.eta_D * 0.6
         else:
             self.eta_D = self.eta_D
-        # self.eta_D = 0.55
+
         # Delivered Horse Power (DHP), P_d
         self.P_d = (self.P_e / self.eta_D)
         self.P_b = self.P_d / 0.98
@@ -1223,10 +1111,7 @@ class ConsumesEnergy:
         # 1) self.P_propulsion, for the convenience of validation.  (propulsion power and fuel used for propulsion),
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
-        # print(self.eta_D,'etd_D')
-        # print(self.P_d,'Pd')
-        # print(self.P_propulsion,'P_propulsion')
-        # print(self.P_tot,'Ptot')
+
         return self.eta_D, self.P_d, self.P_propulsion, self.P_tot, self.P_given
 
     def emission_factors_general(self):
@@ -2007,8 +1892,7 @@ class EnergyCalculation:
                 else:               
                     V_w = V_g + U_c   # the velocity to water when sailing downstream          
             
-            # print(V_g,'V_g')
-            # print(V_w,'V_w')
+
             # returen vessel speed to ground Vg and real vessel speed relative to water Vw between two points
             return V_g, V_w
         
@@ -2101,17 +1985,11 @@ class EnergyCalculation:
 
                 else:  # otherwise log P_tot
           
-                    
-                    
+                                        
                     # Energy consumed per time step delta_t in the propulsion stage
                     energy_delta = (
                         self.vessel.P_given * delta_t * (V_g_ave/V_g) / 3600
-                    )  #second/3600=hour -->kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
-                    # energy_delta = (
-                    #     self.vessel.P_given * delta_t * ( v/ V_g_ave) / 3600
-                    # )  #second/3600=hour -->kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
-                    # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t,
-                    # consuming 'energy_delta' kWh
+                    )  #second/3600=hour -->kWh
                     sailing_duration_delta = delta_t * (V_g_ave/V_g)
                     R_tot_delta = self.vessel.R_tot
                     P_tot_delta = (
@@ -2340,7 +2218,6 @@ class EnergyCalculation:
                 )
 
                 self.energy_use["water depth"].append(h_0)
-                    # to do: add option enabling getting depth from large waterway network: self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
 
 
     def plot(self):
