@@ -1,31 +1,34 @@
-import datetime, time
-import pathlib
-import logging
-import uuid
+import datetime
 import functools
 import itertools
 import json
-import pyproj
-import shapely.geometry
-import numpy as np
-import pandas as pd
-import scipy.optimize
-import simpy
-import tqdm
-
-# package(s) for data handling
-
-# OpenTNSim
-import opentnsim
-import opentnsim.strategy
-import opentnsim.graph_module
-from opentnsim.strategy import get_upperbound_for_power2v
+import logging
 
 # Used for mathematical functions
 import math
+import pathlib
+import time
+import uuid
+import importlib.resources
 
 # Used for making the graph to visualize our problem
 import networkx as nx
+import numpy as np
+import pandas as pd
+import pyproj
+import scipy.optimize
+import shapely.geometry
+import simpy
+import tqdm
+
+# OpenTNSim
+import opentnsim
+import opentnsim.graph_module
+import opentnsim.strategy
+from opentnsim.strategy import get_upperbound_for_power2v
+
+# package(s) for data handling
+
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +36,20 @@ logger = logging.getLogger(__name__)
 def load_partial_engine_load_correction_factors():
     """read correction factor from package directory"""
 
-    # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent / "data"
-    correctionfactors_path = data_dir / "Correctionfactors.csv"
-    df = pd.read_csv(correctionfactors_path, comment="#")
+    data_resource = importlib.resources.files("opentnsim.data")
+    correction_factors = data_resource.joinpath("Correctionfactors.csv")
+    with correction_factors.open() as f:
+        df = pd.read_csv(f, comment="#")
     return df
 
 
 def karpov_smooth_curves():
     """read correction factor from package directory"""
+    data_resource = importlib.resources.files("opentnsim.data")
 
-    # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent / "data"
-    karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
-    df = pd.read_csv(karpov_smooth_curves_path, comment="#")
+    karpov_smooth_curves = data_resource.joinpath("KarpovSmoothCurves.csv")
+    with karpov_smooth_curves.open() as f:
+        df = pd.read_csv(f, comment="#")
     return df
 
 
