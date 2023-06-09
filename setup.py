@@ -11,7 +11,7 @@
 import sys
 
 from pkg_resources import require, VersionConflict
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, find_namespace_packages
 
 try:
     require("setuptools>=38.3")
@@ -84,6 +84,7 @@ tests_require = [
 with open("README.md", "r") as des:
     long_description = des.read()
 
+
 setup(
     author="Mark van Koningsveld",
     author_email="m.vankoningsveld@tudelft.nl",
@@ -105,7 +106,7 @@ setup(
     include_package_data=True,
     keywords="OpenTNSim",
     name="opentnsim",
-    packages=find_packages(include=["opentnsim"]),
+    packages=["opentnsim", "opentnsim.data"],
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
