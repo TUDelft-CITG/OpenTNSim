@@ -747,7 +747,7 @@ class PassLock():
                 #Speed reduction in the approach to the line-up area
                 vessel.wait_for_next_cycle = False
                 vessel.waited_in_waiting_area = False
-                vessel.v = 0.5*vessel.v
+                vessel.v = 0.75*vessel.v
 
                 #Calculates and reports the total waiting time in the waiting area
                 if wait_for_lineup_area != vessel.env.now:
@@ -758,7 +758,7 @@ class PassLock():
                                      nx.get_node_attributes(vessel.env.FG, "geometry")[node_waiting_area])
 
                     #Speed reduction in the approach to the line-up area, as the vessel had to lay still in the waiting area
-                    vessel.v = 0.5*vessel.v
+                    vessel.v = 0.3*vessel.v
 
                     #Changes boolean of the vessel which indicates that it had to wait in the waiting area
                     for line_up_user in lineup_area.line_up_area[lineup_area.start_node].users:

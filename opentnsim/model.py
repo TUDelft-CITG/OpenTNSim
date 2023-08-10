@@ -9,10 +9,12 @@ import uuid
 # package(s) related to the simulation
 import simpy
 import networkx as nx
+import numpy as np
 
 # spatial libraries
 import pyproj
 import shapely.geometry
+import pytz
 
 # additional packages
 import datetime, time
@@ -24,7 +26,6 @@ import opentnsim.core as core
 import opentnsim.vessel_traffic_service as vessel_traffic_service
 
 logger = logging.getLogger(__name__)
-
 
 class VesselGenerator:
     """
@@ -154,16 +155,20 @@ class Simulation(core.Identifiable):
     A class to generate vessels from a database
     """
 
-    def __init__(self, simulation_start, graph, hydrodynamic_data=None, scenario=None):
+    def __init__(self, graph, simulation_start=datetime.datetime.now(),simulation_duration=None,simulation_stop=None, hydrodynamic_data=None, vessel_speed_data=None, scenario=None):
         """ 
         Initialization 
         
         scenario: scenario with vessels - should be coupled to the database
         """
-        self.environment = simpy.Environment(
-            initial_time=time.mktime(simulation_start.timetuple())
-        )
+        self.environment = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
         self.environment.FG = graph
+        self.environment.simulation_start = simulation_start
+        self.environment.simulation_stop = simulation_stop
+        print(pd.Timestamp(datetime.datetime.fromtimestamp(self.environment.now)).to_datetime64())
+        self.simulation_duration = simulation_duration
+        if self.environment.simulation_stop:
+            self.simulation_duration = self.environment.simulation_stop-self.environment.simulation_start
         self.environment.routes = pd.DataFrame.from_dict(
             {
                 "Origin": [],
@@ -179,15 +184,38 @@ class Simulation(core.Identifiable):
         self.environment.vessels = []
         self.output = {}
 
-        if hydrodynamic_data != None:
-            self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data)
+        if not vessel_speed_data:
+            vessel_speed_data = pd.DataFrame(columns=['edge', 'speed'])
+            for idx, edge in enumerate(graph.edges):
+                vessel_speed_data.at[idx, 'edge'] = edge
+                vessel_speed_data.at[idx, 'speed'] = np.NaN
+            vessel_speed_data.set_index('edge')
+
+        if not hydrodynamic_data:
+            hydrodynamic_data = xr.Dataset()
+            stations = list(graph.nodes)
+            times = [simulation_start, simulation_end]
+            layers = [0]
+            static_data = [np.NaN] * len(graph.nodes)
+            dynamic_time_data = [[np.NaN, np.NaN]] * len(graph.nodes)
+            dynamic_time_layer_data = [[[np.NaN], [np.NaN]]] * len(graph.nodes)
+            MBL = xr.DataArray(data=static_data, dims='STATION', coords=dict(STATION=stations))
+            wlev = xr.DataArray(data=dynamic_time_data, dims=['STATION', 'TIME'],
+                                coords=dict(STATION=stations, TIME=times))
+            cvel = xr.DataArray(data=dynamic_time_layer_data, dims=['STATION', 'TIME', 'LAYER'],
+                                coords=dict(STATION=stations, TIME=times, LAYER=layers))
+            hydrodynamic_data['MBL'] = MBL
+            hydrodynamic_data['Water level'] = wlev
+            hydrodynamic_data['Current velocity'] = cvel
+
+        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data,vessel_speed_data)
 
     def add_vessels(
         self,
-        origin,
-        destination,
+        origin=None,
+        destination=None,
         vessel=None,
-        vessel_generator = None,
+        vessel_generator=None,
         fleet_distribution=None,
         arrival_distribution=1,
         arrival_process="Markovian",
@@ -199,12 +227,14 @@ class Simulation(core.Identifiable):
         arrival_distribution:   specify the distribution from which vessels are generated, int or list
         arrival_process:        process of arrivals
         """
-        
+
         if vessel_generator == None:
             self.environment.vessels.append(vessel)
             process = self.environment.process(vessel.move())
             vessel.process = process
-            
+            if 'arrival_time' not in vessel.metadata.keys():
+                vessel.metadata['arrival_time'] = self.environment.simulation_start
+
         else:
             self.environment.process(
                 vessel_generator.arrival_process(
@@ -218,11 +248,10 @@ class Simulation(core.Identifiable):
                 )
             )
 
-    def run(self, duration=24 * 60 * 60):
+    def run(self):
         """ 
         Run the simulation 
         
         duration:               specify the duration of the simulation in seconds
         """
-
-        self.environment.run(until=self.environment.now + duration)
+        self.environment.run(until=self.environment.now + self.simulation_duration.total_seconds())

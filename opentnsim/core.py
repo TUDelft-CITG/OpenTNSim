@@ -9,6 +9,8 @@ import uuid
 import simpy
 import networkx as nx
 import numpy as np
+import pandas as pd
+import pytz
 
 # spatial libraries
 import pyproj
@@ -121,26 +123,19 @@ class Log:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.log = {"Message": [], "Timestamp": [], "Value": [], "Geometry": []}
+        self.log = {"Time": [], "Location": [], "Action": [], "Status": []}
 
-    def log_entry(self, log, t, value, geometry_log):
+    def log_entry(self, time, location, action, status_report):
         """Log"""
-        self.log["Message"].append(log)
-        self.log["Timestamp"].append(datetime.datetime.fromtimestamp(t))
-        self.log["Value"].append(value)
-        self.log["Geometry"].append(geometry_log)
+        self.log["Time"].append(pd.Timestamp(datetime.datetime.fromtimestamp(time,tz=pytz.utc)).to_datetime64())
+        self.log["Location"].append(location)
+        self.log["Action"].append(action)
+        self.log["Status"].append(status_report)
 
     def get_log_as_json(self):
         json = []
-        for msg, t, value, geometry_log in zip(
-            self.log["Message"],
-            self.log["Timestamp"],
-            self.log["Value"],
-            self.log["Geometry"],
-        ):
-            json.append(
-                dict(message=msg, time=t, value=value, geometry_log=geometry_log)
-            )
+        for time, location, action, status in zip(self.log["Time"],self.log["Location"],self.log["Action"],self.log["Status"]):
+            json.append(dict(time=time, location=location, action=action, status=status))
         return json
 
 class Neighbours:
@@ -187,76 +182,77 @@ class Routeable:
 class Movable(Locatable, Routeable, Log):
     """Mixin class: Something can move
     Used for object that can move with a fixed speed
-    geometry: point used to track its current location
-    v: speed"""
+    geometry: point used to track its current location"""
 
-    def __init__(self, v=4, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.v = v
         self.on_pass_node = []
         self.on_look_ahead_to_node = []
         self.on_pass_edge = []
         self.on_complete_pass_edge = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    def initial_timeout(self):
-        yield self.env.timeout(self.metadata['delay'])
-        self.metadata['delay'] = 0
-
     def move(self):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
-        self.distance = 0
-        if self.metadata['delay'] != 0: yield from Movable.initial_timeout(self)
+        for idx,method in enumerate(self.on_pass_node):
+            if method.__str__().split('method ')[1].split(' of <')[0] == 'HasPortAccess.request_terminal_access':
+                self.on_pass_node.insert(0, self.on_pass_node.pop(idx))
+                break
 
+        yield self.env.timeout((self.metadata['arrival_time'] - self.env.simulation_start).total_seconds())
+        #print(self.name,datetime.datetime.fromtimestamp(self.env.now,tz=pytz.utc))
+        self.metadata['arrival_time'] = self.env.simulation_start #resets delay
+
+        self.distance = 0
+        self.update_route_status_report()
         # Check if vessel is at correct location - if not, move to location
         if self.geometry != nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]:
             orig = self.geometry
             dest = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
-            self.distance += self.wgs84.inv(shapely.geometry.asShape(orig).x,
-                                            shapely.geometry.asShape(orig).y,
-                                            shapely.geometry.asShape(dest).x,
-                                            shapely.geometry.asShape(dest).y,)[2]
-
-            yield self.env.timeout(self.distance / self.current_speed)
-            self.log_entry("Sailing to start", self.env.now, self.distance, dest)
+            self.distance += self.wgs84.inv(orig.x,orig.y,dest.x,dest.y)[2]
+            yield self.env.timeout(self.distance / self.v)
+            self.log_entry(self.env.now,dest,"Sailing to start",self.output.copy())
 
         # Move over the path and log every step
         for node in enumerate(self.route):
             self.node = node[1]
             if node[0] + 2 <= len(self.route):
-                origin = self.route[node[0]]
-                destination = self.route[node[0] + 1]
+                self.current_node = self.route[node[0]]
+                self.next_node = self.route[node[0] + 1]
 
-            try:
-                yield from self.pass_node(origin)
-            except simpy.exceptions.Interrupt as e:
-                break
+                try:
+                    yield from self.pass_node(self.current_node)
+                except simpy.exceptions.Interrupt as e:
+                    break
 
-            try:
-                yield from self.pass_edge(origin, destination)
-            except simpy.exceptions.Interrupt as e:
-                break
+                try:
+                    yield from self.pass_edge(self.current_node, self.next_node)
+                except simpy.exceptions.Interrupt as e:
+                    break
 
-            try:
-                yield from self.complete_pass_edge(destination)
-            except simpy.exceptions.Interrupt as e:
-                break
+                try:
+                    yield from self.complete_pass_edge(self.next_node)
+                except simpy.exceptions.Interrupt as e:
+                    break
 
-            try:
-                yield from self.look_ahead_to_node(destination)
-            except simpy.exceptions.Interrupt as e:
-                break
+                try:
+                    yield from self.look_ahead_to_node(self.next_node)
+                except simpy.exceptions.Interrupt as e:
+                    break
+
+                current_speed = self.env.vessel_traffic_service.provide_speed(self, (self.current_node, self.next_node))
+                logger.debug("  distance: " + "%4.2f" % self.distance + " m")
+                logger.debug("  sailing:  " + "%4.2f" % current_speed + " m/s")
+                logger.debug("  duration: " + "%4.2f" % ((self.distance / current_speed) / 3600) + " hrs")
 
             if node[0] + 2 == len(self.route):
                 break
 
-        logger.debug("  distance: " + "%4.2f" % self.distance + " m")
-        logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
-        logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
+        self.update_route_status_report(True)
 
     def look_ahead_to_node(self,destination):
         for gen in self.on_look_ahead_to_node:
@@ -297,47 +293,42 @@ class Movable(Locatable, Routeable, Log):
             return distance
 
         self.distance = self.env.FG.edges[origin, destination, k]['Info']['length']
-        if next_node and ("Line-up area" in self.env.FG.edges[destination,next_node,k_next_node].keys() or "Line-up area" in self.env.FG.edges[next_node,destination,k_next_node].keys()):
+        if next_node and ("Line-up area" in self.env.FG.edges[self.next_node,next_node,k_next_node].keys() or "Line-up area" in self.env.FG.edges[next_node,destination,k_next_node].keys()):
             dest = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
             self.distance = calculate_distance_wgs84(self,dest,origin)
 
-        if "Line-up area" in self.env.FG.edges[origin,destination,k].keys() or "Line-up area" in self.env.FG.edges[destination,origin,k].keys():
+        if "Line-up area" in self.env.FG.edges[self.current_node,self.next_node,k].keys() or "Line-up area" in self.env.FG.edges[destination,origin,k].keys():
             orig = shapely.geometry.Point(self.lineup_pos_lat,self.lineup_pos_lon)
             self.distance = calculate_distance_wgs84(self,orig,destination)
 
-        if next_node and ("Lock" in self.env.FG.edges[destination,next_node,k_next_node].keys() or "Lock" in self.env.FG.edges[next_node,destination,k_next_node].keys()):
+        if next_node and ("Lock" in self.env.FG.edges[self.next_node,next_node,k_next_node].keys() or "Lock" in self.env.FG.edges[next_node,destination,k_next_node].keys()):
             dest = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
             self.distance = calculate_distance_wgs84(self,dest,origin)
 
-        if "Lock" in self.env.FG.edges[origin,destination,k].keys() or "Lock" in self.env.FG.edges[destination,origin,k].keys():
+        if "Lock" in self.env.FG.edges[self.current_node,self.next_node,k].keys() or "Lock" in self.env.FG.edges[destination,origin,k].keys():
             orig = shapely.geometry.Point(self.lock_pos_lat,self.lock_pos_lon)
             self.distance = calculate_distance_wgs84(self,orig,destination)
 
-        if "Terminal" in self.env.FG.edges[origin,destination,k].keys():
+        if "Terminal" in self.env.FG.edges[self.current_node,self.next_node,k].keys():
             orig = shapely.geometry.Point(self.terminal_pos_lat, self.terminal_pos_lon)
             self.distance = calculate_distance_wgs84(self,orig,destination)
 
-        if 'Vertical tidal restriction' in self.env.FG.nodes[origin]['Info'].keys():
-            ukc = self.env.vessel_traffic_service.provide_ukc_clearance(self, origin)
-        else:
-            ukc = 0
-        self.log_entry("Sailing from node {} to node {} start".format(origin, destination),self.env.now, ukc, orig, )
-
+        status_report = self.update_sailing_status_report(self.current_node,self.next_node,(self.current_node,self.next_node,k))
+        self.log_entry(self.env.now, orig, "Sailing from node {} to node {} start".format(self.current_node, self.next_node), status_report)
         sailing = True
-        sailing_start = self.env.now
         while sailing:
             try:
-                yield self.env.timeout(self.distance / self.current_speed - (self.env.now - sailing_start))
+                yield self.env.timeout(self.env.vessel_traffic_service.provide_sailing_time(self,[self.current_node,self.next_node])['Time'].sum())
             except simpy.exceptions.Interrupt as e:
                 pass
             else:
                 break
 
-        if 'Vertical tidal restriction' in self.env.FG.nodes[destination]['Info'].keys():
-            ukc = self.env.vessel_traffic_service.provide_ukc_clearance(self, destination)
+        if next_node:
+            status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))
         else:
-            ukc = 0
-        self.log_entry("Sailing from node {} to node {} stop".format(origin, destination),self.env.now, ukc, dest, )
+            status_report = self.update_sailing_status_report(self.next_node,self.next_node,(self.current_node, self.next_node, k))
+        self.log_entry(self.env.now, dest, "Sailing from node {} to node {} stop".format(self.current_node, self.next_node), status_report)
         self.geometry = dest
 
     def complete_pass_edge(self,destination):
@@ -347,22 +338,3 @@ class Movable(Locatable, Routeable, Log):
             except simpy.exceptions.Interrupt as e:
                 logger.debug("Completed", exc_info=True)
                 raise simpy.exceptions.Interrupt('Completed')
-
-    @property
-    def current_speed(self):
-        return self.v
-
-class ContainerDependentMovable(Movable, HasContainer):
-    """ContainerDependentMovable class
-    Used for objects that move with a speed dependent on the container level
-    compute_v: a function, given the fraction the container is filled (in [0,1]), returns the current speed"""
-
-    def __init__(self, compute_v, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.compute_v = compute_v
-        self.wgs84 = pyproj.Geod(ellps="WGS84")
-
-    @property
-    def current_speed(self):
-        return self.compute_v(self.container.level / self.container.capacity)

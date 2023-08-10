@@ -11,7 +11,6 @@ class ExtraMetadata:
         super().__init__(*args)
         # store all other properties as metadata
         self.metadata = kwargs
-        self.metadata['start_time'] = self.env.now
 
 class VesselProperties:
     """Mixin class: Something that has vessel properties
@@ -33,10 +32,12 @@ class VesselProperties:
             type,
             B,
             L,
-            H_e,
-            H_f,
-            T_e,
-            T_f,
+            T,
+            H,
+            origin,
+            destination,
+            v,
+            next_destination = '',
             *args,
             **kwargs
     ):
@@ -44,37 +45,25 @@ class VesselProperties:
 
         """Initialization"""
         self.type = type
-
         self.B = B
         self.L = L
-
-        self.H_e = H_e
-        self.H_f = H_f
-
-        self.T_e = T_e
-        self.T_f = T_f
+        self._T = T
+        self._H = H
+        self.v = v
+        self.origin = origin
+        self.destination = list(destination)
+        self.next_destination = list(next_destination)
+        self.bound = 'inbound'
 
     @property
     def H(self):
-        """ Calculate current height based on filling degree """
-
-        return (
-                self.filling_degree * (self.H_f - self.H_e)
-                + self.H_e
-        )
+        H = self._H
+        return H
 
     @property
     def T(self):
-        """ Calculate current draught based on filling degree
-
-        Here we should implement the rules from Van Dorsser et al
-        https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships
-        """
-
-        return (
-                self.filling_degree * (self.T_f - self.T_e)
-                + self.T_e
-        )
+        T = self._T
+        return T
 
     def get_route(
             self,
