@@ -310,6 +310,7 @@ class Movable(Locatable, Routeable, Log):
             self.distance = calculate_distance_wgs84(self,orig,destination)
 
         if "Terminal" in self.env.FG.edges[self.current_node,self.next_node,k].keys():
+            print(self.L,self.current_node,self.next_node)
             orig = shapely.geometry.Point(self.terminal_pos_lat, self.terminal_pos_lon)
             self.distance = calculate_distance_wgs84(self,orig,destination)
 

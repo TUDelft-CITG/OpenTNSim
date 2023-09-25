@@ -766,6 +766,8 @@ class VesselTrafficService:
             # Plot tidal windows
             for window in tidal_windows:
                 tidal_window, = ax.fill([window[0], window[0], window[1], window[1]], [ax.get_ylim()[0], ax.get_ylim()[1], ax.get_ylim()[1], ax.get_ylim()[0]],facecolor='limegreen', alpha=0.25, edgecolor='none')
+            if not tidal_windows:
+                tidal_window = ax.fill([0, 0, 0, 0], [ax.get_ylim()[0], ax.get_ylim()[1], ax.get_ylim()[1], ax.get_ylim()[0]],facecolor='limegreen', alpha=0.25, edgecolor='none')
 
             # Figure ticks
             ax.set_xticks(ax.get_xticks())
@@ -786,4 +788,6 @@ class VesselTrafficService:
                 ax.legend([net_UKC, minimum_required_net_ukc, vertical_tidal_window,tidal_window],['Net UKC', 'Required net UKC','Vertical tidal windows','Resulting tidal windows'], frameon=False, loc='upper left',bbox_to_anchor=(1.05, 1.0));
             ax.set_title(f'Accessibility of {vessel.type}-class vessel with name {vessel.name} and {np.round(vessel.T,2)}m draught and a length of {np.round(vessel.L)}m, sailing {vessel.bound}')
             plt.show()
+            return tidal_accessibility, tidal_windows, fig, ax,ax_right
+
         return tidal_accessibility,tidal_windows
