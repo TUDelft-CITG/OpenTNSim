@@ -105,7 +105,9 @@ class VesselTrafficService:
 
     def provide_sailing_time(self,vessel,route):
         sailing_distance_over_route = self.provide_sailing_distance_over_route(vessel,route)
+        print(sailing_distance_over_route)
         vessel_speed_over_route = self.provide_speed_over_route(vessel,route)
+        print(vessel_speed_over_route)
         sailing_time_over_route = pd.concat([sailing_distance_over_route,vessel_speed_over_route],axis=1)
         sailing_time_over_route['Time'] = sailing_time_over_route['Distance']/sailing_time_over_route['Speed']
         return sailing_time_over_route
@@ -332,8 +334,9 @@ class VesselTrafficService:
             sailing_time_to_next_node = vessel.env.vessel_traffic_service.provide_sailing_time(vessel,route[:(route_index+1)])
             time_correction_index = int(np.round(sailing_time_to_next_node['Time'].sum() / (t_step/np.timedelta64(1, 's'))))
             water_level = self.hydrodynamic_information['Water level'][node_index].values[time_start_index:time_end_index]
-            _, _, _, required_water_depth, _, MBL = self.provide_ukc_clearance(vessel,node_name,delay)
-            water_depth = [wlev + MBL for wlev in water_level]
+            _, _, _, required_water_depth, _, _ = self.provide_ukc_clearance(vessel,node_name,delay)
+            MBL = self.hydrodynamic_information['MBL'][node_index].values[time_start_index:time_end_index]
+            water_depth = water_level + MBL
             net_ukc = pd.concat([net_ukc, pd.DataFrame([available_water_depth-required_water_depth for available_water_depth in water_depth], index=[t-time_correction_index*t_step for t in times], columns=[node_name])],axis=1)
 
         # Pick the minimum of the water depths for each time and each node
