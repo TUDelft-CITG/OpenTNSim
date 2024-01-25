@@ -180,7 +180,7 @@ class VesselProperties:
         renewable_fuel_volume=None,
         renewable_fuel_required_space=None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -322,6 +322,7 @@ class Routable(SimpyObject):
         if hasattr(self.env, "graph"):
             return self.env.graph
         elif hasattr(self.env, "FG"):
+            warnings.warn(".FG attribute has been renamed to .graph, please update your code", DeprecationWarning)
             return self.env.FG
         else:
             raise ValueError("Routable expects .graph to be present on env")
@@ -426,7 +427,7 @@ class Movable(Locatable, Routable, Log):
         for on_pass_edge_function in self.on_pass_edge_functions:
             yield from on_pass_edge_function(origin, destination)
 
-        # TODO: there is an issue here. If geometry is available, resources and power are ignored.
+        # If we have a geometry. We'll sail step by step along the coordinates of the geometry.
         if "geometry" in edge:
             edge_route = np.array(edge["geometry"].coords)
 
@@ -458,20 +459,7 @@ class Movable(Locatable, Routable, Log):
                     shapely.geometry.shape(sub_dest).y,
                 )[2]
                 self.distance += distance
-                self.log_entry(
-                    "Sailing from node {} to node {} sub edge {} start".format(origin, destination, index),
-                    self.env.now,
-                    0,
-                    sub_orig,
-                )
-                yield self.env.timeout(distance / self.current_speed)
-                self.log_entry(
-                    "Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index),
-                    self.env.now,
-                    0,
-                    sub_dest,
-                )
-            self.geometry = dest
+
         else:
             distance = self.wgs84.inv(
                 shapely.geometry.shape(orig).x,
@@ -482,49 +470,88 @@ class Movable(Locatable, Routable, Log):
 
             self.distance += distance
 
-            value = 0
+        # remember when we arrived at the edge
+        arrival = self.env.now
 
-            # remember when we arrived at the edge
-            arrival = self.env.now
+        v = self.current_speed
 
-            v = self.current_speed
+        # This is the case if we are sailing on power
+        if getattr(self, "P_tot_given", None) is not None:
+            edge = self.graph.edges[origin, destination]
+            depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
 
-            # This is the case if we are sailing on power
-            if getattr(self, "P_tot_given", None) is not None:
-                edge = self.graph.edges[origin, destination]
-                depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+            # estimate 'grounding speed' as a useful upperbound
+            (
+                upperbound,
+                selected,
+                results_df,
+            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
+            v = self.power2v(self, edge, upperbound)
+            # use computed power
+            value = self.P_given
 
-                # estimate 'grounding speed' as a useful upperbound
-                (
-                    upperbound,
-                    selected,
-                    results_df,
-                ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
-                v = self.power2v(self, edge, upperbound)
-                # use computed power
-                value = self.P_given
+        # Wait for edge resources to become available
+        if "Resources" in edge.keys():
+            resource = self.graph.edges[origin, destination]["Resources"]
+            with resource.request() as request:
+                print(f"Before request accepted {self.name}")
+                print(f"{resource.count} of {resource.capacity} slots are allocated.")
+                print(f"  Users: {resource.users}")
+                print(f"  Queued events: {resource.queue}")
+                yield request
+                print(f"Request accepted {self.name}")
+                # we had to wait, log it
+                print(f"vessel {self.name} arrived at {arrival} and got resource at {self.env.now}")
+                print(f"vessel {self.name} has request at {request}")
+
+                print(f"env of main {self.env}, env of resource {resource._env} of resource {resource}")
+
+                if arrival != self.env.now:
+                    self.log_entry(
+                        "Waiting to pass edge {} - {} start".format(origin, destination),
+                        arrival,
+                        value,
+                        orig,
+                    )
+                    self.log_entry(
+                        "Waiting to pass edge {} - {} stop".format(origin, destination),
+                        self.env.now,
+                        value,
+                        orig,
+                    )
+
+        # The logging expects a value, but there's not much to report, other than time and location.
+        # So we'll just use 0.
+        value = 0
+        if "geometry" in edge:
+            # The edge has a geometry. We'll sail step by step along the coordinates of the geometry
+            for index, pt in enumerate(edge_route[:-1]):
+                sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
+                sub_dest = shapely.geometry.Point(edge_route[index + 1][0], edge_route[index + 1][1])
+                distance = self.wgs84.inv(
+                    shapely.geometry.shape(sub_orig).x,
+                    shapely.geometry.shape(sub_orig).y,
+                    shapely.geometry.shape(sub_dest).x,
+                    shapely.geometry.shape(sub_dest).y,
+                )[2]
+                self.log_entry(
+                    "Sailing from node {} to node {} sub edge {} start".format(origin, destination, index),
+                    self.env.now,
+                    value,
+                    sub_orig,
+                )
+                yield self.env.timeout(distance / self.current_speed)
+                self.log_entry(
+                    "Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index),
+                    self.env.now,
+                    value,
+                    sub_dest,
+                )
+        else:
+            # We don't have a geometry for the edge. We'll sail straight from the origin to the destination
 
             # determine time to pass edge
             timeout = distance / v
-
-            # Wait for edge resources to become available
-            if "Resources" in edge.keys():
-                with self.graph.edges[origin, destination]["Resources"].request() as request:
-                    yield request
-                    # we had to wait, log it
-                    if arrival != self.env.now:
-                        self.log_entry(
-                            "Waiting to pass edge {} - {} start".format(origin, destination),
-                            arrival,
-                            value,
-                            orig,
-                        )
-                        self.log_entry(
-                            "Waiting to pass edge {} - {} stop".format(origin, destination),
-                            self.env.now,
-                            value,
-                            orig,
-                        )
 
             # default velocity based on current speed.
             self.log_entry(
@@ -541,6 +568,11 @@ class Movable(Locatable, Routable, Log):
                 dest,
             )
         self.geometry = dest
+
+        if "Resources" in edge.keys():
+            resource = self.graph.edges[origin, destination]["Resources"]
+            resource.release(request)
+            print(f"vessel {self.name} released {request} at {self.env.now}")
 
     @property
     def current_speed(self):
