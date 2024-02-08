@@ -48,6 +48,9 @@ class HasOutput:
             self.output['visited_turning_basins'] = []
             self.output['visited_terminals'] = []
             self.output['visited_berths'] = []
+            self.output['visited_waiting_areas'] = []
+            self.output['visited_lineup_areas'] = []
+            self.output['visited_lock_chambers'] = []
 
         elif self.__class__.__name__ == 'IsTerminal' or self.__class__.__name__ == 'IsJettyTerminal':
             for berth in [berth.name for berth in self.resource.items]:
@@ -75,41 +78,64 @@ class HasOutput:
             self.output['vessel_turning_time'] = np.NaN
             self.output['visited_vessels'] = []
 
-    def update_route_status_report(self,move_stop=False):
-        pass
-        # if not move_stop:
-        #     self.output['length'] = self.L
-        #     self.output['beam'] = self.B
-        #     self.output['draught'] = self.T
-        #     self.output['route'] = self.route
-        #     self.output['bound'] = self.bound
-        #     self.output['sailed_routes'].append(self.route)
-        #     self.output['origin'] = self.route[0]
-        #     self.output['destination'] = self.route[-1]
-        #     self.output['sailing_distance'] = 0.
-        #     self.output['sailing_time'] = 0.
-        #     for node in self.route:
-        #         if 'Anchorage' in self.env.FG.nodes[node]:
-        #             self.output['anchorage'] = self.env.FG.nodes[node]['Anchorage'][0].name
-        #         if 'Turning basin' in self.env.FG.nodes[node] and self.bound == 'inbound' and self.env.FG.nodes[node]['Turning Basin'][0].length <= self.L:
-        #             self.output['turning_basin'] = self.env.FG.nodes[node]['Turning Basin'][0].name
-        #     if 'terminal_of_call' in self.metadata.keys() and self.metadata['terminal_of_call'].size:
-        #         self.output['terminal'] = self.metadata['terminal_of_call'][0]
-        #     if 'berth_of_call' in self.metadata.keys() and self.metadata['berth_of_call'].size:
-        #         self.output['berth'] = self.metadata['berth_of_call'][0]
+        elif self.__class__.__name__ == 'IsLock':
+            self.output['visiting_vessels'] = []
 
-        # if move_stop and self.log['Status']:
-        #     correction = deepcopy(self.log['Status'])[-1]['sailing_distance']
-        #     if 'anchorage' in self.output['sailed_routes'][-1]:
-        #         correction = self.env.vessel_traffic_service.provide_sailing_distance_over_route(self, self.route_after_anchorage[:-1])['Distance'].sum()
-        #     for index, info in enumerate(list(reversed(self.log['Status']))):
-        #         index = len(self.log['Status']) - index - 1
-        #         if info['route'] != self.output['sailed_routes'][-1]:
-        #             break
-        #         if info['bound'] == 'inbound':
-        #             self.log['Status'][index]['sailing_distance'] -= correction
-        #         else:
-        #             self.log['Status'][index]['sailing_distance'] = -info['sailing_distance']
+        elif self.__class__.__name__ == 'IsLockLineUpArea':
+            self.output['visiting_vessels'] = []
+
+        elif self.__class__.__name__ == 'IsLockWaitingArea':
+            self.output['visiting_vessels'] = []
+
+    def update_route_status_report(self,move_stop=False):
+        if not move_stop:
+            self.output['length'] = self.L
+            self.output['beam'] = self.B
+            self.output['draught'] = self.T
+            self.output['route'] = self.route
+            self.output['bound'] = self.bound
+            self.output['sailed_routes'].append(self.route)
+            self.output['origin'] = self.route[0]
+            self.output['destination'] = self.route[-1]
+            self.output['sailing_distance'] = 0.
+            self.output['sailing_time'] = 0.
+            for node in self.route:
+                if 'Anchorage' in self.env.FG.nodes[node]:
+                    self.output['anchorage'] = self.env.FG.nodes[node]['Anchorage'][0].name
+                if 'Turning basin' in self.env.FG.nodes[node] and self.bound == 'inbound' and self.env.FG.nodes[node]['Turning Basin'][0].length <= self.L:
+                    self.output['turning_basin'] = self.env.FG.nodes[node]['Turning Basin'][0].name
+            if 'terminal_of_call' in self.metadata.keys() and self.metadata['terminal_of_call'].size:
+                self.output['terminal'] = self.metadata['terminal_of_call'][0]
+            if 'berth_of_call' in self.metadata.keys() and self.metadata['berth_of_call'].size:
+                self.output['berth'] = self.metadata['berth_of_call'][0]
+
+        if move_stop and self.log['Status']:
+            correction = deepcopy(self.log['Status'])[-1]['sailing_distance']
+            if 'anchorage' in self.output['sailed_routes'][-1]:
+                correction = self.env.vessel_traffic_service.provide_sailing_distance_over_route(self, self.route_after_anchorage[:-1])['Distance'].sum()
+            for index, info in enumerate(list(reversed(self.log['Status']))):
+                index = len(self.log['Status']) - index - 1
+                if info['route'] != self.output['sailed_routes'][-1]:
+                    break
+                if info['bound'] == 'inbound':
+                    self.log['Status'][index]['sailing_distance'] -= correction
+                else:
+                    self.log['Status'][index]['sailing_distance'] = -info['sailing_distance']
+
+    def update_waiting_area_status_report(self,waiting_area,node_waiting_area):
+        self.output['visited_waiting_areas'].append(waiting_area.name)
+        waiting_area.output['visiting_vessels'] = [user.obj for user in waiting_area.waiting_area[node_waiting_area].users]
+        return
+
+    def update_lineup_area_status_report(self,lineup_area,node_lineup_area):
+        self.output['visited_lineup_areas'].append(lineup_area.name)
+        lineup_area.output['visiting_vessels'] = [user.obj for user in lineup_area.line_up_area[node_lineup_area].users]
+        return
+
+    def update_lock_status_report(self,lock):
+        self.output['visited_lock_chambers'].append(lock.name)
+        lock.output['visiting_vessels'] = [user.obj for user in lock.resource.users]
+        return
 
     def update_turing_basin_status_report(self,turning_basin,turning_stop=False):
         turning_basin.output['vessel_information'] = deepcopy(self.output)

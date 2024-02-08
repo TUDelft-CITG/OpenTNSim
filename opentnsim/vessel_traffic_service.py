@@ -65,7 +65,7 @@ class VesselTrafficService:
         return waiting_time
 
     def provide_speed(self,vessel,edge):
-        if 'vessel_speeds' in dir(self):
+        if 'vessel_speeds' in dir(self) and edge in list(self.vessel_speeds.edge.values):
             vessel_speed = float(self.vessel_speeds.sel({'edge': edge}).average_speed.values)
         else:
             vessel_speed = vessel.v
@@ -307,7 +307,7 @@ class VesselTrafficService:
         node_index = list(self.hydrodynamic_information['STATION'].values).index(node)
         time_index = np.absolute(self.hydrodynamic_information.TIME.values - pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + delay, tz=pytz.utc)).to_datetime64()).argmin()
         water_level = self.hydrodynamic_information['Water level'][node_index].values[time_index]
-        MBL = self.hydrodynamic_information['MBL'][node_index].values
+        MBL = self.hydrodynamic_information['MBL'][node_index].values[time_index]
         available_water_depth = water_level + MBL
         return MBL,water_level,available_water_depth
 

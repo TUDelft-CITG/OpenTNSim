@@ -156,7 +156,7 @@ class Simulation(core.Identifiable):
     A class to generate vessels from a database
     """
 
-    def __init__(self, graph, simulation_start=datetime.datetime.now(),simulation_duration=None,simulation_stop=None, hydrodynamic_data=None, vessel_speed_data=None, scenario=None):
+    def __init__(self, graph, simulation_start=datetime.datetime.now(),simulation_duration=None, simulation_stop=None, hydrodynamic_data=None, vessel_speed_data=None, scenario=None):
         """ 
         Initialization 
         

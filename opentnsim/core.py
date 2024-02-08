@@ -204,6 +204,7 @@ class Movable(Locatable, Routeable, Log):
                 break
 
         yield self.env.timeout((self.metadata['arrival_time'] - self.env.simulation_start).total_seconds())
+        self.arrival_time = self.env.now
         self.metadata['arrival_time'] = self.env.simulation_start #resets delay
 
         self.distance = 0
