@@ -293,7 +293,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         lock_depth,  # a float which contains the depth of the lock chamber
         distance_doors1_from_first_waiting_area,
         distance_doors2_from_second_waiting_area,
-        detector_nodes,
+        detector_nodes=None,
         doors_open=0,  # a float which contains the time it takes to open the doors
         doors_close=0,  # a float which contains the time it takes to close the doors
         disch_coeff=0,  # a float which contains the discharge coefficient of filling system
@@ -327,6 +327,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         self.conditions = conditions
         self.time_step = time_step
         self.priority_rules = priority_rules
+        if detector_nodes is None:
+            detector_nodes = []
         self.detector_nodes = detector_nodes
         self.distance_doors1_from_first_waiting_area = distance_doors1_from_first_waiting_area
         self.distance_doors2_from_second_waiting_area = distance_doors2_from_second_waiting_area
@@ -337,19 +339,23 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             index=pd.MultiIndex(levels=[[], []], codes=[[], []], names=["Name", "VesselName"]),
             columns=["direction", "ETA", "ETD", "Length", "Beam", "Draught", "VesselType", "Priority"],
         )
-        super().__init__(capacity=100, length=lock_length, remaining_length=lock_length, *args, **kwargs)
+
+        # 100 spaces in the lock by default
+        capacity = 100
+
+        super().__init__(nr_resources=capacity, length=lock_length, remaining_length=lock_length, *args, **kwargs)
         self.simulation_start = self.env.simulation_start.timestamp()
         self.next_lockage = {
-            node_doors1: simpy.PriorityResource(self.env, capacity=100),
-            node_doors2: simpy.PriorityResource(self.env, capacity=100),
+            node_doors1: simpy.PriorityResource(self.env, capacity=capacity),
+            node_doors2: simpy.PriorityResource(self.env, capacity=capacity),
         }
         self.next_lockage_length = {
             node_doors1: simpy.Container(self.env, capacity=lock_length, init=lock_length),
             node_doors2: simpy.Container(self.env, capacity=lock_length, init=lock_length),
         }
         self.in_next_lockage = {
-            node_doors1: simpy.PriorityResource(self.env, capacity=100),
-            node_doors2: simpy.PriorityResource(self.env, capacity=100),
+            node_doors1: simpy.PriorityResource(self.env, capacity=capacity),
+            node_doors2: simpy.PriorityResource(self.env, capacity=capacity),
         }
         self.doors_1 = {
             node_doors1: simpy.PriorityResource(self.env, capacity=1),
