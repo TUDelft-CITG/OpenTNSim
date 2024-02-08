@@ -22,25 +22,35 @@ import xarray as xr
 from opentnsim import core, output
 
 
+class HasMultiDiGraph:
+    @property
+    def graph(self):
+        """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
+        graph = self.env.FG
+        if not isinstance(self.env.FG, nx.MultiDiGraph):
+            graph = nx.MultiDiGraph(graph)
+        return graph
+
+
 class HasLockInformation:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
 
-class HasLock(core.Movable):
+class HasLock(core.Movable, HasMultiDiGraph):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_node.append(self.register_vessel)
-        self.on_pass_edge.append(self.leave_lock_chamber)
+        self.on_pass_node_functions.append(self.register_vessel)
+        self.on_pass_edge_functions.append(self.leave_lock_chamber)
 
     def register_vessel(self, origin):
-        if "Detector" in self.env.FG.nodes[origin].keys():
+        if "Detector" in self.graph.nodes[origin].keys():
             yield self.env.timeout(0)
             lock = []
             for node1, node2 in zip(self.route[self.route.index(origin) : -1], self.route[self.route.index(origin) + 1 :]):
-                k = sorted(self.env.FG[node1][node2], key=lambda x: self.env.FG[node1][node2][x]["geometry"].length)[0]
-                if "Lock" in self.env.FG.edges[node1, node2, k].keys():
-                    lock = self.env.FG.edges[node1, node2, k]["Lock"][0]
+                k = sorted(self.graph[node1][node2], key=lambda x: self.graph[node1][node2][x]["geometry"].length)[0]
+                if "Lock" in self.graph.edges[node1, node2, k].keys():
+                    lock = self.graph.edges[node1, node2, k]["Lock"][0]
                     node_doors1 = lock.node_doors1
                     node_doors2 = lock.node_doors2
                     doors2 = lock.doors_2[node_doors2]
@@ -81,9 +91,9 @@ class HasLock(core.Movable):
                     self.lock_information[lock.name].converting = False
 
     def leave_lock_chamber(self, origin, destination):
-        k = sorted(self.env.FG[origin][destination], key=lambda x: self.env.FG[origin][destination][x]["geometry"].length)[0]
-        if "Lock" in self.env.FG.edges[origin, destination, k].keys():
-            locks = self.env.FG.edges[origin, destination, k]["Lock"]
+        k = sorted(self.graph[origin][destination], key=lambda x: self.graph[origin][destination][x]["geometry"].length)[0]
+        if "Lock" in self.graph.edges[origin, destination, k].keys():
+            locks = self.graph.edges[origin, destination, k]["Lock"]
             if origin == locks[0].node_doors1:
                 direction = 1
             else:
@@ -96,39 +106,39 @@ class HasLock(core.Movable):
 class HasWaitingArea(core.Movable):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_node.append(self.leave_waiting_area)
+        self.on_pass_node_functions.append(self.leave_waiting_area)
 
     def leave_waiting_area(self, origin):
-        if "Waiting area" in self.env.FG.nodes[origin].keys():  # if vessel is in waiting area
+        if "Waiting area" in self.graph.nodes[origin].keys():  # if vessel is in waiting area
             yield from PassLock.leave_waiting_area(self, origin)
 
 
-class HasLineUpArea(core.Movable):
+class HasLineUpArea(core.Movable, HasMultiDiGraph):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_edge.append(self.approach_lineup_area)  # on_look_ahead_to_node
-        self.on_pass_edge.append(self.leave_lineup_area)
+        self.on_pass_edge_functions.append(self.approach_lineup_area)  # on_look_ahead_to_node
+        self.on_pass_edge_functions.append(self.leave_lineup_area)
 
     def approach_lineup_area(self, origin, destination):
         # if destination != self.route[-1]:
         # next_node = self.route[self.route.index(destination)+1]
-        k1 = sorted(self.env.FG[origin][destination], key=lambda x: self.env.FG[origin][destination][x]["geometry"].length)[0]
-        k2 = sorted(self.env.FG[destination][origin], key=lambda x: self.env.FG[destination][origin][x]["geometry"].length)[0]
-        if "Line-up area" in self.env.FG.edges[origin, destination, k1].keys():  # if vessel is approaching the line-up area
+        k1 = sorted(self.graph[origin][destination], key=lambda x: self.graph[origin][destination][x]["geometry"].length)[0]
+        k2 = sorted(self.graph[destination][origin], key=lambda x: self.graph[destination][origin][x]["geometry"].length)[0]
+        if "Line-up area" in self.graph.edges[origin, destination, k1].keys():  # if vessel is approaching the line-up area
             yield from PassLock.approach_lineup_area(self, origin, destination)
-            # elif "Line-up area" in self.env.FG.edges[destination, origin,k2].keys():
+            # elif "Line-up area" in self.graph.edges[destination, origin,k2].keys():
             #     yield from PassLock.approach_lineup_area(self, destination, origin)
 
     def leave_lineup_area(self, origin, destination):
-        k1 = sorted(self.env.FG[origin][destination], key=lambda x: self.env.FG[origin][destination][x]["geometry"].length)[0]
-        k2 = sorted(self.env.FG[destination][origin], key=lambda x: self.env.FG[destination][origin][x]["geometry"].length)[0]
-        if "Line-up area" in self.env.FG.edges[origin, destination, k1].keys():  # if vessel is located in the line-up
+        k1 = sorted(self.graph[origin][destination], key=lambda x: self.graph[origin][destination][x]["geometry"].length)[0]
+        k2 = sorted(self.graph[destination][origin], key=lambda x: self.graph[destination][origin][x]["geometry"].length)[0]
+        if "Line-up area" in self.graph.edges[origin, destination, k1].keys():  # if vessel is located in the line-up
             yield from PassLock.leave_lineup_area(self, origin, destination)
-        elif "Line-up area" in self.env.FG.edges[destination, origin, k2].keys():
+        elif "Line-up area" in self.graph.edges[destination, origin, k2].keys():
             yield from PassLock.leave_lineup_area(self, destination, origin)
 
 
-class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.HasOutput):
+class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.HasOutput, HasMultiDiGraph):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
     creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity
     """
@@ -148,10 +158,10 @@ class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.Ha
 
         # Add to the graph:
         if "FG" in dir(self.env):
-            if "Waiting area" not in self.env.FG.nodes[node].keys():
-                self.env.FG.nodes[node]["Waiting area"] = [self]
+            if "Waiting area" not in self.graph.nodes[node].keys():
+                self.graph.nodes[node]["Waiting area"] = [self]
             else:
-                self.env.FG.nodes[node]["Waiting area"].append(self)
+                self.graph.nodes[node]["Waiting area"].append(self)
 
     def find_lineup_areas(self, vessel, index_node_waiting_area):
         lineup_areas = []
@@ -188,7 +198,7 @@ class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.Ha
         return locks, directions
 
 
-class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core.Log, output.HasOutput):
+class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core.Log, output.HasOutput, HasMultiDiGraph):
     """Mixin class: Something has line-up area object properties as part of the lock complex [in SI-units]:
     creates a line-up area with the following resources:
         - enter_line_up_area: resource used when entering the line-up area (assures one-by-one entry of the line-up area by vessels)
@@ -236,10 +246,10 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
 
         # Add to the graph:
         if "FG" in dir(self.env):
-            if "Line-up area" not in self.env.FG.edges[self.start_node, self.end_node, k_edge].keys():
-                self.env.FG.edges[self.start_node, self.end_node, k_edge]["Line-up area"] = [self]
+            if "Line-up area" not in self.graph.edges[self.start_node, self.end_node, k_edge].keys():
+                self.graph.edges[self.start_node, self.end_node, k_edge]["Line-up area"] = [self]
             else:
-                self.env.FG.edges[self.start_node, self.end_node, k_edge]["Line-up area"].append(self)
+                self.graph.edges[self.start_node, self.end_node, k_edge]["Line-up area"].append(self)
 
     def find_lock(self, vessel, start_node, end_node, direction=0):
         lock = None
@@ -281,7 +291,7 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
         return lock, direction
 
 
-class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, output.HasOutput):
+class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, output.HasOutput, HasMultiDiGraph):
     """Mixin class: Something which has lock chamber object properties as part of a lock complex [in SI-units]"""
 
     def __init__(
@@ -375,7 +385,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         self.node_doors2 = node_doors2
         if not self.node_open:
             self.node_open = random.choice([node_doors1, node_doors2])
-        index_node_open = list(self.env.FG.nodes).index(self.node_open)
+        index_node_open = list(self.graph.nodes).index(self.node_open)
 
         if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
             iter_data = self.env.vessel_traffic_service.hydrodynamic_information.sel(STATIONS=index_node_open).interp(
@@ -388,27 +398,28 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             self.discharge_fresh = np.abs(self.water_level.rename("Fresh discharge").copy()) * 0
 
         for detector_node in self.detector_nodes:
-            if "Detector" not in self.env.FG.nodes[detector_node]:
-                self.env.FG.nodes[detector_node]["Detector"] = {}
+            if "Detector" not in self.graph.nodes[detector_node]:
+                self.graph.nodes[detector_node]["Detector"] = {}
 
-            route1 = nx.dijkstra_path(self.env.FG, detector_node, self.node_doors1)
-            route2 = nx.dijkstra_path(self.env.FG, detector_node, self.node_doors2)
+            route1 = nx.dijkstra_path(self.graph, detector_node, self.node_doors1)
+            route2 = nx.dijkstra_path(self.graph, detector_node, self.node_doors2)
             for route in [route1, route2]:
                 if len(route) > 1 and (
                     [self.node_doors1, self.node_doors2] == [route[-2], route[-1]]
                     or [self.node_doors1, self.node_doors2] == [route[-1], route[-2]]
                 ):
-                    self.env.FG.nodes[detector_node]["Detector"][route[-1]] = core.IsDetectorNode(self)
+                    self.graph.nodes[detector_node]["Detector"][route[-1]] = core.IsDetectorNode(self)
                     break
 
         # Add to the graph:
         if "FG" in dir(self.env):
-            if "Lock" not in self.env.FG.edges[self.node_doors1, self.node_doors2, k_edge].keys():
-                self.env.FG.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"] = [self]
-                self.env.FG.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"] = [self]
+            # TODO: cast to DiGraph
+            if "Lock" not in self.graph.edges[self.node_doors1, self.node_doors2, k_edge].keys():
+                self.graph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"] = [self]
+                self.graph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"] = [self]
             else:
-                self.env.FG.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"].append(self)
-                self.env.FG.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"].append(self)
+                self.graph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"].append(self)
+                self.graph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"].append(self)
 
     def check_priority(self, vessel, direction):
         waiting_area = self.find_previous_waiting_area(vessel, direction)
@@ -544,9 +555,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return waiting_area
 
     def exchange_flux_time_series_calculator(self, T_door_open, time_index):
-        index_node_doors1 = list(self.env.FG.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.env.FG.nodes).index(self.node_doors2)
-        index_node_open = list(self.env.FG.nodes).index(self.node_open)
+        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
+        index_node_open = list(self.graph.nodes).index(self.node_open)
         time_value = self.salinity.TIME[time_index].values
         S_lock = self.salinity[time_index]
         S_lock_harbour = (
@@ -599,8 +610,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return
 
     def levelling_to_harbour(self, V_ship, levelling_time, side, delay=0):
-        index_node_doors1 = list(self.env.FG.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.env.FG.nodes).index(self.node_doors2)
+        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
         time_index = np.absolute(
             self.env.vessel_traffic_service.hydrodynamic_information.TIME.values
             - np.datetime64(datetime.datetime.fromtimestamp(self.env.now + delay))
@@ -668,7 +679,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return V_levelling, S_lock_final, V_loss_lev
 
     def sailing_out_to_harbour(self, V_ship, time_index):
-        index_node_open = list(self.env.FG.nodes).index(self.node_open)
+        index_node_open = list(self.graph.nodes).index(self.node_open)
         S_lock = self.salinity[time_index]
         time_value = self.salinity.TIME.values[time_index]
         WLev_lock_harbour = (
@@ -695,9 +706,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return S_lock
 
     def door_open_harbour(self, T_door_open, time_index_start):
-        index_node_doors1 = list(self.env.FG.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.env.FG.nodes).index(self.node_doors2)
-        index_node_open = list(self.env.FG.nodes).index(self.node_open)
+        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
+        index_node_open = list(self.graph.nodes).index(self.node_open)
         time_value = self.salinity.TIME[time_index_start].values
         S_lock = self.salinity[time_index_start]
         S_lock_harbour = (
@@ -790,8 +801,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
                     lock.discharge_fresh[time_step + time_index] += 0
             return
 
-        index_node_doors1 = list(self.env.FG.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.env.FG.nodes).index(self.node_doors2)
+        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
         if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
             time = np.arange(
                 0,

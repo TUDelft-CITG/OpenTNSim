@@ -347,6 +347,7 @@ class Movable(Locatable, Routable, Log):
         self.v = v
         super().__init__(*args, **kwargs)
         self.on_pass_edge_functions = []
+        self.on_pass_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     def move(self, destination: Union[Locatable, Geometry, str] = None, engine_order: float = 1.0, duration: float = None):
@@ -389,9 +390,15 @@ class Movable(Locatable, Routable, Log):
             # name it a, b here, to avoid confusion with destination argument
             a, b = edge
 
+            node = a
+
+            self.pass_node(node)
+
+            # we are now at the node
+            self.node = node
+
             # update to current position
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[a]
-            self.node = a
             self.position_on_route = i
 
             # are we already at destination?
@@ -417,6 +424,11 @@ class Movable(Locatable, Routable, Log):
             logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
         else:
             logger.debug("  current_speed:  not set")
+
+    def pass_node(self, node):
+        # call all on_pass_node_functions
+        for on_pass_node_function in self.on_pass_node_functions:
+            yield from on_pass_node_function(node)
 
     def pass_edge(self, origin, destination):
         edge = self.graph.edges[origin, destination]

@@ -6,6 +6,9 @@ import numpy as np
 import xarray as xr
 
 import opentnsim.core as core
+import opentnsim.output as output
+import opentnsim.vessel_traffic_service
+
 import opentnsim.lock
 import networkx as nx
 
@@ -40,10 +43,12 @@ def graph():
 @pytest.fixture
 def env(graph):
     t_start = datetime.datetime(2024, 1, 1, 0, 0, 0)
+    t_stop = datetime.datetime(2024, 2, 1, 0, 0, 0)
     env = simpy.Environment(initial_time=t_start.timestamp())
 
     env.epoch = t_start
     env.simulation_start = t_start
+    env.simulation_stop = t_stop
     # TODO: switch to env.graph
     env.FG = graph
     # run for a day
@@ -52,7 +57,7 @@ def env(graph):
 
 @pytest.fixture
 def hydrodynamics_env(env):
-    t_end = datetime.datetime(2024, 2, 1, 0, 0, 0)
+    t_end = env.simulation_stop
     stations = list(env.FG.nodes)
     times = np.arange(env.epoch, t_end, datetime.timedelta(seconds=600))
     water_depth = [np.linspace(10, 10, len(times)), np.linspace(10, 10, len(times))]
@@ -70,19 +75,19 @@ def hydrodynamics_env(env):
     return env
 
 
-def add_vessel(env, name, origin, destination, type, L, B, T, v, arrival_time):
+def add_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arrival_time):
     Vessel = type(
         "Vessel",
         (
-            core.SimpyObject,
-            core.Identifiable,
-            lock.HasWaitingArea,
-            lock.HasLock,
-            lock.HasLineUpArea,
+            opentnsim.lock.HasWaitingArea,
+            opentnsim.lock.HasLock,
+            opentnsim.lock.HasLineUpArea,
             core.Movable,
-            vessel.VesselProperties,
+            core.VesselProperties,
             output.HasOutput,
-            vessel.ExtraMetadata,
+            core.Identifiable,
+            core.SimpyObject,
+            core.ExtraMetadata,
         ),
         {},
     )
@@ -95,7 +100,7 @@ def add_vessel(env, name, origin, destination, type, L, B, T, v, arrival_time):
             "destination": destination,
             "geometry": env.FG.nodes[origin],
             "route": nx.dijkstra_path(env.FG, origin, destination),
-            "type": type,
+            "type": vessel_type,
             "L": L,
             "B": B,
             "T": T,
@@ -123,16 +128,16 @@ def test_lock(hydrodynamics_env):
         speed_reduction_factor=1,
         detector_nodes=[],
     )
-    lock.IsLockLineUpArea(
+    opentnsim.lock.IsLockLineUpArea(
         env=env, name="Lock", distance_to_lock_doors=0, start_node=0, end_node=1, lineup_length=400, speed_reduction_factor=1
     )
-    lock.IsLockLineUpArea(
+    opentnsim.lock.IsLockLineUpArea(
         env=env, name="Lock", distance_to_lock_doors=0, start_node=1, end_node=0, lineup_length=400, speed_reduction_factor=1
     )
-    lock.IsLockWaitingArea(env=sim.environment, name="Lock", distance_from_node=0, node=0)
-    lock.IsLockWaitingArea(env=sim.environment, name="Lock", distance_from_node=0, node=1)
+    opentnsim.lock.IsLockWaitingArea(env=env, name="Lock", distance_from_node=0, node=0)
+    opentnsim.lock.IsLockWaitingArea(env=env, name="Lock", distance_from_node=0, node=1)
 
-    add_vessel(env, 0, 0, 1, None, 200, 30, 8, v, datetime.datetime(2024, 1, 1, 0, 0, 0))
+    add_vessel(env, 0, 0, 1, None, 200, 30, 8, v=4, arrival_time=datetime.datetime(2024, 1, 1, 0, 0, 0))
 
     env.run()
 
