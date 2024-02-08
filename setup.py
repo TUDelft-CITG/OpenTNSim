@@ -48,6 +48,7 @@ requires = [
     # deprecate old functions
     "Deprecated",
     "tqdm",
+    "xarray",
 ]
 
 setup_requirements = [
