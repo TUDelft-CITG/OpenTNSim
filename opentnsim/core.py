@@ -491,38 +491,27 @@ class Movable(Locatable, Routable, Log):
             value = self.P_given
 
         # Wait for edge resources to become available
-        if "Resources" in edge.keys():
-            resource = self.graph.edges[origin, destination]["Resources"]
-            with resource.request() as request:
-                print(f"Before request accepted {self.name}")
-                print(f"{resource.count} of {resource.capacity} slots are allocated.")
-                print(f"  Users: {resource.users}")
-                print(f"  Queued events: {resource.queue}")
-                yield request
-                print(f"Request accepted {self.name}")
-                # we had to wait, log it
-                print(f"vessel {self.name} arrived at {arrival} and got resource at {self.env.now}")
-                print(f"vessel {self.name} has request at {request}")
-
-                print(f"env of main {self.env}, env of resource {resource._env} of resource {resource}")
-
-                if arrival != self.env.now:
-                    self.log_entry(
-                        "Waiting to pass edge {} - {} start".format(origin, destination),
-                        arrival,
-                        value,
-                        orig,
-                    )
-                    self.log_entry(
-                        "Waiting to pass edge {} - {} stop".format(origin, destination),
-                        self.env.now,
-                        value,
-                        orig,
-                    )
-
         # The logging expects a value, but there's not much to report, other than time and location.
         # So we'll just use 0.
         value = 0
+
+        if "Resources" in edge.keys():
+            resource = edge["Resources"]
+            request = resource.request()
+            self.log_entry_v0(
+                "Waiting to pass edge {} - {} start".format(origin, destination),
+                arrival,
+                value,
+                orig,
+            )
+            yield request
+            self.log_entry_v0(
+                "Waiting to pass edge {} - {} stop".format(origin, destination),
+                self.env.now,
+                value,
+                orig,
+            )
+
         if "geometry" in edge:
             # The edge has a geometry. We'll sail step by step along the coordinates of the geometry
             for index, pt in enumerate(edge_route[:-1]):
@@ -534,14 +523,14 @@ class Movable(Locatable, Routable, Log):
                     shapely.geometry.shape(sub_dest).x,
                     shapely.geometry.shape(sub_dest).y,
                 )[2]
-                self.log_entry(
+                self.log_entry_v0(
                     "Sailing from node {} to node {} sub edge {} start".format(origin, destination, index),
                     self.env.now,
                     value,
                     sub_orig,
                 )
                 yield self.env.timeout(distance / self.current_speed)
-                self.log_entry(
+                self.log_entry_v0(
                     "Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index),
                     self.env.now,
                     value,
@@ -572,7 +561,6 @@ class Movable(Locatable, Routable, Log):
         if "Resources" in edge.keys():
             resource = self.graph.edges[origin, destination]["Resources"]
             resource.release(request)
-            print(f"vessel {self.name} released {request} at {self.env.now}")
 
     @property
     def current_speed(self):
