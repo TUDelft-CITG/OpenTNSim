@@ -1,3 +1,5 @@
+"""This is the lock module as part of the OpenTNSim package. See the locking examples in the book for detailed descriptions."""
+
 # package(s) related to the simulation
 import bisect
 import datetime
@@ -9,6 +11,7 @@ import time as timepy
 import networkx as nx
 import numpy as np
 import pandas as pd
+
 # spatial libraries
 import pyproj
 import pytz
@@ -127,12 +130,12 @@ class HasLineUpArea(core.Movable):
 
 class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.HasOutput):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
-    creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
+    creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity
+    """
 
     def __init__(
         self, node, distance_from_node, *args, **kwargs  # a string which indicates the location of the start of the waiting area
     ):
-
         self.node = node
         self.distance_from_node = distance_from_node
         super().__init__(*args, **kwargs)
@@ -206,7 +209,6 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
         *args,
         **kwargs
     ):
-
         self.start_node = start_node
         self.end_node = end_node
         self.lineup_length = self.effective_lineup_length = lineup_length
@@ -310,7 +312,6 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         *args,
         **kwargs
     ):
-
         """Initialization"""
         # Properties
         self.lock_length = lock_length
@@ -756,21 +757,16 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             - environment: see init function"""
 
         def calculate_discharge(lock, z, to_wlev, from_wlev, time_index, time_step):
+            two_gz = np.sqrt(2 * 9.81 * z)
             if to_wlev[time_step] <= from_wlev[time_step]:
                 lock.water_level[time_index + time_step] = z + to_wlev[time_step]
                 if z != 0:
                     if lock.node_open == lock.node_doors2:
-                        lock.discharge_res[time_step + time_index] += (
-                            -1 * lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        )
-                        lock.discharge_fresh[time_step + time_index] += (
-                            -1 * lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        )
+                        lock.discharge_res[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
+                        lock.discharge_fresh[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
                     else:
-                        lock.discharge_res[time_step + time_index] += lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        lock.discharge_saline[time_step + time_index] += (
-                            lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        )
+                        lock.discharge_res[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
+                        lock.discharge_saline[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
                 else:
                     lock.discharge_res[time_step + time_index] = 0
                     lock.discharge_fresh[time_step + time_index] = 0
@@ -778,17 +774,11 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
                 lock.water_level[time_index + time_step] = to_wlev[time_step] - z
                 if z != 0:
                     if lock.node_open == lock.node_doors2:
-                        lock.discharge_res[time_step + time_index] += lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        lock.discharge_saline[time_step + time_index] += (
-                            lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        )
+                        lock.discharge_res[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
+                        lock.discharge_saline[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
                     else:
-                        lock.discharge_res[time_step + time_index] += (
-                            -1 * lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        )
-                        lock.discharge_fresh[time_step + time_index] += (
-                            -1 * lock.disch_coeff * lock.opening_area * np.sqrt(2 * 9.81 * z)
-                        )
+                        lock.discharge_res[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
+                        lock.discharge_fresh[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
                 else:
                     lock.discharge_res[time_step + time_index] += 0
                     lock.discharge_fresh[time_step + time_index] += 0
@@ -833,6 +823,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             ).argmin()
             calculate_discharge(self, z, to_wlev, from_wlev, time_index, 0)
             time_series = np.arange(0, 2 * 3600, self.time_step)
+
             for t in enumerate(time_series):
                 if t[0] == 0:
                     continue
@@ -885,22 +876,15 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
 
         def door_open():
             if len(self.log["Action"]) > 4:
-                if timeout_required:
-                    T_door_open = self.env.now - time.mktime(pd.Timestamp(self.log["Time"][-4]).timetuple()) - 0.5 * self.doors_open
-                else:
-                    T_door_open = (
-                        self.env.now
-                        + self.doors_close
-                        - time.mktime(pd.Timestamp(self.log["Time"][-4]).timetuple())
-                        - 0.5 * self.doors_open
-                    )
+                t_doors_open = time.mktime(pd.Timestamp(self.log["Time"][-4]).timetuple())
             else:
-                if timeout_required:
-                    T_door_open = self.env.now - time.mktime(self.env.simulation_start.timetuple()) - 0.5 * self.doors_open
-                else:
-                    T_door_open = (
-                        self.env.now + self.doors_close - time.mktime(self.env.simulation_start.timetuple()) - 0.5 * self.doors_open
-                    )
+                t_doors_open = time.mktime(self.env.simulation_start.timetuple())
+
+            if timeout_required:
+                T_door_open = self.env.now - t_doors_open - 0.5 * self.doors_open
+            else:
+                T_door_open = self.env.now + self.doors_close - t_doors_open - 0.5 * self.doors_open
+
             if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
                 time_index_start = np.absolute(
                     self.water_level.TIME.values - np.datetime64(datetime.datetime.fromtimestamp(self.env.now - T_door_open))
@@ -1370,7 +1354,6 @@ class PassLock:
         # Checks the need to change the position of the vessel within the line-up area
         for vessel_index, lineup_area_user in enumerate(lineup_area.line_up_area[start_node].users):
             if lineup_area_user.obj.id == vessel.id:
-
                 # Imports information about the current lock cycle
                 lock_door_1_user_priority = 0
                 lock_door_2_user_priority = 0
