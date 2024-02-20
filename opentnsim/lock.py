@@ -22,14 +22,25 @@ import xarray as xr
 from opentnsim import core, output
 
 
-class HasMultiDiGraph:
+class HasMultiDiGraph(core.SimpyObject):
+    """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     @property
-    def graph(self):
-        """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
-        graph = self.env.FG
+    def multidigraph(self):
+        # create a multidigraph copy of graph if it was not done before
+
+        if not hasattr(self.env, "_multidigraph"):
+            self.env._multidigraph = self.copy()
+        return self.env._multidigraph
+
+    def copy(self):
+        multidigraph = self.env.FG
         if not isinstance(self.env.FG, nx.MultiDiGraph):
-            graph = nx.MultiDiGraph(graph)
-        return graph
+            multidigraph = nx.MultiDiGraph(multidigraph)
+        return multidigraph
 
 
 class HasLockInformation:
@@ -44,13 +55,13 @@ class HasLock(core.Movable, HasMultiDiGraph):
         self.on_pass_edge_functions.append(self.leave_lock_chamber)
 
     def register_vessel(self, origin):
-        if "Detector" in self.graph.nodes[origin].keys():
+        if "Detector" in self.multidigraph.nodes[origin].keys():
             yield self.env.timeout(0)
             lock = []
             for node1, node2 in zip(self.route[self.route.index(origin) : -1], self.route[self.route.index(origin) + 1 :]):
-                k = sorted(self.graph[node1][node2], key=lambda x: self.graph[node1][node2][x]["geometry"].length)[0]
-                if "Lock" in self.graph.edges[node1, node2, k].keys():
-                    lock = self.graph.edges[node1, node2, k]["Lock"][0]
+                k = sorted(self.multidigraph[node1][node2], key=lambda x: self.multidigraph[node1][node2][x]["geometry"].length)[0]
+                if "Lock" in self.multidigraph.edges[node1, node2, k].keys():
+                    lock = self.multidigraph.edges[node1, node2, k]["Lock"][0]
                     node_doors1 = lock.node_doors1
                     node_doors2 = lock.node_doors2
                     doors2 = lock.doors_2[node_doors2]
@@ -91,9 +102,11 @@ class HasLock(core.Movable, HasMultiDiGraph):
                     self.lock_information[lock.name].converting = False
 
     def leave_lock_chamber(self, origin, destination):
-        k = sorted(self.graph[origin][destination], key=lambda x: self.graph[origin][destination][x]["geometry"].length)[0]
-        if "Lock" in self.graph.edges[origin, destination, k].keys():
-            locks = self.graph.edges[origin, destination, k]["Lock"]
+        k = sorted(
+            self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
+        )[0]
+        if "Lock" in self.multidigraph.edges[origin, destination, k].keys():
+            locks = self.multidigraph.edges[origin, destination, k]["Lock"]
             if origin == locks[0].node_doors1:
                 direction = 1
             else:
@@ -109,7 +122,7 @@ class HasWaitingArea(core.Movable):
         self.on_pass_node_functions.append(self.leave_waiting_area)
 
     def leave_waiting_area(self, origin):
-        if "Waiting area" in self.graph.nodes[origin].keys():  # if vessel is in waiting area
+        if "Waiting area" in self.multidigraph.nodes[origin].keys():  # if vessel is in waiting area
             yield from PassLock.leave_waiting_area(self, origin)
 
 
@@ -122,19 +135,27 @@ class HasLineUpArea(core.Movable, HasMultiDiGraph):
     def approach_lineup_area(self, origin, destination):
         # if destination != self.route[-1]:
         # next_node = self.route[self.route.index(destination)+1]
-        k1 = sorted(self.graph[origin][destination], key=lambda x: self.graph[origin][destination][x]["geometry"].length)[0]
-        k2 = sorted(self.graph[destination][origin], key=lambda x: self.graph[destination][origin][x]["geometry"].length)[0]
-        if "Line-up area" in self.graph.edges[origin, destination, k1].keys():  # if vessel is approaching the line-up area
+        k1 = sorted(
+            self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
+        )[0]
+        k2 = sorted(
+            self.multidigraph[destination][origin], key=lambda x: self.multidigraph[destination][origin][x]["geometry"].length
+        )[0]
+        if "Line-up area" in self.multidigraph.edges[origin, destination, k1].keys():  # if vessel is approaching the line-up area
             yield from PassLock.approach_lineup_area(self, origin, destination)
-            # elif "Line-up area" in self.graph.edges[destination, origin,k2].keys():
+            # elif "Line-up area" in self.multidigraph.edges[destination, origin,k2].keys():
             #     yield from PassLock.approach_lineup_area(self, destination, origin)
 
     def leave_lineup_area(self, origin, destination):
-        k1 = sorted(self.graph[origin][destination], key=lambda x: self.graph[origin][destination][x]["geometry"].length)[0]
-        k2 = sorted(self.graph[destination][origin], key=lambda x: self.graph[destination][origin][x]["geometry"].length)[0]
-        if "Line-up area" in self.graph.edges[origin, destination, k1].keys():  # if vessel is located in the line-up
+        k1 = sorted(
+            self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
+        )[0]
+        k2 = sorted(
+            self.multidigraph[destination][origin], key=lambda x: self.multidigraph[destination][origin][x]["geometry"].length
+        )[0]
+        if "Line-up area" in self.multidigraph.edges[origin, destination, k1].keys():  # if vessel is located in the line-up
             yield from PassLock.leave_lineup_area(self, origin, destination)
-        elif "Line-up area" in self.graph.edges[destination, origin, k2].keys():
+        elif "Line-up area" in self.multidigraph.edges[destination, origin, k2].keys():
             yield from PassLock.leave_lineup_area(self, destination, origin)
 
 
@@ -158,17 +179,17 @@ class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.Ha
 
         # Add to the graph:
         if "FG" in dir(self.env):
-            if "Waiting area" not in self.graph.nodes[node].keys():
-                self.graph.nodes[node]["Waiting area"] = [self]
+            if "Waiting area" not in self.multidigraph.nodes[node].keys():
+                self.multidigraph.nodes[node]["Waiting area"] = [self]
             else:
-                self.graph.nodes[node]["Waiting area"].append(self)
+                self.multidigraph.nodes[node]["Waiting area"].append(self)
 
     def find_lineup_areas(self, vessel, index_node_waiting_area):
         lineup_areas = []
         for node1, node2 in zip(vessel.route[index_node_waiting_area:-1], vessel.route[index_node_waiting_area + 1 :]):
-            k = sorted(vessel.env.FG[node1][node2], key=lambda x: vessel.env.FG[node1][node2][x]["geometry"].length)[0]
-            if "Line-up area" in vessel.env.FG.edges[node1, node2, k].keys():
-                lineup_areas = vessel.env.FG.edges[node1, node2, k]["Line-up area"]
+            k = sorted(vessel.multidigraph[node1][node2], key=lambda x: vessel.multidigraph[node1][node2][x]["geometry"].length)[0]
+            if "Line-up area" in vessel.multidigraph.edges[node1, node2, k].keys():
+                lineup_areas = vessel.multidigraph.edges[node1, node2, k]["Line-up area"]
             else:
                 continue
 
@@ -180,11 +201,11 @@ class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.Ha
             vessel.route[index_node_waiting_area:-1], vessel.route[index_node_waiting_area + 1 :]
         ):
             k = sorted(
-                vessel.env.FG[approach_node][departure_node],
-                key=lambda x: vessel.env.FG[approach_node][departure_node][x]["geometry"].length,
+                vessel.multidigraph[approach_node][departure_node],
+                key=lambda x: vessel.multidigraph[approach_node][departure_node][x]["geometry"].length,
             )[0]
-            if "Lock" in vessel.env.FG.edges[approach_node, departure_node, k].keys():
-                locks.extend(vessel.env.FG.edges[approach_node, departure_node, k]["Lock"])
+            if "Lock" in vessel.multidigraph.edges[approach_node, departure_node, k].keys():
+                locks.extend(vessel.multidigraph.edges[approach_node, departure_node, k]["Lock"])
             else:
                 continue
 
@@ -246,10 +267,10 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
 
         # Add to the graph:
         if "FG" in dir(self.env):
-            if "Line-up area" not in self.graph.edges[self.start_node, self.end_node, k_edge].keys():
-                self.graph.edges[self.start_node, self.end_node, k_edge]["Line-up area"] = [self]
+            if "Line-up area" not in self.multidigraph.edges[self.start_node, self.end_node, k_edge].keys():
+                self.multidigraph.edges[self.start_node, self.end_node, k_edge]["Line-up area"] = [self]
             else:
-                self.graph.edges[self.start_node, self.end_node, k_edge]["Line-up area"].append(self)
+                self.multidigraph.edges[self.start_node, self.end_node, k_edge]["Line-up area"].append(self)
 
     def find_lock(self, vessel, start_node, end_node, direction=0):
         lock = None
@@ -270,11 +291,11 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
 
         for approach_node, departure_node in zip(loop_route_1, loop_route_2):
             k = sorted(
-                vessel.env.FG[approach_node][departure_node],
-                key=lambda x: vessel.env.FG[approach_node][departure_node][x]["geometry"].length,
+                vessel.multidigraph[approach_node][departure_node],
+                key=lambda x: vessel.multidigraph[approach_node][departure_node][x]["geometry"].length,
             )[0]
-            if "Lock" in vessel.env.FG.edges[approach_node, departure_node, k].keys():
-                locks = vessel.env.FG.edges[approach_node, departure_node, k]["Lock"]
+            if "Lock" in vessel.multidigraph.edges[approach_node, departure_node, k].keys():
+                locks = vessel.multidigraph.edges[approach_node, departure_node, k]["Lock"]
                 if approach_node == locks[0].node_doors1:
                     direction = 1
                 else:
@@ -385,7 +406,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         self.node_doors2 = node_doors2
         if not self.node_open:
             self.node_open = random.choice([node_doors1, node_doors2])
-        index_node_open = list(self.graph.nodes).index(self.node_open)
+        index_node_open = list(self.multidigraph.nodes).index(self.node_open)
 
         if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
             iter_data = self.env.vessel_traffic_service.hydrodynamic_information.sel(STATIONS=index_node_open).interp(
@@ -398,28 +419,28 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             self.discharge_fresh = np.abs(self.water_level.rename("Fresh discharge").copy()) * 0
 
         for detector_node in self.detector_nodes:
-            if "Detector" not in self.graph.nodes[detector_node]:
-                self.graph.nodes[detector_node]["Detector"] = {}
+            if "Detector" not in self.multidigraph.nodes[detector_node]:
+                self.multidigraph.nodes[detector_node]["Detector"] = {}
 
-            route1 = nx.dijkstra_path(self.graph, detector_node, self.node_doors1)
-            route2 = nx.dijkstra_path(self.graph, detector_node, self.node_doors2)
+            route1 = nx.dijkstra_path(self.multidigraph, detector_node, self.node_doors1)
+            route2 = nx.dijkstra_path(self.multidigraph, detector_node, self.node_doors2)
             for route in [route1, route2]:
                 if len(route) > 1 and (
                     [self.node_doors1, self.node_doors2] == [route[-2], route[-1]]
                     or [self.node_doors1, self.node_doors2] == [route[-1], route[-2]]
                 ):
-                    self.graph.nodes[detector_node]["Detector"][route[-1]] = core.IsDetectorNode(self)
+                    self.multidigraph.nodes[detector_node]["Detector"][route[-1]] = core.IsDetectorNode(self)
                     break
 
         # Add to the graph:
         if "FG" in dir(self.env):
             # TODO: cast to DiGraph
-            if "Lock" not in self.graph.edges[self.node_doors1, self.node_doors2, k_edge].keys():
-                self.graph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"] = [self]
-                self.graph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"] = [self]
+            if "Lock" not in self.multidigraph.edges[self.node_doors1, self.node_doors2, k_edge].keys():
+                self.multidigraph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"] = [self]
+                self.multidigraph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"] = [self]
             else:
-                self.graph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"].append(self)
-                self.graph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"].append(self)
+                self.multidigraph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"].append(self)
+                self.multidigraph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"].append(self)
 
     def check_priority(self, vessel, direction):
         waiting_area = self.find_previous_waiting_area(vessel, direction)
@@ -469,11 +490,11 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             list(reversed(vessel.route[:index_node_doors2])), list(reversed(vessel.route[1 : index_node_doors2 + 1]))
         ):
             k = sorted(
-                vessel.env.FG[approach_node][departure_node],
-                key=lambda x: vessel.env.FG[approach_node][departure_node][x]["geometry"].length,
+                vessel.multidigraph[approach_node][departure_node],
+                key=lambda x: vessel.multidigraph[approach_node][departure_node][x]["geometry"].length,
             )[0]
-            if "Line-up area" in vessel.env.FG.edges[approach_node, departure_node, k].keys():
-                lineup_areas = vessel.env.FG.edges[approach_node, departure_node, k]["Line-up area"]
+            if "Line-up area" in vessel.multidigraph.edges[approach_node, departure_node, k].keys():
+                lineup_areas = vessel.multidigraph.edges[approach_node, departure_node, k]["Line-up area"]
             else:
                 continue
 
@@ -496,11 +517,11 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
 
         for departure_node, approach_node in zip(vessel.route[index_node_doors2:], vessel.route[index_node_doors1:-1]):
             k = sorted(
-                vessel.env.FG[departure_node][approach_node],
-                key=lambda x: vessel.env.FG[departure_node][approach_node][x]["geometry"].length,
+                vessel.multidigraph[departure_node][approach_node],
+                key=lambda x: vessel.multidigraph[departure_node][approach_node][x]["geometry"].length,
             )[0]
-            if "Line-up area" in vessel.env.FG.edges[departure_node, approach_node, k].keys():
-                lineup_areas = vessel.env.FG.edges[departure_node, approach_node, k]["Line-up area"]
+            if "Line-up area" in vessel.multidigraph.edges[departure_node, approach_node, k].keys():
+                lineup_areas = vessel.multidigraph.edges[departure_node, approach_node, k]["Line-up area"]
             else:
                 continue
 
@@ -520,8 +541,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             index_node_doors2 = vessel.route.index(self.node_doors1)
 
         for previous_node in list(reversed(vessel.route[:index_node_doors2])):
-            if "Waiting area" in vessel.env.FG.nodes[previous_node].keys():
-                waiting_areas = vessel.env.FG.nodes[previous_node]["Waiting area"]
+            if "Waiting area" in vessel.multidigraph.nodes[previous_node].keys():
+                waiting_areas = vessel.multidigraph.nodes[previous_node]["Waiting area"]
             else:
                 continue
 
@@ -541,8 +562,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
             index_node_doors1 = vessel.route.index(self.node_doors2)
 
         for next_node in vessel.route[index_node_doors1:]:
-            if "Waiting area" in vessel.env.FG.nodes[next_node].keys():
-                waiting_areas = vessel.env.FG.nodes[next_node]["Waiting area"]
+            if "Waiting area" in vessel.multidigraph.nodes[next_node].keys():
+                waiting_areas = vessel.multidigraph.nodes[next_node]["Waiting area"]
             else:
                 continue
 
@@ -555,9 +576,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return waiting_area
 
     def exchange_flux_time_series_calculator(self, T_door_open, time_index):
-        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
-        index_node_open = list(self.graph.nodes).index(self.node_open)
+        index_node_doors1 = list(self.multidigraph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.multidigraph.nodes).index(self.node_doors2)
+        index_node_open = list(self.multidigraph.nodes).index(self.node_open)
         time_value = self.salinity.TIME[time_index].values
         S_lock = self.salinity[time_index]
         S_lock_harbour = (
@@ -610,8 +631,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return
 
     def levelling_to_harbour(self, V_ship, levelling_time, side, delay=0):
-        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
+        index_node_doors1 = list(self.multidigraph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.multidigraph.nodes).index(self.node_doors2)
         time_index = np.absolute(
             self.env.vessel_traffic_service.hydrodynamic_information.TIME.values
             - np.datetime64(datetime.datetime.fromtimestamp(self.env.now + delay))
@@ -679,7 +700,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return V_levelling, S_lock_final, V_loss_lev
 
     def sailing_out_to_harbour(self, V_ship, time_index):
-        index_node_open = list(self.graph.nodes).index(self.node_open)
+        index_node_open = list(self.multidigraph.nodes).index(self.node_open)
         S_lock = self.salinity[time_index]
         time_value = self.salinity.TIME.values[time_index]
         WLev_lock_harbour = (
@@ -706,9 +727,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
         return S_lock
 
     def door_open_harbour(self, T_door_open, time_index_start):
-        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
-        index_node_open = list(self.graph.nodes).index(self.node_open)
+        index_node_doors1 = list(self.multidigraph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.multidigraph.nodes).index(self.node_doors2)
+        index_node_open = list(self.multidigraph.nodes).index(self.node_open)
         time_value = self.salinity.TIME[time_index_start].values
         S_lock = self.salinity[time_index_start]
         S_lock_harbour = (
@@ -801,8 +822,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
                     lock.discharge_fresh[time_step + time_index] += 0
             return
 
-        index_node_doors1 = list(self.graph.nodes).index(self.node_doors1)
-        index_node_doors2 = list(self.graph.nodes).index(self.node_doors2)
+        index_node_doors1 = list(self.multidigraph.nodes).index(self.node_doors1)
+        index_node_doors2 = list(self.multidigraph.nodes).index(self.node_doors2)
         if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
             time = np.arange(
                 0,
@@ -1161,7 +1182,7 @@ class PassLock:
                         yield from request_access_lock_cycle(vessel, lineup_area)
 
         # Imports the properties of the waiting area
-        for waiting_area in vessel.env.FG.nodes[node_waiting_area]["Waiting area"]:
+        for waiting_area in vessel.multidigraph.nodes[node_waiting_area]["Waiting area"]:
             if "lock_information" not in dir(vessel):
                 vessel.lock_information = {}
 
@@ -1184,7 +1205,8 @@ class PassLock:
 
                 wait_for_lineup_area = vessel.env.now
                 vessel.v_before_lock = vessel.v
-                vessel.id = vessel.id + "_" + str(vessel.arrival_time)
+                # TODO: check if id's are unique
+                # vessel.id = vessel.id + "_" + str(vessel.arrival_time)
 
                 # Assigning the lock chain series with least expected waiting time to the vessel
                 lock_queue_length = []
@@ -1230,10 +1252,10 @@ class PassLock:
                 # Calculation of the (lat,lon)-coordinates of the assigned position in the line-up area
                 if direction:
                     k = sorted(
-                        lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node],
-                        key=lambda x: lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
+                        lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node],
+                        key=lambda x: lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
                     )[0]
-                    vessel.lock_information[lineup_area.name].lineup_position = lineup_area.env.FG.edges[
+                    vessel.lock_information[lineup_area.name].lineup_position = lineup_area.multidigraph.edges[
                         lineup_area.start_node, lineup_area.end_node, k
                     ]["geometry"].interpolate(
                         lock.distance_doors1_from_first_waiting_area
@@ -1243,10 +1265,10 @@ class PassLock:
 
                 elif not direction:
                     k = sorted(
-                        lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node],
-                        key=lambda x: lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
+                        lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node],
+                        key=lambda x: lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
                     )[0]
-                    vessel.lock_information[lineup_area.name].lineup_position = lineup_area.env.FG.edges[
+                    vessel.lock_information[lineup_area.name].lineup_position = lineup_area.multidigraph.edges[
                         lineup_area.start_node, lineup_area.end_node, k
                     ]["geometry"].interpolate(
                         lock.distance_doors2_from_second_waiting_area
@@ -1278,13 +1300,13 @@ class PassLock:
                 if wait_for_lineup_area != vessel.env.now:
                     vessel.log_entry(
                         wait_for_lineup_area,
-                        nx.get_node_attributes(vessel.env.FG, "geometry")[node_waiting_area],
+                        nx.get_node_attributes(vessel.multidigraph, "geometry")[node_waiting_area],
                         "Waiting in waiting area start",
                         vessel.output.copy(),
                     )
                     vessel.log_entry(
                         vessel.env.now,
-                        nx.get_node_attributes(vessel.env.FG, "geometry")[node_waiting_area],
+                        nx.get_node_attributes(vessel.multidigraph, "geometry")[node_waiting_area],
                         "Waiting in waiting area stop",
                         vessel.output.copy(),
                     )
@@ -1312,8 +1334,10 @@ class PassLock:
             - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network"""
 
         # Imports the properties of the line-up area the vessel is assigned to
-        k = sorted(vessel.env.FG[start_node][end_node], key=lambda x: vessel.env.FG[start_node][end_node][x]["geometry"].length)[0]
-        lineup_areas = vessel.env.FG.edges[start_node, end_node, k]["Line-up area"]
+        k = sorted(
+            vessel.multidigraph[start_node][end_node], key=lambda x: vessel.multidigraph[start_node][end_node][x]["geometry"].length
+        )[0]
+        lineup_areas = vessel.multidigraph.edges[start_node, end_node, k]["Line-up area"]
 
         for lineup_area in lineup_areas:
             if lineup_area.name in vessel.lock_information.keys():
@@ -1338,7 +1362,7 @@ class PassLock:
         if distance_to_lineup_area:
             vessel.log_entry(
                 vessel.env.now,
-                vessel.env.FG.nodes[start_node]["geometry"],
+                vessel.multidigraph.nodes[start_node]["geometry"],
                 "Sailing to start of line-up area start",
                 vessel.output.copy(),
             )
@@ -1389,10 +1413,10 @@ class PassLock:
                         vessel, lock, lineup_area, vessel.lock_information[lock.name].lineup_dist, (vessel_index, lineup_area_user)
                     )
                     k = sorted(
-                        lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node],
-                        key=lambda x: lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
+                        lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node],
+                        key=lambda x: lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
                     )[0]
-                    vessel.lock_information[lock.name].lineup_position = lineup_area.env.FG.edges[
+                    vessel.lock_information[lock.name].lineup_position = lineup_area.multidigraph.edges[
                         lineup_area.start_node, lineup_area.end_node, k
                     ]["geometry"].interpolate(
                         lock.distance_doors1_from_first_waiting_area
@@ -1406,10 +1430,10 @@ class PassLock:
                         vessel, lock, lineup_area, vessel.lock_information[lock.name].lineup_dist, (vessel_index, lineup_area_user)
                     )
                     k = sorted(
-                        lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node],
-                        key=lambda x: lineup_area.env.FG[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
+                        lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node],
+                        key=lambda x: lineup_area.multidigraph[lineup_area.start_node][lineup_area.end_node][x]["geometry"].length,
                     )[0]
-                    vessel.lock_information[lock.name].lineup_position = lineup_area.env.FG.edges[
+                    vessel.lock_information[lock.name].lineup_position = lineup_area.multidigraph.edges[
                         lineup_area.start_node, lineup_area.end_node, k
                     ]["geometry"].interpolate(
                         lock.distance_doors2_from_second_waiting_area
@@ -1448,9 +1472,9 @@ class PassLock:
 
         # Imports the properties of the line-up area the vessel is assigned to
         k_lineup = sorted(
-            vessel.env.FG[start_node][end_node], key=lambda x: vessel.env.FG[start_node][end_node][x]["geometry"].length
+            vessel.multidigraph[start_node][end_node], key=lambda x: vessel.multidigraph[start_node][end_node][x]["geometry"].length
         )[0]
-        lineup_areas = vessel.env.FG.edges[start_node, end_node, k_lineup]["Line-up area"]
+        lineup_areas = vessel.multidigraph.edges[start_node, end_node, k_lineup]["Line-up area"]
         distance_to_lineup_areas = [lineup_area.distance_to_lock_doors for lineup_area in lineup_areas]
         lineup_areas = [x for _, x in sorted(zip(distance_to_lineup_areas, lineup_areas))]
         total_waiting_time = True
@@ -1879,7 +1903,7 @@ class PassLock:
                     vessel.env.now, location_of_end_of_lineup_area, "Sailing to end of line-up area stop", vessel.output.copy()
                 )
                 vessel.distance = (
-                    vessel.env.vessel_traffic_service.provide_trajectory(vessel.env, end_node, waiting_area.node).length
+                    vessel.env.vessel_traffic_service.provide_trajectory(vessel.multidigraph, end_node, waiting_area.node).length
                     - distance_to_end_lineup
                 )
 
@@ -1894,9 +1918,10 @@ class PassLock:
 
         # Imports the properties of the lock chamber the vessel is assigned to
         k = sorted(
-            vessel.env.FG[node_doors1][node_doors2], key=lambda x: vessel.env.FG[node_doors1][node_doors2][x]["geometry"].length
+            vessel.multidigraph[node_doors1][node_doors2],
+            key=lambda x: vessel.multidigraph[node_doors1][node_doors2][x]["geometry"].length,
         )[0]
-        locks = vessel.env.FG.edges[node_doors1, node_doors2, k]["Lock"]
+        locks = vessel.multidigraph.edges[node_doors1, node_doors2, k]["Lock"]
         for lock in locks:
             if lock.name not in vessel.lock_information.keys():
                 continue
@@ -1909,11 +1934,11 @@ class PassLock:
             distance_from_start_edge_to_lock_doors = 0
             vessel.lock_information[lock.name].lock_dist = lock.length.level - 0.5 * vessel.L
             if direction:
-                if "Line-up area" not in vessel.env.FG.edges[node_doors1, node_doors2, k]:
+                if "Line-up area" not in vessel.multidigraph.edges[node_doors1, node_doors2, k]:
                     distance_from_start_edge_to_lock_doors = (
                         lock.distance_doors1_from_first_waiting_area
                         - vessel.env.vessel_traffic_service.provide_trajectory(
-                            vessel.env, previous_waiting_area.node, lock.node_doors1
+                            vessel.multidigraph, previous_waiting_area.node, lock.node_doors1
                         ).length
                     )
                 else:
@@ -1930,11 +1955,11 @@ class PassLock:
                 ].interpolate(lock.distance_doors1_from_first_waiting_area + vessel.lock_information[lock.name].lock_dist)
 
             if not direction:
-                if "Line-up area" not in vessel.env.FG.edges[node_doors1, node_doors2, k]:
+                if "Line-up area" not in vessel.multidigraph.edges[node_doors1, node_doors2, k]:
                     distance_from_start_edge_to_lock_doors = (
                         lock.distance_doors2_from_second_waiting_area
                         - vessel.env.vessel_traffic_service.provide_trajectory(
-                            vessel.env, previous_waiting_area.node, lock.node_doors2
+                            vessel.multidigraph, previous_waiting_area.node, lock.node_doors2
                         ).length
                     )
                 else:
@@ -2052,7 +2077,9 @@ class PassLock:
             vessel.log_entry(
                 vessel.env.now, vessel.lock_information[lock.name].lock_position, "Passing lock stop", vessel.output.copy()
             )
-            vessel.lock_information[lock.name].lineup_position = vessel.env.FG.nodes[opposing_lineup_area.end_node]["geometry"]
+            vessel.lock_information[lock.name].lineup_position = vessel.multidigraph.nodes[opposing_lineup_area.end_node][
+                "geometry"
+            ]
 
             # Sails to the lock doors
             distance_to_second_pair_of_lock_doors = lock.lock_length - vessel.lock_information[lock.name].lock_dist
@@ -2136,8 +2163,10 @@ class PassLock:
             - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network"""
 
         # Imports the properties of the line-up area the vessel is assigned to
-        k = sorted(vessel.env.FG[start_node][end_node], key=lambda x: vessel.env.FG[start_node][end_node][x]["geometry"].length)[0]
-        lineup_areas = vessel.env.FG.edges[start_node, end_node, k]["Line-up area"]
+        k = sorted(
+            vessel.multidigraph[start_node][end_node], key=lambda x: vessel.multidigraph[start_node][end_node][x]["geometry"].length
+        )[0]
+        lineup_areas = vessel.multidigraph.edges[start_node, end_node, k]["Line-up area"]
 
         for lineup_area in lineup_areas:
             if lineup_area.name not in vessel.lock_information.keys():

@@ -75,13 +75,13 @@ def hydrodynamics_env(env):
     return env
 
 
-def add_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arrival_time):
+def create_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arrival_time):
     Vessel = type(
         "Vessel",
         (
-            opentnsim.lock.HasWaitingArea,
             opentnsim.lock.HasLock,
             opentnsim.lock.HasLineUpArea,
+            opentnsim.lock.HasWaitingArea,
             core.Movable,
             core.VesselProperties,
             output.HasOutput,
@@ -92,13 +92,16 @@ def add_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arrival_
         {},
     )
 
+    node = env.FG.nodes[origin]
+    geometry = node["geometry"]
     vessel = Vessel(
         **{
             "env": env,
             "name": name,
             "origin": origin,
             "destination": destination,
-            "geometry": env.FG.nodes[origin],
+            "geometry": geometry,
+            "node": origin,
             "route": nx.dijkstra_path(env.FG, origin, destination),
             "type": vessel_type,
             "L": L,
@@ -110,7 +113,7 @@ def add_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arrival_
     )
 
     env.process(vessel.move())
-    return
+    return vessel
 
 
 def test_lock(hydrodynamics_env):
@@ -137,10 +140,8 @@ def test_lock(hydrodynamics_env):
     opentnsim.lock.IsLockWaitingArea(env=env, name="Lock", distance_from_node=0, node=0)
     opentnsim.lock.IsLockWaitingArea(env=env, name="Lock", distance_from_node=0, node=1)
 
-    add_vessel(env, 0, 0, 1, None, 200, 30, 8, v=4, arrival_time=datetime.datetime(2024, 1, 1, 0, 0, 0))
+    vessel = create_vessel(env, 0, 0, 1, None, 200, 30, 8, v=4, arrival_time=datetime.datetime(2024, 1, 1, 0, 0, 0))
 
     env.run()
 
-    vessels = env.vessels
-
-    assert len(vessels[0].log) > 2
+    assert len(vessel.logbook) > 2

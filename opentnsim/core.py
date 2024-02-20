@@ -319,6 +319,7 @@ class Routable(SimpyObject):
 
     @property
     def graph(self):
+        # TODO: explicitly return a digraph or graph but not a multigraph
         if hasattr(self.env, "graph"):
             return self.env.graph
         elif hasattr(self.env, "FG"):
@@ -392,7 +393,7 @@ class Movable(Locatable, Routable, Log):
 
             node = a
 
-            self.pass_node(node)
+            yield from self.pass_node(node)
 
             # we are now at the node
             self.node = node
