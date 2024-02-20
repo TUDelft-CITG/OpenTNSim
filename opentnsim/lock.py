@@ -22,6 +22,23 @@ import xarray as xr
 from opentnsim import core, output
 
 
+class CustomLog(core.Log):
+    """this module stores log information slightly different"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def log_entry_extra(self, t, geometry_log, log, output):
+        """Log an entry with a dictionary as output"""
+        entry = {
+            "Message": log,
+            "Timestamp": datetime.datetime.fromtimestamp(t),
+            "Geometry": geometry_log,
+            "ObjectState": output,
+        }
+        self.logbook.append(entry)
+
+
 class HasMultiDiGraph(core.SimpyObject):
     """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
 
@@ -312,7 +329,7 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
         return lock, direction
 
 
-class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, output.HasOutput, HasMultiDiGraph):
+class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, output.HasOutput, HasMultiDiGraph):
     """Mixin class: Something which has lock chamber object properties as part of a lock complex [in SI-units]"""
 
     def __init__(
@@ -937,7 +954,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
                     self.salinity[time_index_stop:] = S_lock
 
         # Close the doors
-        self.log_entry(self.env.now, self.node_open, "Lock doors closing start", self.output.copy())
+        self.log_entry_extra(self.env.now, self.node_open, "Lock doors closing start", self.output.copy())
         if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
             time_index = np.max(
                 [
@@ -961,27 +978,29 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
 
         if timeout_required:
             yield environment.timeout(self.doors_close)
-            self.log_entry(environment.now, self.node_open, "Lock doors closing stop", self.output.copy())
+            self.log_entry_extra(environment.now, self.node_open, "Lock doors closing stop", self.output.copy())
             door_open()
             vessel.levelling_time = self.determine_levelling_time(new_level)
         else:
-            self.log_entry(environment.now + self.doors_close, self.node_open, "Lock doors closing stop", self.output.copy())
+            self.log_entry_extra(environment.now + self.doors_close, self.node_open, "Lock doors closing stop", self.output.copy())
             door_open()
             vessel.levelling_time = self.determine_levelling_time(new_level, delay=self.doors_close)
 
         # Convert the chamber
         if timeout_required:
-            self.log_entry(self.env.now, self.node_open, "Lock chamber converting start", self.output.copy())
+            self.log_entry_extra(self.env.now, self.node_open, "Lock chamber converting start", self.output.copy())
         else:
-            self.log_entry(self.env.now + self.doors_close, self.node_open, "Lock chamber converting start", self.output.copy())
+            self.log_entry_extra(
+                self.env.now + self.doors_close, self.node_open, "Lock chamber converting start", self.output.copy()
+            )
 
         # Water level will shift
         self.change_water_level(new_level)
         if timeout_required:
             yield environment.timeout(vessel.levelling_time)
-            self.log_entry(self.env.now, self.node_open, "Lock chamber converting stop", self.output.copy())
+            self.log_entry_extra(self.env.now, self.node_open, "Lock chamber converting stop", self.output.copy())
         else:
-            self.log_entry(
+            self.log_entry_extra(
                 self.env.now + self.doors_close + vessel.levelling_time,
                 self.node_open,
                 "Lock chamber converting stop",
@@ -990,9 +1009,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
 
         # Open the doors
         if timeout_required:
-            self.log_entry(self.env.now, self.node_open, "Lock doors opening start", self.output.copy())
+            self.log_entry_extra(self.env.now, self.node_open, "Lock doors opening start", self.output.copy())
         else:
-            self.log_entry(
+            self.log_entry_extra(
                 self.env.now + self.doors_close + vessel.levelling_time,
                 self.node_open,
                 "Lock doors opening start",
@@ -1020,9 +1039,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, core.Log, outp
 
         if timeout_required:
             yield environment.timeout(self.doors_open)
-            self.log_entry(self.env.now, self.node_open, "Lock doors opening stop", self.output.copy())
+            self.log_entry_extra(self.env.now, self.node_open, "Lock doors opening stop", self.output.copy())
         else:
-            self.log_entry(
+            self.log_entry_extra(
                 self.env.now + self.doors_close + vessel.levelling_time + self.doors_open,
                 self.node_open,
                 "Lock doors opening stop",
@@ -1298,13 +1317,13 @@ class PassLock:
 
                 # Calculates and reports the total waiting time in the waiting area
                 if wait_for_lineup_area != vessel.env.now:
-                    vessel.log_entry(
+                    vessel.log_entry_extra(
                         wait_for_lineup_area,
                         nx.get_node_attributes(vessel.multidigraph, "geometry")[node_waiting_area],
                         "Waiting in waiting area start",
                         vessel.output.copy(),
                     )
-                    vessel.log_entry(
+                    vessel.log_entry_extra(
                         vessel.env.now,
                         nx.get_node_attributes(vessel.multidigraph, "geometry")[node_waiting_area],
                         "Waiting in waiting area stop",
@@ -1360,14 +1379,14 @@ class PassLock:
         )
 
         if distance_to_lineup_area:
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now,
                 vessel.multidigraph.nodes[start_node]["geometry"],
                 "Sailing to start of line-up area start",
                 vessel.output.copy(),
             )
             yield vessel.env.timeout(distance_to_lineup_area / vessel.v)
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now, location_of_start_lineup_area, "Sailing to start of line-up area stop", vessel.output.copy()
             )
 
@@ -1449,11 +1468,14 @@ class PassLock:
 
         # Sail to the assigned position in the line-up area
         if lineup_area.lineup_length:
-            vessel.log_entry(
+            import ipdb
+
+            ipdb.set_trace()
+            vessel.log_entry_extra(
                 vessel.env.now, location_of_start_lineup_area, "Sailing to position in line-up area start", vessel.output.copy()
             )
             yield vessel.env.timeout(vessel.lock_information[lock.name].lineup_dist / vessel.v)
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now,
                 vessel.lock_information[lock.name].lineup_position,
                 "Sailing to position in line-up area stop",
@@ -1548,7 +1570,7 @@ class PassLock:
                                 total_waiting_time += waiting_time
                                 if vessel.log["Action"][-1] != "Waiting in line-up area stop":
                                     vessel.lock_information[lineup_area.name].vessel_waited_in_lineup_area = True
-                                    vessel.log_entry(
+                                    vessel.log_entry_extra(
                                         vessel.env.now,
                                         vessel.log["Location"][-1],
                                         "Waiting in line-up area start",
@@ -1559,7 +1581,7 @@ class PassLock:
                 if vessel.log["Action"][-1] == "Waiting in line-up area stop":
                     vessel.log["Time"][-1] = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
                 elif vessel.log["Action"][-1] == "Waiting in line-up area start":
-                    vessel.log_entry(
+                    vessel.log_entry_extra(
                         vessel.env.now, vessel.log["Location"][-1], "Waiting in line-up area stop", vessel.output.copy()
                     )
 
@@ -1858,13 +1880,13 @@ class PassLock:
             ]
 
             if vessel.env.now != start_waiting_time_in_lineup_area:
-                vessel.log_entry(
+                vessel.log_entry_extra(
                     start_waiting_time_in_lineup_area,
                     vessel.lock_information[lock.name].lineup_position,
                     "Waiting in line-up area start",
                     vessel.output.copy(),
                 )
-                vessel.log_entry(
+                vessel.log_entry_extra(
                     vessel.env.now,
                     vessel.lock_information[lock.name].lineup_position,
                     "Waiting in line-up area stop",
@@ -1883,7 +1905,7 @@ class PassLock:
             waiting_area = lock.find_previous_waiting_area(vessel, direction)
 
             if lineup_area.lineup_length:
-                vessel.log_entry(
+                vessel.log_entry_extra(
                     vessel.env.now,
                     vessel.lock_information[lock.name].lineup_position,
                     "Sailing to end of line-up area start",
@@ -1899,7 +1921,7 @@ class PassLock:
                 location_of_end_of_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(
                     vessel, waiting_area.node, end_node, distance_to_end_lineup
                 )
-                vessel.log_entry(
+                vessel.log_entry_extra(
                     vessel.env.now, location_of_end_of_lineup_area, "Sailing to end of line-up area stop", vessel.output.copy()
                 )
                 vessel.distance = (
@@ -1975,19 +1997,19 @@ class PassLock:
                     "geometry"
                 ].interpolate(lock.distance_doors2_from_second_waiting_area + vessel.lock_information[lock.name].lock_dist)
 
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now, vessel.log["Location"][-1], "Sailing to first set of lock doors start", vessel.output.copy()
             )
             yield vessel.env.timeout(np.max([0, distance_from_start_edge_to_lock_doors]) / vessel.v)
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now, location_first_set_of_lock_doors, "Sailing to first set of lock doors stop", vessel.output.copy()
             )
 
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now, location_first_set_of_lock_doors, "Sailing to assigned location in lock start", vessel.output.copy()
             )
             yield vessel.env.timeout(np.max([0, (vessel.lock_information[lock.name].lock_dist)]) / vessel.v)
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now,
                 vessel.lock_information[lock.name].lock_position,
                 "Sailing to assigned location in lock stop",
@@ -2006,7 +2028,7 @@ class PassLock:
                     vessel.distance = vessel.lock_information[lock.name].lock_dist + lock.distance_doors1_from_first_waiting_area
 
             # Determines current time and reports this to vessel's log as start time of lock passage
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now, vessel.lock_information[lock.name].lock_position, "Passing lock start", vessel.output.copy()
             )
 
@@ -2074,7 +2096,7 @@ class PassLock:
                     yield vessel.lock_information[lock.name].departure_lock
 
             # Calculates and reports the total locking time
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now, vessel.lock_information[lock.name].lock_position, "Passing lock stop", vessel.output.copy()
             )
             vessel.lock_information[lock.name].lineup_position = vessel.multidigraph.nodes[opposing_lineup_area.end_node][
@@ -2101,14 +2123,14 @@ class PassLock:
                     lock.node_doors2, lock.node_doors1, k
                 ]["geometry"].interpolate(lock.distance_doors1_from_first_waiting_area + lock.lock_length)
 
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now,
                 vessel.lock_information[lock.name].lock_position,
                 "Sailing to second set of lock doors start",
                 vessel.output.copy(),
             )
             yield vessel.env.timeout(np.max([0, (distance_to_second_pair_of_lock_doors)]) / vessel.v)
-            vessel.log_entry(
+            vessel.log_entry_extra(
                 vessel.env.now,
                 vessel.lock_information[lock.name].position_second_pair_of_lock_doors,
                 "Sailing to second set of lock doors stop",
@@ -2189,13 +2211,17 @@ class PassLock:
 
             vessel.lock_information[lock.name].in_lock = False
             if distance_to_lineup_end:
-                vessel.log_entry(vessel.env.now, vessel.log["Location"][-1], "Sailing to line-up area start", vessel.output.copy())
+                vessel.log_entry_extra(
+                    vessel.env.now, vessel.log["Location"][-1], "Sailing to line-up area start", vessel.output.copy()
+                )
                 yield vessel.env.timeout(np.max([0, distance_to_lineup_end]) / vessel.v)
-                vessel.log_entry(vessel.env.now, location_end_lineup_area, "Sailing to line-up area stop", vessel.output.copy())
+                vessel.log_entry_extra(
+                    vessel.env.now, location_end_lineup_area, "Sailing to line-up area stop", vessel.output.copy()
+                )
 
-            vessel.log_entry(vessel.env.now, location_end_lineup_area, "Passing line-up area start", vessel.output.copy())
+            vessel.log_entry_extra(vessel.env.now, location_end_lineup_area, "Passing line-up area start", vessel.output.copy())
             yield vessel.env.timeout(lineup_area.lineup_length / vessel.v)
-            vessel.log_entry(vessel.env.now, location_start_lineup_area, "Passing line-up area stop", vessel.output.copy())
+            vessel.log_entry_extra(vessel.env.now, location_start_lineup_area, "Passing line-up area stop", vessel.output.copy())
             vessel.distance = vessel.env.vessel_traffic_service.provide_distance_to_node(
                 vessel, start_node, end_node, vessel.log["Location"][-1]
             )
