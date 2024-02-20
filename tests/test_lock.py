@@ -85,6 +85,7 @@ def create_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arriv
             core.Movable,
             core.VesselProperties,
             output.HasOutput,
+            opentnsim.lock.CustomLog,
             core.Identifiable,
             core.SimpyObject,
             core.ExtraMetadata,
