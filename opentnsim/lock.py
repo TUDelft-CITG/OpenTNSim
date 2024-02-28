@@ -930,8 +930,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
         self.converting_chamber = True
 
         def door_open():
-            if len(self.log["Action"]) > 4:
-                t_doors_open = time.mktime(pd.Timestamp(self.log["Time"][-4]).timetuple())
+            if len(self.logbook) > 4:
+                t_doors_open = time.mktime(pd.Timestamp(self.logbook[-4]["Timestamp"]).timetuple())
             else:
                 t_doors_open = time.mktime(self.env.simulation_start.timetuple())
 
@@ -963,7 +963,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                         self.salinity.TIME.values
                         - np.datetime64(
                             datetime.datetime.fromtimestamp(
-                                timepy.mktime(pd.Timestamp(self.log["Time"][-1]).timetuple()) + 0.5 * self.doors_close
+                                timepy.mktime(pd.Timestamp(self.logbook[-1]["Timestamp"]).timetuple()) + 0.5 * self.doors_close
                             )
                         )
                     ).argmin(),
@@ -1025,7 +1025,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                     np.absolute(
                         self.salinity.TIME.values
                         - np.datetime64(
-                            datetime.datetime.fromtimestamp(timepy.mktime(pd.Timestamp(self.log["Time"][-1]).timetuple()))
+                            datetime.datetime.fromtimestamp(timepy.mktime(pd.Timestamp(self.logbook[-1]["Timestamp"]).timetuple()))
                         )
                     ).argmin(),
                 ]
@@ -1468,9 +1468,6 @@ class PassLock:
 
         # Sail to the assigned position in the line-up area
         if lineup_area.lineup_length:
-            import ipdb
-
-            ipdb.set_trace()
             vessel.log_entry_extra(
                 vessel.env.now, location_of_start_lineup_area, "Sailing to position in line-up area start", vessel.output.copy()
             )
@@ -1568,21 +1565,24 @@ class PassLock:
 
                             if waiting_time:
                                 total_waiting_time += waiting_time
-                                if vessel.log["Action"][-1] != "Waiting in line-up area stop":
+                                if vessel.logbook[-1]["Message"] != "Waiting in line-up area stop":
                                     vessel.lock_information[lineup_area.name].vessel_waited_in_lineup_area = True
                                     vessel.log_entry_extra(
                                         vessel.env.now,
-                                        vessel.log["Location"][-1],
+                                        vessel.logbook[-1]["Geometry"],
                                         "Waiting in line-up area start",
                                         vessel.output.copy(),
                                     )
                                 yield vessel.env.timeout(waiting_time)
 
-                if vessel.log["Action"][-1] == "Waiting in line-up area stop":
-                    vessel.log["Time"][-1] = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
-                elif vessel.log["Action"][-1] == "Waiting in line-up area start":
+                import ipdb
+
+                ipdb.set_trace()
+                if vessel.logbook[-1]["Message"] == "Waiting in line-up area stop":
+                    vessel.logbook[-1]["Timestamp"] = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
+                elif vessel.logbook[-1]["Message"] == "Waiting in line-up area start":
                     vessel.log_entry_extra(
-                        vessel.env.now, vessel.log["Location"][-1], "Waiting in line-up area stop", vessel.output.copy()
+                        vessel.env.now, vessel.logbook[-1]["Geometry"], "Waiting in line-up area stop", vessel.output.copy()
                     )
 
         for lineup_area in lineup_areas:
@@ -1737,9 +1737,9 @@ class PassLock:
                     else:
                         for user in lineup_area.line_up_area[lineup_area.start_node].users:
                             if "empty_converting" in dir(user.obj.lock_information[lock.name]):
-                                if time.mktime(pd.Timestamp(lock.log["Time"][-1]).timetuple()) - vessel.env.now > 0:
+                                if time.mktime(pd.Timestamp(lock.logbook[-1]["Timestamp"]).timetuple()) - vessel.env.now > 0:
                                     yield vessel.env.timeout(
-                                        time.mktime(pd.Timestamp(lock.log["Time"][-1]).timetuple()) - vessel.env.now
+                                        time.mktime(pd.Timestamp(lock.logbook[-1]["Timestamp"]).timetuple()) - vessel.env.now
                                     )
 
                         if (door2.users != [] and door2.users[0].priority == -1) or (
@@ -1998,7 +1998,7 @@ class PassLock:
                 ].interpolate(lock.distance_doors2_from_second_waiting_area + vessel.lock_information[lock.name].lock_dist)
 
             vessel.log_entry_extra(
-                vessel.env.now, vessel.log["Location"][-1], "Sailing to first set of lock doors start", vessel.output.copy()
+                vessel.env.now, vessel.logbook[-1]["Geometry"], "Sailing to first set of lock doors start", vessel.output.copy()
             )
             yield vessel.env.timeout(np.max([0, distance_from_start_edge_to_lock_doors]) / vessel.v)
             vessel.log_entry_extra(
@@ -2168,12 +2168,12 @@ class PassLock:
 
         if direction:
             vessel.distance = vessel.env.vessel_traffic_service.provide_distance_to_node(
-                vessel, lock.node_doors1, lock.node_doors2, vessel.log["Location"][-1]
+                vessel, lock.node_doors1, lock.node_doors2, vessel.logbook[-1]["Geometry"]
             )
 
         if not direction:
             vessel.distance = vessel.env.vessel_traffic_service.provide_distance_to_node(
-                vessel, lock.node_doors2, lock.node_doors1, vessel.log["Location"][-1]
+                vessel, lock.node_doors2, lock.node_doors1, vessel.logbook[-1]["Geometry"]
             )
 
     def leave_opposite_lineup_area(vessel, start_node, end_node, direction):
@@ -2212,7 +2212,7 @@ class PassLock:
             vessel.lock_information[lock.name].in_lock = False
             if distance_to_lineup_end:
                 vessel.log_entry_extra(
-                    vessel.env.now, vessel.log["Location"][-1], "Sailing to line-up area start", vessel.output.copy()
+                    vessel.env.now, vessel.logbook[-1]["Geometry"], "Sailing to line-up area start", vessel.output.copy()
                 )
                 yield vessel.env.timeout(np.max([0, distance_to_lineup_end]) / vessel.v)
                 vessel.log_entry_extra(
@@ -2223,7 +2223,7 @@ class PassLock:
             yield vessel.env.timeout(lineup_area.lineup_length / vessel.v)
             vessel.log_entry_extra(vessel.env.now, location_start_lineup_area, "Passing line-up area stop", vessel.output.copy())
             vessel.distance = vessel.env.vessel_traffic_service.provide_distance_to_node(
-                vessel, start_node, end_node, vessel.log["Location"][-1]
+                vessel, start_node, end_node, vessel.logbook[-1]["Geometry"]
             )
 
             if not lineup_area.passing_allowed:
