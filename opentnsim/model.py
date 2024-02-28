@@ -31,7 +31,7 @@ class VesselGenerator:
     """
 
     def __init__(self, vessel_type, vessel_database, loaded=None, random_seed=3):
-        """ Initialization """
+        """Initialization"""
 
         self.vessel_type = vessel_type
         self.vessel_database = vessel_database
@@ -40,11 +40,9 @@ class VesselGenerator:
         random.seed(random_seed)
 
     def generate(self, environment, vessel_name, scenario=None):
-        """ Generate a vessel """
+        """Generate a vessel"""
 
-        vessel_info = self.vessel_database.sample(
-            n=1, random_state=int(1000 * random.random())
-        )
+        vessel_info = self.vessel_database.sample(n=1, random_state=int(1000 * random.random()))
         vessel_data = {}
 
         vessel_data["env"] = environment
@@ -70,6 +68,9 @@ class VesselGenerator:
         vessel_data["route"] = None
         vessel_data["geometry"] = None
 
+        # add a unique id to the id, so that our ships are unique even when resampled
+        vessel_data["id"] = f'{vessel_data["id"]}-{uuid.uuid4()}'
+
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
@@ -81,9 +82,9 @@ class VesselGenerator:
         scenario,
         arrival_process,
     ):
-        """ 
+        """
         Make arrival process
-        
+
         environment:            simpy environment
         arrival_distribution:   specify the distribution from which vessels are generated, int or list
         arrival_process:        process of arrivals
@@ -97,30 +98,21 @@ class VesselGenerator:
             self.inter_arrival_times = [3600 / n for n in arrival_distribution]
 
         elif type(arrival_distribution) == list:
-            raise ValueError(
-                "List should contain an average number of vessels per hour for an entire day: 24 entries."
-            )
+            raise ValueError("List should contain an average number of vessels per hour for an entire day: 24 entries.")
 
         else:
-            raise ValueError(
-                "Specify an arrival distribution: type Integer or type List."
-            )
+            raise ValueError("Specify an arrival distribution: type Integer or type List.")
 
         while True:
-
             # Check simulation time
-            inter_arrival = self.inter_arrival_times[
-                datetime.datetime.fromtimestamp(environment.now).hour
-            ]
+            inter_arrival = self.inter_arrival_times[datetime.datetime.fromtimestamp(environment.now).hour]
 
             # In the case of a Markovian arrival process
             if arrival_process == "Markovian":
-
                 # Make a timestep based on the poisson process
                 yield environment.timeout(random.expovariate(1 / inter_arrival))
 
             elif arrival_process == "Uniform":
-
                 # Make a timestep based on uniform arrivals
                 yield environment.timeout(inter_arrival)
 
@@ -133,10 +125,8 @@ class VesselGenerator:
             vessel = self.generate(environment, "Vessel", scenario)
             vessel.env = environment
             vessel.route = nx.dijkstra_path(environment.FG, origin, destination)
-            vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
-                vessel.route[0]
-            ]
-            
+            vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[vessel.route[0]]
+
             environment.vessels.append(vessel)
             # Move on path
             environment.process(vessel.move())
@@ -148,14 +138,12 @@ class Simulation(core.Identifiable):
     """
 
     def __init__(self, simulation_start, graph, scenario=None):
-        """ 
-        Initialization 
-        
+        """
+        Initialization
+
         scenario: scenario with vessels - should be coupled to the database
         """
-        self.environment = simpy.Environment(
-            initial_time=time.mktime(simulation_start.timetuple())
-        )
+        self.environment = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
         self.environment.FG = graph
         self.environment.routes = pd.DataFrame.from_dict(
             {
@@ -175,23 +163,23 @@ class Simulation(core.Identifiable):
         self,
         origin,
         destination,
-        vessel = None,
-        vessel_generator = None,
+        vessel=None,
+        vessel_generator=None,
         arrival_distribution=1,
         arrival_process="Markovian",
     ):
-        """ 
+        """
         Make arrival process
-        
+
         environment:            simpy environment
         arrival_distribution:   specify the distribution from which vessels are generated, int or list
         arrival_process:        process of arrivals
         """
-        
+
         if vessel_generator == None:
             self.environment.vessels.append(vessel)
             self.environment.process(vessel.move())
-            
+
         else:
             self.environment.process(
                 vessel_generator.arrival_process(
@@ -205,9 +193,9 @@ class Simulation(core.Identifiable):
             )
 
     def run(self, duration=24 * 60 * 60):
-        """ 
-        Run the simulation 
-        
+        """
+        Run the simulation
+
         duration:               specify the duration of the simulation in seconds
         """
 

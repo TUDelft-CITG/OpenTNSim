@@ -156,18 +156,11 @@ class HasLineUpArea(core.Movable, HasMultiDiGraph):
         self.on_pass_edge_functions.append(self.leave_lineup_area)
 
     def approach_lineup_area(self, origin, destination):
-        # if destination != self.route[-1]:
-        # next_node = self.route[self.route.index(destination)+1]
         k1 = sorted(
             self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
         )[0]
-        k2 = sorted(
-            self.multidigraph[destination][origin], key=lambda x: self.multidigraph[destination][origin][x]["geometry"].length
-        )[0]
         if "Line-up area" in self.multidigraph.edges[origin, destination, k1].keys():  # if vessel is approaching the line-up area
             yield from PassLock.approach_lineup_area(self, origin, destination)
-            # elif "Line-up area" in self.multidigraph.edges[destination, origin,k2].keys():
-            #     yield from PassLock.approach_lineup_area(self, destination, origin)
 
     def leave_lineup_area(self, origin, destination):
         k1 = sorted(
@@ -457,7 +450,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
 
         # Add to the graph:
         if "FG" in dir(self.env):
-            # TODO: cast to DiGraph
+            # Add the lock to the edge or append it to the existing list
             if "Lock" not in self.multidigraph.edges[self.node_doors1, self.node_doors2, k_edge].keys():
                 self.multidigraph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"] = [self]
                 self.multidigraph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"] = [self]
@@ -1232,8 +1225,6 @@ class PassLock:
 
                 wait_for_lineup_area = vessel.env.now
                 vessel.v_before_lock = vessel.v
-                # TODO: check if id's are unique
-                # vessel.id = vessel.id + "_" + str(vessel.arrival_time)
 
                 # Assigning the lock chain series with least expected waiting time to the vessel
                 lock_queue_length = []
