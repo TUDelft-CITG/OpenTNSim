@@ -117,7 +117,8 @@ def create_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arriv
     return vessel
 
 
-def test_lock(hydrodynamics_env):
+@pytest.fixture
+def lock_env(hydrodynamics_env):
     env = hydrodynamics_env
     lock = opentnsim.lock.IsLock(
         env=env,
@@ -130,7 +131,7 @@ def test_lock(hydrodynamics_env):
         distance_doors1_from_first_waiting_area=400,
         distance_doors2_from_second_waiting_area=400,
         speed_reduction_factor=1,
-        detector_nodes=[],
+        detector_nodes=[0, 1],
     )
     opentnsim.lock.IsLockLineUpArea(
         env=env, name="Lock", distance_to_lock_doors=0, start_node=0, end_node=1, lineup_length=400, speed_reduction_factor=1
@@ -140,6 +141,19 @@ def test_lock(hydrodynamics_env):
     )
     opentnsim.lock.IsLockWaitingArea(env=env, name="Lock", distance_from_node=0, node=0)
     opentnsim.lock.IsLockWaitingArea(env=env, name="Lock", distance_from_node=0, node=1)
+
+    env.lock = lock
+    return env
+
+
+def test_is_lock(lock_env):
+    env = lock_env
+    lock = env.lock
+    assert hasattr(lock, "next_lockage_length"), "lock should have next_lockage_length"
+
+
+def test_sail_through_lock(lock_env):
+    env = lock_env
 
     vessel = create_vessel(env, 0, 0, 1, None, 200, 30, 8, v=4, arrival_time=datetime.datetime(2024, 1, 1, 0, 0, 0))
 

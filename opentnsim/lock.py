@@ -39,6 +39,12 @@ class CustomLog(core.Log):
         self.logbook.append(entry)
 
 
+class IsDetectorNode:
+    def __init__(self, infrastructure, *args, **kwargs):
+        self.infrastructure = infrastructure
+        super().__init__(*args, **kwargs)
+
+
 class HasMultiDiGraph(core.SimpyObject):
     """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
 
@@ -446,7 +452,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                     [self.node_doors1, self.node_doors2] == [route[-2], route[-1]]
                     or [self.node_doors1, self.node_doors2] == [route[-1], route[-2]]
                 ):
-                    self.multidigraph.nodes[detector_node]["Detector"][route[-1]] = core.IsDetectorNode(self)
+                    self.multidigraph.nodes[detector_node]["Detector"][route[-1]] = IsDetectorNode(self)
                     break
 
         # Add to the graph:
@@ -460,6 +466,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                 self.multidigraph.edges[self.node_doors2, self.node_doors1, k_edge]["Lock"].append(self)
 
     def check_priority(self, vessel, direction):
+        # we do not have priority
+        condition = False
         waiting_area = self.find_previous_waiting_area(vessel, direction)
         if self.priority_rules is not None:
             condition = self.priority_rules.evaluate(waiting_area.node).iloc[0]
@@ -1575,9 +1583,6 @@ class PassLock:
                                     )
                                 yield vessel.env.timeout(waiting_time)
 
-                import ipdb
-
-                ipdb.set_trace()
                 if vessel.logbook[-1]["Message"] == "Waiting in line-up area stop":
                     vessel.logbook[-1]["Timestamp"] = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
                 elif vessel.logbook[-1]["Message"] == "Waiting in line-up area start":
@@ -1965,14 +1970,15 @@ class PassLock:
                     )
                 else:
                     distance_from_start_edge_to_lock_doors = lineup_area.distance_to_lock_doors
+
                 k = sorted(
-                    lock.env.FG[lock.node_doors1][lock.node_doors2],
-                    key=lambda x: lock.env.FG[lock.node_doors1][lock.node_doors2][x]["geometry"].length,
+                    lock.multidigraph[lock.node_doors1][lock.node_doors2],
+                    key=lambda x: lock.multidigraph[lock.node_doors1][lock.node_doors2][x]["geometry"].length,
                 )[0]
                 location_first_set_of_lock_doors = vessel.env.vessel_traffic_service.provide_location_over_edges(
                     vessel, previous_waiting_area.node, lock.node_doors2, lock.distance_doors1_from_first_waiting_area
                 )
-                vessel.lock_information[lock.name].lock_position = lock.env.FG.edges[lock.node_doors1, lock.node_doors2, k][
+                vessel.lock_information[lock.name].lock_position = lock.multidigraph.edges[lock.node_doors1, lock.node_doors2, k][
                     "geometry"
                 ].interpolate(lock.distance_doors1_from_first_waiting_area + vessel.lock_information[lock.name].lock_dist)
 
@@ -1987,13 +1993,13 @@ class PassLock:
                 else:
                     distance_from_start_edge_to_lock_doors = lineup_area.distance_to_lock_doors
                 k = sorted(
-                    lock.env.FG[lock.node_doors2][lock.node_doors1],
-                    key=lambda x: lock.env.FG[lock.node_doors2][lock.node_doors1][x]["geometry"].length,
+                    lock.multidigraph[lock.node_doors2][lock.node_doors1],
+                    key=lambda x: lock.multidigraph[lock.node_doors2][lock.node_doors1][x]["geometry"].length,
                 )[0]
                 location_first_set_of_lock_doors = vessel.env.vessel_traffic_service.provide_location_over_edges(
                     vessel, previous_waiting_area.node, lock.node_doors1, lock.distance_doors2_from_second_waiting_area
                 )
-                vessel.lock_information[lock.name].lock_position = lock.env.FG.edges[lock.node_doors2, lock.node_doors1, k][
+                vessel.lock_information[lock.name].lock_position = lock.multidigraph.edges[lock.node_doors2, lock.node_doors1, k][
                     "geometry"
                 ].interpolate(lock.distance_doors2_from_second_waiting_area + vessel.lock_information[lock.name].lock_dist)
 
@@ -2107,19 +2113,19 @@ class PassLock:
             distance_to_second_pair_of_lock_doors = lock.lock_length - vessel.lock_information[lock.name].lock_dist
             if direction:
                 k = sorted(
-                    lock.env.FG[lock.node_doors1][lock.node_doors2],
-                    key=lambda x: lock.env.FG[lock.node_doors1][lock.node_doors2][x]["geometry"].length,
+                    lock.multidigraph[lock.node_doors1][lock.node_doors2],
+                    key=lambda x: lock.multidigraph[lock.node_doors1][lock.node_doors2][x]["geometry"].length,
                 )[0]
-                vessel.lock_information[lock.name].position_second_pair_of_lock_doors = lock.env.FG.edges[
+                vessel.lock_information[lock.name].position_second_pair_of_lock_doors = lock.multidigraph.edges[
                     lock.node_doors1, lock.node_doors2, k
                 ]["geometry"].interpolate(lock.distance_doors2_from_second_waiting_area + lock.lock_length)
 
             if not direction:
                 k = sorted(
-                    lock.env.FG[lock.node_doors2][lock.node_doors1],
-                    key=lambda x: lock.env.FG[lock.node_doors2][lock.node_doors1][x]["geometry"].length,
+                    lock.multidigraph[lock.node_doors2][lock.node_doors1],
+                    key=lambda x: lock.multidigraph[lock.node_doors2][lock.node_doors1][x]["geometry"].length,
                 )[0]
-                vessel.lock_information[lock.name].position_second_pair_of_lock_doors = lock.env.FG.edges[
+                vessel.lock_information[lock.name].position_second_pair_of_lock_doors = lock.multidigraph.edges[
                     lock.node_doors2, lock.node_doors1, k
                 ]["geometry"].interpolate(lock.distance_doors1_from_first_waiting_area + lock.lock_length)
 
