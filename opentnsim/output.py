@@ -134,17 +134,14 @@ class HasOutput:
     def update_waiting_area_status_report(self, waiting_area, node_waiting_area):
         self.output["visited_waiting_areas"].append(waiting_area.name)
         waiting_area.output["visiting_vessels"] = [user.obj for user in waiting_area.waiting_area[node_waiting_area].users]
-        return
 
     def update_lineup_area_status_report(self, lineup_area, node_lineup_area):
         self.output["visited_lineup_areas"].append(lineup_area.name)
         lineup_area.output["visiting_vessels"] = [user.obj for user in lineup_area.line_up_area[node_lineup_area].users]
-        return
 
     def update_lock_status_report(self, lock):
         self.output["visited_lock_chambers"].append(lock.name)
         lock.output["visiting_vessels"] = [user.obj for user in lock.resource.users]
-        return
 
     def update_turing_basin_status_report(self, turning_basin, turning_stop=False):
         turning_basin.output["vessel_information"] = deepcopy(self.output)
@@ -160,7 +157,6 @@ class HasOutput:
                 deepcopy(turning_basin.output)["vessel_departure"] - deepcopy(turning_basin.output)["vessel_arrival"]
             )
             self.output["turning_times"].append(deepcopy(turning_basin.output)["vessel_turning_time"])
-        return
 
     def update_waiting_status(self, priority=False, availability=False, tidal_window=False, waiting_stop=False):
         if not waiting_stop:
@@ -178,7 +174,6 @@ class HasOutput:
                 self.output["waiting_time"]["Tidal window"] = pd.Timedelta(int(self.env.now - self.output["waiting_start"]), "s")
             elif priority:
                 self.output["waiting_time"]["Priority"] = pd.Timedelta(int(self.env.now - self.output["waiting_start"]), "s")
-        return
 
     def update_anchorage_status_report(self, anchorage, departure=False):
         anchorage.output["vessel_information"] = deepcopy(self.output)
@@ -197,11 +192,9 @@ class HasOutput:
                 del self.output["waiting_time"]
             except:
                 pass
-        return
 
     def update_terminal_berth_status_report(self, terminal, berth, departure=False):
         terminal.output[berth.name]["vessel_information"] = deepcopy(self.output)
-        return
 
     def update_sailing_status_report(self, current_node, next_node, edge):
         self.output["current_node"] = current_node
