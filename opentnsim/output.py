@@ -190,10 +190,10 @@ class HasOutput:
             try:
                 del self.output["waiting_start"]
                 del self.output["waiting_time"]
-            except:
+            except KeyError:
                 pass
 
-    def update_terminal_berth_status_report(self, terminal, berth, departure=False):
+    def update_terminal_berth_status_report(self, terminal, berth):
         terminal.output[berth.name]["vessel_information"] = deepcopy(self.output)
 
     def update_sailing_status_report(self, current_node, next_node, edge):
