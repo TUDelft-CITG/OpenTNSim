@@ -324,7 +324,7 @@ class Routable(SimpyObject):
         If you want the multidigraph use the HasMultiGraph mixin
 
         """
-        graph is None
+        graph = None
         if hasattr(self.env, "graph"):
             graph = self.env.graph
         elif hasattr(self.env, "FG"):
