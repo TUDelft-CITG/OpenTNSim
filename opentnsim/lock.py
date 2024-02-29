@@ -1236,13 +1236,14 @@ class PassLock:
                         break
 
                 # If the function did not yet assign a lock chain series
-                shortest_lineup_queue = lineup_areas[lock_queue_length.index(min(lock_queue_length))].name
                 if (
                     lineup_area.name not in vessel.lock_information.keys()
                     and "lock_information" in dir(vessel)
-                    and shortest_lineup_queue not in vessel.lock_information.keys()
+                    and lineup_areas[lock_queue_length.index(min(lock_queue_length))].name not in vessel.lock_information.keys()
                 ):
-                    vessel.lock_information[shortest_lineup_queue] = HasLockInformation()
+                    vessel.lock_information[
+                        lineup_areas[lock_queue_length.index(min(lock_queue_length))].name
+                    ] = HasLockInformation()
 
                 yield from access_lineup_area(vessel, lineup_area)
 
@@ -1335,6 +1336,7 @@ class PassLock:
                 waiting_area.waiting_area[node_waiting_area].release(vessel.waiting_area_access)
                 break
 
+    @staticmethod
     def approach_lineup_area(vessel, start_node, end_node):
         """Processes vessels which are approaching the line-up area of the lock complex:
             determines whether the assigned position in the line-up area (distance in [m]) should be changed as the preceding vessel(s),
@@ -1472,6 +1474,7 @@ class PassLock:
             )
             vessel.distance = 0
 
+    @staticmethod
     def leave_lineup_area(vessel, start_node, end_node):
         """Processes vessels which are waiting in the line-up area of the lock complex:
             requesting access to the lock chamber given the governing phase in the lock cycle of the lock chamber and calculates the
