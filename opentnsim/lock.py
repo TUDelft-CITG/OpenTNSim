@@ -646,8 +646,6 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                 self.salinity[time_index + t[0] :] = outer_salinity[time_index + t[0] :]
                 break
 
-        return
-
     def levelling_to_harbour(self, V_ship, levelling_time, side, delay=0):
         index_node_doors1 = list(self.multidigraph.nodes).index(self.node_doors1)
         index_node_doors2 = list(self.multidigraph.nodes).index(self.node_doors2)
