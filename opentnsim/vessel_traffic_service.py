@@ -196,7 +196,7 @@ class VesselTrafficService:
         node_anchorage = 0
         for anchorage_index, node_anchorage in enumerate(sorted_nodes_anchorages):
             if sorted_users_of_anchorages[anchorage_index] < sorted_capacity_of_anchorages[anchorage_index]:
-                node_anchorage
+                # node anchorage is found
                 break
 
         return node_anchorage
@@ -252,9 +252,6 @@ class VesselTrafficService:
                 )
             else:
                 current_velocity = [np.average(current_velocity[t], weights=relative_layer_height) for t in range(len(times))]
-
-        else:
-            current_velocity = current_velocity
 
         if len(current_velocity) > 2:
             current_governing_current_velocity = current_velocity[2]
@@ -562,6 +559,8 @@ class VesselTrafficService:
                 loc="upper left",
                 bbox_to_anchor=(1.0, 1.0),
             )
+            fig.tight_layout()
+
             plt.show()
         return vertical_tidal_accessibility, vertical_tidal_windows, net_ukcs
 
