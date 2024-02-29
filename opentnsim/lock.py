@@ -1825,7 +1825,7 @@ class PassLock:
                     lock.node_doors2,
                     waiting_required,
                 )
-                vessel.Location_end_of_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(
+                vessel.location_end_of_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(
                     vessel,
                     start_node,
                     lock.node_doors2,
@@ -1845,7 +1845,7 @@ class PassLock:
                     lock.node_doors1,
                     waiting_required,
                 )
-                vessel.Location_end_of_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(
+                vessel.location_end_of_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(
                     vessel,
                     start_node,
                     lock.node_doors1,
@@ -1914,6 +1914,7 @@ class PassLock:
                     - distance_to_end_lineup
                 )
 
+    @staticmethod
     def leave_lock(vessel, node_doors1, node_doors2, direction):
         """Processes vessels which are waiting in the lock chamber to be levelled and after levelling:
             checks if vessels which have entered the lock chamber have to wait for the other vessels to enter the lock chamber and
@@ -2027,7 +2028,7 @@ class PassLock:
 
             # Formal request access to lock chamber and calculate position within the lock chamber
             for user in lock.in_next_lockage[node_doors2].users:
-                if not user.obj.id == vessel.id:
+                if user.obj.id != vessel.id:
                     yield lock.length.put(lock.length.capacity - lock.length.level)
                 else:
                     break
@@ -2162,6 +2163,7 @@ class PassLock:
                 vessel, lock.node_doors2, lock.node_doors1, vessel.logbook[-1]["Geometry"]
             )
 
+    @staticmethod
     def leave_opposite_lineup_area(vessel, start_node, end_node, direction):
         """Processes vessels which have left the lock chamber after levelling and are now in the next line-up area in order to leave the lock complex through the next waiting area:
             release of their requests for accessing their second encountered line-up area and lock chamber.
@@ -2180,7 +2182,8 @@ class PassLock:
             if lineup_area.name not in vessel.lock_information.keys():
                 continue
 
-            lock, direction = lineup_area.find_lock(vessel, start_node, end_node, direction=-1)
+            # TODO: check if direction=direction works
+            lock, direction = lineup_area.find_lock(vessel, start_node, end_node, direction=direction)
 
             if direction:
                 distance_from_lock_doors = lock.distance_doors2_from_second_waiting_area
