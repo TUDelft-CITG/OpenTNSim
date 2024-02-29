@@ -1004,6 +1004,7 @@ class VesselTrafficService:
                 loc="upper left",
                 bbox_to_anchor=(1.0, 1.0),
             )
+            fig.tight_layout()
             plt.show()
 
         return (
@@ -1096,7 +1097,7 @@ class VesselTrafficService:
         if plot:
             # Create figure
             if not ax_left:
-                fig, ax_left = plt.subplots(figsize=[16 * 2 / 3, 6])
+                _, ax_left = plt.subplots(figsize=[16 * 2 / 3, 6])
                 ax_right = ax_left.twinx()
 
             # Plot net UKC
