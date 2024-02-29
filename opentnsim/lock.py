@@ -909,9 +909,9 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
         else:
             levelling_time = self.levelling_time
 
-        V_levelling, S_lock, V_loss_lev = self.levelling_to_harbour(
-            self.total_ship_volume_in_lock(), levelling_time, self.node_open, delay
-        )
+        # V_levelling, S_lock, V_loss_lev are not used
+        _ = self.levelling_to_harbour(self.total_ship_volume_in_lock(), levelling_time, self.node_open, delay)
+
         return levelling_time
 
     def convert_chamber(self, environment, new_level, number_of_vessels, vessel, timeout_required=True):
@@ -1236,14 +1236,13 @@ class PassLock:
                         break
 
                 # If the function did not yet assign a lock chain series
-                if lineup_area.name not in vessel.lock_information.keys():
-                    if (
-                        "lock_information" in dir(vessel)
-                        and lineup_areas[lock_queue_length.index(min(lock_queue_length))].name not in vessel.lock_information.keys()
-                    ):
-                        vessel.lock_information[
-                            lineup_areas[lock_queue_length.index(min(lock_queue_length))].name
-                        ] = HasLockInformation()
+                shortest_lineup_queue = lineup_areas[lock_queue_length.index(min(lock_queue_length))].name
+                if (
+                    lineup_area.name not in vessel.lock_information.keys()
+                    and "lock_information" in dir(vessel)
+                    and shortest_lineup_queue not in vessel.lock_information.keys()
+                ):
+                    vessel.lock_information[shortest_lineup_queue] = HasLockInformation()
 
                 yield from access_lineup_area(vessel, lineup_area)
 
