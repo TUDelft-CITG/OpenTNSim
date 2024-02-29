@@ -795,9 +795,6 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                 if time_index + t[0] < len(self.discharge_fresh) - 1:
                     self.discharge_fresh[time_index + t[0]] = -V_ship / (end_time_passing_door - start_time_passing_door)
                     self.discharge_res[time_index + t[0]] = -V_ship / (end_time_passing_door - start_time_passing_door)
-        # Q_avg = (V_ship_upstr + V_exch_inner) / T_door_open
-        # V_loss_exch = V_ship_upstr - V_ship_downstr
-        # S_avg = -(M_inner_a + M_inner_b + M_inner_c - (V_ship_upstr + V_exch_inner) * S_lock_inner) / (V_ship_downstr + V_exch_inner)
         return S_lock
 
     def total_ship_volume_in_lock(self):
@@ -838,7 +835,6 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                 else:
                     lock.discharge_res[time_step + time_index] += 0
                     lock.discharge_fresh[time_step + time_index] += 0
-            return
 
         index_node_doors1 = list(self.multidigraph.nodes).index(self.node_doors1)
         index_node_doors2 = list(self.multidigraph.nodes).index(self.node_doors2)
