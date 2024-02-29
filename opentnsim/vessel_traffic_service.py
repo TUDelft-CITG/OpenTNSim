@@ -374,7 +374,8 @@ class VesselTrafficService:
             - components_calc:
 
         """
-        MBL, water_level, available_water_depth = self.provide_water_depth(vessel, node, delay)
+        # ignore water_level
+        MBL, _, available_water_depth = self.provide_water_depth(vessel, node, delay)
 
         ukc_s, ukc_p, ukc_r, fwa = np.zeros(4)
         if "Vertical tidal restriction" in vessel.multidigraph.nodes[node]["Info"].keys():
@@ -470,7 +471,7 @@ class VesselTrafficService:
         net_ukc = net_ukcs["min_net_ukc"].to_numpy()
 
         # Determine zero crossinsg
-        zero_crossings = np.where(np.diff(np.sign(net_ukc)))[0]
+        zero_crossings = np.nonzero(np.diff(np.sign(net_ukc)))
         for root in [time_net_ukc[i] for i in zero_crossings]:
             # -if the net ukc a moment later than the root is higher than the required water depth:
             if net_ukc[bisect.bisect_right(time_net_ukc, root)] > 0:
@@ -1055,10 +1056,10 @@ class VesselTrafficService:
             if inaccessibility
         ]
         accessible_indexes = np.array(
-            [indexes[-1] for indexes in np.split(accessible_indexes, np.where(np.diff(accessible_indexes) != 1)[0] + 1)], dtype=int
+            [indexes[-1] for indexes in np.split(accessible_indexes, np.nonzero(np.diff(accessible_indexes) != 1) + 1)], dtype=int
         )
         inaccessible_indexes = np.array(
-            [indexes[0] for indexes in np.split(inaccessible_indexes, np.where(np.diff(inaccessible_indexes) != 1)[0] + 1)],
+            [indexes[0] for indexes in np.split(inaccessible_indexes, np.nonzero(np.diff(inaccessible_indexes) != 1) + 1)],
             dtype=int,
         )
         tidal_window_indexes = np.sort(np.append(accessible_indexes, inaccessible_indexes))
