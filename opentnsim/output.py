@@ -196,7 +196,7 @@ class HasOutput:
     def update_terminal_berth_status_report(self, terminal, berth):
         terminal.output[berth.name]["vessel_information"] = deepcopy(self.output)
 
-    def update_sailing_status_report(self, current_node, next_node, edge):
+    def update_sailing_status_report(self, current_node, next_node):
         self.output["current_node"] = current_node
         self.output["next_node"] = next_node
         return deepcopy(self.output)
