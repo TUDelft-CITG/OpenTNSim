@@ -4,6 +4,7 @@
 import json
 import logging
 import uuid
+import numbers
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -91,13 +92,13 @@ class VesselGenerator:
         """
 
         # Create an array with inter-arrival times -- average number of seconds between arrivals
-        if type(arrival_distribution) == int or type(arrival_distribution) == float:
+        if isinstance(arrival_distribution, numbers.Number):
             self.inter_arrival_times = [3600 / arrival_distribution] * 24
 
-        elif type(arrival_distribution) == list and len(arrival_distribution) == 24:
+        elif isinstance(arrival_distribution, list) and len(arrival_distribution) == 24:
             self.inter_arrival_times = [3600 / n for n in arrival_distribution]
 
-        elif type(arrival_distribution) == list:
+        elif isinstance(arrival_distribution, list):
             raise ValueError("List should contain an average number of vessels per hour for an entire day: 24 entries.")
 
         else:
