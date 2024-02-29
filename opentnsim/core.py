@@ -163,8 +163,6 @@ class VesselProperties:
     - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
     """
 
-    # TODO: add blockage factor S to vessel properties
-
     def __init__(
         self,
         type,
@@ -319,13 +317,26 @@ class Routable(SimpyObject):
 
     @property
     def graph(self):
-        # TODO: explicitly return a digraph or graph but not a multigraph
+        """
+        Return the graph of the underlying environment.
+
+        If it's multigraph cast to corresponding type
+        If you want the multidigraph use the HasMultiGraph mixin
+
+        """
+        graph is None
         if hasattr(self.env, "graph"):
-            return self.env.graph
+            graph = self.env.graph
         elif hasattr(self.env, "FG"):
-            return self.env.FG
+            graph = self.env.FG
         else:
             raise ValueError("Routable expects .graph to be present on env")
+
+        if isinstance(graph, nx.MultiDiGraph):
+            return nx.DiGraph(graph)
+        elif isinstance(graph, nx.MultiGraph):
+            return nx.Graph(graph)
+        return graph
 
 
 @deprecated.deprecated(reason="Use Routable instead of Routeable")
