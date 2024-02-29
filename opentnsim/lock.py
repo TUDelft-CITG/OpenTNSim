@@ -1589,9 +1589,6 @@ class PassLock:
             # Vessel releases its request to enter the line-up area, made in the waiting area
             lineup_area.enter_line_up_area[start_node].release(vessel.lock_information[lock.name].enter_lineup_length)
 
-            # Find next lineup_area
-            opposing_lineup_area = lock.find_next_lineup_area(vessel, direction)
-
             def access_lock_chamber(
                 vessel,
                 direction,
@@ -2182,7 +2179,6 @@ class PassLock:
             if lineup_area.name not in vessel.lock_information.keys():
                 continue
 
-            # TODO: check if direction=direction works
             lock, direction = lineup_area.find_lock(vessel, start_node, end_node, direction=direction)
 
             if direction:
