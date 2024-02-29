@@ -1036,7 +1036,7 @@ class VesselTrafficService:
             limit_1 if not math.isnan(limit_1) else limit_2 for limit_1, limit_2 in tidal_accessibility.Limit.to_numpy()
         ]
         tidal_accessibility_condition = [
-            condition_1 if type(condition_1) == str else condition_2
+            condition_1 if isinstance(condition_1, str) else condition_2
             for condition_1, condition_2 in tidal_accessibility.Condition.to_numpy()
         ]
         tidal_accessibility_accessibility = [
