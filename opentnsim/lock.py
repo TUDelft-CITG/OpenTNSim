@@ -1598,7 +1598,6 @@ class PassLock:
                 lineup_area,
                 lock,
                 approach_node,
-                opposing_lineup_area,
                 door1,
                 door2,
                 node_door1,
@@ -1617,10 +1616,6 @@ class PassLock:
                     - lock: an object within the network which is generated with the IsLock mixin class and
                             assigned to the vessel as the lock series with the least expected total waiting time
                     - approach_node: a string which includes the name of the node at which the lock chamber is located in the network
-                    - opposing_lineup_area: an object within the network which is generated with the IsLineUpArea mixin class and
-                                            assigned to the vessel to be entered when leaving the lock chamber
-                    - node_opposing_lineup_area: a string which includes the name of the node at which the line-up area is located on the
-                                                 opposite side of the lock chamber in the network
                     - door1: an object created in the IsLock class which resembles the set of lock doors which is first encountered by
                              the vessel, which should be supscripted to, using a string which includes the name of the node at which this
                              lock door is located in the network and was specified as input in the IsLock class
@@ -1824,7 +1819,6 @@ class PassLock:
                     lineup_area,
                     lock,
                     lock.node_doors1,
-                    opposing_lineup_area,
                     lock.doors_1[lock.node_doors1],
                     lock.doors_2[lock.node_doors2],
                     lock.node_doors1,
@@ -1845,7 +1839,6 @@ class PassLock:
                     lineup_area,
                     lock,
                     lock.node_doors2,
-                    opposing_lineup_area,
                     lock.doors_2[lock.node_doors2],
                     lock.doors_1[lock.node_doors1],
                     lock.node_doors2,
