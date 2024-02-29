@@ -49,7 +49,7 @@ def env(graph):
     env.epoch = t_start
     env.simulation_start = t_start
     env.simulation_stop = t_stop
-    # TODO: switch to env.graph
+
     env.FG = graph
     # run for a day
     return env
