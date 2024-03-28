@@ -80,6 +80,7 @@ tests_require = [
     "ipywidgets==7.7",
     "jsonschema==3.0",
     "jupyterlab_widgets==3",
+    "sphinx",
 ]
 
 with open("README.md", "r") as des:
