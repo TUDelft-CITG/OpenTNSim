@@ -48,6 +48,7 @@ requires = [
     # deprecate old functions
     "Deprecated",
     "tqdm",
+    "xarray",
 ]
 
 setup_requirements = [
@@ -75,10 +76,11 @@ tests_require = [
     "notebook==6.4",
     "nbconvert==6.4",
     "jupyter",
-    "jupyter-book==0.13.1",
+    "jupyter-book",
     "ipywidgets==7.7",
     "jsonschema==3.0",
     "jupyterlab_widgets==3",
+    "sphinx",
 ]
 
 with open("README.md", "r") as des:

@@ -75,3 +75,5 @@ MANIFEST
 *.mp4
 *.kml
 .vscode/settings.json
+notebooks/Port_of_Rotterdam/geospatial_data
+notebooks/Port_of_Rotterdam
