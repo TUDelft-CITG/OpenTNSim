@@ -29,7 +29,7 @@ jobs:
           name: Build docs
           command: |
             docker exec -it opentnsim bash -c "pip install sphinx"
-            docker exec -it opentnsim bash -c "python setup.py docs"
+            docker exec -it opentnsim bash -c "sphinx-build docs docs/_build"
             docker cp opentnsim:/OpenTNSim/docs/_build/html /tmp/artifacts/docs
 
       - run:
