@@ -4,27 +4,29 @@
 import json
 import logging
 import uuid
-import numbers
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
 import networkx as nx
+import numpy as np
 
 # spatial libraries
 import pyproj
 import shapely.geometry
+import pytz
 
 # additional packages
 import datetime, time
 import pandas as pd
 import random
+import xarray as xr
 
 # import core from self
 import opentnsim.core as core
+import opentnsim.vessel_traffic_service as vessel_traffic_service
 
 logger = logging.getLogger(__name__)
-
 
 class VesselGenerator:
     """
@@ -32,18 +34,24 @@ class VesselGenerator:
     """
 
     def __init__(self, vessel_type, vessel_database, loaded=None, random_seed=3):
-        """Initialization"""
+        """ Initialization """
 
         self.vessel_type = vessel_type
         self.vessel_database = vessel_database
         self.loaded = loaded
-
         random.seed(random_seed)
 
-    def generate(self, environment, vessel_name, scenario=None):
-        """Generate a vessel"""
+    def generate(self, environment, vessel_name, fleet_distribution=None, scenario=None):
+        """ Generate a vessel """
 
-        vessel_info = self.vessel_database.sample(n=1, random_state=int(1000 * random.random()))
+        if fleet_distribution == None:
+            vessel_info = self.vessel_database.sample(
+                n=1, random_state=int(1000 * random.random())
+            )
+        else:
+            vessel_info = self.vessel_database.sample(
+                n=1, weights=fleet_distribution,random_state=int(1000 * random.random())
+            )
         vessel_data = {}
 
         vessel_data["env"] = environment
@@ -65,13 +73,9 @@ class VesselGenerator:
                 vessel_data["level"] = vessel_data["capacity"]
             else:
                 vessel_data["level"] = 0
-
         vessel_data["route"] = None
         vessel_data["geometry"] = None
-
-        # add a unique id to the id, so that our ships are unique even when resampled
-        vessel_data["id"] = f'{vessel_data["id"]}-{uuid.uuid4()}'
-
+        self.vessel_type(**vessel_data)
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
@@ -82,38 +86,48 @@ class VesselGenerator:
         arrival_distribution,
         scenario,
         arrival_process,
+        fleet_distribution,
     ):
-        """
+        """ 
         Make arrival process
-
+        
         environment:            simpy environment
         arrival_distribution:   specify the distribution from which vessels are generated, int or list
         arrival_process:        process of arrivals
         """
 
         # Create an array with inter-arrival times -- average number of seconds between arrivals
-        if isinstance(arrival_distribution, numbers.Number):
+        if type(arrival_distribution) == int or type(arrival_distribution) == float:
             self.inter_arrival_times = [3600 / arrival_distribution] * 24
 
-        elif isinstance(arrival_distribution, list) and len(arrival_distribution) == 24:
+        elif type(arrival_distribution) == list and len(arrival_distribution) == 24:
             self.inter_arrival_times = [3600 / n for n in arrival_distribution]
 
-        elif isinstance(arrival_distribution, list):
-            raise ValueError("List should contain an average number of vessels per hour for an entire day: 24 entries.")
+        elif type(arrival_distribution) == list:
+            raise ValueError(
+                "List should contain an average number of vessels per hour for an entire day: 24 entries."
+            )
 
         else:
-            raise ValueError("Specify an arrival distribution: type Integer or type List.")
+            raise ValueError(
+                "Specify an arrival distribution: type Integer or type List."
+            )
 
         while True:
+
             # Check simulation time
-            inter_arrival = self.inter_arrival_times[datetime.datetime.fromtimestamp(environment.now).hour]
+            inter_arrival = self.inter_arrival_times[
+                datetime.datetime.fromtimestamp(environment.now).hour
+            ]
 
             # In the case of a Markovian arrival process
             if arrival_process == "Markovian":
+
                 # Make a timestep based on the poisson process
                 yield environment.timeout(random.expovariate(1 / inter_arrival))
 
             elif arrival_process == "Uniform":
+
                 # Make a timestep based on uniform arrivals
                 yield environment.timeout(inter_arrival)
 
@@ -123,14 +137,18 @@ class VesselGenerator:
                 )
 
             # Create a vessel
-            vessel = self.generate(environment, "Vessel", scenario)
+            vessel = self.generate(environment, "Vessel", fleet_distribution, scenario)
+            vessel.output = {}
+            #core.Output.vessel_dependent_output(vessel)
             vessel.env = environment
             vessel.route = nx.dijkstra_path(environment.FG, origin, destination)
-            vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[vessel.route[0]]
-
+            vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[
+                vessel.route[0]
+            ]
             environment.vessels.append(vessel)
             # Move on path
-            environment.process(vessel.move())
+            process = environment.process(vessel.move())
+            vessel.process = process
 
 
 class Simulation(core.Identifiable):
@@ -138,14 +156,21 @@ class Simulation(core.Identifiable):
     A class to generate vessels from a database
     """
 
-    def __init__(self, simulation_start, graph, scenario=None):
-        """
-        Initialization
-
+    def __init__(self, graph, simulation_start=datetime.datetime.now(),simulation_duration=None, simulation_stop=None, hydrodynamic_data=None, vessel_speed_data=None, scenario=None):
+        """ 
+        Initialization 
+        
         scenario: scenario with vessels - should be coupled to the database
         """
         self.environment = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
         self.environment.FG = graph
+        self.environment.simulation_start = simulation_start
+        self.environment.simulation_stop = simulation_stop
+        self.simulation_duration = simulation_duration
+        if self.environment.simulation_stop:
+            self.simulation_duration = self.environment.simulation_stop-self.environment.simulation_start
+        else:
+            self.environment.simulation_stop = self.environment.simulation_start+self.simulation_duration
         self.environment.routes = pd.DataFrame.from_dict(
             {
                 "Origin": [],
@@ -159,19 +184,49 @@ class Simulation(core.Identifiable):
         self.scenario = scenario
 
         self.environment.vessels = []
+        self.output = {}
+
+        if not vessel_speed_data:
+            vessel_speed_data = None
+            # vessel_speed_data = pd.DataFrame(columns=['edge', 'speed'])
+            # for idx, edge in enumerate(graph.edges):
+            #     vessel_speed_data.at[idx, 'edge'] = edge
+            #     vessel_speed_data.at[idx, 'speed'] = np.NaN
+            # vessel_speed_data.set_index('edge')
+
+        if not hydrodynamic_data:
+            hydrodynamic_data = None
+            # hydrodynamic_data = xr.Dataset()
+            # stations = list(graph.nodes)
+            # times = [simulation_start, simulation_stop]
+            # layers = [0]
+            # static_data = [np.NaN] * len(graph.nodes)
+            # dynamic_time_data = [[np.NaN, np.NaN]] * len(graph.nodes)
+            # dynamic_time_layer_data = [[[np.NaN], [np.NaN]]] * len(graph.nodes)
+            # MBL = xr.DataArray(data=static_data, dims='STATION', coords=dict(STATION=stations))
+            # wlev = xr.DataArray(data=dynamic_time_data, dims=['STATION', 'TIME'],
+            #                     coords=dict(STATION=stations, TIME=times))
+            # cvel = xr.DataArray(data=dynamic_time_layer_data, dims=['STATION', 'TIME', 'LAYER'],
+            #                     coords=dict(STATION=stations, TIME=times, LAYER=layers))
+            # hydrodynamic_data['MBL'] = MBL
+            # hydrodynamic_data['Water level'] = wlev
+            # hydrodynamic_data['Current velocity'] = cvel
+
+        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data,vessel_speed_data)
 
     def add_vessels(
         self,
-        origin,
-        destination,
+        origin=None,
+        destination=None,
         vessel=None,
         vessel_generator=None,
+        fleet_distribution=None,
         arrival_distribution=1,
         arrival_process="Markovian",
     ):
-        """
+        """ 
         Make arrival process
-
+        
         environment:            simpy environment
         arrival_distribution:   specify the distribution from which vessels are generated, int or list
         arrival_process:        process of arrivals
@@ -179,7 +234,10 @@ class Simulation(core.Identifiable):
 
         if vessel_generator == None:
             self.environment.vessels.append(vessel)
-            self.environment.process(vessel.move())
+            process = self.environment.process(vessel.move())
+            vessel.process = process
+            if 'metadata' in dir(vessel) and 'arrival_time' not in vessel.metadata.keys():
+                vessel.metadata['arrival_time'] = self.environment.simulation_start
 
         else:
             self.environment.process(
@@ -190,14 +248,14 @@ class Simulation(core.Identifiable):
                     arrival_distribution,
                     self.scenario,
                     arrival_process,
+                    fleet_distribution,
                 )
             )
 
-    def run(self, duration=24 * 60 * 60):
-        """
-        Run the simulation
-
+    def run(self):
+        """ 
+        Run the simulation 
+        
         duration:               specify the duration of the simulation in seconds
         """
-
-        self.environment.run(until=self.environment.now + duration)
+        self.environment.run(until=self.environment.now + self.simulation_duration.total_seconds())
