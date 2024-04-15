@@ -3,6 +3,7 @@
 """Graph module."""
 
 # package(s) related to time, space and id
+from itertools import cycle
 import json
 import logging
 import math
@@ -15,6 +16,8 @@ import numpy as np
 # spatial libraries
 import pyproj
 import shapely.geometry
+from shapely.geometry import Point, LineString
+from shapely.ops import transform
 
 # matplotlib
 import matplotlib.pyplot as plt
@@ -22,6 +25,7 @@ import matplotlib.pyplot as plt
 # package(s) related to the simulation
 import simpy
 
+import opentnsim.core as core
 import opentnsim.utils
 
 logger = logging.getLogger(__name__)
@@ -88,6 +92,46 @@ def gdf_to_nx(gdf):
                 FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
     return FG
 
+class Node(core.Identifiable,core.Locatable):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class DiGraph:
+
+    def __init__(self, edges, weights = [1], geometries = [None], edges_info = [{}], crs='EPSG:4326', bidirectional = True, *args, **kwargs):
+        """edges: a list of tuples of two Node-objects"""
+
+        super().__init__(*args, **kwargs)
+        self.graph = nx.DiGraph()
+        for (node_I,node_II),weight,geometry,edge_info in zip(edges,cycle(weights),cycle(geometries),cycle(edges_info)):
+            if crs != 'EPSG:4326':
+                CRS = pyproj.CRS(crs)
+                wgs84 = pyproj.CRS('EPSG:4326')
+                CRS_to_wgs84 = pyproj.Transformer.from_crs(CRS, wgs84, always_xy=True).transform
+                node_I.geometry = transform(CRS_to_wgs84,node_I.geometry)
+                node_II.geometry = transform(CRS_to_wgs84,node_II.geometry)
+            self.graph.add_node(node_I.name,geometry=node_I.geometry)
+            self.graph.add_node(node_II.name,geometry=node_II.geometry)
+            if not geometry:
+                geometry = LineString([node_I.geometry,node_II.geometry])
+            elif crs != 'EPSG:4326':
+                geometry = transform(CRS_to_wgs84, geometry)
+            geod = pyproj.Geod(ellps="WGS84")
+            length = geod.geometry_length(geometry)
+            self.graph.add_edge(node_I.name,
+                                node_II.name,
+                                weight=weight,
+                                geometry=geometry,
+                                length=length,
+                                Info=edge_info,)
+            if bidirectional:
+                self.graph.add_edge(node_II.name,
+                                    node_I.name,
+                                    weight=weight,
+                                    geometry=geometry.reverse(),
+                                    length=length,
+                                    Info=edge_info,)
 
 class Graph:
     """General networkx object

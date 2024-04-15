@@ -279,12 +279,11 @@ class Movable(Locatable, Routeable, Log):
 
     def pass_edge(self, origin, destination, start_location, end_location):
         k = sorted(self.env.FG[origin][destination], key=lambda x: self.env.FG[origin][destination][x]['geometry'].length)[0]
-        self.distance = self.env.FG.edges[origin, destination, k]['Info']['length']
+        self.distance = self.env.FG.edges[origin, destination, k]['length']
 
         next_node = None
         if self.route[-1] != destination:
             next_node = self.route[self.route.index(destination)+1]
-            k_next_node = sorted(self.env.FG[next_node][destination], key=lambda x: self.env.FG[next_node][destination][x]['geometry'].length)[0]
 
         for gen in self.on_pass_edge:
             try:
@@ -292,9 +291,6 @@ class Movable(Locatable, Routeable, Log):
             except simpy.exceptions.Interrupt as e:
                 logger.debug("Re-routing", exc_info=True)
                 raise simpy.exceptions.Interrupt('Re-routing')
-
-        if "Terminal" in self.env.FG.edges[self.current_node,self.next_node,k].keys():
-            start_location = shapely.geometry.Point(self.terminal_pos_lat, self.terminal_pos_lon)
 
         sailing = True
         while sailing:

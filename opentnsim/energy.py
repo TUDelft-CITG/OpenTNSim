@@ -18,7 +18,7 @@ import tqdm
 # OpenTNSim
 import opentnsim
 import opentnsim.strategy
-import opentnsim.graph_module
+import opentnsim.graph
 
 # Used for mathematical functions
 import math

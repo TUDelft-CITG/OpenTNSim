@@ -2,7 +2,8 @@
 import numpy as np
 import bisect
 import scipy as sc
-from shapely.geometry import Point,Polygon,MultiPolygon
+from shapely.geometry import Point,LineString,MultiLineString,Polygon,MultiPolygon
+from shapely.ops import linemerge
 import shapely
 import pandas as pd
 from matplotlib import pyplot as plt, dates
@@ -86,7 +87,7 @@ class VesselTrafficService:
         distance = []
         origin_location = vessel.env.FG.nodes[edge[0]]['geometry']
         k = sorted(vessel.env.FG[edge[0]][edge[1]], key=lambda x: vessel.env.FG[edge[0]][edge[1]][x]['geometry'].length)[0]
-        edge_geometry = vessel.env.FG.edges[edge[0], edge[1], k]['Info']['geometry']
+        edge_geometry = vessel.env.FG.edges[edge[0], edge[1], k]['geometry']
         for coord in edge_geometry.coords:
             distance.append(origin_location.distance(Point(coord)))
         if np.argmin(distance):
@@ -96,38 +97,61 @@ class VesselTrafficService:
         return heading
 
     def provide_trajectory(self,env,node_1,node_2):
-        nodes = nx.dijkstra_path(env.FG, node_1, node_2)
-        for loc, edge in enumerate(zip(nodes[:-1], nodes[1:])):
-            k = sorted(env.FG[edge[0]][edge[1]],key=lambda x: env.FG[edge[0]][edge[1]][x]['geometry'].length)[0]
-            geom = env.FG.edges[edge[0], edge[1], k]['geometry']
-            if loc:
-                multi_line = shapely.geometry.MultiLineString([final_geometry, geom])
-                final_geometry = shapely.ops.linemerge(multi_line)
+        geometry = None
+        route = nx.dijkstra_path(env.FG, node_1, node_2)
+        for node_I, node_II in zip(route[:-1], route[1:]):
+            k = sorted(env.FG[node_I][node_II], key=lambda x: env.FG[node_I][node_II][x]['geometry'].length)[0]
+            edge_geometry = env.FG.edges[node_I, node_II, k]['geometry']
+            if geometry:
+                geometry = ops.linemerge(MultiLineString([geometry, edge_geometry]))
             else:
-                final_geometry = geom
-        return final_geometry
+                geometry = edge_geometry
+        return geometry
 
-    def provide_distance_to_node(self,vessel,node_1,node_2,location):
+    def provide_distance_over_network_to_location(self,vessel,node_1,node_2,location):
+        geod = pyproj.Geod(ellps="WGS84")
         geometry = self.provide_trajectory(vessel.env,node_1,node_2)
-        geometries = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance=100), location).geoms
-        distance = 0
-        if location == vessel.env.FG.nodes[node_1]['geometry']:
-            distance = geometry.length
-        elif location == vessel.env.FG.nodes[node_2]['geometry']:
-            distance = 0
+        geometries = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance=0.0001), location).geoms
+        distance_sailed = 0
+        distance_to_go = 0
+        if len(geometries) < 2:
+            if vessel.env.FG.nodes[node_1]['geometry'] == location:
+                distance_to_go = geod.geometry_length(geometries[0])
+            elif vessel.env.FG.nodes[node_2]['geometry'] == location:
+                distance_sailed = geod.geometry_length(geometries[0])
+            elif vessel.env.FG.nodes[node_1]['geometry'].distance(location) > vessel.env.FG.nodes[node_2]['geometry'].distance(location):
+                distance_sailed = geod.geometry_length(geometries[0])
+            else:
+                distance_to_go = geod.geometry_length(geometries[0])
         else:
-            for geom in geometries:
-                if geom.intersects(vessel.env.FG.nodes[node_2]['geometry']):
-                    distance = np.round(geom.length,1)
-        return distance
+            distance_sailed = geod.geometry_length(geometries[0])
+            distance_to_go = geod.geometry_length(geometries[1])
+        return distance_sailed,distance_to_go
 
-    def provide_location_over_edges(self,vessel,node_1,node_2,distance):
-        location = self.provide_trajectory(vessel.env,node_1,node_2).interpolate(distance)
-        return location
+    def provide_location_over_edges(self,vessel,node_1,node_2,interpolation_length):
+        geod = pyproj.Geod(ellps="WGS84")
+        geometry = self.provide_trajectory(vessel.env, node_1, node_2)
+        total_geometry_length = 0
+        for point_I, point_II in zip(geometry.coords[:-1], geometry.coords[1:]):
+            sub_edge_geometry = LineString([Point(point_I), Point(point_II)])
+            total_geometry_length += geod.geometry_length(sub_edge_geometry)
+            if total_geometry_length < interpolation_length:
+                interpolation_length -= geod.geometry_length(sub_edge_geometry)
+                continue
+            az, _, dist = geod.inv(sub_edge_geometry.xy[0][0],
+                                   sub_edge_geometry.xy[1][0],
+                                   sub_edge_geometry.xy[0][1],
+                                   sub_edge_geometry.xy[1][1])
+            interpolation_point_x, interpolation_point_y, _ = geod.fwd(sub_edge_geometry.coords.xy[0][0],
+                                                                       sub_edge_geometry.coords.xy[1][0],
+                                                                       az, interpolation_length)
+            break
+
+        return Point(interpolation_point_x, interpolation_point_y)
 
     def provide_sailing_distance(self,vessel,edge):
         k = sorted(vessel.env.FG[edge[0]][edge[1]], key=lambda x: vessel.env.FG[edge[0]][edge[1]][x]['geometry'].length)[0]
-        sailing_distance = [edge, vessel.env.FG.edges[edge[0], edge[1], k]['Info']['length']]
+        sailing_distance = [edge, vessel.env.FG.edges[edge[0], edge[1], k]['length']]
         return sailing_distance
 
     def provide_sailing_distance_over_route(self,vessel,route):
@@ -143,11 +167,11 @@ class VesselTrafficService:
         else:
             sailing_distance_over_route = pd.DataFrame(columns=['edge','distance'])
             sailing_distance_over_route.loc[0,'edge'] = (route[0], route[1])
-            sailing_distance_over_route.loc[0,'Distance'] = distance
+            sailing_distance_over_route.loc[0,'distance'] = distance
             sailing_distance_over_route = sailing_distance_over_route.set_index('edge')
         vessel_speed_over_route = self.provide_speed_over_route(vessel,route)
         sailing_time_over_route = pd.concat([sailing_distance_over_route,vessel_speed_over_route],axis=1)
-        sailing_time_over_route['Time'] = sailing_time_over_route['Distance']/sailing_time_over_route['Speed']
+        sailing_time_over_route['Time'] = sailing_time_over_route['distance']/sailing_time_over_route['Speed']
         return sailing_time_over_route
 
     def provide_nearest_anchorage_area(self,vessel,node):
@@ -402,11 +426,10 @@ class VesselTrafficService:
         tidal_periods = tidal_periods.set_index('Period start')
         tidal_period_start = tidal_periods[tidal_periods.index <= time_start].iloc[-1]
         tidal_period_stop = tidal_periods[tidal_periods.index <= time_end].iloc[-1]
-
         net_ukcs = self.provide_minimum_available_water_depth_along_route(vessel, route, time_start, time_end, delay)
         for loc,info in net_ukcs.iterrows():
             tidal_periods = pd.DataFrame(self.hydrodynamic_information['Vertical tidal periods'].sel({'STATION':info.station}).to_dict()['data'],columns=['Period start','Tidal period'])
-            tidal_periods = tidal_periods.reset_index(names='Period number')
+            tidal_periods = tidal_peprovide_sailing_timeriods.reset_index(names='Period number')
             tidal_periods = tidal_periods.set_index('Period start')
             tidal_period = tidal_periods[tidal_periods.index <= info.name].iloc[-1]
             net_ukcs.loc[loc,'Tidal period'] = tidal_period['Tidal period']
@@ -697,7 +720,6 @@ class VesselTrafficService:
         tidal_window_indexes = np.sort(np.append(accessible_indexes, inaccessible_indexes))
         tidal_accessibility = tidal_accessibility.iloc[tidal_window_indexes]
         tidal_accessibility = tidal_accessibility.dropna()
-        print(tidal_accessibility)
         return tidal_accessibility
 
     def provide_tidal_windows(self,vessel,route,time_start,time_end,ax_left=None,ax_right=None,delay=0,plot=False):

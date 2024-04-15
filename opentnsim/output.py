@@ -218,26 +218,26 @@ class HasOutput:
     def update_sailing_status_report(self,current_node,next_node,edge):
         self.output['current_node'] = current_node
         self.output['next_node'] = next_node
-        # if "Terminal" in self.env.FG.edges[edge].keys() and self.metadata['terminal_of_call'].size and self.metadata['terminal_of_call'][0] in self.env.FG.edges[edge]['Terminal'].keys():
-        #     self.output['speed'] = 0.
-        # else:
-        #     self.output['speed'] = self.env.vessel_traffic_service.provide_speed(self,edge[:2])
-        # if self.bound == 'outbound':
-        #     self.output['heading'] = 180 - self.env.vessel_traffic_service.provide_heading(self,edge)
-        # else:
-        #     self.output['heading'] = self.env.vessel_traffic_service.provide_heading(self,edge)
-        # if current_node == edge[1]:
-        #     self.output['sailing_distance'] += self.env.FG.edges[edge]['Info']['length']
-        #     self.output['sailing_time'] += self.env.FG.edges[edge]['Info']['length']/self.output['speed']
-        # if 'hydrodynamic_data' in dir(self.env.vessel_traffic_service):
-        #     self.output['MBL'],self.output['water_level'],_ = self.env.vessel_traffic_service.provide_water_depth(self,current_node)
-        #
-        # #Rule-dependent vessel output
-        # if 'Vertical tidal restriction' in self.env.FG.nodes[current_node]['Info'].keys():
-        #     self.output['net_ukc'],self.output['gross_ukc'],_,_,self.output['ship_related_ukc_factors'],_ = self.env.vessel_traffic_service.provide_ukc_clearance(self,current_node)
-        #
-        # if 'Horizontal tidal restriction' in self.env.FG.nodes[current_node]['Info'].keys():
-        #     time_index = np.absolute(self.env.vessel_traffic_service.hydrodynamic_information.TIME.values - pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now,tz=pytz.utc)).to_datetime64()).argmin()
-        #     _,self.output['limiting current velocity'] = self.env.vessel_traffic_service.provide_governing_current_velocity(self,current_node,time_index,time_index+1)
+        if "Terminal" in self.env.FG.edges[edge].keys() and self.metadata['terminal_of_call'].size and self.metadata['terminal_of_call'][0] in self.env.FG.edges[edge]['Terminal'].keys():
+            self.output['speed'] = 0.
+        else:
+            self.output['speed'] = self.env.vessel_traffic_service.provide_speed(self,edge[:2])
+        if self.bound == 'outbound':
+            self.output['heading'] = 180 - self.env.vessel_traffic_service.provide_heading(self,edge)
+        else:
+            self.output['heading'] = self.env.vessel_traffic_service.provide_heading(self,edge)
+        if current_node == edge[1]:
+            self.output['sailing_distance'] += self.env.FG.edges[edge]['length']
+            self.output['sailing_time'] += self.env.FG.edges[edge]['length']/self.output['speed']
+        if 'hydrodynamic_data' in dir(self.env.vessel_traffic_service):
+            self.output['MBL'],self.output['water_level'],_ = self.env.vessel_traffic_service.provide_water_depth(self,current_node)
+
+        #Rule-dependent vessel output
+        if 'Vertical tidal restriction' in self.env.FG.nodes[current_node].keys():
+            self.output['net_ukc'],self.output['gross_ukc'],_,_,self.output['ship_related_ukc_factors'],_ = self.env.vessel_traffic_service.provide_ukc_clearance(self,current_node)
+
+        if 'Horizontal tidal restriction' in self.env.FG.nodes[current_node].keys():
+            time_index = np.absolute(self.env.vessel_traffic_service.hydrodynamic_information.TIME.values - pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now,tz=pytz.utc)).to_datetime64()).argmin()
+            _,self.output['limiting current velocity'] = self.env.vessel_traffic_service.provide_governing_current_velocity(self,current_node,time_index,time_index+1)
 
         return deepcopy(self.output)
