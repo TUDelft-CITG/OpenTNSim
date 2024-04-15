@@ -3,15 +3,19 @@
 """Graph module."""
 
 # package(s) related to time, space and id
+import functools
+import io
 from itertools import cycle
 import json
 import logging
 import math
-import os
-import uuid
-
 import networkx as nx
 import numpy as np
+import os
+import pickle
+import requests
+import uuid
+import yaml
 
 # spatial libraries
 import pyproj
@@ -29,6 +33,8 @@ import opentnsim.core as core
 import opentnsim.utils
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 
 # Determine the wgs84 geoid
 wgs84 = pyproj.Geod(ellps="WGS84")
@@ -104,19 +110,19 @@ class DiGraph:
 
         super().__init__(*args, **kwargs)
         self.graph = nx.DiGraph()
+        if crs != 'EPSG:4326':
+            CRS = pyproj.CRS(crs)
+            wgs84 = pyproj.CRS('EPSG:4326')
+            CRS_to_wgs84 = pyproj.Transformer.from_crs(CRS, wgs84, always_xy=True).transform
         for (node_I,node_II),weight,geometry,edge_info in zip(edges,cycle(weights),cycle(geometries),cycle(edges_info)):
-            if crs != 'EPSG:4326':
-                CRS = pyproj.CRS(crs)
-                wgs84 = pyproj.CRS('EPSG:4326')
-                CRS_to_wgs84 = pyproj.Transformer.from_crs(CRS, wgs84, always_xy=True).transform
-                node_I.geometry = transform(CRS_to_wgs84,node_I.geometry)
-                node_II.geometry = transform(CRS_to_wgs84,node_II.geometry)
-            self.graph.add_node(node_I.name,geometry=node_I.geometry)
-            self.graph.add_node(node_II.name,geometry=node_II.geometry)
+            if node_I.name not in self.graph.nodes:
+                node_I.geometry = transform(CRS_to_wgs84, node_I.geometry)
+                self.graph.add_node(node_I.name,geometry=node_I.geometry)
+            if node_II.name not in self.graph.nodes:
+                node_II.geometry = transform(CRS_to_wgs84, node_II.geometry)
+                self.graph.add_node(node_II.name,geometry=node_II.geometry)
             if not geometry:
                 geometry = LineString([node_I.geometry,node_II.geometry])
-            elif crs != 'EPSG:4326':
-                geometry = transform(CRS_to_wgs84, geometry)
             geod = pyproj.Geod(ellps="WGS84")
             length = geod.geometry_length(geometry)
             self.graph.add_edge(node_I.name,
@@ -320,3 +326,58 @@ def compute_distance(edge, orig, dest):
             shapely.geometry.asShape(sub_dest).y,
         )[2]
     return distance
+
+class FIS:
+
+    def __init__(self,*args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @functools.lru_cache
+    def load_fis_network(url):
+        """load the topological fairway information system network (vaarweginformatie.nl)"""
+
+        # get the data from the url
+        resp = requests.get(url)
+        # convert to file object
+        stream = io.StringIO(resp.text)
+
+        # This will take a minute or two
+        # Here we convert the network to a networkx object
+        G = yaml.load(stream, Loader=yaml.Loader)
+
+        # some brief info
+        n_bytes = len(resp.content)
+        msg = '''Loaded network from {url} file size {mb:.2f}MB. Network has {n_nodes} nodes and {n_edges} edges.'''
+        summary = msg.format(url=url, mb=n_bytes / 1000 ** 2, n_edges=len(G.edges), n_nodes=len(G.nodes))
+        logger.info(summary)
+
+        # The topological network contains information about the original geometry.
+        # Let's convert those into python shapely objects for easier use later
+        for n in G.nodes:
+            G.nodes[n]['geometry'] = shapely.geometry.Point(G.nodes[n]['X'], G.nodes[n]['Y'])
+        for e in G.edges:
+            edge = G.edges[e]
+            edge['geometry'] = shapely.wkt.loads(edge['Wkt'])
+
+        return G
+
+    @staticmethod
+    def import_FIS(url):
+
+        fname = "fis_cache\\{}.pkl".format('FIS')
+        if os.path.exists(fname):
+            print('I am loading cached network')
+            with open(fname, 'rb') as pkl_file:
+                FG = pickle.load(pkl_file)
+                pkl_file.close()
+
+        else:
+            print('I am getting new network')
+            FG = FIS.load_fis_network(url)
+
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+            with open(fname, 'wb') as pkl_file:
+                pickle.dump(FG, pkl_file)
+                pkl_file.close()
+
+        return FG

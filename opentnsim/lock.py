@@ -9,6 +9,7 @@ import pyproj
 import shapely.geometry
 import simpy
 import random
+import re
 import numpy as np
 import networkx as nx
 import math
@@ -912,51 +913,77 @@ class IsLockComplex(IsLock):
                                               passing_allowed=self.passing_allowed_in_lineup_area_B,
                                               speed_reduction_factor=self.speed_reduction_factor_lineup_area_B)
 
-    def create_time_distance_diagram(self,vessels,accuracy=100):
+    def create_time_distance_diagram(self,
+                                     vessels,
+                                     accuracy=100,
+                                     ax=None,
+                                     x_offset=0,
+                                     ylim = None,
+                                     vessel_color='C0'):
         times = []
         distances = []
+        r = re.compile("Sailing from node . to node . start")
         for vessel in vessels:
             vessel_df = pd.DataFrame(vessel.log)
-            direction = vessel.route.index(self.start_node) > vessel.route.index(self.start_node)
-            sailed_distance = []
-            sailed_time = []
-            for loc, info in vessel_df.iterrows():
-                vessel_location = info['Location']
-                distance_sailed, distance_to_go = self.env.vessel_traffic_service.provide_distance_over_network_to_location(vessel, self.start_node, self.end_node, vessel_location)
-                if not direction:
-                    sailed_distance.append(distance_sailed)
-                else:
-                    sailed_distance.append(distance_to_go)
-                sailed_time.append(info['Time'])
-            times.append(sailed_time)
-            distances.append(sailed_distance)
+            sailed_edges = [index for index, action in enumerate(vessel_df['Action']) if r.search(action)]
+            sailed_edges.append(len(vessel_df) - 1)
+            lock_passage = 0
+            for index_sailing_start, index_sailing_stop in zip(sailed_edges[:-1], sailed_edges[1:]):
+                if not [index for index, action in
+                        enumerate(vessel_df.loc[index_sailing_start:index_sailing_stop]['Action']) if
+                        action == 'Passing lock start']:
+                    continue
 
-        fig, ax = plt.subplots(figsize=[6,6])
+                if not vessel_df.iloc[-1]['Status']['visited_lock_chambers'][lock_passage] == self.name:
+                    lock_passage += 1
+                    continue
+
+                lock_passage += 1
+                destination = vessel_df.loc[index_sailing_stop]['Action'].split(' start')[0].split('node ')[-1]
+                direction = destination == self.start_node
+                sailed_distance = []
+                sailed_time = []
+                for loc, info in vessel_df[index_sailing_start:index_sailing_stop+1].iterrows():
+                    vessel_location = info['Location']
+                    distance_sailed, distance_to_go = self.env.vessel_traffic_service.provide_distance_over_network_to_location(vessel, self.start_node, self.end_node, vessel_location)
+                    if not direction:
+                        sailed_distance.append(distance_sailed)
+                    else:
+                        sailed_distance.append(distance_to_go)
+                    sailed_time.append(info['Time'])
+                times.append(sailed_time)
+                distances.append(sailed_distance)
+
+        if not ax:
+            _, ax = plt.subplots(figsize=[6,6])
         for distance, time in zip(distances, times):
-            ax.plot(distance, time)
+            ax.plot([dist+x_offset for dist in distance], time, color=vessel_color)
 
-        ylim_min, ylim_max = ax.get_ylim()
+        if not ylim:
+            ylim_min, ylim_max = ax.get_ylim()
+        else:
+            ylim_min, ylim_max = ylim
 
-        ax.fill([self.distance_doors_A_from_waiting_area_A + self.waiting_area_A.distance_from_node,
-                  self.distance_doors_A_from_waiting_area_A + self.waiting_area_A.distance_from_node,
-                  self.distance_doors_A_from_waiting_area_A + self.lock_length + self.waiting_area_A.distance_from_node,
-                  self.distance_doors_A_from_waiting_area_A + self.lock_length + self.waiting_area_A.distance_from_node, ],
+        ax.fill([self.distance_doors_A_from_waiting_area_A + self.waiting_area_A.distance_from_node + x_offset,
+                  self.distance_doors_A_from_waiting_area_A + self.waiting_area_A.distance_from_node + x_offset,
+                  self.distance_doors_A_from_waiting_area_A + self.lock_length + self.waiting_area_A.distance_from_node + x_offset,
+                  self.distance_doors_A_from_waiting_area_A + self.lock_length + self.waiting_area_A.distance_from_node + x_offset, ],
                  [ylim_min, ylim_max, ylim_max, ylim_min], color='lightgrey', edgecolor='k')
         ax.set_ylim(ylim_min, ylim_max)
-        xlim_min = 0
-        xlim_max = np.ceil(self.env.FG.edges[self.start_node,self.end_node,self.k]['length']/accuracy)*accuracy
+        xlim_min = 0+x_offset
+        xlim_max = np.ceil(self.env.FG.edges[self.start_node,self.end_node,self.k]['length']/accuracy)*accuracy+x_offset
         ax.set_xlim(xlim_min,xlim_max)
         xticks = np.arange(xlim_min,xlim_max+accuracy/2,accuracy/2)
         ax.set_xticks(xticks)
         center_index = int((len(xticks) - 1) / 2)
         xticklabels = np.zeros(len(xticks))
-        xticklabels[0:center_index] = np.arange((len(xticklabels) - 1 - center_index) * -(accuracy / 2), 0, (accuracy / 2))
-        xticklabels[center_index:] = np.arange(0, (len(xticklabels) - center_index) * (accuracy / 2), (accuracy / 2))
+        xticklabels[0:center_index] = np.arange((len(xticklabels) - 1 - center_index) * -(accuracy / 2)+x_offset, 0+x_offset, (accuracy / 2))
+        xticklabels[center_index:] = np.arange(0+x_offset, (len(xticklabels) - center_index) * (accuracy / 2)+x_offset, (accuracy / 2))
         ax.set_xticklabels(xticklabels)
         ax.set_xlabel('Distance to center of lock chamber [m]')
         ax.set_ylabel('Datetime')
         ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
-        return fig,ax,times
+        return ax
 
 
 class PassLock:
@@ -1253,11 +1280,16 @@ class PassLock:
                 #Decision if position should be changed
                 if direction and lock_door_2_user_priority == -1:
                     vessel.lock_information[lock.name].lineup_dist = change_lineup_dist(vessel, lock, lineup_area, vessel.lock_information[lock.name].lineup_dist, (vessel_index,lineup_area_user))
+                    if not lineup_area.lineup_area_length:
+                        vessel.lock_information[lock.name].lineup_dist = 0
                     vessel.lock_information[lock.name].lineup_position = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel,lineup_area.start_node, lineup_area.end_node,lock.distance_doors_A_from_waiting_area_A-lineup_area.distance_to_lock_doors - lineup_area.lineup_area_length + vessel.lock_information[lock.name].lineup_dist + waiting_area.distance_from_node)
 
                 elif not direction and lock_door_1_user_priority == -1:
                     vessel.lock_information[lock.name].lineup_dist = change_lineup_dist(vessel, lock, lineup_area, vessel.lock_information[lock.name].lineup_dist, (vessel_index,lineup_area_user))
+                    if not lineup_area.lineup_area_length:
+                        vessel.lock_information[lock.name].lineup_dist = 0
                     vessel.lock_information[lock.name].lineup_position = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel,lineup_area.end_node, lineup_area.start_node,lock.distance_doors_B_from_waiting_area_B-lineup_area.distance_to_lock_doors - lineup_area.lineup_area_length + vessel.lock_information[lock.name].lineup_dist + waiting_area.distance_from_node)
+
                 break
             break
 
