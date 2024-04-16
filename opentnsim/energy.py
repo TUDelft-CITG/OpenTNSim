@@ -18,7 +18,7 @@ import tqdm
 # OpenTNSim
 import opentnsim
 import opentnsim.strategy
-import opentnsim.graph
+import opentnsim.graph as graph_module
 
 # Used for mathematical functions
 import math
@@ -151,7 +151,7 @@ def power2v(vessel, edge, upperbound):
     returns velocity [m/s]
     """
 
-    assert isinstance(vessel, opentnsim.core.VesselProperties), "vessel should be an instance of VesselProperties"
+    assert isinstance(vessel, opentnsim.vessel.VesselProperties), "vessel should be an instance of VesselProperties"
 
     assert vessel.C_B is not None, "C_B cannot be None"
 

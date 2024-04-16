@@ -110,11 +110,10 @@ class DiGraph:
 
         super().__init__(*args, **kwargs)
         self.graph = nx.DiGraph()
-        if crs != 'EPSG:4326':
-            CRS = pyproj.CRS(crs)
-            wgs84 = pyproj.CRS('EPSG:4326')
-            CRS_to_wgs84 = pyproj.Transformer.from_crs(CRS, wgs84, always_xy=True).transform
-        for (node_I,node_II),weight,geometry,edge_info in zip(edges,cycle(weights),cycle(geometries),cycle(edges_info)):
+        CRS = pyproj.CRS(crs)
+        wgs84 = pyproj.CRS('EPSG:4326')
+        CRS_to_wgs84 = pyproj.Transformer.from_crs(CRS, wgs84, always_xy=True).transform
+        for index,((node_I,node_II),weight,geometry,edge_info) in enumerate(zip(edges,cycle(weights),cycle(geometries),cycle([edges_info]))):
             if node_I.name not in self.graph.nodes:
                 node_I.geometry = transform(CRS_to_wgs84, node_I.geometry)
                 self.graph.add_node(node_I.name,geometry=node_I.geometry)
@@ -125,19 +124,22 @@ class DiGraph:
                 geometry = LineString([node_I.geometry,node_II.geometry])
             geod = pyproj.Geod(ellps="WGS84")
             length = geod.geometry_length(geometry)
+            Info = {}
+            for key,value in edge_info.items():
+                Info[key] = value[index]
             self.graph.add_edge(node_I.name,
                                 node_II.name,
                                 weight=weight,
                                 geometry=geometry,
                                 length=length,
-                                Info=edge_info,)
+                                Info=Info,)
             if bidirectional:
                 self.graph.add_edge(node_II.name,
                                     node_I.name,
                                     weight=weight,
                                     geometry=geometry.reverse(),
                                     length=length,
-                                    Info=edge_info,)
+                                    Info=Info,)
 
 class Graph:
     """General networkx object
@@ -381,3 +383,22 @@ class FIS:
                 pkl_file.close()
 
         return FG
+
+class HasMultiDiGraph:
+    """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @property
+    def multidigraph(self):
+        # create a multidigraph copy of graph if it was not done before
+        if not hasattr(self.env, "_multidigraph"):
+            self.env._multidigraph = self.copy()
+        return self.env._multidigraph
+
+    def copy(self):
+        multidigraph = self.env.FG
+        if not isinstance(self.env.FG, nx.MultiDiGraph):
+            multidigraph = nx.MultiDiGraph(multidigraph)
+        return multidigraph

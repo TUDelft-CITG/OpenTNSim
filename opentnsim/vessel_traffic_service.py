@@ -15,11 +15,12 @@ import pytz
 import xarray as xr
 
 from shapely.ops import transform
-from opentnsim import tidal_window_constructor
+from opentnsim import core,tidal_window_constructor, graph
+
 # spatial libraries
 import pyproj
 
-class VesselTrafficService:
+class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
     """Class: a collection of functions that processes requests of vessels regarding the nautical processes on ow to enter the port safely"""
 
     def __init__(self,hydrodynamic_data=None,vessel_speed_data=None,*args,**kwargs):
@@ -28,6 +29,7 @@ class VesselTrafficService:
             self.hydrodynamic_information = hydrodynamic_data
         if isinstance(vessel_speed_data, xr.Dataset):
             self.vessel_speeds = vessel_speed_data
+
 
     def provide_waiting_time_for_inbound_tidal_window(self,vessel,route,time_start=None,time_stop=None,delay=0,plot=False):
         """ Function: calculates the time that a vessel has to wait depending on the available tidal windows
@@ -70,7 +72,7 @@ class VesselTrafficService:
         if 'vessel_speeds' in dir(self) and edge in list(self.vessel_speeds.edge.values):
             vessel_speed = float(self.vessel_speeds.sel({'edge': edge}).average_speed.values)
         else:
-            vessel_speed = vessel.v
+            vessel_speed = vessel.current_speed
         return vessel_speed
 
     def provide_speed_over_route(self,vessel,route):
@@ -85,9 +87,9 @@ class VesselTrafficService:
             return x[::-1], y[::-1]
 
         distance = []
-        origin_location = vessel.env.FG.nodes[edge[0]]['geometry']
-        k = sorted(vessel.env.FG[edge[0]][edge[1]], key=lambda x: vessel.env.FG[edge[0]][edge[1]][x]['geometry'].length)[0]
-        edge_geometry = vessel.env.FG.edges[edge[0], edge[1], k]['geometry']
+        origin_location = vessel.multidigraph.nodes[edge[0]]['geometry']
+        k = sorted(vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
+        edge_geometry = vessel.multidigraph.edges[edge[0], edge[1], k]['geometry']
         for coord in edge_geometry.coords:
             distance.append(origin_location.distance(Point(coord)))
         if np.argmin(distance):
@@ -96,30 +98,30 @@ class VesselTrafficService:
                                         edge_geometry.coords[0][1] - edge_geometry.coords[-1][1]))
         return heading
 
-    def provide_trajectory(self,env,node_1,node_2):
+    def provide_trajectory(self,node_1,node_2):
         geometry = None
-        route = nx.dijkstra_path(env.FG, node_1, node_2)
+        route = nx.dijkstra_path(self.multidigraph, node_1, node_2)
         for node_I, node_II in zip(route[:-1], route[1:]):
-            k = sorted(env.FG[node_I][node_II], key=lambda x: env.FG[node_I][node_II][x]['geometry'].length)[0]
-            edge_geometry = env.FG.edges[node_I, node_II, k]['geometry']
+            k = sorted(self.multidigraph[node_I][node_II], key=lambda x: self.multidigraph[node_I][node_II][x]['geometry'].length)[0]
+            edge_geometry = self.multidigraph.edges[node_I, node_II, k]['geometry']
             if geometry:
                 geometry = ops.linemerge(MultiLineString([geometry, edge_geometry]))
             else:
                 geometry = edge_geometry
         return geometry
 
-    def provide_distance_over_network_to_location(self,vessel,node_1,node_2,location):
+    def provide_distance_over_network_to_location(self,node_1,node_2,location):
         geod = pyproj.Geod(ellps="WGS84")
-        geometry = self.provide_trajectory(vessel.env,node_1,node_2)
+        geometry = self.provide_trajectory(node_1,node_2)
         geometries = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance=0.0001), location).geoms
         distance_sailed = 0
         distance_to_go = 0
         if len(geometries) < 2:
-            if vessel.env.FG.nodes[node_1]['geometry'] == location:
+            if self.multidigraph.nodes[node_1]['geometry'] == location:
                 distance_to_go = geod.geometry_length(geometries[0])
-            elif vessel.env.FG.nodes[node_2]['geometry'] == location:
+            elif self.multidigraph.nodes[node_2]['geometry'] == location:
                 distance_sailed = geod.geometry_length(geometries[0])
-            elif vessel.env.FG.nodes[node_1]['geometry'].distance(location) > vessel.env.FG.nodes[node_2]['geometry'].distance(location):
+            elif self.multidigraph.nodes[node_1]['geometry'].distance(location) > self.multidigraph.nodes[node_2]['geometry'].distance(location):
                 distance_sailed = geod.geometry_length(geometries[0])
             else:
                 distance_to_go = geod.geometry_length(geometries[0])
@@ -130,7 +132,7 @@ class VesselTrafficService:
 
     def provide_location_over_edges(self,vessel,node_1,node_2,interpolation_length):
         geod = pyproj.Geod(ellps="WGS84")
-        geometry = self.provide_trajectory(vessel.env, node_1, node_2)
+        geometry = self.provide_trajectory(node_1, node_2)
         total_geometry_length = 0
         for point_I, point_II in zip(geometry.coords[:-1], geometry.coords[1:]):
             sub_edge_geometry = LineString([Point(point_I), Point(point_II)])
@@ -150,8 +152,8 @@ class VesselTrafficService:
         return Point(interpolation_point_x, interpolation_point_y)
 
     def provide_sailing_distance(self,vessel,edge):
-        k = sorted(vessel.env.FG[edge[0]][edge[1]], key=lambda x: vessel.env.FG[edge[0]][edge[1]][x]['geometry'].length)[0]
-        sailing_distance = [edge, vessel.env.FG.edges[edge[0], edge[1], k]['length']]
+        k = sorted(vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
+        sailing_distance = [edge, vessel.multidigraph.edges[edge[0], edge[1], k]['length']]
         return sailing_distance
 
     def provide_sailing_distance_over_route(self,vessel,route):
@@ -180,11 +182,11 @@ class VesselTrafficService:
         users_of_anchorages = []
         sailing_times_to_anchorages = []
         # Loop over the nodes of the network and identify all the anchorage areas:
-        for node_anchorage in vessel.env.FG.nodes:
-            if 'Anchorage' in vessel.env.FG.nodes[node_anchorage]:
+        for node_anchorage in self.multidigraph.nodes:
+            if 'Anchorage' in self.multidigraph.nodes[node_anchorage]:
                 # Determine if the anchorage area can be reached
                 anchorage_reachable = True
-                route_to_anchorage = nx.dijkstra_path(vessel.env.FG, node, node_anchorage)
+                route_to_anchorage = nx.dijkstra_path(self.multidigraph, node, node_anchorage)
                 for node_on_route in route_to_anchorage:
                     station_index = list(self.hydrodynamic_information['STATION']).index(node_on_route)
                     min_water_level = np.min(self.hydrodynamic_information['Water level'][station_index].values)
@@ -198,10 +200,10 @@ class VesselTrafficService:
 
                 # Extract information over the individual anchorage areas: capacity, users, and the sailing distance to the anchorage area from the designated terminal the vessel is planning to call
                 nodes_of_anchorages.append(node_anchorage)
-                capacity_of_anchorages.append(vessel.env.FG.nodes[node_anchorage]['Anchorage'][0].resource.capacity)
-                users_of_anchorages.append(len(vessel.env.FG.nodes[node_anchorage]['Anchorage'][0].resource.users))
-                route_from_anchorage = nx.dijkstra_path(vessel.env.FG, node_anchorage, vessel.route[-1])
-                sailing_time_to_anchorage = vessel.env.vessel_traffic_service.provide_sailing_time(vessel,route_from_anchorage)['Time'].sum()
+                capacity_of_anchorages.append(self.multidigraph.nodes[node_anchorage]['Anchorage'][0].resource.capacity)
+                users_of_anchorages.append(len(self.multidigraph.nodes[node_anchorage]['Anchorage'][0].resource.users))
+                route_from_anchorage = nx.dijkstra_path(self.multidigraph, node_anchorage, vessel.route[-1])
+                sailing_time_to_anchorage = self.provide_sailing_time(vessel,route_from_anchorage)['Time'].sum()
                 sailing_times_to_anchorages.append(sailing_time_to_anchorage)
 
         # Sort the lists based on the sailing distance to the anchorage area from the designated terminal the vessel is planning to call
@@ -356,9 +358,9 @@ class VesselTrafficService:
         MBL,water_level,available_water_depth = self.provide_water_depth(vessel,node,delay)
 
         ukc_s, ukc_p, ukc_r, fwa = np.zeros(4)
-        if 'Vertical tidal restriction' in vessel.env.FG.nodes[node]['Info'].keys():
-            ukcs_s, ukcs_p, ukcs_r, fwas = vessel.env.FG.nodes[node]['Info']['Vertical tidal restriction']['Type']
-            specifications = vessel.env.FG.nodes[node]['Info']['Vertical tidal restriction']['Specification']
+        if 'Vertical tidal restriction' in vessel.multidigraph.nodes[node]['Info'].keys():
+            ukcs_s, ukcs_p, ukcs_r, fwas = vessel.multidigraph.nodes[node]['Info']['Vertical tidal restriction']['Type']
+            specifications = vessel.multidigraph.nodes[node]['Info']['Vertical tidal restriction']['Specification']
 
             # Determine which restriction applies to vessel
             restriction_indexes, _ = self.provide_tidal_window_restriction(vessel, [node], specifications, node)
@@ -616,9 +618,9 @@ class VesselTrafficService:
         time_start_index = np.max([0, np.absolute(self.hydrodynamic_information.TIME.values - (time_start)).argmin() - 2])
         time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end)).argmin()
         for route_index, node_name in enumerate(route):
-            if 'Horizontal tidal restriction' in vessel.env.FG.nodes[node_name]['Info'].keys():
+            if 'Horizontal tidal restriction' in vessel.multidigraph.nodes[node_name]['Info'].keys():
                 sailing_time_to_next_node = self.provide_sailing_time(vessel, route[:(route_index + 1)])
-                specifications = vessel.env.FG.nodes[node_name]['Info']['Horizontal tidal restriction']['Specification']
+                specifications = vessel.multidigraph.nodes[node_name]['Info']['Horizontal tidal restriction']['Specification']
                 restriction_indexes, no_tidal_window = self.provide_tidal_window_restriction(vessel, route, specifications, node_name)
                 if no_tidal_window:
                     continue
@@ -627,9 +629,9 @@ class VesselTrafficService:
                 time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), 's'))).argmin()
                 for restriction_index in restriction_indexes:
                     horizontal_tidal_window = True
-                    hydrodynamic_data = vessel.env.FG.nodes[node_name]['Info']['Horizontal tidal restriction']['Data'][restriction_index]
-                    cross_current_limit = vessel.env.FG.nodes[node_name]['Info']['Horizontal tidal restriction']['Limit'][restriction_index]
-                    window_specifications = vessel.env.FG.nodes[node_name]['Info']['Horizontal tidal restriction']['Type'][restriction_index]
+                    hydrodynamic_data = vessel.multidigraph.nodes[node_name]['Info']['Horizontal tidal restriction']['Data'][restriction_index]
+                    cross_current_limit = vessel.multidigraph.nodes[node_name]['Info']['Horizontal tidal restriction']['Limit'][restriction_index]
+                    window_specifications = vessel.multidigraph.nodes[node_name]['Info']['Horizontal tidal restriction']['Type'][restriction_index]
                     if window_specifications.window_method == 'Maximum':
                         next_horizontal_tidal_accessibility,station = calculate_horizontal_tidal_window(vessel,time_start_index,time_end_index,hydrodynamic_data,cross_current_limit,window_specifications)
                     if window_specifications.window_method == 'Point-based':

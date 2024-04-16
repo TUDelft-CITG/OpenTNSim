@@ -100,27 +100,27 @@ class HasOutput:
             self.output['sailing_distance'] = 0.
             self.output['sailing_time'] = 0.
             for node in self.route:
-                if 'Anchorage' in self.env.FG.nodes[node]:
-                    self.output['anchorage'] = self.env.FG.nodes[node]['Anchorage'][0].name
-                if 'Turning basin' in self.env.FG.nodes[node] and self.bound == 'inbound' and self.env.FG.nodes[node]['Turning Basin'][0].length <= self.L:
-                    self.output['turning_basin'] = self.env.FG.nodes[node]['Turning Basin'][0].name
+                if 'Anchorage' in self.multidigraph.nodes[node]:
+                    self.output['anchorage'] = self.multidigraph.nodes[node]['Anchorage'][0].name
+                if 'Turning basin' in self.multidigraph.nodes[node] and self.bound == 'inbound' and self.multidigraph.nodes[node]['Turning Basin'][0].length <= self.L:
+                    self.output['turning_basin'] = self.multidigraph.nodes[node]['Turning Basin'][0].name
             if 'terminal_of_call' in self.metadata.keys() and self.metadata['terminal_of_call'].size:
                 self.output['terminal'] = self.metadata['terminal_of_call'][0]
             if 'berth_of_call' in self.metadata.keys() and self.metadata['berth_of_call'].size:
                 self.output['berth'] = self.metadata['berth_of_call'][0]
 
-        if move_stop and self.log['Status']:
-            correction = deepcopy(self.log['Status'])[-1]['sailing_distance']
+        if move_stop and len(self.logbook):
+            correction = deepcopy(self.logbook)[-1]['Value']['sailing_distance']
             if 'anchorage' in self.output['sailed_routes'][-1]:
                 correction = self.env.vessel_traffic_service.provide_sailing_distance_over_route(self, self.route_after_anchorage[:-1])['Distance'].sum()
-            for index, info in enumerate(list(reversed(self.log['Status']))):
-                index = len(self.log['Status']) - index - 1
-                if info['route'] != self.output['sailed_routes'][-1]:
+            for index, info in enumerate(list(reversed(self.logbook))):
+                index = len(self.logbook) - index - 1
+                if info['Value']['route'] != self.output['sailed_routes'][-1]:
                     break
-                if info['bound'] == 'inbound':
-                    self.log['Status'][index]['sailing_distance'] -= correction
+                if info['Value']['bound'] == 'inbound':
+                    self.logbook[index]['Value']['sailing_distance'] -= correction
                 else:
-                    self.log['Status'][index]['sailing_distance'] = -info['sailing_distance']
+                    self.logbook[index]['Value']['sailing_distance'] = -info['Value']['sailing_distance']
 
     def update_waiting_area_status_report(self,waiting_area,node_waiting_area):
         self.output['visited_waiting_areas'].append(waiting_area.name)
@@ -218,7 +218,7 @@ class HasOutput:
     def update_sailing_status_report(self,current_node,next_node,edge):
         self.output['current_node'] = current_node
         self.output['next_node'] = next_node
-        if "Terminal" in self.env.FG.edges[edge].keys() and self.metadata['terminal_of_call'].size and self.metadata['terminal_of_call'][0] in self.env.FG.edges[edge]['Terminal'].keys():
+        if "Terminal" in self.multidigraph.edges[edge].keys() and self.metadata['terminal_of_call'].size and self.metadata['terminal_of_call'][0] in self.multidigraph.edges[edge]['Terminal'].keys():
             self.output['speed'] = 0.
         else:
             self.output['speed'] = self.env.vessel_traffic_service.provide_speed(self,edge[:2])
@@ -227,16 +227,16 @@ class HasOutput:
         else:
             self.output['heading'] = self.env.vessel_traffic_service.provide_heading(self,edge)
         if current_node == edge[1]:
-            self.output['sailing_distance'] += self.env.FG.edges[edge]['length']
-            self.output['sailing_time'] += self.env.FG.edges[edge]['length']/self.output['speed']
+            self.output['sailing_distance'] += self.multidigraph.edges[edge]['length']
+            self.output['sailing_time'] += self.multidigraph.edges[edge]['length']/self.output['speed']
         if 'hydrodynamic_data' in dir(self.env.vessel_traffic_service):
             self.output['MBL'],self.output['water_level'],_ = self.env.vessel_traffic_service.provide_water_depth(self,current_node)
 
         #Rule-dependent vessel output
-        if 'Vertical tidal restriction' in self.env.FG.nodes[current_node].keys():
+        if 'Vertical tidal restriction' in self.multidigraph.nodes[current_node].keys():
             self.output['net_ukc'],self.output['gross_ukc'],_,_,self.output['ship_related_ukc_factors'],_ = self.env.vessel_traffic_service.provide_ukc_clearance(self,current_node)
 
-        if 'Horizontal tidal restriction' in self.env.FG.nodes[current_node].keys():
+        if 'Horizontal tidal restriction' in self.multidigraph.nodes[current_node].keys():
             time_index = np.absolute(self.env.vessel_traffic_service.hydrodynamic_information.TIME.values - pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now,tz=pytz.utc)).to_datetime64()).argmin()
             _,self.output['limiting current velocity'] = self.env.vessel_traffic_service.provide_governing_current_velocity(self,current_node,time_index,time_index+1)
 
