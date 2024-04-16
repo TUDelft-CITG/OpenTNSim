@@ -105,7 +105,7 @@ class Node(core.Identifiable,core.Locatable):
 
 class DiGraph:
 
-    def __init__(self, edges, weights = [1], geometries = [None], edges_info = [{}], crs='EPSG:4326', bidirectional = True, *args, **kwargs):
+    def __init__(self, edges, weights = [1], geometries = [None], edges_info = {}, crs='EPSG:4326', bidirectional = True, *args, **kwargs):
         """edges: a list of tuples of two Node-objects"""
 
         super().__init__(*args, **kwargs)
