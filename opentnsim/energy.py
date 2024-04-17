@@ -1267,7 +1267,7 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_s(self):
         """Total diesel fuel use in g/s:
 
-        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600  # without considering C_year
         self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600  # considering C_year
@@ -1279,7 +1279,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
 
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
         self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
@@ -1290,7 +1290,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
 
-        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
@@ -1328,8 +1328,8 @@ class ConsumesEnergy:
 class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
-    # to do: add other alternatives from Marin's table to have completed renewable energy sources
-    # to do: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
+    # ToDo: add other alternatives from Marin's table to have completed renewable energy sources
+    # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
 
     def __init__(self, FG, vessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1498,7 +1498,7 @@ class EnergyCalculation:
                     )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
-                    # To do: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
+                    # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
                     delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
