@@ -861,6 +861,7 @@ class ConsumesEnergy:
                 self.eta_D = 0.26
             else:
                 self.eta_D = 0.25
+
         # Delivered Horse Power (DHP), P_d
         self.P_d = self.P_e / self.eta_D
 
@@ -888,7 +889,7 @@ class ConsumesEnergy:
 
         assert not isinstance(self.P_given, complex), f"P_given number should not be complex: {self.P_given}"
 
-        # return these three varible:
+        # return these three variables:
         # 1) self.P_propulsion, for the convience of validation.  (propulsion power and fuel used for propulsion),
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
