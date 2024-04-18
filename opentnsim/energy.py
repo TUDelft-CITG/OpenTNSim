@@ -743,21 +743,33 @@ class ConsumesEnergy:
     def calculate_total_power_required(self, v, h_0):
         """Total required power:
 
-        - The total required power is the sum of the power for systems on board (P_hotel) + power required for propulsion
+        - The total required power is the sum of the power for systems on board (P_hotel) + power required for
+          propulsion
         - The power required for propulsion depends on the calculated resistance
 
         Output:
         - P_propulsion: required power for propulsion, equals to P_d (Delivered Horse Power)
         - P_tot: required power for propulsion and hotelling
-        - P_given: the power given by the engine to the ship (for propulsion and hotelling), which is the actual power the ship uses
+        - P_given: the power given by the engine to the ship (for propulsion and hotelling), which is the actual power
+          the ship uses
 
         Note:
-        In this version, we define the propulsion power as P_d (Delivered Horse Power) ratehr than P_b (Brake Horse Power). The reason we choose P_d as propulsion power is to prevent double use of the same power efficiencies.
-        The details are 1) The P_b calculation involves gearing efficiency and transmission efficiency already while P_d not. 2) P_d is the power delivered to propellers. 3) To estimate the reneable fuel use, we will involve "energy conversion efficicies" later in the calculation. The 'energy conversion efficicies' for renewable fuel powered vessels are commonly measured/given as a whole covering the engine power systems, includes different engine (such as fuel cell engine, battery engine, internal combustion engine, hybird engine) efficiencies, and corresponding gearbox efficiencies, AC/DC converter efficiencies, excludes the efficiency items of propellers.
-        Therefore, to algin with the later use of "energy conversion efficicies" for fuel use estimation and prevent double use of some power efficiencies such as gearing efficiency, here we choose P_d as propulsion power.
+        In this version, we define the propulsion power as P_d (Delivered Horse Power) rather than P_b (Brake Horse
+        Power). The reason we choose P_d as propulsion power is to prevent double use of the same power efficiencies.
+        The details are
+        1) The P_b calculation involves gearing efficiency and transmission efficiency already while P_d not.
+        2) P_d is the power delivered to propellers.
+        3) To estimate the renewable fuel use, we will involve "energy conversion efficiencies" later in the
+           calculation.
+        The 'energy conversion efficiencies' for renewable fuel powered vessels are commonly measured/given as a whole
+        covering the engine power systems, includes different engine (such as fuel cell engine, battery engine, internal
+        combustion engine, hybrid engine) efficiencies, and corresponding gearbox efficiencies, AC/DC converter
+        efficiencies, excludes the efficiency items of propellers.
+        Therefore, to align with the later use of "energy conversion efficiencies" for fuel use estimation and prevent
+        double use of some power efficiencies such as gearing efficiency, here we choose P_d as propulsion power.
         """
 
-        # Required power for systems on board, "5%" based on De Vos and van Gils (2011):Walstrom versus generators troom
+        # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
         # self.P_hotel = 0.05 * self.P_installed
 
         # Required power for propulsion
@@ -790,7 +802,8 @@ class ConsumesEnergy:
 
         #         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
-        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
+        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland
+        # Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
         # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power
         # relation between eta_D and ship velocity v
 
