@@ -1439,7 +1439,7 @@ class EnergyCalculation:
 
                 else:  # otherwise log P_tot
                     # Energy consumed per time step delta_t in the propulsion stage
-                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven with v a strange cutoff occurs)
+                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the available power ... that now works)
                     energy_delta = (
                         self.vessel.P_tot * delta_t / 3600
                     )  # kJ/3600 = kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
