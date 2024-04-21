@@ -770,109 +770,112 @@ class ConsumesEnergy:
         """
 
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
-        # self.P_hotel = 0.05 * self.P_installed
+        self.P_hotel = 0.05 * self.P_installed
 
         # Required power for propulsion
         # Effective Horse Power (EHP), P_e
         self.P_e = v * self.R_tot
 
-        #         # Calculation hull efficiency
-        #         dw = np.zeros(101)  # velocity correction coefficient
-        #         counter = 0
+        # Calculation hull efficiency
+        dw = np.zeros(101)  # velocity correction coefficient
+        counter = 0
 
-        #         if self.F_rL < 0.2:
-        #             self.dw = 0
-        #         else:
-        #             self.dw = 0.1
+        if self.F_rL < 0.2:
+            self.dw = 0
+        else:
+            self.dw = 0.1
 
-        #         self.w = (
-        #             0.11
-        #             * (0.16 / self.x)
-        #             * self.C_B
-        #             * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
-        #             - self.dw
-        #         )  # wake fraction 'w'
+        self.w = (
+            0.11
+            * (0.16 / self.x)
+            * self.C_B
+            * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
+            - self.dw
+        )  # wake fraction 'w'
 
-        #         assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
+        assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
 
-        #         if self.x == 1:
-        #             self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
-        #         else:
-        #             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
+        if self.x == 1:
+            self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
+        else:
+            self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
-        #         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
+        self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
         # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland
         # Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
         # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power
         # relation between eta_D and ship velocity v
 
-        if h_0 >= 9:
-            if self.F_rh >= 0.5:
-                self.eta_D = 0.6
-            elif 0.325 <= self.F_rh < 0.5:
-                self.eta_D = 0.7
-            elif 0.28 <= self.F_rh < 0.325:
-                self.eta_D = 0.59
-            elif 0.2 < self.F_rh < 0.28:
-                self.eta_D = 0.56
-            elif 0.17 < self.F_rh <= 0.2:
-                self.eta_D = 0.41
-            elif 0.15 < self.F_rh <= 0.17:
-                self.eta_D = 0.35
-            else:
-                self.eta_D = 0.29
+        # if h_0 >= 9:
+        #     if self.F_rh >= 0.5:
+        #         self.eta_D = 0.6
+        #     elif 0.325 <= self.F_rh < 0.5:
+        #         self.eta_D = 0.7
+        #     elif 0.28 <= self.F_rh < 0.325:
+        #         self.eta_D = 0.59
+        #     elif 0.2 < self.F_rh < 0.28:
+        #         self.eta_D = 0.56
+        #     elif 0.17 < self.F_rh <= 0.2:
+        #         self.eta_D = 0.41
+        #     elif 0.15 < self.F_rh <= 0.17:
+        #         self.eta_D = 0.35
+        #     else:
+        #         self.eta_D = 0.29
+        #
+        # elif 5 <= h_0 < 9:
+        #     if self.F_rh > 0.62:
+        #         self.eta_D = 0.7
+        #     elif 0.58 < self.F_rh < 0.62:
+        #         self.eta_D = 0.68
+        #     elif 0.57 < self.F_rh <= 0.58:
+        #         self.eta_D = 0.7
+        #     elif 0.51 < self.F_rh <= 0.57:
+        #         self.eta_D = 0.68
+        #     elif 0.475 < self.F_rh <= 0.51:
+        #         self.eta_D = 0.53
+        #     elif 0.45 < self.F_rh <= 0.475:
+        #         self.eta_D = 0.4
+        #     elif 0.36 < self.F_rh <= 0.45:
+        #         self.eta_D = 0.37
+        #     elif 0.33 < self.F_rh <= 0.36:
+        #         self.eta_D = 0.36
+        #     elif 0.3 < self.F_rh <= 0.33:
+        #         self.eta_D = 0.35
+        #     elif 0.28 < self.F_rh <= 0.3:
+        #         self.eta_D = 0.331
+        #     else:
+        #         self.eta_D = 0.33
+        # else:
+        #     if self.F_rh > 0.56:
+        #         self.eta_D = 0.28
+        #     elif 0.4 < self.F_rh <= 0.56:
+        #         self.eta_D = 0.275
+        #     elif 0.36 < self.F_rh <= 0.4:
+        #         self.eta_D = 0.345
+        #     elif 0.33 < self.F_rh <= 0.36:
+        #         self.eta_D = 0.28
+        #     elif 0.3 < self.F_rh <= 0.33:
+        #         self.eta_D = 0.27
+        #     elif 0.28 < self.F_rh <= 0.3:
+        #         self.eta_D = 0.26
+        #     else:
+        #         self.eta_D = 0.25
+        #
+        # # Delivered Horse Power (DHP), P_d
+        # self.P_d = self.P_e / self.eta_D
 
-        elif 5 <= h_0 < 9:
-            if self.F_rh > 0.62:
-                self.eta_D = 0.7
-            elif 0.58 < self.F_rh < 0.62:
-                self.eta_D = 0.68
-            elif 0.57 < self.F_rh <= 0.58:
-                self.eta_D = 0.7
-            elif 0.51 < self.F_rh <= 0.57:
-                self.eta_D = 0.68
-            elif 0.475 < self.F_rh <= 0.51:
-                self.eta_D = 0.53
-            elif 0.45 < self.F_rh <= 0.475:
-                self.eta_D = 0.4
-            elif 0.36 < self.F_rh <= 0.45:
-                self.eta_D = 0.37
-            elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.36
-            elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.35
-            elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.331
-            else:
-                self.eta_D = 0.33
-        else:
-            if self.F_rh > 0.56:
-                self.eta_D = 0.28
-            elif 0.4 < self.F_rh <= 0.56:
-                self.eta_D = 0.275
-            elif 0.36 < self.F_rh <= 0.4:
-                self.eta_D = 0.345
-            elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.28
-            elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.27
-            elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.26
-            else:
-                self.eta_D = 0.25
-
-        # Delivered Horse Power (DHP), P_d
-        self.P_d = self.P_e / self.eta_D
-
-        logger.debug("eta_D = {:.2f}".format(self.eta_D))
-        # self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
+        # logger.debug("eta_D = {:.2f}".format(self.eta_D))
+        
+        self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above)
-        # self.P_b = self.P_d / (self.eta_t * self.eta_g)
+        self.P_b = self.P_d / (self.eta_t * self.eta_g)
 
-        self.P_propulsion = self.P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
+        # self.P_propulsion = self.P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
+        self.P_propulsion = self.P_b  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
 
+        # TODO: consider to facilitate that all engine power can go into propulsion (Auxiliary generator for hotel)
         self.P_tot = self.P_hotel + self.P_propulsion
 
         # Partial engine load (P_partial): needed in the 'Emission calculations'
@@ -883,9 +886,9 @@ class ConsumesEnergy:
             self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
 
-        # logger.debug(f'The total power required is {self.P_tot} kW')
-        # logger.debug(f'The actual total power given is {self.P_given} kW')
-        # logger.debug(f'The partial load is {self.P_partial}')
+        logger.debug(f'The total power required is {self.P_tot} kW')
+        logger.debug(f'The actual total power given is {self.P_given} kW')
+        logger.debug(f'The partial load is {self.P_partial}')
 
         assert not isinstance(self.P_given, complex), f"P_given number should not be complex: {self.P_given}"
 
