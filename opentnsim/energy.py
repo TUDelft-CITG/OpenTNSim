@@ -75,8 +75,8 @@ def power2v(vessel, edge, upperbound):
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
-        # compute difference between power setting by captain and power needed for velocity
-        diff = vessel.P_tot_given - vessel.P_tot
+        # compute difference between power setting by captain (incl hotel) and power needed for velocity (incl hotel)
+        diff = vessel.P_tot_given - P_given # vessel.P_tot
         logger.debug(f"optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}")
 
         return diff**2
@@ -832,6 +832,7 @@ class ConsumesEnergy:
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
 
+        return self.P_given
 
     def emission_factors_general(self):
         """General emission factors:
