@@ -68,6 +68,8 @@ def get_upperbound_for_power2v(vessel, width, depth, bounds=(0, 20)):
     range.
     """
 
+    # TODO: this whole method seems to never be used (its usage is commented out in the power2v method (remove?)
+
     def get_grounding_v(vessel, width, depth, bounds):
         def seek_v_given_z(v, vessel, width, depth):
             # calculate sinkage
@@ -248,11 +250,15 @@ class ConsumesEnergy:
 
         self.P_installed = P_installed
         self.bulbous_bow = bulbous_bow
+
+        # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
         self.P_hotel_perc = P_hotel_perc
+
         if P_hotel:  # if P_hotel is specified as None calculate it from P_hotel_percentage
             self.P_hotel = P_hotel
         else:  # otherwise use the given value
             self.P_hotel = self.P_hotel_perc * self.P_installed
+
         self.P_tot_given = P_tot_given
         self.L_w = L_w
         self.year = current_year
@@ -326,6 +332,8 @@ class ConsumesEnergy:
         self.C_WP = (1 + 2 * self.C_B) / 3  # Waterplane coefficient
         self.C_P = self.C_B / self.C_M  # Prismatic coefficient
 
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C - Eq C.2
         self.delta = self.C_B * self.L * self.B * self.T  # Water displacement
 
         self.lcb = -13.5 + 19.4 * self.C_P  # longitudinal center of buoyancy
@@ -349,6 +357,7 @@ class ConsumesEnergy:
         self.S_APP = 0.05 * self.S  # Wet area of appendages
         self.S_B = self.L * self.B  # Area of flat bottom
 
+        # TODO: we may want to give D_s (screw diameter) if it is known (now it is always calculated)
         self.D_s = 0.7 * self.T  # Diameter of the screw
         self.T_F = self.T  # Forward draught of the vessel [m]
         self.h_B = 0.2 * self.T  # Position of the centre of the transverse area [m]
@@ -450,7 +459,7 @@ class ConsumesEnergy:
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
         # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
         assert self.g >= 0, f"g should be positive: {self.g}"
-        assert h_0 >= 0, f"g should be positive: {h_0}"
+        assert h_0 >= 0, f"h_0 should be positive: {h_0}"
         self.F_rh = v / np.sqrt(self.g * h_0)
 
         if self.F_rh <= 0.4:
@@ -770,21 +779,27 @@ class ConsumesEnergy:
         """
 
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
-        self.P_hotel = 0.05 * self.P_installed
+        # TODO: This line should be removed here, it overwrites what is set in the __init__ method
+        # self.P_hotel = 0.05 * self.P_installed
 
         # Required power for propulsion
-        # Effective Horse Power (EHP), P_e
+        # Effective Horse Power (EHP), P_e (Van Koningsveld et al (2023) - Part IV Eq 5.17)
         self.P_e = v * self.R_tot
 
         # Calculation hull efficiency
+        # TODO: these lines seem to do noting
         dw = np.zeros(101)  # velocity correction coefficient
         counter = 0
 
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C
         if self.F_rL < 0.2:
-            self.dw = 0
+            self.dw = 0    # the velocity correction coefficient is 0 when FrL is smaller than 0.2
         else:
-            self.dw = 0.1
+            self.dw = 0.1  # otherwise the velocity correction coefficient is 0.1
 
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C - Eq C.1
         self.w = (
             0.11
             * (0.16 / self.x)
@@ -796,8 +811,10 @@ class ConsumesEnergy:
         assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
 
         if self.x == 1:
+            # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
             self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
         else:
+            # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
@@ -866,10 +883,12 @@ class ConsumesEnergy:
         # self.P_d = self.P_e / self.eta_D
 
         # logger.debug("eta_D = {:.2f}".format(self.eta_D))
-        
+
+        # (Van Koningsveld et al (2023) - Part IV Eq 5.19)
         self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above)
+        # (Van Koningsveld et al (2023) - Part IV Eq 5.24)
         self.P_b = self.P_d / (self.eta_t * self.eta_g)
 
         # self.P_propulsion = self.P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
@@ -897,7 +916,8 @@ class ConsumesEnergy:
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
 
-        return self.P_propulsion, self.P_tot, self.P_given
+        # TODO: these don't need to be returned as they are stored in self (check if this gives errors?)
+        # return self.P_propulsion, self.P_tot, self.P_given
 
     def emission_factors_general(self):
         """General emission factors:
@@ -1426,6 +1446,7 @@ class EnergyCalculation:
             node_stop = find_closest_node(self.FG, geom_stop)[0]
 
             # Read from the FG data from vaarweginformatie.nl the General depth of each edge
+            # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
             try:  # if node_start != node_stop:
                 depth = self.FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
             except:
@@ -1439,10 +1460,10 @@ class EnergyCalculation:
         # log messages that are related to locking
         # todo: check if this still works with Floors new locking module
         stationary_phase_indicator = [
-            "Waiting to enter waiting area stop",
-            "Waiting in waiting area stop",
-            "Waiting in line-up area stop",
-            "Passing lock stop",
+            "Waiting to enter waiting area stop",   # checked: not sure if still used in locking module
+            "Waiting in waiting area stop",         # checked: not sure if still used in locking module
+            "Waiting in line-up area stop",         # checked: still used in locking module
+            "Passing lock stop",                    # checked: still used in locking module
         ]
 
         # extract relevant elements from the vessel log
@@ -1496,6 +1517,7 @@ class EnergyCalculation:
 
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
                     # consuming 'energy_delta' kWh
+                    # TODO: check, as it seems that stationary energy use is now not stored.
                     P_hotel_delta = self.vessel.P_hotel  # in kW
                     P_installed_delta = self.vessel.P_installed  # in kW
 
