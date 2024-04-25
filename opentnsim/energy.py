@@ -133,6 +133,7 @@ class ConsumesEnergy:
         rho=1000,
         g=9.81,
         x=2,
+        D_s=1.4,
         eta_o=0.4,
         eta_r=1.00,
         eta_t=0.98,
@@ -167,6 +168,7 @@ class ConsumesEnergy:
         self.rho = rho
         self.g = g
         self.x = x
+        self.D_s = D_s
         self.eta_o = eta_o
         self.eta_r = eta_r
         self.eta_t = eta_t
@@ -262,8 +264,10 @@ class ConsumesEnergy:
         # Segers (2021) Eq 3.20
         self.S_B = self.L * self.B  # Area of flat bottom
 
-        # TODO: we may want to give D_s (screw diameter) if it is known (now it is always calculated)
-        self.D_s = 0.7 * self.T  # Diameter of the screw
+        # TODO: we D_s is a property that should be given, not calculated
+        # if self.D_s is None:
+        #     self.D_s = 0.7 * self.T  # Diameter of the screw
+
         # TODO: check references for these equations
         self.T_F = self.T  # Forward draught of the vessel [m]
         self.h_B = 0.2 * self.T  # Position of the centre of the transverse area [m]

@@ -300,6 +300,7 @@ class Movable(Locatable, Routable, Log):
 
         # This is the case if we are sailing on power
         value = 0
+        # TODO: check how this should respond to h_squat. I would say if h_squat is false that you dont want to include sinkage
         if getattr(self, "P_tot_given", None) is not None:
             edge = self.graph.edges[origin, destination]
             depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]

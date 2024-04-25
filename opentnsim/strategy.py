@@ -297,7 +297,8 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     results = []
     for i, row in tqdm.tqdm(task_df.iterrows(), disable=True):
         # calculate squat and the waterdepth after squat
-        # todo: check if we can replace this with a squat method
+        # TODO: check if we can replace this with a squat method (NB: this follows: Barrass & Derrett (2006), https://doi.org/10.1016/B978-0-08-097093-6.00042-6)
+        # TODO: can't we use energy.calculate_max_sinkage (rather than retype it here)
         z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (width * depth)) ** 0.81) * ((row["velocity"] * 1.94) ** 2.08) / 20
 
         # calculate squatted waterdepth
@@ -323,6 +324,7 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     results_df = pd.DataFrame(results)
 
     # return only dataframe up to and including the first time that P_tot == P_installed
+    # TODO: is P_tot again incl hotel power, do we want to focus on P_tot being equal to P_available_for_propulsion
     selected = results_df[0 : (results_df.P_installed >= results_df.P_tot).idxmin()]
 
     upperbound = selected.Powerallowed_v.max()
