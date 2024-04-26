@@ -361,6 +361,7 @@ class Movable(Locatable, Routable, Log):
         self.on_pass_edge_functions = []
         self.on_pass_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
+        self.on_pass_edge_functions.append(self.do_move)
 
     def move(self, destination: Union[Locatable, Geometry, str] = None, engine_order: float = 1.0, duration: float = None):
         """determine distance between origin and destination, and
@@ -422,7 +423,9 @@ class Movable(Locatable, Routable, Log):
                 if destination == self.node:
                     break
 
-            yield from self.pass_edge(a, b)
+            for on_pass_edge_function in self.on_pass_edge_functions:
+                yield from on_pass_edge_function(a, b)
+
 
             # we arrived at destination
             # update to new position
@@ -442,13 +445,10 @@ class Movable(Locatable, Routable, Log):
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
 
-    def pass_edge(self, origin, destination):
+    def do_move(self, origin, destination):
         edge = self.graph.edges[origin, destination]
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
-
-        for on_pass_edge_function in self.on_pass_edge_functions:
-            yield from on_pass_edge_function(origin, destination)
 
         # TODO: there is an issue here. If geometry is available, resources and power are ignored.
         if "geometry" in edge:
