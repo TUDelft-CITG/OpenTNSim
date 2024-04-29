@@ -313,6 +313,7 @@ class Movable(Locatable, Routable, Log):
             ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
             self.v = self.power2v(self, edge, upperbound)
             # store upperbound velocity
+            # TODO: remove these three fields after debugging
             self.selected = selected
             self.results_df = results_df
             self.upperbound = upperbound
