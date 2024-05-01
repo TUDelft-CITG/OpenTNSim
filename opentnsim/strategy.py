@@ -241,15 +241,15 @@ def get_v(vessel, width, depth, margin, bounds):
     reached given a vessel's T and a safety margin."""
 
     def seek_v_given_z(v, vessel, width, depth, margin):
-        # calculate sinkage
 
-        z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (width * depth)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+        # calculate the sinkage (if turned on, otherwise 0)
+        max_sinkage = vessel.calculate_max_sinkage(v=v, h_0=depth, width=width)
 
         # calculate available underkeel clearance (vessel in rest)
-        z_given = depth - vessel._T
+        available_clearance = depth - vessel._T
 
         # compute difference between the sinkage and the space available for sinkage (including safety margin)
-        diff = z_given - z_computed - margin
+        diff = available_clearance - max_sinkage - margin
 
         return diff**2
 
@@ -264,11 +264,8 @@ def get_v(vessel, width, depth, margin, bounds):
     # the value of fit.x within the bound (0,20) is the velocity we find where the diff**2 reach a minimum (zero).
     v = fit.x
 
-    # calculate the key values again for the resulting speed
-    z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (width * depth)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
-    depth_squat = depth - z_computed
 
-    return v, depth, depth_squat, z_computed, margin
+    return v, depth, margin
 
 
 def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
@@ -278,10 +275,17 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     range."""
 
     # estimate the grounding velocity
-    grounding_v, depth, depth_squat, z_computed, margin = get_v(vessel, width, depth, margin=0, bounds=bounds)
+    # here we optionally try to take sinkage into account and try to compute the maximum velocity where we still have underkeel clearance
+    grounding_v, depth, margin = get_v(vessel, width, depth, margin=0, bounds=bounds)
 
+
+    # The next step is to compute the maximum power for the veloctiy.
+    # Here (for some reason we don't use a solver )
     # find max power velocity
-    velocity = np.linspace(0.01, grounding_v, 100)
+    velocity = np.linspace(0.01, grounding_v, 500)
+
+    # Here we create a list of velocities from 0.01 to the grounding velocity in 100 steps
+    # For each velocity we will calculate the squat and the waterdepth after squat
     task = list(itertools.product(velocity[0:-1]))
 
     # prepare a list of dictionaries for pandas
@@ -294,15 +298,15 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     task_df = pd.DataFrame(rows)
 
     # creat a results empty list to collect the below results
+    # TODO: replace this with a goalseeking function, now we need 500 iterations to get an accurate result
+    # With a goal seeking function (similar to get_v, we should have this down to ~10-20)
+    # Or we can compute it analytically, but that requres a lot of coding
     results = []
     for i, row in tqdm.tqdm(task_df.iterrows(), disable=True):
-        # calculate squat and the waterdepth after squat
-        # TODO: check if we can replace this with a squat method (NB: this follows: Barrass & Derrett (2006), https://doi.org/10.1016/B978-0-08-097093-6.00042-6)
-        # TODO: can't we use energy.calculate_max_sinkage (rather than retype it here)
-        z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (width * depth)) ** 0.81) * ((row["velocity"] * 1.94) ** 2.08) / 20
 
-        # calculate squatted waterdepth
-        h_0 = depth - z_computed
+        # in energy module waterdepth  is called h_0 (ignores when squat is disabled)
+        h_0 = vessel.calculate_h_squat(v=row["velocity"], h_0=depth, width=width)
+        max_sinkage = vessel.calculate_max_sinkage(v=row["velocity"], h_0=depth, width=width)
 
         # for the squatted water depth calculate resistance and power
         vessel.calculate_total_resistance(v=row["velocity"], h_0=h_0)
@@ -314,9 +318,10 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
         result["Powerallowed_v"] = row["velocity"]
         result["P_tot"] = vessel.P_tot
         result["P_installed"] = vessel.P_installed
-        result["h_0"] = depth
-        result["z_computed"] = z_computed
-        result["h_squat"] = h_0
+        # not used but for inspection
+        result["depth"] = depth
+        result["max_sinkage"] = max_sinkage
+        result["h_0"] = h_0
 
         # update resulst dict
         results.append(result)
