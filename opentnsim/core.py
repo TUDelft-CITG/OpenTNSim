@@ -306,19 +306,22 @@ class Movable(Locatable, Routable, Log):
             depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
 
             # estimate 'grounding speed' as a useful upperbound
+            # Width is always set to 150, that makes it consistent again with the squat function in energy module
             (
                 upperbound,
                 selected,
                 results_df,
             ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
+            # Here the upperbound is used to estimate the actual velocity
+            #
             self.v = self.power2v(self, edge, upperbound)
             # store upperbound velocity
             # TODO: remove these three fields after debugging
             self.selected = selected
             self.results_df = results_df
             self.upperbound = upperbound
-            # use computed power
-            value = self.P_given
+            # use upperbound power (used to compute the sailing speed)
+            value = upperbound
 
         # Maximum speed restriction may be limiting the on power speed
         if 'vessel_traffic_service' in dir(self.env):
