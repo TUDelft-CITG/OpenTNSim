@@ -300,28 +300,30 @@ class Movable(Locatable, Routable, Log):
 
         # This is the case if we are sailing on power
         value = 0
-        # TODO: check how this should respond to h_squat. I would say if h_squat is false that you dont want to include sinkage
         if getattr(self, "P_tot_given", None) is not None:
             edge = self.graph.edges[origin, destination]
             depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
 
-            # estimate 'grounding speed' as a useful upperbound
-            # Width is always set to 150, that makes it consistent again with the squat function in energy module
+            # You can input more power than is realistic
+            # There are two mechanisms that reduce the power given:
+            # 1. The grounding speed:
             (
                 upperbound,
                 selected,
                 results_df,
             ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
+
+
             # Here the upperbound is used to estimate the actual velocity
-            #
-            self.v = self.power2v(self, edge, upperbound)
+            power_used = min(self.P_tot_given, upperbound)
+            self.v = self.power2v(self, edge, power_used)
             # store upperbound velocity
             # TODO: remove these three fields after debugging
             self.selected = selected
             self.results_df = results_df
             self.upperbound = upperbound
             # use upperbound power (used to compute the sailing speed)
-            value = upperbound
+            value = power_used
 
         # Maximum speed restriction may be limiting the on power speed
         if 'vessel_traffic_service' in dir(self.env):
