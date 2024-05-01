@@ -26,9 +26,13 @@ import simpy
 from openclsim.core import Identifiable, Locatable, SimpyObject, Log
 
 import opentnsim.energy
-import opentnsim.graph_module
+import opentnsim.graph as graph_module
+
 
 # additional packages
+import json
+import pandas as pd
+import pytz
 
 
 logger = logging.getLogger(__name__)
@@ -40,15 +44,18 @@ Geometry = shapely.Geometry
 class HasResource(SimpyObject):
     """Something that has a resource limitation, a resource request must be granted before the object can be used.
 
-    - nr_resources: nr of requests that can be handled simultaneously
-    """
+    nr_resources: nr of requests that can be handled simultaneously"""
 
-    def __init__(self, nr_resources=1, priority=False, *args, **kwargs):
+    def __init__(self, capacity = 1, parallel_resources = {}, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.resource = (
-            simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
-        )
+        if not parallel_resources:
+            self.resource = simpy.PriorityResource(self.env, capacity=capacity)
+
+        else:
+            self.resource = {}
+            for resource_name,capacity in independent_resources.items():
+                self.resource[resource_name] = simpy.PriorityResource(self.env, capacity=capacity)
 
 
 class Neighbours:
@@ -63,19 +70,16 @@ class Neighbours:
         self.neighbours = travel_to
 
 
-class HasLength(SimpyObject):
+class HasLength(SimpyObject): #used by IsLock and IsLineUpArea to regulate number of vessels in each lock cycle and calculate repsective position in lock chamber/line-up area
     """Mixin class: Something with a storage capacity
-
     capacity: amount the container can hold
     level: amount the container holds initially
-    total_requested: a counter that helps to prevent over requesting
-    """
+    total_requested: a counter that helps to prevent over requesting"""
 
     def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
-        self.pos_length = simpy.Container(self.env, capacity=length, init=remaining_length)
+        self.length = simpy.Container(self.env, capacity = length, init=remaining_length)
 
 
 class HasContainer(SimpyObject):
@@ -132,163 +136,6 @@ class HasLoad:
         return self.filling_degree * (self.H_f - self.H_e) + self.H_e
 
 
-class VesselProperties:
-    """Mixin class: Something that has vessel properties
-    This mixin is updated to better accommodate the ConsumesEnergy mixin
-
-    - type: can contain info on vessel type (avv class, cemt_class or other)
-    - B: vessel width
-    - L: vessel length
-    - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property
-      ['Info']['GeneralDepth']
-    - T: actual draught
-    - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing,
-      the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety
-      margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude
-      of the ship captain and shipping companies.
-    - h_squat: the water depth considering ship squatting while the ship moving (if set to False, h_squat is disabled)
-    - payload: cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.
-      (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
-    - vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker".
-      ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull),
-      based on van Dorsser et al's paper.
-      (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
-    Alternatively you can specify draught based on filling degree
-    - H_e: vessel height unloaded
-    - H_f: vessel height loaded
-    - T_e: draught unloaded
-    - T_f: draught loaded
-    - renewable_fuel_mass: renewable fuel mass on board [kg]
-    - renewable_fuel_volume: renewable fuel volume on board [m3]
-    - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
-    """
-
-    def __init__(
-        self,
-        type,
-        B,
-        L,
-        h_min=None,
-        T=None,
-        safety_margin=None,
-        h_squat=None,
-        payload=None,
-        vessel_type=None,
-        renewable_fuel_mass=None,
-        renewable_fuel_volume=None,
-        renewable_fuel_required_space=None,
-        *args,
-        **kwargs
-    ):
-        super().__init__(*args, **kwargs)
-
-        """Initialization
-        """
-        self.type = type
-        self.B = B
-        self.L = L
-        # hidden because these can also computed on the fly
-        self._T = T
-        self._h_min = h_min
-        # alternative  options
-        self.safety_margin = safety_margin
-        self.h_squat = h_squat
-        self.payload = payload
-        self.vessel_type = vessel_type
-        self.renewable_fuel_mass = renewable_fuel_mass
-        self.renewable_fuel_volume = renewable_fuel_volume
-        self.renewable_fuel_required_space = renewable_fuel_required_space
-
-    @property
-    def T(self):
-        """Compute the actual draught.
-        This will default to using the draught passed by the constructor. If it is None it will try to find one in the super class.
-        """
-        if self._T is not None:
-            # if we were passed a T value, use tha one
-            T = self._T
-        elif self.T_f is not None and self.T_e is not None:
-            # base draught on filling degree
-            T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
-        elif self.payload is not None and self.vessel_type is not None:
-            T = opentnsim.strategy.Payload2T(
-                self,
-                Payload_strategy=self.payload,
-                vessel_type=self.vessel_type,
-                bounds=(0, 40),
-            )  # this need to be tested
-        # todo: for later possibly include Payload2T
-
-        return T
-
-    @property
-    def h_min(self):
-        if self._h_min is not None:
-            h_min = self._h_min
-        else:
-            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.graph, route=self.route)
-
-        return h_min
-
-    def get_route(
-        self,
-        origin,
-        destination,
-        graph=None,
-        minWidth=None,
-        minHeight=None,
-        minDepth=None,
-        randomSeed=4,
-    ):
-        """Calculate a path based on vessel restrictions"""
-
-        graph = graph if graph else self.graph
-        minWidth = minWidth if minWidth else 1.1 * self.B
-        minHeight = minHeight if minHeight else 1.1 * self.H
-        minDepth = minDepth if minDepth else 1.1 * self.T
-
-        # Check if information on restrictions is added to the edges
-        random.seed(randomSeed)
-        edge = random.choice(list(graph.edges(data=True)))
-        edge_attrs = list(edge[2].keys())
-
-        # IMPROVE THIS TO CHECK ALL EDGES AND COMBINATIONS OF RESTRICTIONS
-
-        if all(item in edge_attrs for item in ["Width", "Height", "Depth"]):
-            edges = []
-            nodes = []
-
-            for edge in graph.edges(data=True):
-                if edge[2]["Width"] >= minWidth and edge[2]["Height"] >= minHeight and edge[2]["Depth"] >= minDepth:
-                    edges.append(edge)
-
-                    nodes.append(graph.nodes[edge[0]])
-                    nodes.append(graph.nodes[edge[1]])
-
-            subGraph = graph.__class__()
-
-            for node in nodes:
-                subGraph.add_node(
-                    node["name"],
-                    name=node["name"],
-                    geometry=node["geometry"],
-                    position=(node["geometry"].x, node["geometry"].y),
-                )
-
-            for edge in edges:
-                subGraph.add_edge(edge[0], edge[1], attr_dict=edge[2])
-
-            try:
-                return nx.dijkstra_path(subGraph, origin, destination)
-                # return nx.bidirectional_dijkstra(subGraph, origin, destination)
-            except nx.NetworkXNoPath:
-                raise ValueError("No path was found with the given boundary conditions.")
-
-        # If not, return shortest path
-        else:
-            return nx.dijkstra_path(graph, origin, destination)
-
-
 class Routable(SimpyObject):
     """Mixin class: Something with a route (networkx format)
 
@@ -296,24 +143,17 @@ class Routable(SimpyObject):
     - position_on_route: index of position
     """
 
-    def __init__(self, route, complete_path=None, *args, **kwargs):
+    def __init__(self, origin, destination, next_destinations=[], *args, **kwargs):
         """Initialization"""
         super().__init__(*args, **kwargs)
         env = kwargs.get("env")
-        # if env is given and env is not None
-        if env is not None:
-            has_fg = hasattr(env, "FG")
-            has_graph = hasattr(env, "graph")
-            if has_fg and not has_graph:
-                warnings.warn(".FG attribute has been renamed to .graph, please update your code", DeprecationWarning)
-            assert (
-                has_fg or has_graph
-            ), "Routable expects `.graph` (a networkx graph) to be present as an attribute on the environment"
         super().__init__(*args, **kwargs)
-        self.route = route
+        self.origin = origin
+        self.destination = destination
+        self.next_destinations = next_destinations
+        self.route = nx.dijkstra_path(env.FG, origin, self.destination)
         # start at start of route
         self.position_on_route = 0
-        self.complete_path = complete_path
 
     @property
     def graph(self):
@@ -339,11 +179,6 @@ class Routable(SimpyObject):
         return graph
 
 
-@deprecated.deprecated(reason="Use Routable instead of Routeable")
-class Routeable(Routable):
-    """Old name for Mixin class: renamed to Routable."""
-
-
 class Movable(Locatable, Routable, Log):
     """Mixin class: Something can move.
 
@@ -352,83 +187,88 @@ class Movable(Locatable, Routable, Log):
     - geometry: point used to track its current location
     - v: speed
     - on_pass_edge_functions can contain a list of generators in the form of on_pass_edge(source: Point, destination: Point) -> yield event
+    - on_pass_node_functions can contain a list of generators in the form of on_pass_node(source: Point) -> yield event
     """
 
-    def __init__(self, v: float, *args, **kwargs):
+    def __init__(self, env, origin, destination, *args, **kwargs):
+        geometry = env.FG.nodes[origin]['geometry']
+        super().__init__(origin=origin, destination=destination, geometry=geometry, env=env, *args, **kwargs)
         """Initialization"""
-        self.v = v
-        super().__init__(*args, **kwargs)
-        self.on_pass_edge_functions = []
         self.on_pass_node_functions = []
+        self.on_pass_edge_functions = []
+        self.on_complete_pass_edge_functions = []
+        self.on_look_ahead_to_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    def move(self, destination: Union[Locatable, Geometry, str] = None, engine_order: float = 1.0, duration: float = None):
+    def move(self):
         """determine distance between origin and destination, and
         yield the time it takes to travel it
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
 
-        # simplify destination to node or geometry
-        if isinstance(destination, Locatable):
-            destination = destination.geometry
+        # time-out if arrival time lies in future
+        yield self.env.timeout((self.metadata['arrival_time'] - self.env.simulation_start).total_seconds())
+        self.arrival_time = self.env.now
+        self.metadata['arrival_time'] = self.env.simulation_start  # resets delay
 
+        # default distance to next node
         self.distance = 0
-        speed = self.v
+
+        for idx,method in enumerate(self.on_pass_node_functions):
+            if method.__str__().split('method ')[1].split(' of <')[0] == 'HasPortAccess.request_terminal_access':
+                self.on_pass_node.insert(0, self.on_pass_node.pop(idx))
+                break
+
+        self.update_route_status_report()
 
         # Check if vessel is at correct location - if not, move to location
-        first_n = self.route[0]
-        first_node = self.graph.nodes[first_n]
-        first_geometry = first_node["geometry"]
-
-        if self.geometry != first_geometry:
-            orig = self.geometry
-            dest = first_geometry
-
+        vessel_origin_location = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+        if self.geometry != vessel_origin_location:
+            start_location = self.geometry
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
 
-            self.distance += self.wgs84.inv(
-                shapely.geometry.shape(orig).x,
-                shapely.geometry.shape(orig).y,
-                shapely.geometry.shape(dest).x,
-                shapely.geometry.shape(dest).y,
-            )[2]
+            self.distance += self.wgs84.inv(start_location.x,
+                                            start_location.y,
+                                            vessel_origin_location.x,
+                                            vessel_origin_location.y
+                                            )[2]
 
             yield self.env.timeout(self.distance / self.current_speed)
-            self.log_entry("Sailing to start", self.env.now, self.distance, dest)
+            self.log_entry("Sailing to start", self.env.now, self.output.copy(), vessel_origin_location)
 
         # Move over the path and log every step
-        for i, edge in enumerate(zip(self.route[:-1], self.route[1:])):
-            # name it a, b here, to avoid confusion with destination argument
-            a, b = edge
+        for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
+            self.current_node, self.next_node = edge # origin and destination
+            start_location = nx.get_node_attributes(self.env.FG, "geometry")[self.current_node]
+            end_location = nx.get_node_attributes(self.env.FG, "geometry")[self.next_node]
 
-            node = a
+            # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
+            k = sorted(self.multidigraph[self.current_node][self.next_node],key=lambda x: self.multidigraph[self.current_node][self.next_node][x]['geometry'].length)[0]
+            status_report = self.update_sailing_status_report(self.current_node, self.next_node, (self.current_node, self.next_node, k))
+            self.log_entry("Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+                           self.env.now, status_report, start_location)
 
-            yield from self.pass_node(node)
-
-            # we are now at the node
-            self.node = node
+            yield from self.pass_node(self.current_node)
 
             # update to current position
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[a]
-            self.position_on_route = i
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
+            self.position_on_route = index
 
             # are we already at destination?
-            if destination is not None:
-                # for geometry we need to use the shapely equivalent
-                if isinstance(destination, Geometry) and destination.equals(self.geometry):
-                    break
-                # or the node equivalence
-                if destination == self.node:
-                    break
+            if self.next_node == self.current_node:
+                break
 
-            yield from self.pass_edge(a, b)
+            yield from self.pass_edge(self.current_node, self.next_node, end_location)
+            yield from self.complete_pass_edge(self.next_node)
 
             # we arrived at destination
             # update to new position
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[b]
-            self.node = b
-            self.position_on_route = i + 1
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.next_node]
+            self.current_node = self.next_node
+            self.position_on_route = index + 1
+
+            yield from self.look_ahead_to_node(self.next_node)
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
@@ -436,135 +276,103 @@ class Movable(Locatable, Routable, Log):
             logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
         else:
             logger.debug("  current_speed:  not set")
+        self.update_route_status_report(True)
 
     def pass_node(self, node):
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
 
-    def pass_edge(self, origin, destination):
+    def pass_edge(self, origin, destination, end_location):
         edge = self.graph.edges[origin, destination]
-        orig = nx.get_node_attributes(self.graph, "geometry")[origin]
-        dest = nx.get_node_attributes(self.graph, "geometry")[destination]
+        k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
+        self.distance = self.multidigraph.edges[origin, destination, k]['length']
+
+        next_node = None
+        if self.route[-1] != destination:
+            next_node = self.route[self.route.index(destination)+1]
 
         for on_pass_edge_function in self.on_pass_edge_functions:
             yield from on_pass_edge_function(origin, destination)
 
-        # TODO: there is an issue here. If geometry is available, resources and power are ignored.
-        if "geometry" in edge:
-            edge_route = np.array(edge["geometry"].coords)
+        # remember when we arrived at the edge
+        arrival = self.env.now
 
-            # check if edge is in the sailing direction, otherwise flip it
-            distance_from_start = self.wgs84.inv(
-                orig.x,
-                orig.y,
-                edge_route[0][0],
-                edge_route[0][1],
-            )[2]
-            distance_from_stop = self.wgs84.inv(
-                orig.x,
-                orig.y,
-                edge_route[-1][0],
-                edge_route[-1][1],
-            )[2]
-            if distance_from_start > distance_from_stop:
-                # when the distance from the starting point is greater than from the end point
-                edge_route = np.flipud(np.array(edge["geometry"].coords))
+        # This is the case if we are sailing on power
+        value = 0
+        if getattr(self, "P_tot_given", None) is not None:
+            edge = self.graph.edges[origin, destination]
+            depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
 
-            for index, pt in enumerate(edge_route[:-1]):
-                sub_orig = shapely.geometry.Point(edge_route[index][0], edge_route[index][1])
-                sub_dest = shapely.geometry.Point(edge_route[index + 1][0], edge_route[index + 1][1])
+            # You can input more power than is realistic
+            # There are two mechanisms that reduce the power given:
+            # 1. The grounding speed:
+            (
+                upperbound,
+                selected,
+                results_df,
+            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
 
-                distance = self.wgs84.inv(
-                    shapely.geometry.shape(sub_orig).x,
-                    shapely.geometry.shape(sub_orig).y,
-                    shapely.geometry.shape(sub_dest).x,
-                    shapely.geometry.shape(sub_dest).y,
-                )[2]
-                self.distance += distance
-                self.log_entry(
-                    "Sailing from node {} to node {} sub edge {} start".format(origin, destination, index),
-                    self.env.now,
-                    0,
-                    sub_orig,
-                )
-                yield self.env.timeout(distance / self.current_speed)
-                self.log_entry(
-                    "Sailing from node {} to node {} sub edge {} stop".format(origin, destination, index),
-                    self.env.now,
-                    0,
-                    sub_dest,
-                )
-            self.geometry = dest
+
+            # Here the upperbound is used to estimate the actual velocity
+            power_used = min(self.P_tot_given, upperbound)
+            self.v = self.power2v(self, edge, power_used)
+            # store upperbound velocity
+            # TODO: remove these three fields after debugging
+            self.selected = selected
+            self.results_df = results_df
+            self.upperbound = upperbound
+            # use upperbound power (used to compute the sailing speed)
+            value = power_used
+
+        # Maximum speed restriction may be limiting the on power speed
+        if 'vessel_traffic_service' in dir(self.env):
+            self.v = self.env.vessel_traffic_service.provide_speed(self,edge)
+
+        # Wait for edge resources to become available
+        if "Resources" in edge.keys():
+            with self.graph.edges[origin, destination]["Resources"].request() as request:
+                yield request
+                # we had to wait, log it
+                if arrival != self.env.now:
+                    self.log_entry(
+                        "Waiting to pass edge {} - {} start".format(origin, destination),
+                        arrival,
+                        value,
+                        orig,
+                    )
+                    self.log_entry(
+                        "Waiting to pass edge {} - {} stop".format(origin, destination),
+                        self.env.now,
+                        value,
+                        orig,
+                    )
+
+        # default velocity based on current speed.
+        timeout = self.distance / self.current_speed
+        yield self.env.timeout(timeout)
+        if next_node:
+            status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))
         else:
-            distance = self.wgs84.inv(
-                shapely.geometry.shape(orig).x,
-                shapely.geometry.shape(orig).y,
-                shapely.geometry.shape(dest).x,
-                shapely.geometry.shape(dest).y,
-            )[2]
+            status_report = self.update_sailing_status_report(self.next_node,self.next_node,(self.current_node, self.next_node, k))
+        self.log_entry("Sailing from node {} to node {} stop".format(self.current_node, self.next_node), self.env.now, status_report, end_location)
+        self.geometry = end_location
 
-            self.distance += distance
+    def complete_pass_edge(self,destination):
+        for gen in self.on_complete_pass_edge_functions:
+            try:
+                yield from gen(destination)
+            except simpy.exceptions.Interrupt as e:
+                logger.debug("Completed", exc_info=True)
+                raise simpy.exceptions.Interrupt('Completed')
 
-            value = 0
-
-            # remember when we arrived at the edge
-            arrival = self.env.now
-
-            v = self.current_speed
-
-            # This is the case if we are sailing on power
-            if getattr(self, "P_tot_given", None) is not None:
-                edge = self.graph.edges[origin, destination]
-                depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
-
-                # estimate 'grounding speed' as a useful upperbound
-                (
-                    upperbound,
-                    selected,
-                    results_df,
-                ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
-                v = self.power2v(self, edge, upperbound)
-                # use computed power
-                value = self.P_given
-
-            # determine time to pass edge
-            timeout = distance / v
-
-            # Wait for edge resources to become available
-            if "Resources" in edge.keys():
-                with self.graph.edges[origin, destination]["Resources"].request() as request:
-                    yield request
-                    # we had to wait, log it
-                    if arrival != self.env.now:
-                        self.log_entry(
-                            "Waiting to pass edge {} - {} start".format(origin, destination),
-                            arrival,
-                            value,
-                            orig,
-                        )
-                        self.log_entry(
-                            "Waiting to pass edge {} - {} stop".format(origin, destination),
-                            self.env.now,
-                            value,
-                            orig,
-                        )
-
-            # default velocity based on current speed.
-            self.log_entry(
-                "Sailing from node {} to node {} start".format(origin, destination),
-                self.env.now,
-                value,
-                orig,
-            )
-            yield self.env.timeout(timeout)
-            self.log_entry(
-                "Sailing from node {} to node {} stop".format(origin, destination),
-                self.env.now,
-                value,
-                dest,
-            )
-        self.geometry = dest
+    def look_ahead_to_node(self,destination):
+        for gen in self.on_look_ahead_to_node_functions:
+            try:
+                yield from gen(destination)
+            except simpy.exceptions.Interrupt as e:
+                logger.debug("Re-routing", exc_info=True)
+                raise simpy.exceptions.Interrupt('Re-routing')
 
     @property
     def current_speed(self):
@@ -587,6 +395,15 @@ class ContainerDependentMovable(Movable, HasContainer):
         return self.compute_v(self.container.level / self.container.capacity)
 
 
+class HasCapacity(SimpyObject):
+
+    def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
+        self.pos_length = simpy.Container(self.env, capacity=length, init=remaining_length)
+
+
 class ExtraMetadata:
     """store all leftover keyword arguments as metadata property (use as last mixin)"""
 
@@ -594,3 +411,14 @@ class ExtraMetadata:
         super().__init__(*args)
         # store all other properties as metadata
         self.metadata = kwargs
+
+
+class HasType:
+    """Mixin class: Something that has a type (such as a vessel may be a container vessel, tanker, etc.
+
+    type: string"""
+
+    def __init__(self, type, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+        self.type = type
