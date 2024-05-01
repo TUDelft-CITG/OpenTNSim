@@ -1248,7 +1248,7 @@ class ConsumesEnergy:
         self.emission_g_s_NOX = self.P_given * self.total_factor_NOX / 3600
 
 
-    def calculate_max_sinkage(self, v, h_0):
+    def calculate_max_sinkage(self, v, h_0, width=150):
         """Calculate the maximum sinkage of a moving ship
 
         the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates,
@@ -1257,28 +1257,24 @@ class ConsumesEnergy:
         some explanation for the variables in the equation:
         - h_0: water depth
         - v: ship velocity relative to the water
-        - 150: Here we use the standard width 150 m as the waterway width
-
+        - width: river width, default to 150
         """
 
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+        max_sinkage = 0
+        if self.h_squat:
+            max_sinkage = (self.C_B * ((self.B * self._T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
 
         return max_sinkage
 
 
-    def calculate_h_squat(self, v, h_0):
-        """Calculate the waterlevel in case h_squat is set to True
+    def calculate_h_squat(self, v, h_0, width=150):
+        """Calculate the water depth in case h_squat is set to True
 
         The amount of water under the keel is calculated h_0 - T. When h_squat is set to True, we estimate a max_sinkage
         that is subtracted from h_0. This values is returned as h_squat for further calculation.
 
         """
-
-        if self.h_squat:
-            h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
-
-        else:
-            h_squat = h_0
+        h_squat = h_0 - self.calculate_max_sinkage(v, h_0, width=width)
 
         return h_squat
 
