@@ -145,13 +145,12 @@ class Routable(SimpyObject):
 
     def __init__(self, origin, destination, next_destinations=[], *args, **kwargs):
         """Initialization"""
-        super().__init__(*args, **kwargs)
         env = kwargs.get("env")
         super().__init__(*args, **kwargs)
         self.origin = origin
         self.destination = destination
         self.next_destinations = next_destinations
-        self.route = nx.dijkstra_path(env.FG, origin, self.destination)
+        self.route = nx.dijkstra_path(env.FG, self.origin, self.destination)
         # start at start of route
         self.position_on_route = 0
 
@@ -216,7 +215,7 @@ class Movable(Locatable, Routable, Log):
 
         for idx,method in enumerate(self.on_pass_node_functions):
             if method.__str__().split('method ')[1].split(' of <')[0] == 'HasPortAccess.request_terminal_access':
-                self.on_pass_node.insert(0, self.on_pass_node.pop(idx))
+                self.on_pass_node_functions.insert(0, self.on_pass_node_functions.pop(idx))
                 break
 
         self.update_route_status_report()
@@ -235,7 +234,7 @@ class Movable(Locatable, Routable, Log):
                                             )[2]
 
             yield self.env.timeout(self.distance / self.current_speed)
-            self.log_entry("Sailing to start", self.env.now, self.output.copy(), vessel_origin_location)
+            self.log_entry_v0("Sailing to start", self.env.now, self.output.copy(), vessel_origin_location)
 
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
@@ -246,8 +245,8 @@ class Movable(Locatable, Routable, Log):
             # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
             k = sorted(self.multidigraph[self.current_node][self.next_node],key=lambda x: self.multidigraph[self.current_node][self.next_node][x]['geometry'].length)[0]
             status_report = self.update_sailing_status_report(self.current_node, self.next_node, (self.current_node, self.next_node, k))
-            self.log_entry("Sailing from node {} to node {} start".format(self.current_node, self.next_node),
-                           self.env.now, status_report, start_location)
+            self.log_entry_v0("Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+                              self.env.now, status_report, start_location)
 
             yield from self.pass_node(self.current_node)
 

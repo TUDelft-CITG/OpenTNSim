@@ -48,7 +48,7 @@ class HasWaterway(core.Movable):
 
         return infrastructures, ahead_nodes, next_nodes
 
-class IsWaterwayJunction(core.HasResource,core.SimpyObject,core.Identifiable, core.Log):
+class IsWaterwayJunction(core.HasResource,core.Identifiable, core.Log):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
             creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
 

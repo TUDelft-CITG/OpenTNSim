@@ -11,7 +11,7 @@ import pytz
 
 # OpenTNSim
 from opentnsim import core
-from opentnsim import waterway
+#from opentnsim import waterway
 from opentnsim import output
 
 # spatial libraries
@@ -27,7 +27,7 @@ class IsJetty():
 class HasTerminal(core.Movable):
     def __init__(self,*args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_edge.append(self.pass_terminal)
+        self.on_pass_edge_functions.append(self.pass_terminal)
 
     def pass_terminal(self,origin,destination):
         # Terminal
@@ -39,7 +39,7 @@ class HasTerminal(core.Movable):
 class HasPortAccess(core.Movable):
     def __init__(self,*args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_node.append(self.request_terminal_access)
+        self.on_pass_node_functions.append(self.request_terminal_access)
 
     def request_terminal_access(self, origin):
         # Request for a terminal
@@ -54,7 +54,7 @@ class HasPortAccess(core.Movable):
 class HasAnchorage(core.Movable):
     def __init__(self,*args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_complete_pass_edge.append(self.pass_anchorage_area)
+        self.on_complete_pass_edge_functions.append(self.pass_anchorage_area)
 
     def pass_anchorage_area(self,destination):
         # Anchorage
@@ -65,8 +65,8 @@ class HasAnchorage(core.Movable):
 class HasTurningBasin(core.Movable):
     def __init__(self,*args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_node.append(self.enter_turning_basin)
-        self.on_look_ahead_to_node.append(self.request_turning_basin)
+        self.on_pass_node_functions.append(self.enter_turning_basin)
+        self.on_look_ahead_to_node_functions.append(self.request_turning_basin)
 
     def enter_turning_basin(self, origin):
         if 'Turning Basin' in self.env.FG.nodes[origin].keys():
@@ -145,7 +145,7 @@ class PriorityFilterStore(simpy.FilterStore):
             self.get_queue.insert(number_in_line, self.get_queue.pop())
         return request
 
-class IsJettyTerminal(core.SimpyObject,core.HasType, core.Identifiable, core.Log, output.HasOutput):
+class IsJettyTerminal(core.HasType, core.Identifiable, core.Log, output.HasOutput):
 
     def __init__(self,env,name,type,information,*args,**kwargs):
         self.resource = PriorityFilterStore(env)

@@ -212,7 +212,9 @@ class Simulation(core.Identifiable):
             # hydrodynamic_data['Water level'] = wlev
             # hydrodynamic_data['Current velocity'] = cvel
 
-        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data,vessel_speed_data)
+        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(env=self.environment,
+                                                                                              hydrodynamic_data=hydrodynamic_data,
+                                                                                              vessel_speed_data=vessel_speed_data)
 
     def add_vessels(
         self,

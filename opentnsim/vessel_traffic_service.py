@@ -110,10 +110,10 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
                 geometry = edge_geometry
         return geometry
 
-    def provide_distance_over_network_to_location(self,node_1,node_2,location):
+    def provide_distance_over_network_to_location(self,node_1,node_2,location,tolerance=0.0001):
         geod = pyproj.Geod(ellps="WGS84")
         geometry = self.provide_trajectory(node_1,node_2)
-        geometries = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance=0.0001), location).geoms
+        geometries = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance=tolerance), location).geoms
         distance_sailed = 0
         distance_to_go = 0
         if len(geometries) < 2:
@@ -148,7 +148,6 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
                                                                        sub_edge_geometry.coords.xy[1][0],
                                                                        az, interpolation_length)
             break
-
         return Point(interpolation_point_x, interpolation_point_y)
 
     def provide_sailing_distance(self,vessel,edge):
@@ -167,13 +166,13 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
         if distance is None:
             sailing_distance_over_route = self.provide_sailing_distance_over_route(vessel,route)
         else:
-            sailing_distance_over_route = pd.DataFrame(columns=['edge','distance'])
+            sailing_distance_over_route = pd.DataFrame(columns=['edge','Distance'])
             sailing_distance_over_route.loc[0,'edge'] = (route[0], route[1])
-            sailing_distance_over_route.loc[0,'distance'] = distance
+            sailing_distance_over_route.loc[0,'Distance'] = distance
             sailing_distance_over_route = sailing_distance_over_route.set_index('edge')
         vessel_speed_over_route = self.provide_speed_over_route(vessel,route)
         sailing_time_over_route = pd.concat([sailing_distance_over_route,vessel_speed_over_route],axis=1)
-        sailing_time_over_route['Time'] = sailing_time_over_route['distance']/sailing_time_over_route['Speed']
+        sailing_time_over_route['Time'] = sailing_time_over_route['Distance']/sailing_time_over_route['Speed']
         return sailing_time_over_route
 
     def provide_nearest_anchorage_area(self,vessel,node):
@@ -431,7 +430,7 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
         net_ukcs = self.provide_minimum_available_water_depth_along_route(vessel, route, time_start, time_end, delay)
         for loc,info in net_ukcs.iterrows():
             tidal_periods = pd.DataFrame(self.hydrodynamic_information['Vertical tidal periods'].sel({'STATION':info.station}).to_dict()['data'],columns=['Period start','Tidal period'])
-            tidal_periods = tidal_peprovide_sailing_timeriods.reset_index(names='Period number')
+            tidal_periods = tidal_periods.reset_index(names='Period number')
             tidal_periods = tidal_periods.set_index('Period start')
             tidal_period = tidal_periods[tidal_periods.index <= info.name].iloc[-1]
             net_ukcs.loc[loc,'Tidal period'] = tidal_period['Tidal period']
@@ -729,7 +728,10 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
         time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay),'s'))).argmin()
         vertical_tidal_accessibility,vertical_tidal_windows,net_ukcs = self.provide_vertical_tidal_windows(vessel, route, time_start, time_end, delay)
         horizontal_tidal_accessibility,horizontal_tidal_windows,horizontal_tidal_restriction_nodes,horizontal_tidal_restriction_stations,window_specifications = self.provide_horizontal_tidal_windows(vessel, route, time_start, time_end, delay)
-        tidal_accessibility = self.combine_tidal_windows(vertical_tidal_accessibility,horizontal_tidal_accessibility)
+        if not horizontal_tidal_accessibility.empty:
+            tidal_accessibility = self.combine_tidal_windows(vertical_tidal_accessibility,horizontal_tidal_accessibility)
+        else:
+            tidal_accessibility = vertical_tidal_accessibility
         tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(tidal_accessibility.iloc[:-1].iterrows(), tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == 'Accessible']
         #Plot
         if plot:
