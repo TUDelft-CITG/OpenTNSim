@@ -78,7 +78,3 @@ def test_basic_energy(vessel, env, graph):
     env.run()
 
     print(vessel.logbook)
-
-
-if __name__ == "__main__":
-    test_basic_energy()
