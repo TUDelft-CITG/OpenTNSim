@@ -530,11 +530,10 @@ class Movable(Locatable, Routable, Log):
                 # Here the upperbound is used to estimate the actual velocity
                 power_used = min(self.P_tot_given, upperbound)
                 self.v = self.power2v(self, edge, power_used)
-                # store upperbound velocity
-                # TODO: remove these three fields after debugging
-                self.selected = selected
-                self.results_df = results_df
-                self.upperbound = upperbound
+                # store upperbound velocity as hidden variables (for inspection of solver)
+                self._selected = selected
+                self._results_df = results_df
+                self._upperbound = upperbound
                 # use upperbound power (used to compute the sailing speed)
                 value = power_used
 
