@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import opentnsim.core as core # now contains mixin class consumes energy, also the modified vessel properties
+import opentnsim.core as core  # now contains mixin class consumes energy, also the modified vessel properties
 import opentnsim.graph_module as graph_module
 import opentnsim.plot as plot
 import opentnsim.model as model
@@ -11,4 +11,4 @@ import opentnsim.strategy as strategy
 
 __author__ = """Mark van Koningsveld"""
 __email__ = "M.vanKoningsveld@tudelft.nl"
-__version__ = "1.1.2"
+__version__ = "1.3.5"
