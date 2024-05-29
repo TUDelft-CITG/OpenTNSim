@@ -352,6 +352,7 @@ class Movable(Locatable, Routable, Log):
     - geometry: point used to track its current location
     - v: speed
     - on_pass_edge_functions can contain a list of generators in the form of on_pass_edge(source: Point, destination: Point) -> yield event
+    - on_pass_node_functions can contain a list of generators in the form of on_pass_node(source: Point) -> yield event
     """
 
     def __init__(self, v: float, *args, **kwargs):
@@ -526,7 +527,15 @@ class Movable(Locatable, Routable, Log):
                 ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
                 v = self.power2v(self, edge, upperbound)
                 # use computed power
-                value = self.P_given
+                # Here the upperbound is used to estimate the actual velocity
+                power_used = min(self.P_tot_given, upperbound)
+                self.v = self.power2v(self, edge, power_used)
+                # store upperbound velocity as hidden variables (for inspection of solver)
+                self._selected = selected
+                self._results_df = results_df
+                self._upperbound = upperbound
+                # use upperbound power (used to compute the sailing speed)
+                value = power_used
 
             # determine time to pass edge
             timeout = distance / v

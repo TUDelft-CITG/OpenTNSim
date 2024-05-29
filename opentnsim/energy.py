@@ -1,30 +1,15 @@
-import datetime, time
 import pathlib
 import logging
-import uuid
 import functools
-import itertools
-import json
 import pyproj
-import shapely.geometry
 import numpy as np
 import pandas as pd
 import scipy.optimize
-import simpy
-import tqdm
-
-# package(s) for data handling
 
 # OpenTNSim
 import opentnsim
+import opentnsim.core
 import opentnsim.strategy
-import opentnsim.graph_module
-
-# Used for mathematical functions
-import math
-
-# Used for making the graph to visualize our problem
-import networkx as nx
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +21,7 @@ def load_partial_engine_load_correction_factors():
     data_dir = pathlib.Path(__file__).parent.parent / "data"
     correctionfactors_path = data_dir / "Correctionfactors.csv"
     df = pd.read_csv(correctionfactors_path, comment="#")
+
     return df
 
 
@@ -46,6 +32,7 @@ def karpov_smooth_curves():
     data_dir = pathlib.Path(__file__).parent.parent / "data"
     karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
     df = pd.read_csv(karpov_smooth_curves_path, comment="#")
+
     return df
 
 
@@ -61,89 +48,6 @@ def find_closest_node(G, point):
     return name_node, distance_node
 
 
-def get_upperbound_for_power2v(vessel, width, depth, bounds=(0, 20)):
-    """for a waterway section with a given width and depth, compute a maximum installed-
-    power-allowed velocity, considering squat. This velocity is set as upperbound in the
-    power2v function in energy.py "upperbound" is the maximum value in velocity searching
-    range.
-    """
-
-    def get_grounding_v(vessel, width, depth, bounds):
-        def seek_v_given_z(v, vessel, width, depth):
-            # calculate sinkage
-            z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (width * depth)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
-
-            # calculate available underkeel clearance (vessel in rest)
-            z_given = depth - vessel._T
-
-            # compute difference between the sinkage and the space available for sinkage
-            diff = z_given - z_computed
-
-            return diff**2
-
-        # goalseek to minimize
-        fun = functools.partial(seek_v_given_z, vessel=vessel, width=width, depth=depth)
-        fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method="bounded")
-
-        # check if we found a minimum
-        if not fit.success:
-            raise ValueError(fit)
-
-        # the value of fit.x within the bound (0,20) is the velocity we find where the diff**2 reach a minimum (zero).
-        grounding_v = fit.x
-
-        print("grounding velocity {:.2f} m/s".format(grounding_v))
-
-        return grounding_v
-
-    # create a large velocity[m/s] range for both inland shipping and seagoing shipping
-    grounding_v = get_grounding_v(vessel, width, depth, bounds)
-    velocity = np.linspace(0.01, grounding_v, 1000)
-    task = list(itertools.product(velocity[0:-1]))
-
-    # prepare a list of dictionaries for pandas
-    rows = []
-    for item in task:
-        row = {"velocity": item[0]}
-        rows.append(row)
-
-    # convert simulations to dataframe, so that we can apply a function and monitor progress
-    task_df = pd.DataFrame(rows)
-
-    # creat a results empty list to collect the below results
-    results = []
-    for i, row in tqdm.tqdm(task_df.iterrows(), disable=True):
-        h_0 = depth
-        velocity = row["velocity"]
-
-        # calculate squat and the waterdepth after squat
-        z_computed = (vessel.C_B * ((vessel.B * vessel._T) / (150 * h_0)) ** 0.81) * ((velocity * 1.94) ** 2.08) / 20
-        h_0 = depth - z_computed
-
-        # for the squatted water depth calculate resistance and power
-        # vessel.calculate_properties()
-        # vessel.calculate_frictional_resistance(v=velocity, h_0=h_0)
-        vessel.calculate_total_resistance(v=velocity, h_0=h_0)
-        P_tot = vessel.calculate_total_power_required(v=velocity)
-
-        # prepare a row
-        result = {}
-        result.update(row)
-        result["Powerallowed_v"] = velocity
-        result["P_tot"] = P_tot
-        result["P_installed"] = vessel.P_installed
-
-        # update resulst dict
-        results.append(result)
-
-    results_df = pd.DataFrame(results)
-
-    selected = results_df.query("P_tot < P_installed")
-    upperbound = max(selected["Powerallowed_v"])
-    print("upperbound velocity {:.2f} m/s".format(upperbound))
-    return upperbound
-
-
 def power2v(vessel, edge, upperbound):
     """Compute vessel velocity given an edge and power (P_tot_given)
 
@@ -152,14 +56,11 @@ def power2v(vessel, edge, upperbound):
     """
 
     assert isinstance(vessel, opentnsim.core.VesselProperties), "vessel should be an instance of VesselProperties"
-
     assert vessel.C_B is not None, "C_B cannot be None"
 
-    # upperbound = get_upperbound_for_power2v()
-    # bounds > 10 gave an issue...
-    # TODO: check what the origin of this is.
     def seek_v_given_power(v, vessel, edge):
         """function to optimize"""
+        # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
         # water depth from the edge
         h_0 = edge["Info"]["GeneralDepth"]
         try:
@@ -169,14 +70,16 @@ def power2v(vessel, edge, upperbound):
             pass
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
         vessel.calculate_total_resistance(v, h_0)
+
         # compute total power given
         P_given = vessel.calculate_total_power_required(v=v, h_0=h_0)
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
-        # compute difference between power setting by captain and power needed for velocity
-        diff = vessel.P_tot_given - vessel.P_tot
+        # compute difference between power setting by captain (incl hotel) and power needed for velocity (incl hotel)
+        diff = vessel.P_tot_given - P_given  # vessel.P_tot
         logger.debug(f"optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}")
+
         return diff**2
 
     # fill in some of the parameters that we already know
@@ -188,6 +91,7 @@ def power2v(vessel, edge, upperbound):
     if not fit.success:
         raise ValueError(fit)
     logger.debug(f"fit: {fit}")
+
     return fit.x
 
 
@@ -230,6 +134,7 @@ class ConsumesEnergy:
         rho=1000,
         g=9.81,
         x=2,
+        D_s=1.4,
         eta_o=0.4,
         eta_r=1.00,
         eta_t=0.98,
@@ -237,7 +142,7 @@ class ConsumesEnergy:
         c_stern=0,
         C_BB=0.2,
         C_B=0.85,
-        one_k2=2.5,
+        one_k2=2.5,  # following Segers (2021) we assume (1 + k2) to be 2.5 (see below Eq 3.27)
         *args,
         **kwargs,
     ):
@@ -248,11 +153,15 @@ class ConsumesEnergy:
 
         self.P_installed = P_installed
         self.bulbous_bow = bulbous_bow
+
+        # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
         self.P_hotel_perc = P_hotel_perc
-        if P_hotel:  # if P_hotel is specified as None calculate it from P_hotel_percentage
+
+        if P_hotel:  # if P_hotel is specified use the given value
             self.P_hotel = P_hotel
-        else:  # otherwise use the given value
+        else:  # if P_hotel is None calculate it from P_hotel_percentage and P_installed
             self.P_hotel = self.P_hotel_perc * self.P_installed
+
         self.P_tot_given = P_tot_given
         self.L_w = L_w
         self.year = current_year
@@ -260,6 +169,7 @@ class ConsumesEnergy:
         self.rho = rho
         self.g = g
         self.x = x
+        self.D_s = D_s
         self.eta_o = eta_o
         self.eta_r = eta_r
         self.eta_t = eta_t
@@ -283,15 +193,8 @@ class ConsumesEnergy:
             if P_tot_given > P_installed:
                 self.P_tot_given = self.P_installed
 
-        # # TODO: check assumption when combining move with energy
-        # if self.P_tot_given is not None and self.v is not None:
-        #     raise ValueError("please specify v or P_tot_given, but not both")
-
-    # The engine age and construction year of the engine is computed with the function below.
-    # The construction year of the engine is used in the emission functions (1) emission_factors_general and (2) correction_factors
-
     def calculate_engine_age(self):
-        """Calculating the construction year of the engine, dependend on a Weibull function with
+        """Calculating the construction year of the engine, dependent on a Weibull function with
         shape factor 'k', and scale factor 'lmb', which are determined by the weight class L_w
         """
 
@@ -315,41 +218,56 @@ class ConsumesEnergy:
         self.C_year = self.year - self.age
 
         logger.debug(f"The construction year of the engine is {self.C_year}")
+
         return self.C_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
 
-        # TO DO: add properties for seagoing ships with bulbs
+        # TODO: add properties for seagoing ships with bulbs
 
-        self.C_M = 1.006 - 0.0056 * self.C_B ** (-3.56)  # Midship section coefficient
-        self.C_WP = (1 + 2 * self.C_B) / 3  # Waterplane coefficient
-        self.C_P = self.C_B / self.C_M  # Prismatic coefficient
+        # (Van Koningsveld et al (2023) - Part IV Eq 5.9, 5.10 and below Eq 5.12)
+        self.C_M = 1.006 - 0.0056 * self.C_B ** (-3.56)  # Midship section coefficient (Eq 5.9)
+        self.C_WP = (1 + 2 * self.C_B) / 3  # Waterplane coefficient (Eq 5.10)
+        self.C_P = self.C_B / self.C_M  # Prismatic coefficient (see below Eq 5.12)
 
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C - Eq C.2
         self.delta = self.C_B * self.L * self.B * self.T  # Water displacement
 
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         self.lcb = -13.5 + 19.4 * self.C_P  # longitudinal center of buoyancy
+        # Van Koningsveld et al (2023) - Part IV Eq 5.13
         self.L_R = self.L * (
-            1 - self.C_P + (0.06 * self.C_P * self.lcb) / (4 * self.C_P - 1)
+            1 - self.C_P + ((0.06 * self.C_P * self.lcb) / (4 * self.C_P - 1)) * (19.4 * self.C_P - 13.5)
         )  # length parameter reflecting the length of the run
 
-        self.A_T = 0.2 * self.B * self.T  # transverse area of the transom
+        # Van Koningsveld et al (2023) - below Eq 5.16
+        self.A_T = 0.1 * self.B * self.T  # transverse area of the transom
         # calculation for A_BT (cross-sectional area of the bulb at still water level [m^2]) depends on whether a ship has a bulb
         if self.bulbous_bow:
+            # TODO: check Holtrop and Mennen for this formulation
             self.A_BT = self.C_BB * self.B * self.T * self.C_M  # calculate A_BT for seagoing ships having a bulb
         else:
             self.A_BT = 0  # most inland ships do not have a bulb. So we assume A_BT=0.
 
-        # Total wet area: S
+        # Total wet area: S (Van Koningsveld et al (2023) - Eq 5.8)
         assert self.C_M >= 0, f"C_M should be positive: {self.C_M}"
         self.S = self.L * (2 * self.T + self.B) * np.sqrt(self.C_M) * (
             0.453 + 0.4425 * self.C_B - 0.2862 * self.C_M - 0.003467 * (self.B / self.T) + 0.3696 * self.C_WP
         ) + 2.38 * (self.A_BT / self.C_B)
 
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # In the explanation under Eq 3.27
         self.S_APP = 0.05 * self.S  # Wet area of appendages
+        # Segers (2021) Eq 3.20
         self.S_B = self.L * self.B  # Area of flat bottom
 
-        self.D_s = 0.7 * self.T  # Diameter of the screw
+        # TODO: we D_s is a property that should be given, not calculated
+        # if self.D_s is None:
+        #     self.D_s = 0.7 * self.T  # Diameter of the screw
+
+        # TODO: check references for these equations
         self.T_F = self.T  # Forward draught of the vessel [m]
         self.h_B = 0.2 * self.T  # Position of the centre of the transverse area [m]
 
@@ -366,20 +284,25 @@ class ConsumesEnergy:
         assert self.D > 0, f"D should be > 0: {self.D}"
 
         # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
+        # Van Koningsveld et al (2023) - Eq 5.3
         self.Cf_deep = 0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)
         assert not isinstance(self.Cf_deep, complex), f"Cf_deep should not be complex: {self.Cf_deep}"
 
         # Friction coefficient based on CFD computations of Zeng et al. (2018), taking into account shallow water effects
+        # Van Koningsveld et al (2023) - Eq 5.4
         self.Cf_shallow = (0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)) * (
             1 + (0.003998 / (np.log10(self.R_e) - 4.393)) * (self.D / self.L) ** (-1.083)
         )
         assert not isinstance(self.Cf_shallow, complex), f"Cf_shallow should not be complex: {self.Cf_shallow}"
 
         # Friction coefficient in deep water according to ITTC-1957 curve
+        # Van Koningsveld et al (2023) - Eq 5.6
         self.Cf_0 = 0.075 / ((np.log10(self.R_e) - 2) ** 2)
 
         # 'a' is the coefficient needed to calculate the Katsui friction coefficient
+        # Van Koningsveld et al (2023) - below Eq 5.7
         self.a = 0.042612 * np.log10(self.R_e) + 0.56725
+        # Van Koningsveld et al (2023) - Eq 5.7
         self.Cf_Katsui = 0.0066577 / ((np.log10(self.R_e) - 4.3762) ** self.a)
 
         # The average velocity underneath the ship, taking into account the shallow water effect
@@ -393,22 +316,22 @@ class ConsumesEnergy:
         # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is
         # defined according to Zeng et al. (2018)
 
-        # calculate Friction coefficient C_f for deep water:
-
         if (h_0 - self.T) / self.L > 1:
+            # calculate Friction coefficient C_f for deep water:
+            # Zeng et al. (2018)
             self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
             logger.debug("now i am in the deep loop")
         else:
             # calculate Friction coefficient C_f for shallow water:
+            # Van Koningsveld et al (2023) - Eq 5.5
             self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
             logger.debug("now i am in the shallow loop")
         assert not isinstance(self.C_f, complex), f"C_f should not be complex: {self.C_f}"
 
         # The total frictional resistance R_f [kN]:
-        self.R_f = (self.C_f * 0.5 * self.rho * (v**2) * self.S) / 1000
+        # Van Koningsveld et al (2023) - Eq 5.2
+        self.R_f = (0.5 * self.rho * (v**2) * self.C_f * self.S) / 1000
         assert not isinstance(self.R_f, complex), f"R_f should not be complex: {self.R_f}"
-
-        return self.R_f
 
     def calculate_viscous_resistance(self):
         """Viscous resistance
@@ -417,14 +340,17 @@ class ConsumesEnergy:
         - Form factor (1 + k1) has to be multiplied by the frictional resistance R_f, to account for the effect of viscosity"""
 
         # c_14 accounts for the specific shape of the afterbody
+        # TODO: check where this value comes from (Holtrop and Mennen?) (following Segers (2021) we assume c_stern = 0 which leads to c_14 to be 1
         self.c_14 = 1 + 0.0011 * self.c_stern
 
         # the form factor (1+k1) describes the viscous resistance
+        # Van Koningsveld et al (2023) - Eq 5.12
+        # TODO: consider to rename self.delta to self.nabla
         self.one_k1 = 0.93 + 0.487 * self.c_14 * ((self.B / self.L) ** 1.068) * ((self.T / self.L) ** 0.461) * (
             (self.L / self.L_R) ** 0.122
         ) * (((self.L**3) / self.delta) ** 0.365) * ((1 - self.C_P) ** (-0.604))
+
         self.R_f_one_k1 = self.R_f * self.one_k1
-        return self.R_f_one_k1
 
     def calculate_appendage_resistance(self, v):
         """Appendage resistance
@@ -433,9 +359,8 @@ class ConsumesEnergy:
         - Appendages (like a rudder, shafts, skeg) result in additional frictional resistance"""
 
         # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
+        # Segers (2021) - Eq 3.27 (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
         self.R_APP = (0.5 * self.rho * (v**2) * self.S_APP * self.one_k2 * self.C_f) / 1000
-
-        return self.R_APP
 
     def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
@@ -450,7 +375,7 @@ class ConsumesEnergy:
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
         # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
         assert self.g >= 0, f"g should be positive: {self.g}"
-        assert h_0 >= 0, f"g should be positive: {h_0}"
+        assert h_0 >= 0, f"h_0 should be positive: {h_0}"
         self.F_rh = v / np.sqrt(self.g * h_0)
 
         if self.F_rh <= 0.4:
@@ -606,9 +531,11 @@ class ConsumesEnergy:
 
         assert self.g >= 0, f"g should be positive: {self.g}"
         assert self.L >= 0, f"L should be positive: {self.L}"
-        # self.F_rL = self.V_2 / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
+
         self.F_rL = v / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
+
         # parameter c_7 is determined by the B/L ratio
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         if self.B / self.L < 0.11:
             self.c_7 = 0.229577 * (self.B / self.L) ** 0.33333
         if self.B / self.L > 0.25:
@@ -617,6 +544,7 @@ class ConsumesEnergy:
             self.c_7 = self.B / self.L
 
         # half angle of entrance in degrees
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         self.i_E = 1 + 89 * np.exp(
             -((self.L / self.B) ** 0.80856)
             * ((1 - self.C_WP) ** 0.30484)
@@ -625,11 +553,13 @@ class ConsumesEnergy:
             * ((100 * self.delta / (self.L**3)) ** 0.16302)
         )
 
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         self.c_1 = 2223105 * (self.c_7**3.78613) * ((self.T / self.B) ** 1.07961) * (90 - self.i_E) ** (-1.37165)
         self.c_2 = 1  # accounts for the effect of the bulbous bow, which is not present at inland ships
         self.c_5 = 1 - (0.8 * self.A_T) / (self.B * self.T * self.C_M)  # influence of the transom stern on the wave resistance
 
         # parameter c_15 depoends on the ratio L^3 / delta
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         if (self.L**3) / self.delta < 512:
             self.c_15 = -1.69385
         if (self.L**3) / self.delta > 1727:
@@ -638,6 +568,7 @@ class ConsumesEnergy:
             self.c_15 = -1.69385 + (self.L / (self.delta ** (1 / 3)) - 8) / 2.36
 
         # parameter c_16 depends on C_P
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         if self.C_P < 0.8:
             self.c_16 = 8.07981 * self.C_P - 13.8673 * (self.C_P**2) + 6.984388 * (self.C_P**3)
         else:
@@ -648,11 +579,14 @@ class ConsumesEnergy:
         else:
             self.lmbda = 1.446 * self.C_P - 0.36
 
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         self.m_1 = (
             0.0140407 * (self.L / self.T) - 1.75254 * ((self.delta) ** (1 / 3) / self.L) - 4.79323 * (self.B / self.L) - self.c_16
         )
+        # Van Koningsveld et al (2023) - Part IV Table 5.1
         self.m_2 = self.c_15 * (self.C_P**2) * np.exp((-0.1) * (self.F_rL ** (-2)))
 
+        # Van Koningsveld et al (2023) - Part IV Eq 5.16
         self.R_W = (
             self.c_1
             * self.c_2
@@ -663,8 +597,6 @@ class ConsumesEnergy:
             * np.exp(self.m_1 * (self.F_rL ** (-0.9)) + self.m_2 * np.cos(self.lmbda * (self.F_rL ** (-2))))
             / 1000
         )  # kN
-
-        return self.R_W
 
     def calculate_residual_resistance(self, v, h_0):
         """Residual resistance terms
@@ -720,8 +652,6 @@ class ConsumesEnergy:
 
         self.R_res = self.R_TR + self.R_A + self.R_B
 
-        return self.R_res
-
     def calculate_total_resistance(self, v, h_0):
         """Total resistance:
 
@@ -738,127 +668,138 @@ class ConsumesEnergy:
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A + self.R_B
 
-        return self.R_tot
-
     def calculate_total_power_required(self, v, h_0):
         """Total required power:
 
-        - The total required power is the sum of the power for systems on board (P_hotel) + power required for propulsion
+        - The total required power is the sum of the power for systems on board (P_hotel) + power required for
+          propulsion
         - The power required for propulsion depends on the calculated resistance
 
         Output:
         - P_propulsion: required power for propulsion, equals to P_d (Delivered Horse Power)
         - P_tot: required power for propulsion and hotelling
-        - P_given: the power given by the engine to the ship (for propulsion and hotelling), which is the actual power the ship uses
+        - P_given: the power given by the engine to the ship (for propulsion and hotelling), which is the actual power
+          the ship uses
 
         Note:
-        In this version, we define the propulsion power as P_d (Delivered Horse Power) ratehr than P_b (Brake Horse Power). The reason we choose P_d as propulsion power is to prevent double use of the same power efficiencies.
-        The details are 1) The P_b calculation involves gearing efficiency and transmission efficiency already while P_d not. 2) P_d is the power delivered to propellers. 3) To estimate the reneable fuel use, we will involve "energy conversion efficicies" later in the calculation. The 'energy conversion efficicies' for renewable fuel powered vessels are commonly measured/given as a whole covering the engine power systems, includes different engine (such as fuel cell engine, battery engine, internal combustion engine, hybird engine) efficiencies, and corresponding gearbox efficiencies, AC/DC converter efficiencies, excludes the efficiency items of propellers.
-        Therefore, to algin with the later use of "energy conversion efficicies" for fuel use estimation and prevent double use of some power efficiencies such as gearing efficiency, here we choose P_d as propulsion power.
+        In this version, we define the propulsion power as P_d (Delivered Horse Power) rather than P_b (Brake Horse
+        Power). The reason we choose P_d as propulsion power is to prevent double use of the same power efficiencies.
+        The details are
+        1) The P_b calculation involves gearing efficiency and transmission efficiency already while P_d not.
+        2) P_d is the power delivered to propellers.
+        3) To estimate the renewable fuel use, we will involve "energy conversion efficiencies" later in the
+           calculation.
+        The 'energy conversion efficiencies' for renewable fuel powered vessels are commonly measured/given as a whole
+        covering the engine power systems, includes different engine (such as fuel cell engine, battery engine, internal
+        combustion engine, hybrid engine) efficiencies, and corresponding gearbox efficiencies, AC/DC converter
+        efficiencies, excludes the efficiency items of propellers.
+        Therefore, to align with the later use of "energy conversion efficiencies" for fuel use estimation and prevent
+        double use of some power efficiencies such as gearing efficiency, here we choose P_d as propulsion power.
         """
 
-        # Required power for systems on board, "5%" based on De Vos and van Gils (2011):Walstrom versus generators troom
-        # self.P_hotel = 0.05 * self.P_installed
-
         # Required power for propulsion
-        # Effective Horse Power (EHP), P_e
+        # Effective Horse Power (EHP), P_e (Van Koningsveld et al (2023) - Part IV Eq 5.17)
         self.P_e = v * self.R_tot
 
-        #         # Calculation hull efficiency
-        #         dw = np.zeros(101)  # velocity correction coefficient
-        #         counter = 0
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C
+        if self.F_rL < 0.2:
+            self.dw = 0  # the velocity correction coefficient is 0 when FrL is smaller than 0.2
+        else:
+            self.dw = 0.1  # otherwise the velocity correction coefficient is 0.1
 
-        #         if self.F_rL < 0.2:
-        #             self.dw = 0
-        #         else:
-        #             self.dw = 0.1
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C - Eq C.1
+        self.w = 0.11 * (0.16 / self.x) * self.C_B * np.sqrt((self.delta ** (1 / 3)) / self.D_s) - self.dw  # wake fraction 'w'
 
-        #         self.w = (
-        #             0.11
-        #             * (0.16 / self.x)
-        #             * self.C_B
-        #             * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
-        #             - self.dw
-        #         )  # wake fraction 'w'
+        assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
 
-        #         assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
+        if self.x == 1:
+            # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
+            self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
+        else:
+            # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
+            self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
-        #         if self.x == 1:
-        #             self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
-        #         else:
-        #             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
+        self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
-        #         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
-
-        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
+        # TODO: check below suggestions. They were made to allow for better translation to alternative energy sources. But the changes induced unexpected behaviour.
+        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland
+        # Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
         # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power
         # relation between eta_D and ship velocity v
 
-        if h_0 >= 9:
-            if self.F_rh >= 0.5:
-                self.eta_D = 0.6
-            elif 0.325 <= self.F_rh < 0.5:
-                self.eta_D = 0.7
-            elif 0.28 <= self.F_rh < 0.325:
-                self.eta_D = 0.59
-            elif 0.2 < self.F_rh < 0.28:
-                self.eta_D = 0.56
-            elif 0.17 < self.F_rh <= 0.2:
-                self.eta_D = 0.41
-            elif 0.15 < self.F_rh <= 0.17:
-                self.eta_D = 0.35
-            else:
-                self.eta_D = 0.29
+        # if h_0 >= 9:
+        #     if self.F_rh >= 0.5:
+        #         self.eta_D = 0.6
+        #     elif 0.325 <= self.F_rh < 0.5:
+        #         self.eta_D = 0.7
+        #     elif 0.28 <= self.F_rh < 0.325:
+        #         self.eta_D = 0.59
+        #     elif 0.2 < self.F_rh < 0.28:
+        #         self.eta_D = 0.56
+        #     elif 0.17 < self.F_rh <= 0.2:
+        #         self.eta_D = 0.41
+        #     elif 0.15 < self.F_rh <= 0.17:
+        #         self.eta_D = 0.35
+        #     else:
+        #         self.eta_D = 0.29
+        #
+        # elif 5 <= h_0 < 9:
+        #     if self.F_rh > 0.62:
+        #         self.eta_D = 0.7
+        #     elif 0.58 < self.F_rh < 0.62:
+        #         self.eta_D = 0.68
+        #     elif 0.57 < self.F_rh <= 0.58:
+        #         self.eta_D = 0.7
+        #     elif 0.51 < self.F_rh <= 0.57:
+        #         self.eta_D = 0.68
+        #     elif 0.475 < self.F_rh <= 0.51:
+        #         self.eta_D = 0.53
+        #     elif 0.45 < self.F_rh <= 0.475:
+        #         self.eta_D = 0.4
+        #     elif 0.36 < self.F_rh <= 0.45:
+        #         self.eta_D = 0.37
+        #     elif 0.33 < self.F_rh <= 0.36:
+        #         self.eta_D = 0.36
+        #     elif 0.3 < self.F_rh <= 0.33:
+        #         self.eta_D = 0.35
+        #     elif 0.28 < self.F_rh <= 0.3:
+        #         self.eta_D = 0.331
+        #     else:
+        #         self.eta_D = 0.33
+        # else:
+        #     if self.F_rh > 0.56:
+        #         self.eta_D = 0.28
+        #     elif 0.4 < self.F_rh <= 0.56:
+        #         self.eta_D = 0.275
+        #     elif 0.36 < self.F_rh <= 0.4:
+        #         self.eta_D = 0.345
+        #     elif 0.33 < self.F_rh <= 0.36:
+        #         self.eta_D = 0.28
+        #     elif 0.3 < self.F_rh <= 0.33:
+        #         self.eta_D = 0.27
+        #     elif 0.28 < self.F_rh <= 0.3:
+        #         self.eta_D = 0.26
+        #     else:
+        #         self.eta_D = 0.25
+        #
+        # # Delivered Horse Power (DHP), P_d
+        # self.P_d = self.P_e / self.eta_D
 
-        elif 5 <= h_0 < 9:
-            if self.F_rh > 0.62:
-                self.eta_D = 0.7
-            elif 0.58 < self.F_rh < 0.62:
-                self.eta_D = 0.68
-            elif 0.57 < self.F_rh <= 0.58:
-                self.eta_D = 0.7
-            elif 0.51 < self.F_rh <= 0.57:
-                self.eta_D = 0.68
-            elif 0.475 < self.F_rh <= 0.51:
-                self.eta_D = 0.53
-            elif 0.45 < self.F_rh <= 0.475:
-                self.eta_D = 0.4
-            elif 0.36 < self.F_rh <= 0.45:
-                self.eta_D = 0.37
-            elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.36
-            elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.35
-            elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.331
-            else:
-                self.eta_D = 0.33
-        else:
-            if self.F_rh > 0.56:
-                self.eta_D = 0.28
-            elif 0.4 < self.F_rh <= 0.56:
-                self.eta_D = 0.275
-            elif 0.36 < self.F_rh <= 0.4:
-                self.eta_D = 0.345
-            elif 0.33 < self.F_rh <= 0.36:
-                self.eta_D = 0.28
-            elif 0.3 < self.F_rh <= 0.33:
-                self.eta_D = 0.27
-            elif 0.28 < self.F_rh <= 0.3:
-                self.eta_D = 0.26
-            else:
-                self.eta_D = 0.25
-        # Delivered Horse Power (DHP), P_d
-        self.P_d = self.P_e / self.eta_D
+        # logger.debug("eta_D = {:.2f}".format(self.eta_D))
 
-        logger.debug("eta_D = {:.2f}".format(self.eta_D))
-        # self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
+        # (Van Koningsveld et al (2023) - Part IV Eq 5.19)
+        self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
         # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above)
-        # self.P_b = self.P_d / (self.eta_t * self.eta_g)
+        # (Van Koningsveld et al (2023) - Part IV Eq 5.24)
+        self.P_b = self.P_d / (self.eta_t * self.eta_g)
 
-        self.P_propulsion = self.P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
+        # self.P_propulsion = self.P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
+        self.P_propulsion = self.P_b  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
 
+        # TODO: consider to facilitate that all engine power can go into propulsion (Auxiliary generator for hotel)
         self.P_tot = self.P_hotel + self.P_propulsion
 
         # Partial engine load (P_partial): needed in the 'Emission calculations'
@@ -869,18 +810,18 @@ class ConsumesEnergy:
             self.P_given = self.P_tot
             self.P_partial = self.P_tot / self.P_installed
 
-        # logger.debug(f'The total power required is {self.P_tot} kW')
-        # logger.debug(f'The actual total power given is {self.P_given} kW')
-        # logger.debug(f'The partial load is {self.P_partial}')
+        logger.debug(f"The total power required is {self.P_tot} kW")
+        logger.debug(f"The actual total power given is {self.P_given} kW")
+        logger.debug(f"The partial load is {self.P_partial}")
 
         assert not isinstance(self.P_given, complex), f"P_given number should not be complex: {self.P_given}"
 
-        # return these three varible:
+        # return these three variables:
         # 1) self.P_propulsion, for the convience of validation.  (propulsion power and fuel used for propulsion),
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
 
-        return self.P_propulsion, self.P_tot, self.P_given
+        return self.P_given
 
     def emission_factors_general(self):
         """General emission factors:
@@ -1262,43 +1203,33 @@ class ConsumesEnergy:
         self.diesel_use_g_m = (self.P_given * self.final_SFC_diesel_ICE_mass / v) / 3600  # without considering C_year
         self.diesel_use_g_m_C_year = (self.P_given * self.final_SFC_diesel_C_year_ICE_mass / v) / 3600  # considering C_year
 
-        return self.diesel_use_g_m, self.diesel_use_g_m_C_year
-
     def calculate_diesel_use_g_s(self):
         """Total diesel fuel use in g/s:
 
-        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600  # without considering C_year
         self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600  # considering C_year
 
-        return self.diesel_use_g_s, self.diesel_use_g_s_C_year
-
-    # TO DO: Add functions here to calculate renewable energy source use rate in g/m, g/s
-
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
 
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
         self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
         self.emission_g_m_NOX = self.P_given * self.total_factor_NOX / v / 3600
 
-        return self.emission_g_m_CO2, self.emission_g_m_PM10, self.emission_g_m_NOX
-
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
 
-        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
         self.emission_g_s_NOX = self.P_given * self.total_factor_NOX / 3600
 
-        return self.emission_g_s_CO2, self.emission_g_s_PM10, self.emission_g_s_NOX
-
-    def calculate_max_sinkage(self, v, h_0):
+    def calculate_max_sinkage(self, v, h_0, width=150):
         """Calculate the maximum sinkage of a moving ship
 
         the calculation equation is described in Barrass, B. & Derrett, R.'s book (2006), Ship Stability for Masters and Mates,
@@ -1307,20 +1238,23 @@ class ConsumesEnergy:
         some explanation for the variables in the equation:
         - h_0: water depth
         - v: ship velocity relative to the water
-        - 150: Here we use the standard width 150 m as the waterway width
-
+        - width: river width, default to 150
         """
 
-        max_sinkage = (self.C_B * ((self.B * self._T) / (150 * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+        max_sinkage = 0
+        if self.h_squat:
+            max_sinkage = (self.C_B * ((self.B * self._T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
 
         return max_sinkage
 
-    def calculate_h_squat(self, v, h_0):
-        if self.h_squat:
-            h_squat = h_0 - self.calculate_max_sinkage(v, h_0)
+    def calculate_h_squat(self, v, h_0, width=150):
+        """Calculate the water depth in case h_squat is set to True
 
-        else:
-            h_squat = h_0
+        The amount of water under the keel is calculated h_0 - T. When h_squat is set to True, we estimate a max_sinkage
+        that is subtracted from h_0. This values is returned as h_squat for further calculation.
+
+        """
+        h_squat = h_0 - self.calculate_max_sinkage(v, h_0, width=width)
 
         return h_squat
 
@@ -1328,8 +1262,8 @@ class ConsumesEnergy:
 class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
-    # to do: add other alternatives from Marin's table to have completed renewable energy sources
-    # to do: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
+    # ToDo: add other alternatives from Marin's table to have completed renewable energy sources
+    # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
 
     def __init__(self, FG, vessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1409,6 +1343,7 @@ class EnergyCalculation:
             node_stop = find_closest_node(self.FG, geom_stop)[0]
 
             # Read from the FG data from vaarweginformatie.nl the General depth of each edge
+            # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
             try:  # if node_start != node_stop:
                 depth = self.FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
             except:
@@ -1422,10 +1357,10 @@ class EnergyCalculation:
         # log messages that are related to locking
         # todo: check if this still works with Floors new locking module
         stationary_phase_indicator = [
-            "Waiting to enter waiting area stop",
-            "Waiting in waiting area stop",
-            "Waiting in line-up area stop",
-            "Passing lock stop",
+            "Waiting to enter waiting area stop",  # checked: not sure if still used in locking module
+            "Waiting in waiting area stop",  # checked: not sure if still used in locking module
+            "Waiting in line-up area stop",  # checked: still used in locking module
+            "Passing lock stop",  # checked: still used in locking module
         ]
 
         # extract relevant elements from the vessel log
@@ -1466,7 +1401,7 @@ class EnergyCalculation:
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
-                print(h_0)
+                # print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
@@ -1479,13 +1414,15 @@ class EnergyCalculation:
 
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
                     # consuming 'energy_delta' kWh
+                    # TODO: check, as it seems that stationary energy use is now not stored.
                     P_hotel_delta = self.vessel.P_hotel  # in kW
                     P_installed_delta = self.vessel.P_installed  # in kW
 
                 else:  # otherwise log P_tot
                     # Energy consumed per time step delta_t in the propulsion stage
+                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the available power ... that now works)
                     energy_delta = (
-                        self.vessel.P_given * delta_t / 3600
+                        self.vessel.P_tot * delta_t / 3600
                     )  # kJ/3600 = kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
 
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t,
@@ -1498,7 +1435,7 @@ class EnergyCalculation:
                     )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
-                    # To do: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
+                    # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
                     delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
@@ -1580,18 +1517,3 @@ class EnergyCalculation:
         # - en er is nog iets mis met de snelheid rond een sluis
 
         # - add HasCurrent Class or def
-
-    def plot(self):
-        import folium
-
-        df = pd.DataFrame.from_dict(self.energy_use)
-
-        m = folium.Map(location=[51.7, 4.4], zoom_start=12)
-
-        line = []
-        for index, row in df.iterrows():
-            line.append((row["edge_start"].y, row["edge_start"].x))
-
-        folium.PolyLine(line, weight=4).add_to(m)
-
-        return m
