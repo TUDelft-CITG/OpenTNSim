@@ -11,4 +11,4 @@ import opentnsim.strategy as strategy
 
 __author__ = """Mark van Koningsveld"""
 __email__ = "M.vanKoningsveld@tudelft.nl"
-__version__ = "1.3.5"
+__version__ = "1.3.6"
