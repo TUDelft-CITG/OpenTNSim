@@ -1,30 +1,34 @@
-import datetime, time
-import pathlib
-import logging
-import uuid
+import datetime
 import functools
+import io
 import itertools
 import json
-import pyproj
-import shapely.geometry
-import numpy as np
-import pandas as pd
-import scipy.optimize
-import simpy
-import tqdm
-
-# package(s) for data handling
-
-# OpenTNSim
-import opentnsim
-import opentnsim.strategy
-import opentnsim.graph_module
+import logging
 
 # Used for mathematical functions
 import math
+import pathlib
+import pkgutil
+import time
+import uuid
 
 # Used for making the graph to visualize our problem
 import networkx as nx
+import numpy as np
+import pandas as pd
+import pyproj
+import scipy.optimize
+import shapely.geometry
+import simpy
+import tqdm
+
+# OpenTNSim
+import opentnsim
+import opentnsim.graph_module
+import opentnsim.strategy
+
+# package(s) for data handling
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +36,10 @@ logger = logging.getLogger(__name__)
 def load_partial_engine_load_correction_factors():
     """read correction factor from package directory"""
 
-    # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent / "data"
-    correctionfactors_path = data_dir / "Correctionfactors.csv"
-    df = pd.read_csv(correctionfactors_path, comment="#")
+    correction_factors_bytes = pkgutil.get_data(__name__, "data/Correctionfactors.csv")
+    correction_factors_stream = io.BytesIO(correction_factors_bytes)
+
+    df = pd.read_csv(correction_factors_stream, comment="#")
     return df
 
 
@@ -43,9 +47,10 @@ def karpov_smooth_curves():
     """read correction factor from package directory"""
 
     # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent / "data"
-    karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
-    df = pd.read_csv(karpov_smooth_curves_path, comment="#")
+    karpov_smooth_curves_bytes = pkgutil.get_data(__name__, "data/KarpovSmoothCurves.csv")
+    karpov_smooth_curves_stream = io.BytesIO(karpov_smooth_curves_bytes)
+
+    df = pd.read_csv(karpov_smooth_curves_stream, comment="#")
     return df
 
 
@@ -1466,7 +1471,6 @@ class EnergyCalculation:
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
-                print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
