@@ -31,6 +31,13 @@ To also install the extra dependencies used for testing you can use:
 pip install opentnsim[testing]
 ```
 
+To install in development mode, you can use (from the source directory)
+``` bash
+pip install -e .
+```
+
+
+
 This is the preferred method to install OpenTNSim, as it will always install the most recent stable release.
 
 If you don not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process.

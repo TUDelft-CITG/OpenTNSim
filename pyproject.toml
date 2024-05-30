@@ -1,2 +1,107 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opentnsim"
+dynamic = ["version"]
+description = "The OpenTNSim package aims to facilitate the analysis of network performance for different network configurations, fleet compositions and traffic rules."
+readme = "README.md"
+license = "mit"
+authors = [
+    { name = "Mark van Koningsveld", email = "m.vankoningsveld@tudelft.nl" },
+]
+keywords = [
+    "OpenTNSim",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "click",
+    "Deprecated",
+    "Dill",
+    "Flask-cors",
+    "Flask>=1.0",
+    "geopandas",
+    "matplotlib",
+    "networkx>=3",
+    "nose",
+    "numpy",
+    "openclsim>=0.16",
+    "pandas>=0.24.0",
+    "pint",
+    "plotly",
+    "pyproj",
+    "requests",
+    "requests-cache",
+    "scipy",
+    "shapely>=2",
+    "simplekml",
+    "simpy",
+    "sphinx_rtd_theme",
+    "tqdm",
+    "xarray",
+]
+
+[project.optional-dependencies]
+testing = [
+    "colorcet",
+    "cython",
+    "fiona",
+    "folium",
+    "geopandas",
+    "geopandas",
+    "ipyleaflet",
+    "ipywidgets",
+    "jsonschema",
+    "jupyter",
+    "jupyter-book",
+    "jupyterlab_widgets",
+    "momepy",
+    "nbconvert",
+    "nbmake",
+    "notebook",
+    "openpyxl",
+    "pytest-cov",
+    "pytest-datadir",
+    "pytest-timeout",
+    "pytest",
+    "pyyaml",
+    "sphinx",
+]
+
+[project.scripts]
+opentnsim = "opentnsim.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/TUDelft-CITG/OpenTNSim"
+
+[tool.hatch.version]
+path = "opentnsim/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/opentnsim",
+]
+
+
+
 [tool.black]
 line-length = 132
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--cov --cov-report term-missing --cov-report html --verbose"
+
+norecursedirs = [
+    "dist",
+    "build",
+    ".tox",
+    ".eggs"
+]
+testpaths = "tests"

@@ -17,7 +17,7 @@ jobs:
       - run:
           name: Run tests - Pytest
           command: |
-            docker exec -it opentnsim bash -c "python setup.py test"
+            docker exec -it opentnsim bash -c "pytest"
             docker cp opentnsim:/OpenTNSim/htmlcov /tmp/artifacts
 
       - run:
