@@ -92,3 +92,16 @@ include = [
 
 [tool.black]
 line-length = 132
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--cov --cov-report term-missing --cov-report html --verbose"
+
+norecursedirs = [
+    "dist",
+    "build",
+    ".tox",
+    ".eggs"
+]
+testpaths = "tests"
