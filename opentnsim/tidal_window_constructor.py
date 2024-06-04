@@ -69,9 +69,9 @@ class NetworkProperties:
                 - vertical_tidal_window_input: assembly of specific information that defines the restriction (see specific input classes in the notebook)
         """
         #Specifies two parameters in the dictionary with a corresponding data structure of lists
-        if 'Type' not in network.nodes[node]['Info']['Vertical tidal restriction']:
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'] = [[], [], [], []]
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'] = [[], [], [], [], [], []]
+        if 'Type' not in network.nodes[node]['Vertical tidal restriction']:
+            network.nodes[node]['Vertical tidal restriction']['Type'] = [[], [], [], []]
+            network.nodes[node]['Vertical tidal restriction']['Specification'] = [[], [], [], [], [], []]
 
         #Loops over the number of types of restrictions that may hold for different classes of vessels
         for input_data in vertical_tidal_window_input:
@@ -85,10 +85,10 @@ class NetworkProperties:
                         globals()[field.name] = [0,0]
 
             # Appends the specific data regarding the type of the restriction to data structure
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][0].append(ukc_s)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][1].append(ukc_p)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][2].append(ukc_r)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Type'][3].append(fwa)
+            network.nodes[node]['Vertical tidal restriction']['Type'][0].append(ukc_s)
+            network.nodes[node]['Vertical tidal restriction']['Type'][1].append(ukc_p)
+            network.nodes[node]['Vertical tidal restriction']['Type'][2].append(ukc_r)
+            network.nodes[node]['Vertical tidal restriction']['Type'][3].append(fwa)
 
             # Unpacks the data for the different vessel criteria and appends it to a list
             vessel_characteristics_type = []
@@ -108,13 +108,13 @@ class NetworkProperties:
                     vessel_method_list.append(sign)
 
             # Appends the specific data regarding the properties for which the restriction holds to data structure
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][0].append(vessel_characteristics_type)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][1].append(vessel_characteristics_value)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][4].append(vessel_method_list)
-            network.nodes[node]['Info']['Vertical tidal restriction']['Specification'][5].append([])
+            network.nodes[node]['Vertical tidal restriction']['Specification'][0].append(vessel_characteristics_type)
+            network.nodes[node]['Vertical tidal restriction']['Specification'][1].append(vessel_characteristics_value)
+            network.nodes[node]['Vertical tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
+            network.nodes[node]['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
+            network.nodes[node]['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
+            network.nodes[node]['Vertical tidal restriction']['Specification'][4].append(vessel_method_list)
+            network.nodes[node]['Vertical tidal restriction']['Specification'][5].append([])
 
     def append_horizontal_tidal_restriction_to_network(self,network,node,horizontal_tidal_window_input):
         """ Function: appends horizontal tidal restrictions to the node of the network
@@ -125,17 +125,17 @@ class NetworkProperties:
                 - horizontal_tidal_window_input: assembly of specific information that defines the restriction (see specific input classes in the notebook)
         """
         # Loops over the number of types of restrictions that may hold for different classes of vessels
-        if 'Data' not in network.nodes[node]['Info']['Horizontal tidal restriction']:
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'] = []
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Limit'] = []
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'] = []
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'] = [[], [], [], [], [], []]
+        if 'Data' not in network.nodes[node]['Horizontal tidal restriction']:
+            network.nodes[node]['Horizontal tidal restriction']['Data'] = []
+            network.nodes[node]['Horizontal tidal restriction']['Limit'] = []
+            network.nodes[node]['Horizontal tidal restriction']['Type'] = []
+            network.nodes[node]['Horizontal tidal restriction']['Specification'] = [[], [], [], [], [], []]
 
         for input_data in horizontal_tidal_window_input:
             # Unpacks the data for flood and ebb and appends it to a list
             window_specifications = input_data.window_specifications
             current_velocity_data = input_data.data
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Limit'].append({})
+            network.nodes[node]['Horizontal tidal restriction']['Limit'].append({})
             if window_specifications.window_method == 'Maximum':
                 max_flood_current = input_data.window_specifications.current_velocity_values['Flood']
                 max_ebb_current = input_data.window_specifications.current_velocity_values['Ebb']
@@ -153,16 +153,16 @@ class NetworkProperties:
                 #     cross_current_limit_dataframe.at[ebb_start, 'Limit'] = max_ebb_current
                 #     cross_current_limit_dataframe.at[ebb_start, 'Tide'] = 'Ebb'
                 # cross_current_limit_dataframe['Limit'] = cross_current_limit_dataframe.Limit.astype(float)
-                network.nodes[node]['Info']['Horizontal tidal restriction']['Limit'][-1]['Flood'] = max_flood_current
-                network.nodes[node]['Info']['Horizontal tidal restriction']['Limit'][-1]['Ebb'] = max_ebb_current
+                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Flood'] = max_flood_current
+                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Ebb'] = max_ebb_current
 
             elif window_specifications.window_method == 'Point-based':
-                network.nodes[node]['Info']['Horizontal tidal restriction']['Limit'][-1]['Flood'] = input_data.window_specifications.current_velocity_values['Flood']
-                network.nodes[node]['Info']['Horizontal tidal restriction']['Limit'][-1]['Ebb'] = input_data.window_specifications.current_velocity_values['Ebb']
+                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Flood'] = input_data.window_specifications.current_velocity_values['Flood']
+                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Ebb'] = input_data.window_specifications.current_velocity_values['Ebb']
 
             # Appends the specific data regarding the type of the restriction to data structure
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Data'].append(current_velocity_data)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Type'].append(window_specifications)
+            network.nodes[node]['Horizontal tidal restriction']['Data'].append(current_velocity_data)
+            network.nodes[node]['Horizontal tidal restriction']['Type'].append(window_specifications)
 
             # Unpacks the data for the different vessel criteria and appends it to a list
             vessel_characteristics_type = []
@@ -170,6 +170,7 @@ class NetworkProperties:
             vessel_characteristics_value = []
             vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
             for info in vessel_characteristics:
+                print(vessel_characteristics_spec)
                 vessel_characteristics_type.append(info)
                 vessel_characteristics_spec.append(vessel_characteristics[info][0])
                 vessel_characteristics_value.append(vessel_characteristics[info][1])
@@ -182,9 +183,9 @@ class NetworkProperties:
                     vessel_method_list.append(sign)
 
             # Appends the specific data regarding the properties for which the restriction holds to data structure
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][0].append(vessel_characteristics_type)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][1].append(vessel_characteristics_value)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][4].append(vessel_method_list)
-            network.nodes[node]['Info']['Horizontal tidal restriction']['Specification'][5].append([input_data.condition['Origin'], input_data.condition['Destination']])
+            network.nodes[node]['Horizontal tidal restriction']['Specification'][0].append(vessel_characteristics_type)
+            network.nodes[node]['Horizontal tidal restriction']['Specification'][1].append(vessel_characteristics_value)
+            network.nodes[node]['Horizontal tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
+            network.nodes[node]['Horizontal tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
+            network.nodes[node]['Horizontal tidal restriction']['Specification'][4].append(vessel_method_list)
+            network.nodes[node]['Horizontal tidal restriction']['Specification'][5].append([input_data.condition['Origin'], input_data.condition['Destination']])

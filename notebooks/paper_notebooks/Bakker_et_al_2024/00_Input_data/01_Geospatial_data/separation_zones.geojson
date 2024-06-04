@@ -1,0 +1,499 @@
+{
+  "type": "FeatureCollection",
+  "generator": "overpass-ide",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.",
+  "timestamp": "2022-08-24T10:01:39Z",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/9312665",
+        "seamark:type": "separation_zone",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              3.5861667,
+              52.0095
+            ],
+            [
+              3.5823333,
+              52.0426667
+            ],
+            [
+              3.4288333,
+              52.0353333
+            ],
+            [
+              3.4215,
+              51.9958333
+            ],
+            [
+              3.5861667,
+              52.0095
+            ]
+          ],
+          [
+            [
+              3.556,
+              52.0358333
+            ],
+            [
+              3.5584999,
+              52.0095005
+            ],
+            [
+              3.5585,
+              52.0095
+            ],
+            [
+              3.4501667,
+              52.0005
+            ],
+            [
+              3.4551667,
+              52.0315
+            ],
+            [
+              3.556,
+              52.0358333
+            ]
+          ]
+        ]
+      },
+      "id": "relation/9312665"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394927",
+        "seamark:name": "Maas West Outer TSS",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.3135,
+            52.0295
+          ],
+          [
+            3.3021667,
+            51.9858333
+          ],
+          [
+            3.231,
+            51.9798333
+          ],
+          [
+            3.2300372,
+            51.9831415
+          ],
+          [
+            3.2271951,
+            51.9865768
+          ],
+          [
+            3.2227684,
+            51.9893028
+          ],
+          [
+            3.2171905,
+            51.991053
+          ],
+          [
+            3.2110073,
+            51.991656
+          ],
+          [
+            3.2078333,
+            51.9915
+          ],
+          [
+            3.1376667,
+            51.9855
+          ],
+          [
+            3.138,
+            51.99
+          ],
+          [
+            3.2315,
+            51.998
+          ],
+          [
+            3.2093333,
+            52.021
+          ],
+          [
+            3.1393333,
+            52.0175
+          ],
+          [
+            3.1395,
+            52.021
+          ],
+          [
+            3.3135,
+            52.0295
+          ]
+        ]
+      },
+      "id": "way/112394927"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394933",
+        "seamark:name": "Maas West Inner TSS",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.5873333,
+            51.9986667
+          ],
+          [
+            3.5906667,
+            51.9708333
+          ],
+          [
+            3.413,
+            51.9483333
+          ],
+          [
+            3.4195,
+            51.9848333
+          ],
+          [
+            3.4963333,
+            51.9911667
+          ],
+          [
+            3.5585,
+            51.981
+          ],
+          [
+            3.5636599,
+            51.9805752
+          ],
+          [
+            3.5697314,
+            51.9811675
+          ],
+          [
+            3.5752085,
+            51.9828864
+          ],
+          [
+            3.5795552,
+            51.9855634
+          ],
+          [
+            3.582346,
+            51.9889364
+          ],
+          [
+            3.5833076,
+            51.9926752
+          ],
+          [
+            3.582346,
+            51.9964136
+          ],
+          [
+            3.5811667,
+            51.9981667
+          ],
+          [
+            3.5873333,
+            51.9986667
+          ]
+        ]
+      },
+      "id": "way/112394933"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394940",
+        "seamark:name": "North Hinder North TSS",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.11,
+            52.1563333
+          ],
+          [
+            3.0436667,
+            52.1918333
+          ],
+          [
+            2.9971667,
+            52.1505
+          ],
+          [
+            3.0513333,
+            52.1215
+          ],
+          [
+            3.11,
+            52.1563333
+          ]
+        ]
+      },
+      "id": "way/112394940"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394941",
+        "seamark:name": "Maas North TSS",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.8563333,
+            52.3701667
+          ],
+          [
+            3.8251667,
+            52.3741667
+          ],
+          [
+            3.7948333,
+            52.2845
+          ],
+          [
+            3.785,
+            52.119
+          ],
+          [
+            3.9013333,
+            52.1195
+          ],
+          [
+            3.8396667,
+            52.3195
+          ],
+          [
+            3.8563333,
+            52.3701667
+          ]
+        ]
+      },
+      "id": "way/112394941"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394943",
+        "seamark:name": "Maas West Outer TSS",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.2993333,
+            51.9748333
+          ],
+          [
+            3.2885,
+            51.9331667
+          ],
+          [
+            3.1248333,
+            51.9128333
+          ],
+          [
+            3.1256667,
+            51.9176667
+          ],
+          [
+            3.2041667,
+            51.9273333
+          ],
+          [
+            3.2258333,
+            51.9561667
+          ],
+          [
+            3.1311667,
+            51.9481667
+          ],
+          [
+            3.1333333,
+            51.9606667
+          ],
+          [
+            3.2993333,
+            51.9748333
+          ]
+        ]
+      },
+      "id": "way/112394943"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394945",
+        "name": "Maas North-West TSS",
+        "seamark:name": "Maas North-West TSS",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.6106667,
+            52.1028333
+          ],
+          [
+            3.5256667,
+            52.133
+          ],
+          [
+            3.5215,
+            52.1286667
+          ],
+          [
+            3.6045,
+            52.0993333
+          ],
+          [
+            3.6106667,
+            52.1028333
+          ]
+        ]
+      },
+      "id": "way/112394945"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231966028",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.5031667,
+            52.1103333
+          ],
+          [
+            3.5776667,
+            52.084
+          ],
+          [
+            3.5781667,
+            52.079
+          ],
+          [
+            3.4708333,
+            52.0776667
+          ],
+          [
+            3.5031667,
+            52.1103333
+          ]
+        ]
+      },
+      "id": "way/231966028"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499386227",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.7858333,
+            51.6336667
+          ],
+          [
+            2.7463333,
+            51.6521667
+          ],
+          [
+            2.6975,
+            51.7051667
+          ],
+          [
+            2.7075,
+            51.7351667
+          ],
+          [
+            2.69,
+            51.7041667
+          ],
+          [
+            2.739,
+            51.651167
+          ],
+          [
+            2.7858333,
+            51.6336667
+          ]
+        ]
+      },
+      "id": "way/499386227"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/669496774",
+        "seamark:type": "separation_zone",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.5584999,
+            52.0095005
+          ],
+          [
+            3.556,
+            52.0358333
+          ],
+          [
+            3.4551667,
+            52.0315
+          ],
+          [
+            3.4501667,
+            52.0005
+          ],
+          [
+            3.5585,
+            52.0095
+          ]
+        ]
+      },
+      "id": "way/669496774"
+    }
+  ]
+}

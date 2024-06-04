@@ -1,0 +1,385 @@
+{
+  "type": "FeatureCollection",
+  "generator": "overpass-ide",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.",
+  "timestamp": "2022-08-24T09:11:54Z",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10406116",
+        "seamark:name": "5 East Anchorage",
+        "seamark:type": "anchorage",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              3.6375,
+              52.1181667
+            ],
+            [
+              3.7443333,
+              52.1188333
+            ],
+            [
+              3.746681,
+              52.1816161
+            ],
+            [
+              3.5443032,
+              52.1820305
+            ],
+            [
+              3.544,
+              52.1513333
+            ],
+            [
+              3.6375,
+              52.1181667
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10406116"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10406117",
+        "seamark:name": "4 East Anchorage",
+        "seamark:type": "anchorage",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              3.6996671,
+              51.9534752
+            ],
+            [
+              3.7053108,
+              51.9156588
+            ],
+            [
+              3.8181594,
+              51.921994
+            ],
+            [
+              3.8125118,
+              51.9597715
+            ],
+            [
+              3.6996671,
+              51.9534752
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10406117"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10406118",
+        "seamark:name": "2 Anchorage",
+        "seamark:type": "anchorage",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              2.8600931,
+              51.9184117
+            ],
+            [
+              2.8774524,
+              51.9012827
+            ],
+            [
+              3.0010914,
+              51.9491653
+            ],
+            [
+              2.9215,
+              51.9421667
+            ],
+            [
+              2.8600931,
+              51.9184117
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10406118"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10406119",
+        "seamark:anchorage:category": "deep_water",
+        "seamark:name": "1 Anchorage",
+        "seamark:type": "anchorage",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              2.7737812,
+              52.0678847
+            ],
+            [
+              2.8677069,
+              52.1346179
+            ],
+            [
+              2.7545572,
+              52.1341347
+            ],
+            [
+              2.7147109,
+              52.1000992
+            ],
+            [
+              2.7111553,
+              52.0658288
+            ],
+            [
+              2.7737812,
+              52.0678847
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10406119"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/211934340",
+        "name": "Schouwenbank Anchorage",
+        "place": "locality",
+        "seamark:name": "Schouwenbank Anchorage",
+        "seamark:type": "anchorage"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              3.347372,
+              51.839733
+            ],
+            [
+              3.304167,
+              51.793
+            ],
+            [
+              3.322833,
+              51.753933
+            ],
+            [
+              3.418183,
+              51.806983
+            ],
+            [
+              3.409679,
+              51.836652
+            ],
+            [
+              3.347372,
+              51.839733
+            ]
+          ]
+        ]
+      },
+      "id": "way/211934340"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129970399",
+        "seamark:name": "3 East Anchorage",
+        "seamark:type": "anchorage"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.556,
+            52.0358333
+          ],
+          [
+            3.5584999,
+            52.0095005
+          ],
+          [
+            3.5585,
+            52.0095
+          ],
+          [
+            3.4501667,
+            52.0005
+          ],
+          [
+            3.4551667,
+            52.0315
+          ],
+          [
+            3.556,
+            52.0358333
+          ]
+        ]
+      },
+      "id": "way/129970399"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129988235",
+        "seamark:name": "3 South Anchorage",
+        "seamark:type": "anchorage"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.2041667,
+            51.9273333
+          ],
+          [
+            3.1256667,
+            51.9176667
+          ],
+          [
+            3.1311667,
+            51.9481667
+          ],
+          [
+            3.2258333,
+            51.9561667
+          ],
+          [
+            3.2041667,
+            51.9273333
+          ]
+        ]
+      },
+      "id": "way/129988235"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129988236",
+        "seamark:name": "3 North Anchorage",
+        "seamark:type": "anchorage"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.2315,
+            51.998
+          ],
+          [
+            3.138,
+            51.99
+          ],
+          [
+            3.1393333,
+            52.0175
+          ],
+          [
+            3.2093333,
+            52.021
+          ],
+          [
+            3.2315,
+            51.998
+          ]
+        ]
+      },
+      "id": "way/129988236"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499613374",
+        "seamark:name": "4 West Anchorage",
+        "seamark:type": "anchorage"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.4194166,
+            51.8588452
+          ],
+          [
+            3.4048333,
+            51.9016667
+          ],
+          [
+            3.5943333,
+            51.9376667
+          ],
+          [
+            3.6291617,
+            51.9443282
+          ],
+          [
+            3.6482066,
+            51.9013974
+          ],
+          [
+            3.4194166,
+            51.8588452
+          ]
+        ]
+      },
+      "id": "way/499613374"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193772",
+        "seamark:name": "6 Anchorage",
+        "seamark:type": "anchorage"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.8244478,
+            52.4679647
+          ],
+          [
+            3.8177329,
+            52.4471162
+          ],
+          [
+            3.730073,
+            52.4396291
+          ],
+          [
+            3.7254918,
+            52.4595103
+          ],
+          [
+            3.8244478,
+            52.4679647
+          ]
+        ]
+      },
+      "id": "way/755193772"
+    }
+  ]
+}

@@ -221,7 +221,7 @@ class HasOutput:
         if "Terminal" in self.multidigraph.edges[edge].keys() and self.metadata['terminal_of_call'].size and self.metadata['terminal_of_call'][0] in self.multidigraph.edges[edge]['Terminal'].keys():
             self.output['speed'] = 0.
         else:
-            self.output['speed'] = self.env.vessel_traffic_service.provide_speed(self,edge[:2])
+            self.output['speed'] = self.env.vessel_traffic_service.provide_speed(edge[:2])
         if self.bound == 'outbound':
             self.output['heading'] = 180 - self.env.vessel_traffic_service.provide_heading(self,edge)
         else:

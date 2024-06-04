@@ -73,15 +73,15 @@ class HasTurningBasin(core.Movable):
             turning_basin = self.env.FG.nodes[origin]['Turning Basin'][0]
             if self.bound == 'inbound' and turning_basin.length >= self.L:
                 self.update_turing_basin_status_report(turning_basin)
-                self.log_entry(self.env.now, self.env.FG.nodes[origin]['geometry'], "Turning start", deepcopy(self.output))
-                turning_basin.log_entry(self.env.now, self.env.FG.nodes[origin]['geometry'], "Turning start", deepcopy(turning_basin.output))
+                self.log_entry_v0("Turning start", self.env.now, deepcopy(self.output), self.env.FG.nodes[origin]['geometry'])
+                turning_basin.log_entry_v0("Turning start", self.env.now, deepcopy(turning_basin.output), self.env.FG.nodes[origin]['geometry'])
                 yield self.env.timeout(self.metadata['t_turning'][0])
                 self.update_turing_basin_status_report(turning_basin, turning_stop = True)
-                self.log_entry(self.env.now, self.env.FG.nodes[origin]['geometry'], "Turning stop", deepcopy(self.output))
-                turning_basin.log_entry(self.env.now, self.env.FG.nodes[origin]['geometry'], "Turning stop", deepcopy(turning_basin.output))
+                self.log_entry_v0("Turning stop", self.env.now,  deepcopy(self.output), self.env.FG.nodes[origin]['geometry'])
+                turning_basin.log_entry_v0("Turning stop", self.env.now, deepcopy(turning_basin.output), self.env.FG.nodes[origin]['geometry'])
             else:
-                self.log_entry(self.env.now, self.env.FG.nodes[origin]['geometry'], "Passing Turning Basin", deepcopy(self.output))
-                turning_basin.log_entry(self.env.now, self.env.FG.nodes[origin]['geometry'], "Vessel Passing", deepcopy(turning_basin.output))
+                self.log_entry_v0("Passing Turning Basin", self.env.now, deepcopy(self.output), self.env.FG.nodes[origin]['geometry'])
+                turning_basin.log_entry_v0("Vessel Passing", self.env.now, deepcopy(turning_basin.output), self.env.FG.nodes[origin]['geometry'])
             if 'request_access_turning_basin' in dir(self):
                 turning_basin.resource.release(self.request_access_turning_basin)
                 del(self.request_access_turning_basin)
@@ -227,17 +227,17 @@ class PassTerminal:
             yield vessel.anchorage_access
             vessel.update_waiting_status()
             vessel.update_anchorage_status_report(anchorage)
-            anchorage.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], "Vessel arrival", deepcopy(anchorage.output))
-            vessel.log_entry(vessel.env.now,nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], "Waiting in anchorage start", deepcopy(vessel.output))
+            anchorage.log_entry_v0("Vessel arrival", vessel.env.now, deepcopy(anchorage.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]])
+            vessel.log_entry_v0("Waiting in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]])
             vessel.arrival_time_in_anchorage = vessel.env.now
         terminal = vessel.env.FG.edges[vessel.route_after_anchorage[-2], vessel.route_after_anchorage[-1], 0]['Terminal'][vessel.metadata['terminal_of_call'][0]]
 
         if 'additional_waiting_time' in vessel.metadata.keys() and vessel.metadata['additional_waiting_time']:
             vessel.update_waiting_status(priority=True)
-            vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting in anchorage for arrival prioritized vessel start", deepcopy(vessel.output))
+            vessel.log_entry_v0("Waiting in anchorage for arrival prioritized vessel start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
             yield vessel.env.timeout(vessel.metadata['additional_waiting_time'])
             vessel.update_waiting_status(priority=True, waiting_stop=True)
-            vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting in anchorage for arrival prioritized vessel stop", deepcopy(vessel.output))
+            vessel.log_entry_v0("Waiting in anchorage for arrival prioritized vessel stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
             vessel.arrival_time_in_anchorage = vessel.env.now
             vessel.metadata['additional_waiting_time'] = 0.
             vessel.route = vessel.route_after_anchorage
@@ -248,7 +248,7 @@ class PassTerminal:
 
         if 'waiting_for_available_berth' in dir(vessel):
             vessel.update_waiting_status(availability=True)
-            vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting for available berth in anchorage stop", deepcopy(vessel.output))
+            vessel.log_entry_v0("Waiting for available berth in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
             for user in terminal.occupying_vessels.users:
                 if user.vessel.berth.name == vessel.metadata['berth_of_call'][0]:
                     yield vessel.env.timeout(np.max([0,(user.vessel.etd-vessel.env.now-vessel.env.vessel_traffic_service.provide_sailing_time(vessel,vessel.route_after_anchorage[:-1])['Time'].sum())]))
@@ -258,16 +258,16 @@ class PassTerminal:
             yield vessel.waiting_for_available_berth
             vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + 2 * vessel.metadata['t_berthing'] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route_after_anchorage[:-1])['Time'].sum()
             vessel.update_waiting_status(availability=True,waiting_stop=True)
-            vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting for available berth in anchorage stop", deepcopy(vessel.output))
+            vessel.log_entry_v0("Waiting for available berth in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
 
         vessel.waiting_for_inbound_tidal_window = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route_after_anchorage[:-1], delay=0, plot=False)
         if vessel.waiting_for_inbound_tidal_window:
             vessel.update_waiting_status(tidal_window=True)
-            vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting for tidal window in anchorage start", deepcopy(vessel.output))
+            vessel.log_entry_v0("Waiting for tidal window in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
             yield vessel.env.timeout(vessel.waiting_for_inbound_tidal_window) | vessel.env.timeout(vessel.metadata['max_waiting_time']-(vessel.arrival_time_in_anchorage-vessel.env.now))
             vessel.etd += vessel.waiting_for_inbound_tidal_window
             vessel.update_waiting_status(tidal_window=True, waiting_stop=True)
-            vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting for tidal window in anchorage stop", deepcopy(vessel.output))
+            vessel.log_entry_v0("Waiting for tidal window in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
 
         if vessel.env.now - vessel.arrival_time_in_anchorage > vessel.metadata['max_waiting_time']:
             vessel.port_accessible = False
@@ -292,13 +292,13 @@ class PassTerminal:
             yield vessel.reservation
 
         vessel.update_anchorage_status_report(anchorage,departure=True)
-        vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]], "Waiting in anchorage stop", deepcopy(vessel.output))
+        vessel.log_entry_v0("Waiting in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
         #waterway.PassWaterway.release_access_previous_section(vessel, vessel.route[0])
         #yield from waterway.PassWaterway.request_access_next_section(vessel, vessel.route[0])
         vessel.geometry = nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]]
         vessel.env.process(vessel.move())
         anchorage.resource.release(vessel.anchorage_access)
-        anchorage.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]], "Vessel departure", deepcopy(anchorage.output))
+        anchorage.log_entry_v0("Vessel departure", vessel.env.now, deepcopy(anchorage.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]])
 
     def request_quay_position(vessel, terminal):
         """ Function that claims a length along the quay equal to the length of the vessel itself and calculates the relative position of the vessel along the quay. If there are multiple
@@ -477,13 +477,13 @@ class PassTerminal:
                 if old_level != new_level:
                     terminal.length.put(new_level - old_level)
                 # Give vessel length back to keep track of the total claimed vessel length and log this value and the departure event in the logfile of the terminal, and release the request of the vessel to access the terminal
-                terminal.log_entry(vessel.env.now+delay, nx.get_node_attributes(vessel.env.FG, "geometry")[index], "Departure of vessel", deepcopy(terminal.output)[berth.name])
+                terminal.log_entry_v0("Departure of vessel", vessel.env.now+delay, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
             terminal.resource.release(vessel.accessed_terminal)
 
         # Else if the terminal is of type 'jetty': adjust number of vessels occupying a jetty, log the departure of this vessel and this number, and release the request of the vessel for the specific jetty
         elif terminal.type == 'jetty':
             if vessel.port_accessible:
-                terminal.log_entry(vessel.env.now+delay, nx.get_node_attributes(vessel.env.FG, "geometry")[index], "Departure of vessel", deepcopy(terminal.output)[berth.name])
+                terminal.log_entry_v0("Departure of vessel", vessel.env.now+delay, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
             terminal.resource.release(vessel.accessed_terminal)
 
     def request_terminal_access(vessel, edge, node):
@@ -527,10 +527,10 @@ class PassTerminal:
                 if 'additional_waiting_time' in vessel.metadata.keys() and vessel.metadata['additional_waiting_time']:
                     if ("Terminal" in vessel.env.FG.edges[vessel.route[0], vessel.route[1], k] or vessel.route[0] != '8866969'):
                         vessel.update_waiting_status(priority=True)
-                        vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting in terminal for arrival prioritized vessel start", deepcopy(vessel.output))
+                        vessel.log_entry_v0("Waiting in terminal for arrival prioritized vessel start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
                         yield vessel.env.timeout(vessel.metadata['additional_waiting_time'])
                         vessel.update_waiting_status(priority=True, waiting_stop=True)
-                        vessel.log_entry(vessel.env.now,nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting in terminal for arrival prioritized vessel stop", deepcopy(vessel.output))
+                        vessel.log_entry_v0("Waiting in terminal for arrival prioritized vessel stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
                         vessel.metadata['additional_waiting_time'] = 0.
                     else:
                         vessel.move_to_anchorage = True
@@ -570,7 +570,7 @@ class PassTerminal:
                     vessel.access_terminal.value
                 except:
                     vessel.update_waiting_status(availability=True, waiting_stop=False)
-                    vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting in terminal for available berth start", deepcopy(vessel.output))
+                    vessel.log_entry_v0("Waiting in terminal for available berth start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
                     for user in terminal.occupying_vessels.users:
                         if user.vessel.berth.name == vessel.metadata['berth_of_call'][0]:
                             yield vessel.env.timeout(np.max([0,(user.vessel.etd-vessel.env.now-vessel.env.vessel_traffic_service.provide_sailing_time(vessel,vessel.route[:-1])['Time'].sum())]))
@@ -579,7 +579,7 @@ class PassTerminal:
                                 del (user.vessel.accessed_terminal)
                     yield vessel.access_terminal
                     vessel.update_waiting_status(availability=True, waiting_stop=True)
-                    vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]],"Waiting in terminal for available berth stop", deepcopy(vessel.output))
+                    vessel.log_entry_v0("Waiting in terminal for available berth stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
                 else:
                     yield vessel.access_terminal
                 vessel.berth = vessel.access_terminal.value
@@ -590,10 +590,10 @@ class PassTerminal:
                 yield vessel.reservation
                 if vessel.waiting_time_in_anchorage:
                     vessel.update_waiting_status(tidal_window=True, waiting_stop=False)
-                    vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]], "Waiting in terminal for tidal window start", deepcopy(vessel.output))
+                    vessel.log_entry_v0("Waiting in terminal for tidal window start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
                     yield vessel.env.timeout(vessel.waiting_time_in_anchorage)
                     vessel.update_waiting_status(tidal_window=True, waiting_stop=True)
-                    vessel.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]], "Waiting in terminal for tidal window stop", deepcopy(vessel.output))
+                    vessel.log_entry_v0("Waiting in terminal for tidal window stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
 
             if not vessel.waiting_for_availability_terminal:
                 vessel.waiting_time_in_anchorage = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route, delay=0, plot=False)
@@ -667,7 +667,7 @@ class PassTerminal:
 
         # If the terminal is of type 'quay': log in logfile of terminal keeping track of the available length (by getting the so-called position length)
         vessel.update_terminal_berth_status_report(terminal,berth)
-        terminal.log_entry(vessel.env.now,nx.get_node_attributes(vessel.env.FG, "geometry")[index], "Arrival of vessel", deepcopy(terminal.output)[berth.name])
+        terminal.log_entry_v0("Arrival of vessel", vessel.env.now, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
 
         route_to_nearest_turning_basin = []
         for node in vessel.route_after_terminal:
@@ -680,19 +680,19 @@ class PassTerminal:
         time_of_arrival = vessel.env.now
 
         # Berthing: log the start and stop of this event in log file of vessel including the calculated net ukc, and yield timeout equal to the time it takes to berth
-        vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Berthing start", deepcopy(vessel.output))
+        vessel.log_entry_v0("Berthing start", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
         yield vessel.env.timeout(vessel.metadata['t_berthing'])
-        vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Berthing stop", deepcopy(vessel.output))
+        vessel.log_entry_v0("Berthing stop", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
 
         # If terminal is part of a junction: release request of this section (vessel is berthed and not in channel/basin)
         #if 'Junction' in vessel.env.FG.nodes[edge[1]].keys():
         #    waterway.PassWaterway.release_access_previous_section(vessel, edge[1])
 
         # Determine the new route of the vessel (depending on whether the vessel came from the anchorage area or sailed to the terminal directly) and changing the direction of the vessel
-        if vessel.next_destination[0]:
-            route_after_terminal = nx.dijkstra_path(vessel.env.FG, vessel.destination[0], vessel.next_destination[0])
+        if vessel.metadata['next_destination'][0]:
+            route_after_terminal = nx.dijkstra_path(vessel.env.FG, vessel.destination, vessel.metadata['next_destination'][0])
         else:
-            route_after_terminal = nx.dijkstra_path(vessel.env.FG, vessel.destination[0], vessel.origin)
+            route_after_terminal = nx.dijkstra_path(vessel.env.FG, vessel.destination, vessel.origin)
 
         if len(route_after_terminal) < 2:
             route_after_terminal = [edge[0], edge[1]]
@@ -702,16 +702,16 @@ class PassTerminal:
             vessel.metadata['priority'] = -1
 
         # (Un)loading: log the start and stop of this event in log file of vessel including the calculated net ukc, and yield timeout equal to the time it takes to unload
-        vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon),"(Un)loading start", deepcopy(vessel.output))
+        vessel.log_entry_v0("(Un)loading start", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
         yield vessel.env.timeout(vessel.metadata['t_(un)loading'][0])
         vessel._T -= vessel.metadata['(un)loading'][0]
-        vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "(Un)loading stop", deepcopy(vessel.output))
+        vessel.log_entry_v0("(Un)loading stop", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
         vessel.route = route_after_terminal
         vessel.bound = 'outbound'
         vessel.metadata['berth_of_call'] = np.delete(vessel.metadata['berth_of_call'], 0, 0)
         vessel.metadata['terminal_of_call'] = np.delete(vessel.metadata['terminal_of_call'], 0, 0)
-        vessel.destination = np.delete(vessel.destination, 0, 0)
-        vessel.next_destination = np.delete(vessel.next_destination, 0, 0)
+        vessel.destination = vessel.metadata['next_destination'][0]
+        vessel.metadata['next_destination'] = np.delete(vessel.metadata['next_destination'], 0, 0)
         vessel.metadata['(un)loading'] = np.delete(vessel.metadata['(un)loading'], 0, 0)
         vessel.metadata['t_(un)loading'] = np.delete(vessel.metadata['t_(un)loading'], 0, 0)
         if vessel.route:
@@ -723,20 +723,20 @@ class PassTerminal:
             yield from PassTerminal.request_terminal_access(vessel, [route_after_terminal[-1],route_after_terminal[-2],k], route_after_terminal[-1])
 
         # elif vessel.waiting_for_outbound_tidal_window:
-        #     vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Waiting for tidal window start", deepcopy(vessel.output))
+        #     vessel.log_entry_v0(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Waiting for tidal window start", deepcopy(vessel.output))
         #     yield vessel.env.timeout(np.max([0, vessel.waiting_for_outbound_tidal_window]))
-        #     vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Waiting for tidal window stop", deepcopy(vessel.output))
+        #     vessel.log_entry_v0(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Waiting for tidal window stop", deepcopy(vessel.output))
 
         # Deberthing: if the terminal is part of an section, request access to this section first
         #if 'Junction' in vessel.env.FG.nodes[edge[1]].keys():
         #    yield from waterway.PassWaterway.request_access_next_section(vessel, edge[0])
 
         # Deberthing: log the start and stop of this event in log file of vessel including the calculated net ukc, and yield timeout equal to the time it takes to deberth
-        vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Deberthing start", deepcopy(vessel.output))
+        vessel.log_entry_v0("Deberthing start", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
         yield vessel.env.timeout(vessel.metadata['t_berthing'])
         vessel.update_terminal_berth_status_report(terminal, berth, departure=True)
-        vessel.log_entry(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Deberthing stop", deepcopy(vessel.output))
-        terminal.log_entry(vessel.env.now, nx.get_node_attributes(vessel.env.FG, "geometry")[index],"Departure of vessel", deepcopy(terminal.output)[berth.name])
+        vessel.log_entry_v0("Deberthing stop", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
+        terminal.log_entry_v0("Departure of vessel", vessel.env.now, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
 
         if 'accessed_terminal' in dir(vessel):
             terminal.release_terminal(vessel.accessed_terminal.value)

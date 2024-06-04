@@ -18,6 +18,8 @@ class vessel_characteristics(Enum):
     max_le_UKC = ['maxUKC', '<=']
     max_lt_UKC = ['maxUKC', '<']
     type = ['Type', '==']
+    terminal = ['Terminal','.isin(']
+    visited_terminal = ['Previous terminal','.isin(']
 
 class vessel_direction(Enum):
     inbound = 'inbound'

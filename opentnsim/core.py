@@ -248,7 +248,10 @@ class Movable(Locatable, Routable, Log):
             self.log_entry_v0("Sailing from node {} to node {} start".format(self.current_node, self.next_node),
                               self.env.now, status_report, start_location)
 
-            yield from self.pass_node(self.current_node)
+            try:
+                yield from self.pass_node(self.current_node)
+            except simpy.exceptions.Interrupt as e:
+                break
 
             # update to current position
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
@@ -258,8 +261,15 @@ class Movable(Locatable, Routable, Log):
             if self.next_node == self.current_node:
                 break
 
-            yield from self.pass_edge(self.current_node, self.next_node, end_location)
-            yield from self.complete_pass_edge(self.next_node)
+            try:
+                yield from self.pass_edge(self.current_node, self.next_node, end_location)
+            except simpy.exceptions.Interrupt as e:
+                break
+
+            try:
+                yield from self.complete_pass_edge(self.next_node)
+            except simpy.exceptions.Interrupt as e:
+                break
 
             # we arrived at destination
             # update to new position
@@ -267,7 +277,10 @@ class Movable(Locatable, Routable, Log):
             self.current_node = self.next_node
             self.position_on_route = index + 1
 
-            yield from self.look_ahead_to_node(self.next_node)
+            try:
+                yield from self.look_ahead_to_node(self.next_node)
+            except simpy.exceptions.Interrupt as e:
+                break
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
@@ -280,61 +293,27 @@ class Movable(Locatable, Routable, Log):
     def pass_node(self, node):
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
-            yield from on_pass_node_function(node)
+            try:
+                yield from on_pass_node_function(node)
+            except simpy.exceptions.Interrupt as e:
+                logger.debug("Re-routing", exc_info=True)
+                raise simpy.exceptions.Interrupt('Re-routing')
 
     def pass_edge(self, origin, destination, end_location):
-        edge = self.graph.edges[origin, destination]
+        self.origin = origin
+        self.destination = destination
         k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
         self.distance = self.multidigraph.edges[origin, destination, k]['length']
-
         next_node = None
         if self.route[-1] != destination:
             next_node = self.route[self.route.index(destination)+1]
 
         for on_pass_edge_function in self.on_pass_edge_functions:
-            yield from on_pass_edge_function(origin, destination)
-
-        # remember when we arrived at the edge
-        arrival = self.env.now
-
-        # This is the case if we are sailing on power
-        value = 0
-        if getattr(self, "P_tot_given", None) is not None:
-            edge = self.graph.edges[origin, destination]
-            depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
-
-            # estimate 'grounding speed' as a useful upperbound
-            (
-                upperbound,
-                selected,
-                results_df,
-            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
-            self.v = self.power2v(self, edge, upperbound)
-            # use computed power
-            value = self.P_given
-
-        # Maximum speed restriction may be limiting the on power speed
-        if 'vessel_traffic_service' in dir(self.env):
-            self.v = self.env.vessel_traffic_service.provide_speed(self,edge)
-
-        # Wait for edge resources to become available
-        if "Resources" in edge.keys():
-            with self.graph.edges[origin, destination]["Resources"].request() as request:
-                yield request
-                # we had to wait, log it
-                if arrival != self.env.now:
-                    self.log_entry(
-                        "Waiting to pass edge {} - {} start".format(origin, destination),
-                        arrival,
-                        value,
-                        orig,
-                    )
-                    self.log_entry(
-                        "Waiting to pass edge {} - {} stop".format(origin, destination),
-                        self.env.now,
-                        value,
-                        orig,
-                    )
+            try:
+                yield from on_pass_edge_function(origin, destination)
+            except simpy.exceptions.Interrupt as e:
+                logger.debug("Re-routing", exc_info=True)
+                raise simpy.exceptions.Interrupt('Re-routing')
 
         # default velocity based on current speed.
         timeout = self.distance / self.current_speed
@@ -343,7 +322,7 @@ class Movable(Locatable, Routable, Log):
             status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))
         else:
             status_report = self.update_sailing_status_report(self.next_node,self.next_node,(self.current_node, self.next_node, k))
-        self.log_entry("Sailing from node {} to node {} stop".format(self.current_node, self.next_node), self.env.now, status_report, end_location)
+        self.log_entry_v0("Sailing from node {} to node {} stop".format(self.current_node, self.next_node), self.env.now, status_report, end_location)
         self.geometry = end_location
 
     def complete_pass_edge(self,destination):
@@ -364,8 +343,19 @@ class Movable(Locatable, Routable, Log):
 
     @property
     def current_speed(self):
-        return self.v
+        if getattr(self, "P_tot_given", None) is not None:
+            edge = self.graph.edges[self.origin, self.destination]
+            depth = self.graph.get_edge_data(self.origin, self.destination)["Info"]["GeneralDepth"]
 
+            # estimate 'grounding speed' as a useful upperbound
+            (upperbound, selected, results_df,) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150,
+                                                                                                depth=depth, margin=0)
+            self.v = self.power2v(self, edge, upperbound)
+
+        if 'vessel_traffic_service' in dir(self.env):
+            self.v = self.env.vessel_traffic_service.provide_speed((self.origin,self.destination))
+
+        return self.v
 
 class ContainerDependentMovable(Movable, HasContainer):
     """ContainerDependentMovable class

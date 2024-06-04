@@ -1,0 +1,3077 @@
+{
+  "type": "FeatureCollection",
+  "generator": "overpass-ide",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.",
+  "timestamp": "2022-08-24T10:03:39Z",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/9745212",
+        "name": "Fietspad",
+        "place": "locality",
+        "seamark:information": "Small craft and pleasure craft are urgently requested to use the channel parallel to the main fairway, named \"Fietspad\".",
+        "seamark:name": "Fietspad",
+        "seamark:type": "separation_boundary",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              3.865631,
+              51.352372
+            ],
+            [
+              3.885464,
+              51.356136
+            ],
+            [
+              3.898617,
+              51.362328
+            ],
+            [
+              3.910578,
+              51.36765
+            ],
+            [
+              3.922228,
+              51.373864
+            ],
+            [
+              3.935333,
+              51.379511
+            ],
+            [
+              3.944089,
+              51.386544
+            ],
+            [
+              3.947439,
+              51.394225
+            ],
+            [
+              3.951594,
+              51.401764
+            ],
+            [
+              3.945417,
+              51.394733
+            ],
+            [
+              3.9391,
+              51.3876
+            ],
+            [
+              3.933469,
+              51.380733
+            ],
+            [
+              3.920983,
+              51.374533
+            ],
+            [
+              3.909533,
+              51.368767
+            ],
+            [
+              3.897308,
+              51.362853
+            ],
+            [
+              3.884631,
+              51.357564
+            ],
+            [
+              3.864022,
+              51.353342
+            ],
+            [
+              3.853417,
+              51.350594
+            ],
+            [
+              3.846006,
+              51.348967
+            ],
+            [
+              3.833356,
+              51.349428
+            ],
+            [
+              3.825367,
+              51.349683
+            ],
+            [
+              3.814383,
+              51.350164
+            ],
+            [
+              3.794639,
+              51.356461
+            ],
+            [
+              3.779531,
+              51.361378
+            ],
+            [
+              3.7792,
+              51.360383
+            ],
+            [
+              3.793778,
+              51.355081
+            ],
+            [
+              3.813767,
+              51.348806
+            ],
+            [
+              3.825864,
+              51.348725
+            ],
+            [
+              3.833389,
+              51.348533
+            ],
+            [
+              3.846236,
+              51.348164
+            ],
+            [
+              3.8538929,
+              51.3498253
+            ],
+            [
+              3.865631,
+              51.352372
+            ]
+          ]
+        ]
+      },
+      "id": "relation/9745212"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/9745213",
+        "name": "Fietspad Plaat van Osenisse - Groen",
+        "seamark:information": "Small craft and pleasure craft are urgently requested to use the channel parallel to the main fairway, named \"Fietspad\".",
+        "seamark:name": "Fietspad",
+        "seamark:type": "separation_boundary",
+        "source": "https://www.defensie.nl/english/topics/notices-to-mariners/contents/database/by-week?week=23&year=2016&1800series=true *224/16",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.030497,
+              51.402236
+            ],
+            [
+              4.030283,
+              51.410967
+            ],
+            [
+              4.02815,
+              51.417883
+            ],
+            [
+              4.022667,
+              51.424283
+            ],
+            [
+              4.012983,
+              51.4299
+            ],
+            [
+              4.000367,
+              51.4344
+            ],
+            [
+              3.992333,
+              51.43505
+            ],
+            [
+              3.993778,
+              51.43395
+            ],
+            [
+              3.999906,
+              51.43405
+            ],
+            [
+              4.012433,
+              51.429419
+            ],
+            [
+              4.021581,
+              51.423981
+            ],
+            [
+              4.025794,
+              51.417889
+            ],
+            [
+              4.026653,
+              51.411028
+            ],
+            [
+              4.026956,
+              51.402194
+            ],
+            [
+              4.030497,
+              51.402236
+            ]
+          ]
+        ]
+      },
+      "id": "relation/9745213"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/9745214",
+        "name": "Fietspad",
+        "place": "locality",
+        "seamark:information": "Small craft and pleasure craft are urgently requested to use the channel parallel to the main fairway, named \"Fietspad\".",
+        "seamark:name": "Fietspad",
+        "seamark:type": "separation_boundary",
+        "source": "https://www.defensie.nl/english/topics/notices-to-mariners/contents/database/by-week?week=23&year=2016&1800series=true *224/16",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.02225,
+              51.434983
+            ],
+            [
+              4.036756,
+              51.422131
+            ],
+            [
+              4.039033,
+              51.41205
+            ],
+            [
+              4.039533,
+              51.402433
+            ],
+            [
+              4.039867,
+              51.393383
+            ],
+            [
+              4.040583,
+              51.3863
+            ],
+            [
+              4.046133,
+              51.381017
+            ],
+            [
+              4.043178,
+              51.386539
+            ],
+            [
+              4.043067,
+              51.393317
+            ],
+            [
+              4.042883,
+              51.40235
+            ],
+            [
+              4.043867,
+              51.410633
+            ],
+            [
+              4.044363,
+              51.421733
+            ],
+            [
+              4.034475,
+              51.428353
+            ],
+            [
+              4.02225,
+              51.434983
+            ]
+          ]
+        ]
+      },
+      "id": "relation/9745214"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10351245",
+        "seamark:information": "Small craft and pleasure craft are urgently requested to use the channel parallel to the main fairway, named \"Fietspad\".",
+        "seamark:name": "Fietspad",
+        "seamark:source": "https://afdelingkust.login.kanooh.be/sites/default/files/atoms/files/ntm201805_076-079.pdf(2018-05/07)",
+        "seamark:type": "separation_boundary",
+        "source": "https://www.defensie.nl/english/topics/notices-to-mariners/contents/database/by-week?week=23&year=2016&1800series=true *224/16",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.1077726,
+              51.3714216
+            ],
+            [
+              4.12535,
+              51.372967
+            ],
+            [
+              4.134067,
+              51.37485
+            ],
+            [
+              4.14365,
+              51.376267
+            ],
+            [
+              4.148183,
+              51.37865
+            ],
+            [
+              4.152833,
+              51.382017
+            ],
+            [
+              4.162642,
+              51.387381
+            ],
+            [
+              4.161417,
+              51.388267
+            ],
+            [
+              4.1515,
+              51.38345
+            ],
+            [
+              4.142667,
+              51.380333
+            ],
+            [
+              4.133717,
+              51.377133
+            ],
+            [
+              4.128667,
+              51.375383
+            ],
+            [
+              4.119383,
+              51.373417
+            ],
+            [
+              4.108467,
+              51.372267
+            ],
+            [
+              4.1077726,
+              51.3714216
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10351245"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10351247",
+        "name": "Fietspad Gat van Osenisse - Groen",
+        "place": "locality",
+        "seamark:information": "Small craft and pleasure craft are urgently requested to use the channel parallel to the main fairway, named \"Fietspad\".",
+        "seamark:name": "Fietspad Gat van Osenisse - Groen",
+        "seamark:type": "separation_boundary",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              3.959917,
+              51.3996
+            ],
+            [
+              3.9573,
+              51.391567
+            ],
+            [
+              3.953633,
+              51.38455
+            ],
+            [
+              3.940142,
+              51.375331
+            ],
+            [
+              3.9277,
+              51.368983
+            ],
+            [
+              3.910867,
+              51.361183
+            ],
+            [
+              3.92925,
+              51.367617
+            ],
+            [
+              3.942783,
+              51.373217
+            ],
+            [
+              3.957033,
+              51.383833
+            ],
+            [
+              3.9599,
+              51.390867
+            ],
+            [
+              3.959917,
+              51.3996
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10351247"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394924",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.9325,
+            52.1196667
+          ],
+          [
+            3.8723333,
+            52.3171667
+          ],
+          [
+            3.888,
+            52.3661667
+          ]
+        ]
+      },
+      "id": "way/112394924"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394930",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.9838333,
+            52.2236667
+          ],
+          [
+            2.936,
+            52.1831667
+          ]
+        ]
+      },
+      "id": "way/112394930"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394932",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.2725,
+            53.1361667
+          ],
+          [
+            3.8906667,
+            52.9445
+          ],
+          [
+            3.426,
+            52.5951667
+          ],
+          [
+            3.3861667,
+            52.5618333
+          ]
+        ]
+      },
+      "id": "way/112394932"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394934",
+        "note": "inshore traffic boundary",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.6675,
+            51.9518333
+          ],
+          [
+            3.6996671,
+            51.9534752
+          ]
+        ]
+      },
+      "id": "way/112394934"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394935",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.746681,
+            52.1816161
+          ],
+          [
+            3.7493333,
+            52.2336667
+          ],
+          [
+            3.7955,
+            52.378
+          ]
+        ]
+      },
+      "id": "way/112394935"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394939",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.6375,
+            52.1181667
+          ],
+          [
+            3.544,
+            52.1513333
+          ]
+        ]
+      },
+      "id": "way/112394939"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112394948",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.620167,
+            51.724
+          ],
+          [
+            2.524615,
+            51.654582
+          ],
+          [
+            2.4541667,
+            51.6033333
+          ],
+          [
+            2.3969444,
+            51.5521133
+          ],
+          [
+            2.3397222,
+            51.5008355
+          ],
+          [
+            2.2825,
+            51.4495
+          ]
+        ]
+      },
+      "id": "way/112394948"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112779588",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.1616667,
+            52.1286667
+          ],
+          [
+            3.1053333,
+            52.0925
+          ]
+        ]
+      },
+      "id": "way/112779588"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/112939396",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.1395,
+            52.021
+          ],
+          [
+            3.14075,
+            52.0469242
+          ],
+          [
+            3.142,
+            52.0728333
+          ]
+        ]
+      },
+      "id": "way/112939396"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113064995",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.0456667,
+            51.992
+          ],
+          [
+            4.022,
+            51.999
+          ],
+          [
+            3.9485,
+            52.0171667
+          ],
+          [
+            3.9508538,
+            52.0182362
+          ],
+          [
+            3.9529239,
+            52.0195087
+          ],
+          [
+            3.9546644,
+            52.020956
+          ],
+          [
+            3.9560369,
+            52.0225461
+          ],
+          [
+            3.957011,
+            52.0242438
+          ],
+          [
+            3.9575651,
+            52.0260116
+          ],
+          [
+            3.9576871,
+            52.0278103
+          ],
+          [
+            3.9573741,
+            52.0296002
+          ],
+          [
+            3.9565805,
+            52.031435
+          ],
+          [
+            3.9553303,
+            52.0331707
+          ],
+          [
+            3.9536543,
+            52.0347649
+          ],
+          [
+            3.9515937,
+            52.0361781
+          ],
+          [
+            3.9491993,
+            52.0373757
+          ],
+          [
+            3.9465299,
+            52.0383282
+          ],
+          [
+            3.9436511,
+            52.0390122
+          ],
+          [
+            3.940634,
+            52.0394108
+          ],
+          [
+            3.9375526,
+            52.0395144
+          ],
+          [
+            3.9344827,
+            52.0393203
+          ],
+          [
+            3.9315,
+            52.0388333
+          ],
+          [
+            3.8833333,
+            52.0333333
+          ],
+          [
+            3.7345699,
+            52.0214038
+          ],
+          [
+            3.5861667,
+            52.0095
+          ],
+          [
+            3.4215,
+            51.9958333
+          ],
+          [
+            3.3021667,
+            51.9858333
+          ],
+          [
+            3.231,
+            51.9798333
+          ],
+          [
+            3.2300372,
+            51.9831415
+          ],
+          [
+            3.2271951,
+            51.9865768
+          ],
+          [
+            3.2227684,
+            51.9893028
+          ],
+          [
+            3.2171905,
+            51.991053
+          ],
+          [
+            3.2110073,
+            51.991656
+          ],
+          [
+            3.2078333,
+            51.9915
+          ],
+          [
+            3.1376667,
+            51.9855
+          ],
+          [
+            3.0215,
+            52.0061667
+          ],
+          [
+            3.0144538,
+            52.0071825
+          ],
+          [
+            3.0072378,
+            52.0075196
+          ],
+          [
+            3.0000233,
+            52.0071699
+          ],
+          [
+            2.9929818,
+            52.0061418
+          ],
+          [
+            2.9862807,
+            52.0044597
+          ],
+          [
+            2.9800792,
+            52.0021635
+          ],
+          [
+            2.9745246,
+            51.9993076
+          ],
+          [
+            2.9697491,
+            51.9959598
+          ],
+          [
+            2.965866,
+            51.9921995
+          ],
+          [
+            2.9629677,
+            51.9881161
+          ],
+          [
+            2.961123,
+            51.9838065
+          ],
+          [
+            2.9604613,
+            51.9805159
+          ],
+          [
+            2.9604156,
+            51.9772
+          ],
+          [
+            2.9609866,
+            51.9739025
+          ],
+          [
+            2.9621667,
+            51.9706667
+          ],
+          [
+            2.9113333,
+            51.9546667
+          ],
+          [
+            2.7608333,
+            51.9068333
+          ],
+          [
+            2.6708333,
+            51.849
+          ],
+          [
+            2.6958333,
+            51.834
+          ],
+          [
+            2.777,
+            51.8861667
+          ],
+          [
+            2.8600931,
+            51.9184117
+          ]
+        ]
+      },
+      "id": "way/113064995"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113080804",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.7316373,
+            52.3416531
+          ],
+          [
+            2.7470795,
+            52.3597513
+          ],
+          [
+            2.771181,
+            52.3879833
+          ],
+          [
+            2.8223828,
+            52.4479003
+          ],
+          [
+            2.9086859,
+            52.548709
+          ],
+          [
+            2.9775224,
+            52.6289498
+          ],
+          [
+            3.0479309,
+            52.710871
+          ],
+          [
+            3.1233303,
+            52.798429
+          ],
+          [
+            3.2375,
+            52.9291667
+          ]
+        ]
+      },
+      "id": "way/113080804"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113080805",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.7813333,
+            53.3646667
+          ],
+          [
+            2.7741413,
+            53.3537149
+          ],
+          [
+            2.7436728,
+            53.3080415
+          ],
+          [
+            2.7074192,
+            53.2521181
+          ],
+          [
+            2.6711655,
+            53.1961214
+          ],
+          [
+            2.6349119,
+            53.1400516
+          ],
+          [
+            2.5986583,
+            53.0839084
+          ],
+          [
+            2.5986439,
+            53.0233881
+          ],
+          [
+            2.5986312,
+            52.9696446
+          ],
+          [
+            2.598603,
+            52.8508426
+          ],
+          [
+            2.5985851,
+            52.7749349
+          ],
+          [
+            2.5985634,
+            52.6831779
+          ],
+          [
+            2.5985256,
+            52.5225308
+          ],
+          [
+            2.5984997,
+            52.4119581
+          ],
+          [
+            2.5984734,
+            52.299518
+          ],
+          [
+            2.5877799,
+            52.1963513
+          ],
+          [
+            2.5801813,
+            52.1228972
+          ],
+          [
+            2.5720509,
+            52.0441682
+          ],
+          [
+            2.5600658,
+            51.9754257
+          ],
+          [
+            2.56,
+            51.9146667
+          ]
+        ]
+      },
+      "id": "way/113080805"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113080810",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.3666667,
+            52.9028333
+          ],
+          [
+            3.2564402,
+            52.7783237
+          ],
+          [
+            3.1882827,
+            52.7000508
+          ],
+          [
+            3.1038452,
+            52.6028866
+          ],
+          [
+            3.0231654,
+            52.5098447
+          ],
+          [
+            2.9135717,
+            52.3831424
+          ],
+          [
+            2.8628636,
+            52.3243948
+          ],
+          [
+            2.7917404,
+            52.241864
+          ],
+          [
+            2.7185521,
+            52.1567762
+          ],
+          [
+            2.7147109,
+            52.1000992
+          ]
+        ]
+      },
+      "id": "way/113080810"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113080811",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.908,
+            53.3358333
+          ],
+          [
+            2.9011948,
+            53.3258588
+          ],
+          [
+            2.871679,
+            53.2817596
+          ],
+          [
+            2.8367611,
+            53.2283937
+          ],
+          [
+            2.8018431,
+            53.1749612
+          ],
+          [
+            2.7669252,
+            53.1214621
+          ],
+          [
+            2.7320072,
+            53.0678963
+          ],
+          [
+            2.7319624,
+            52.9805667
+          ],
+          [
+            2.7319007,
+            52.8599705
+          ],
+          [
+            2.7318554,
+            52.7712689
+          ],
+          [
+            2.7318082,
+            52.6785958
+          ],
+          [
+            2.7317234,
+            52.5118
+          ],
+          [
+            2.7316909,
+            52.4476371
+          ],
+          [
+            2.7316605,
+            52.3876253
+          ],
+          [
+            2.7316461,
+            52.359155
+          ],
+          [
+            2.7316373,
+            52.3416531
+          ]
+        ]
+      },
+      "id": "way/113080811"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113246815",
+        "seamark:name": "Recommended crossing route for small vessels",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.001425,
+            52.0068492
+          ],
+          [
+            4.0431059,
+            52.0317106
+          ],
+          [
+            4.0311667,
+            52.0366667
+          ],
+          [
+            3.9861429,
+            52.0106654
+          ],
+          [
+            4.001425,
+            52.0068492
+          ]
+        ]
+      },
+      "id": "way/113246815"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113246816",
+        "seamark:name": "Recommended crossing route for small vessels",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.9299687,
+            51.9783519
+          ],
+          [
+            3.945,
+            51.973333
+          ],
+          [
+            3.9878796,
+            51.9988177
+          ],
+          [
+            3.9721042,
+            52.0026757
+          ],
+          [
+            3.9299687,
+            51.9783519
+          ]
+        ]
+      },
+      "id": "way/113246816"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/113729831",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            1.8636667,
+            51.7908333
+          ],
+          [
+            1.9999254,
+            51.8304938
+          ],
+          [
+            2.118,
+            51.8648333
+          ]
+        ]
+      },
+      "id": "way/113729831"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/117560529",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.152333,
+            52.724667
+          ],
+          [
+            4.165,
+            52.7433333
+          ],
+          [
+            4.2835,
+            52.8396667
+          ],
+          [
+            4.372272,
+            52.976736
+          ],
+          [
+            4.4633333,
+            53.0636667
+          ]
+        ]
+      },
+      "id": "way/117560529"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129914568",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.4986667,
+            51.3575
+          ],
+          [
+            2.4086476,
+            51.3324909
+          ]
+        ]
+      },
+      "id": "way/129914568"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129914572",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.4986667,
+            51.3908333
+          ],
+          [
+            2.4403333,
+            51.3791667
+          ],
+          [
+            2.366977,
+            51.3666644
+          ],
+          [
+            2.2936667,
+            51.3541667
+          ],
+          [
+            2.2048333,
+            51.3805
+          ]
+        ]
+      },
+      "id": "way/129914572"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129922880",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            1.9731667,
+            51.3671667
+          ],
+          [
+            2.0256667,
+            51.3371765
+          ],
+          [
+            2.0781667,
+            51.3071667
+          ]
+        ]
+      },
+      "id": "way/129922880"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129922890",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.0671667,
+            51.4218333
+          ],
+          [
+            2.0246667,
+            51.4461667
+          ],
+          [
+            1.9601667,
+            51.3748333
+          ],
+          [
+            1.9731667,
+            51.3671667
+          ],
+          [
+            2.0671667,
+            51.4218333
+          ]
+        ]
+      },
+      "id": "way/129922890"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129922896",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.4325,
+            51.8255
+          ],
+          [
+            2.4046389,
+            51.8068279
+          ],
+          [
+            2.3309444,
+            51.757769
+          ],
+          [
+            2.25725,
+            51.7086569
+          ],
+          [
+            2.1835556,
+            51.6594913
+          ],
+          [
+            2.1098611,
+            51.6102724
+          ],
+          [
+            2.0361667,
+            51.561
+          ]
+        ]
+      },
+      "id": "way/129922896"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129970396",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.5781667,
+            52.079
+          ],
+          [
+            3.4708333,
+            52.0776667
+          ],
+          [
+            3.4366667,
+            52.0771667
+          ]
+        ]
+      },
+      "id": "way/129970396"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129970397",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.5776667,
+            52.084
+          ],
+          [
+            3.5031667,
+            52.1103333
+          ]
+        ]
+      },
+      "id": "way/129970397"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129970398",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.4048333,
+            51.9016667
+          ],
+          [
+            3.5943333,
+            51.9376667
+          ]
+        ]
+      },
+      "id": "way/129970398"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129971773",
+        "note": "inshore traffic boundary",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.4048333,
+            51.9016667
+          ],
+          [
+            3.428625,
+            51.8181494
+          ],
+          [
+            3.4524167,
+            51.7344771
+          ],
+          [
+            3.4762083,
+            51.6506496
+          ],
+          [
+            3.5,
+            51.5666667
+          ]
+        ]
+      },
+      "id": "way/129971773"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129988229",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.2738333,
+            51.8765
+          ],
+          [
+            3.154833,
+            51.853667
+          ]
+        ]
+      },
+      "id": "way/129988229"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129988230",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.4366667,
+            52.0771667
+          ],
+          [
+            3.43275,
+            52.0562549
+          ],
+          [
+            3.4288333,
+            52.0353333
+          ],
+          [
+            3.4215,
+            51.9958333
+          ],
+          [
+            3.4195,
+            51.9848333
+          ],
+          [
+            3.413,
+            51.9483333
+          ],
+          [
+            3.4089167,
+            51.9250061
+          ],
+          [
+            3.4048333,
+            51.9016667
+          ],
+          [
+            3.2738333,
+            51.8765
+          ],
+          [
+            3.2811667,
+            51.9048423
+          ],
+          [
+            3.2885,
+            51.9331667
+          ],
+          [
+            3.2993333,
+            51.9748333
+          ],
+          [
+            3.3021667,
+            51.9858333
+          ],
+          [
+            3.3135,
+            52.0295
+          ],
+          [
+            3.3195,
+            52.0525893
+          ],
+          [
+            3.3255,
+            52.0756667
+          ],
+          [
+            3.4366667,
+            52.0771667
+          ]
+        ]
+      },
+      "id": "way/129988230"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129988232",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.5943333,
+            51.9376667
+          ],
+          [
+            3.5925,
+            51.9542531
+          ],
+          [
+            3.5906667,
+            51.9708333
+          ],
+          [
+            3.5873333,
+            51.9986667
+          ],
+          [
+            3.5861667,
+            52.0095
+          ],
+          [
+            3.5823333,
+            52.0426667
+          ],
+          [
+            3.58025,
+            52.060837
+          ],
+          [
+            3.5781667,
+            52.079
+          ],
+          [
+            3.5776667,
+            52.084
+          ],
+          [
+            3.5910822,
+            52.0916917
+          ],
+          [
+            3.6045,
+            52.0993333
+          ],
+          [
+            3.6106667,
+            52.1028333
+          ],
+          [
+            3.6231873,
+            52.1100755
+          ],
+          [
+            3.6375,
+            52.1181667
+          ]
+        ]
+      },
+      "id": "way/129988232"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129988233",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.3255,
+            52.0756667
+          ],
+          [
+            3.142,
+            52.0728333
+          ]
+        ]
+      },
+      "id": "way/129988233"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/129992306",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.7737812,
+            52.0678847
+          ],
+          [
+            2.7078333,
+            52.0205
+          ],
+          [
+            2.56,
+            51.9146667
+          ],
+          [
+            2.4325,
+            51.8255
+          ],
+          [
+            2.5208333,
+            51.7778333
+          ],
+          [
+            2.5433333,
+            51.7655
+          ],
+          [
+            2.620167,
+            51.724
+          ],
+          [
+            2.6448333,
+            51.7271667
+          ],
+          [
+            2.653,
+            51.7283333
+          ],
+          [
+            2.7075,
+            51.7351667
+          ],
+          [
+            2.7266667,
+            51.7691667
+          ],
+          [
+            3.057667,
+            51.835
+          ],
+          [
+            3.154833,
+            51.853667
+          ],
+          [
+            3.1248333,
+            51.9128333
+          ],
+          [
+            3.1333333,
+            51.9606667
+          ],
+          [
+            3.1376667,
+            51.9855
+          ],
+          [
+            3.1395,
+            52.021
+          ],
+          [
+            3.142,
+            52.0728333
+          ],
+          [
+            3.1053333,
+            52.0925
+          ],
+          [
+            3.0513333,
+            52.1215
+          ],
+          [
+            2.9971667,
+            52.1505
+          ],
+          [
+            2.9665833,
+            52.1668363
+          ],
+          [
+            2.936,
+            52.1831667
+          ],
+          [
+            2.8677069,
+            52.1346179
+          ]
+        ]
+      },
+      "id": "way/129992306"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/179416062",
+        "seamark:name": "Galloper",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            1.8488333,
+            51.7488333
+          ],
+          [
+            2.0005,
+            51.6888333
+          ]
+        ]
+      },
+      "id": "way/179416062"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938046",
+        "note": "precautionary area",
+        "seamark:name": "IJmuiden Crossing",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.9396667,
+            52.525
+          ],
+          [
+            3.9363333,
+            52.5151667
+          ],
+          [
+            3.933,
+            52.5045
+          ],
+          [
+            3.9311667,
+            52.4991667
+          ],
+          [
+            3.9183333,
+            52.46
+          ],
+          [
+            3.907156,
+            52.4254509
+          ],
+          [
+            3.8088333,
+            52.4193333
+          ],
+          [
+            3.8177919,
+            52.4471694
+          ],
+          [
+            3.824422,
+            52.467839
+          ],
+          [
+            3.8428333,
+            52.525
+          ],
+          [
+            3.9151667,
+            52.525
+          ],
+          [
+            3.9396667,
+            52.525
+          ]
+        ]
+      },
+      "id": "way/231938046"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938047",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.1116667,
+            52.525
+          ],
+          [
+            3.9396667,
+            52.525
+          ]
+        ]
+      },
+      "id": "way/231938047"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938048",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.0658333,
+            52.59
+          ],
+          [
+            4.1116667,
+            52.525
+          ]
+        ]
+      },
+      "id": "way/231938048"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938050",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.3391667,
+            52.5086667
+          ],
+          [
+            4.2208333,
+            52.5225
+          ]
+        ]
+      },
+      "id": "way/231938050"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938051",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.3246667,
+            52.4603333
+          ],
+          [
+            4.1808333,
+            52.4763333
+          ]
+        ]
+      },
+      "id": "way/231938051"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938052",
+        "seamark:name": "IJ Geul Deep Water Route",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.5336667,
+            52.4683333
+          ],
+          [
+            4.4026667,
+            52.4833333
+          ],
+          [
+            4.4037849,
+            52.4848247
+          ],
+          [
+            4.4043632,
+            52.4870482
+          ],
+          [
+            4.4037849,
+            52.4892716
+          ],
+          [
+            4.4021065,
+            52.4912772
+          ],
+          [
+            4.3994925,
+            52.4928688
+          ],
+          [
+            4.3961986,
+            52.4938907
+          ],
+          [
+            4.3925473,
+            52.4942428
+          ],
+          [
+            4.3908333,
+            52.4941667
+          ],
+          [
+            4.3455,
+            52.4898333
+          ],
+          [
+            4.3338333,
+            52.4911667
+          ],
+          [
+            4.1973333,
+            52.5063333
+          ],
+          [
+            4.1488333,
+            52.506
+          ],
+          [
+            4.1251667,
+            52.506
+          ],
+          [
+            3.933,
+            52.5045
+          ],
+          [
+            3.9151667,
+            52.5043333
+          ],
+          [
+            3.9151667,
+            52.499
+          ],
+          [
+            3.9311667,
+            52.4991667
+          ],
+          [
+            4.129,
+            52.5005
+          ],
+          [
+            4.1526667,
+            52.5006667
+          ],
+          [
+            4.2083333,
+            52.501
+          ],
+          [
+            4.3326667,
+            52.4871667
+          ],
+          [
+            4.3616667,
+            52.4838333
+          ],
+          [
+            4.3901667,
+            52.48
+          ],
+          [
+            4.3925473,
+            52.4798524
+          ],
+          [
+            4.3953333,
+            52.48
+          ],
+          [
+            4.5325,
+            52.4635
+          ]
+        ]
+      },
+      "id": "way/231938052"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938053",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.2208333,
+            52.5225
+          ],
+          [
+            4.1383333,
+            52.5546667
+          ],
+          [
+            4.106,
+            52.6006667
+          ]
+        ]
+      },
+      "id": "way/231938053"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938054",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.1495,
+            52.4715
+          ],
+          [
+            3.9583333,
+            52.4425
+          ],
+          [
+            3.907156,
+            52.4254509
+          ]
+        ]
+      },
+      "id": "way/231938054"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938059",
+        "note": "precautionary area",
+        "seamark:name": "IJmuiden Junction",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.1808333,
+            52.4763333
+          ],
+          [
+            4.1495,
+            52.4715
+          ],
+          [
+            4.1116667,
+            52.525
+          ],
+          [
+            4.1355,
+            52.525
+          ],
+          [
+            4.1546667,
+            52.4978333
+          ],
+          [
+            4.1808333,
+            52.4763333
+          ]
+        ]
+      },
+      "id": "way/231938059"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231938062",
+        "seamark:name": "Deep Water Approach Area",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.9151667,
+            52.5043333
+          ],
+          [
+            3.9151667,
+            52.525
+          ],
+          [
+            3.8428333,
+            52.525
+          ],
+          [
+            3.7861667,
+            52.5248333
+          ],
+          [
+            3.6751667,
+            52.4551667
+          ],
+          [
+            3.824422,
+            52.467839
+          ],
+          [
+            3.9151667,
+            52.4756667
+          ],
+          [
+            3.9151667,
+            52.499
+          ]
+        ]
+      },
+      "id": "way/231938062"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231941071",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.8971667,
+            52.8718333
+          ],
+          [
+            3.517,
+            52.6006667
+          ],
+          [
+            3.4978333,
+            52.5293333
+          ]
+        ]
+      },
+      "id": "way/231941071"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/231991414",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.4523333,
+            52.359
+          ],
+          [
+            3.4896667,
+            52.2411667
+          ],
+          [
+            3.493,
+            52.1691667
+          ],
+          [
+            3.4466667,
+            52.1301667
+          ],
+          [
+            3.207,
+            52.2141667
+          ],
+          [
+            3.415,
+            52.337
+          ],
+          [
+            3.4523333,
+            52.359
+          ]
+        ]
+      },
+      "id": "way/231991414"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/232434979",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.5943333,
+            51.9376667
+          ],
+          [
+            3.6291617,
+            51.9443282
+          ],
+          [
+            3.6675,
+            51.9518333
+          ]
+        ]
+      },
+      "id": "way/232434979"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/232518927",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.4978333,
+            52.5293333
+          ],
+          [
+            3.4523333,
+            52.359
+          ]
+        ]
+      },
+      "id": "way/232518927"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/232518928",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.415,
+            52.337
+          ],
+          [
+            3.4668333,
+            52.5323333
+          ]
+        ]
+      },
+      "id": "way/232518928"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499386226",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.620167,
+            51.724
+          ],
+          [
+            2.6441667,
+            51.6501667
+          ],
+          [
+            2.6401667,
+            51.62
+          ]
+        ]
+      },
+      "id": "way/499386226"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499505985",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.1665002,
+            51.6376667
+          ],
+          [
+            3.1446666,
+            51.573
+          ],
+          [
+            3.0966667,
+            51.5428333
+          ],
+          [
+            3.0446667,
+            51.5085
+          ],
+          [
+            2.972,
+            51.484
+          ]
+        ]
+      },
+      "id": "way/499505985"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499505988",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.0053333,
+            51.4646667
+          ],
+          [
+            3.072,
+            51.487333
+          ],
+          [
+            3.1838333,
+            51.5598333
+          ],
+          [
+            3.2093331,
+            51.6509999
+          ]
+        ]
+      },
+      "id": "way/499505988"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499593976",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.057667,
+            51.835
+          ],
+          [
+            3.0943333,
+            51.8281667
+          ],
+          [
+            3.163333,
+            51.772
+          ]
+        ]
+      },
+      "id": "way/499593976"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499593977",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.154833,
+            51.853667
+          ],
+          [
+            3.213,
+            51.792333
+          ]
+        ]
+      },
+      "id": "way/499593977"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499593982",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.2738333,
+            51.8765
+          ],
+          [
+            3.2563333,
+            51.81
+          ]
+        ]
+      },
+      "id": "way/499593982"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499593983",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.304167,
+            51.793
+          ],
+          [
+            3.4048333,
+            51.9016667
+          ]
+        ]
+      },
+      "id": "way/499593983"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499593986",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.3915,
+            51.6185
+          ],
+          [
+            3.3508333,
+            51.6955
+          ]
+        ]
+      },
+      "id": "way/499593986"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/499593987",
+        "seamark:type": "separation_boundary",
+        "source": "IMO SN.1 Circ.333"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.2566667,
+            51.666
+          ],
+          [
+            3.3455,
+            51.6061667
+          ]
+        ]
+      },
+      "id": "way/499593987"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193773",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.907156,
+            52.4254509
+          ],
+          [
+            3.9046302,
+            52.4176524
+          ],
+          [
+            4.0196872,
+            52.4225131
+          ],
+          [
+            4.0349439,
+            52.4381036
+          ],
+          [
+            4.158812,
+            52.4581186
+          ],
+          [
+            4.1495,
+            52.4715
+          ]
+        ]
+      },
+      "id": "way/755193773"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193777",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.7443333,
+            52.1188333
+          ],
+          [
+            3.746681,
+            52.1816161
+          ]
+        ]
+      },
+      "id": "way/755193777"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193778",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.7443333,
+            52.1188333
+          ],
+          [
+            3.7646667,
+            52.1189167
+          ],
+          [
+            3.785,
+            52.119
+          ],
+          [
+            3.9013333,
+            52.1195
+          ],
+          [
+            3.9169167,
+            52.1195834
+          ],
+          [
+            3.9325,
+            52.1196667
+          ],
+          [
+            4.0013333,
+            52.1198333
+          ],
+          [
+            4.0471492,
+            51.9945418
+          ],
+          [
+            4.0456667,
+            51.992
+          ],
+          [
+            4.0444977,
+            51.9902123
+          ],
+          [
+            4.0428333,
+            51.9876667
+          ],
+          [
+            4.0416,
+            51.9857
+          ]
+        ]
+      },
+      "id": "way/755193778"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193779",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.7443333,
+            52.1188333
+          ],
+          [
+            3.6375,
+            52.1181667
+          ]
+        ]
+      },
+      "id": "way/755193779"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193781",
+        "note": "inshore traffic boundary",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.8125118,
+            51.9597715
+          ],
+          [
+            3.9643333,
+            51.9686667
+          ]
+        ]
+      },
+      "id": "way/755193781"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193782",
+        "note": "inshore traffic boundary",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.6996671,
+            51.9534752
+          ],
+          [
+            3.8125118,
+            51.9597715
+          ]
+        ]
+      },
+      "id": "way/755193782"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193785",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.0010914,
+            51.9491653
+          ],
+          [
+            3.1333333,
+            51.9606667
+          ],
+          [
+            3.2993333,
+            51.9748333
+          ],
+          [
+            3.4195,
+            51.9848333
+          ],
+          [
+            3.4963333,
+            51.9911667
+          ],
+          [
+            3.5585,
+            51.981
+          ],
+          [
+            3.5636599,
+            51.9805752
+          ],
+          [
+            3.5697314,
+            51.9811675
+          ],
+          [
+            3.5752085,
+            51.9828864
+          ],
+          [
+            3.5795552,
+            51.9855634
+          ],
+          [
+            3.582346,
+            51.9889364
+          ],
+          [
+            3.5833076,
+            51.9926752
+          ],
+          [
+            3.582346,
+            51.9964136
+          ],
+          [
+            3.5811667,
+            51.9981667
+          ],
+          [
+            3.5873333,
+            51.9986667
+          ],
+          [
+            3.7375342,
+            52.0107758
+          ],
+          [
+            3.883,
+            52.0225
+          ],
+          [
+            3.889694,
+            52.0227021
+          ],
+          [
+            3.8963901,
+            52.0225292
+          ],
+          [
+            3.903033,
+            52.0219828
+          ],
+          [
+            3.910546,
+            52.0208968
+          ],
+          [
+            3.9178333,
+            52.0193333
+          ],
+          [
+            4.0186667,
+            51.9943333
+          ],
+          [
+            4.0428333,
+            51.9876667
+          ]
+        ]
+      },
+      "id": "way/755193785"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193786",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.8600931,
+            51.9184117
+          ],
+          [
+            2.9215,
+            51.9421667
+          ],
+          [
+            3.0010914,
+            51.9491653
+          ]
+        ]
+      },
+      "id": "way/755193786"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193789",
+        "note": "precautionary area",
+        "seamark:type": "separation_boundary",
+        "source": "IMO COLREG.2 Circ.67"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.8677069,
+            52.1346179
+          ],
+          [
+            2.7737812,
+            52.0678847
+          ]
+        ]
+      },
+      "id": "way/755193789"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193790",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.7111553,
+            52.0658288
+          ],
+          [
+            2.7078333,
+            52.0205
+          ]
+        ]
+      },
+      "id": "way/755193790"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193791",
+        "seamark:type": "separation_boundary"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.7111553,
+            52.0658288
+          ],
+          [
+            2.7147109,
+            52.1000992
+          ]
+        ]
+      },
+      "id": "way/755193791"
+    }
+  ]
+}

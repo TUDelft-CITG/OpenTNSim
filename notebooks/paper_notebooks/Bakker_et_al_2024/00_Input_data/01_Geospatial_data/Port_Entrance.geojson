@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "Port entry.kml",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "Name": "Port entry", "tessellate": 1, "extrude": 0, "visibility": -1 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 4.047229423467938, 51.994406914074688, 0.0 ], [ 4.041721975375938, 51.98586012952218, 0.0 ], [ 4.058149487370488, 51.982313155813152, 0.0 ], [ 4.063621437290585, 51.990978187252402, 0.0 ], [ 4.047229423467938, 51.994406914074688, 0.0 ] ] ] } }
+]
+}
