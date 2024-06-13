@@ -9,7 +9,7 @@ import pandas as pd
 from matplotlib import pyplot as plt, dates
 import math
 import networkx as nx
-import time as timepy
+import time
 import datetime
 import pytz
 import xarray as xr
@@ -44,10 +44,15 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
 
         #Create sub-routes based on anchorage areas on the route
         if not time_start:
-            time_start = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now,tz=pytz.utc)).to_datetime64()
+            time_start = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
         if not time_stop:
-            time_stop = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + vessel.metadata['max_waiting_time'],tz=pytz.utc)).to_datetime64()
+            time_stop = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + vessel.metadata['max_waiting_time'])).to_datetime64()
+
+        t1 = time.time()
         _,tidal_windows = self.provide_tidal_windows(vessel,route,time_start,time_stop,delay,plot=plot)
+        t2 = time.time()
+        print(pd.Timedelta(t2 - t1, 's'))
+        waiting_time = pd.Timedelta(vessel.metadata['max_waiting_time'],'s')
         for window in tidal_windows:
             if time_start > window[1]:
                 continue
@@ -61,11 +66,14 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
         return waiting_time
 
     def provide_waiting_time_for_outbound_tidal_window(self,vessel,route,delay=0,plot=False):
+        t1 = time.time()
         vessel.bound = 'outbound'
         vessel._T -= vessel.metadata['(un)loading'][0]
         waiting_time = self.provide_waiting_time_for_inbound_tidal_window(vessel,route=route,delay=delay, plot=plot)
         vessel._T += vessel.metadata['(un)loading'][0]
         vessel.bound = 'inbound'
+        t2 = time.time()
+        print(pd.Timedelta(t2-t1,'s'))
         return waiting_time
 
     def provide_speed(self,edge):
@@ -220,8 +228,11 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
     def provide_governing_current_velocity(self,vessel,node,time_start_index,time_end_index):
         station_index = list(self.hydrodynamic_information['STATION'].values).index(node)
         times = self.hydrodynamic_information['TIME'].values[time_start_index:time_end_index]
+        start_time = times[0]
+        end_time = times[-1]
+        time_step = times[1]-times[0]
         relative_layer_height = self.hydrodynamic_information['LAYER'].values
-        current_velocity = self.hydrodynamic_information['Primary current velocity'][station_index].transpose().values[time_start_index:time_end_index]
+        current_velocity = self.hydrodynamic_information['Primary current velocity'].sel({'STATION':node,'TIME':np.arange(start_time,end_time+time_step,time_step)}).values
 
         def depth_averaged_current_velocity(interpolation_depth,times,relative_layer_height,current_velocity,station_index):
             layer_boundaries = []
@@ -264,6 +275,7 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
             current_governing_current_velocity = current_velocity[2]
         else:
             current_governing_current_velocity = current_velocity[-1]
+
         return current_velocity, current_governing_current_velocity
 
     # Functions used to calculate the sail-in-times for a specific vessel
@@ -282,20 +294,10 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
         restriction_nodes = []
         boolean = True
         no_tidal_window = True
-        orig = None
-        dest = None
-        if route.index(node) != 0:
-            orig = route[route.index(node) - 1]
-        if route.index(node) != len(route)-1:
-            dest = route[route.index(node) + 1]
         # Determining if and which restriction applies for the vessel by looping over the restriction class
         for restriction_class in enumerate(specifications[0]):
             # - if restriction does not apply to vessel because it is for vessels sailing in the opposite direction: continue loop
             if vessel.bound != specifications[2][restriction_class[0]]:
-                continue
-
-            orig_dest_pair = specifications[-1][restriction_class[0]]
-            if orig_dest_pair and (orig != orig_dest_pair[0] or dest != orig_dest_pair[-1]):
                 continue
 
             if specifications[5][restriction_class[0]] != [] and (specifications[5][restriction_class[0]][0] not in route or specifications[5][restriction_class[0]][1] not in route):
@@ -315,6 +317,14 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
 
                 # Extracting the correct vessel property for the restriction type
                 value = None
+                restriction_value = specifications[1][restriction_class[0]][restriction_type[0]]
+                node_index = route.index(node)
+                if restriction_type[1].find('Bound from') != -1:
+                    if restriction_value in vessel.route[:node_index]:
+                        value = restriction_value
+                if restriction_type[1].find('Bound to') != -1:
+                    if restriction_value in vessel.route[node_index:]:
+                        value = restriction_value
                 if restriction_type[1].find('Length') != -1:
                     value = getattr(vessel, 'L')
                 if restriction_type[1].find('Draught') != -1:
@@ -330,11 +340,12 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
                 if restriction_type[1].find('Previous terminal') != -1 and dict.get(vessel.output, 'visited_terminals'):
                     value = dict.get(vessel.output, 'visited_terminals')[-1]
                 # Determine if the value for the property satisfies the condition of the restriction type
-                df = pd.DataFrame({'Value': [value],'Restriction': [specifications[1][restriction_class[0]][restriction_type[0]]]})
+                df = pd.DataFrame({'Value': [value],'Restriction': [restriction_value]})
                 if isinstance(df['Restriction'].iloc[0],list):
                     boolean = df.eval('Value' + specifications[3][restriction_class[0]][restriction_type[0]] + 'Restriction[0])')[0]
                 else:
                     boolean = df.eval('Value' + specifications[3][restriction_class[0]][restriction_type[0]] + 'Restriction')[0]
+
                 # - if condition is not met: continue loop
                 if not boolean and restriction_type[0] != len(restriction_class[1]) - 1:
                     continue
@@ -360,7 +371,7 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
 
     def provide_water_depth(self,vessel,node,delay=0):
         node_index = list(self.hydrodynamic_information['STATION'].values).index(node)
-        time_index = np.absolute(self.hydrodynamic_information.TIME.values - pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + delay, tz=pytz.utc)).to_datetime64()).argmin()
+        time_index = np.absolute(self.hydrodynamic_information.TIME.values - pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + delay)).to_datetime64()).argmin()
         water_level = self.hydrodynamic_information['Water level'][node_index].values[time_index]
         MBL = self.hydrodynamic_information['MBL'][node_index].values[time_index]
         available_water_depth = water_level + MBL
@@ -411,16 +422,31 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
         time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), 's'))).argmin()
         net_ukc = pd.DataFrame()
         times = self.hydrodynamic_information['TIME'].values[time_start_index:time_end_index]
-        t_step = (times[1] - times[0])
+        start_time = times[0]
+        end_time = times[-1]
+        t_step = times[1] - times[0]
+        time_range = np.arange(start_time, end_time + t_step, t_step)
+        nodes_of_interest = route.copy()
+        for node in route:
+            if self.env.FG.nodes[node]['LAT']-self.env.FG.nodes[node]['MBL'] >= vessel.T+np.max([1.0,vessel.T*1.125]):
+                nodes_of_interest.remove(node)
 
+        if not nodes_of_interest:
+            net_ukc['min_net_ukc'] = 0.0
+            net_ukc['station'] = ''
+            net_ukc.loc[time_start,:] = [1.0,route[0]]
+            net_ukc.loc[time_end,:] = [1.0, route[-1]]
+            return net_ukc
+
+        selected_wlev_data = self.hydrodynamic_information['Water level'].sel({'STATION':nodes_of_interest,'TIME':time_range}).values
+        selected_MBL_data = self.hydrodynamic_information['MBL'].sel({'STATION':nodes_of_interest,'TIME':time_range}).values
         # Start of calculation by looping over the nodes of the route
-        for route_index, node_name in enumerate(route):
-            node_index = list(self.hydrodynamic_information['STATION'].values).index(node_name)
+        for route_index, node_name in enumerate(nodes_of_interest):
             sailing_time_to_next_node = vessel.env.vessel_traffic_service.provide_sailing_time(vessel,route[:(route_index+1)])
             time_correction_index = int(np.round(sailing_time_to_next_node['Time'].sum() / (t_step/np.timedelta64(1, 's'))))
-            water_level = self.hydrodynamic_information['Water level'][node_index].values[time_start_index:time_end_index]
+            water_level = selected_wlev_data[route_index]
+            MBL = selected_MBL_data[route_index]
             _, _, _, required_water_depth, _, _ = self.provide_ukc_clearance(vessel,node_name,delay)
-            MBL = self.hydrodynamic_information['MBL'][node_index].values[time_start_index:time_end_index]
             water_depth = water_level + MBL
             net_ukc = pd.concat([net_ukc, pd.DataFrame([available_water_depth-required_water_depth for available_water_depth in water_depth], index=[t-time_correction_index*t_step for t in times], columns=[node_name])],axis=1)
 
@@ -440,46 +466,31 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
 
         """
         vertical_tidal_accessibility = pd.DataFrame(columns=['Tidal period', 'Period number', 'Limit', 'Accessibility'])
-
         time_start_index = np.max([0, np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), 's'))).argmin() - 2])
         time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), 's'))).argmin()
-        tidal_periods = pd.DataFrame(self.hydrodynamic_information['Vertical tidal periods'].sel({'STATION': route[0]}).to_dict()['data'],columns=['Period start', 'Tidal period'])
-        tidal_periods = tidal_periods.reset_index(names='Period number')
-        tidal_periods = tidal_periods.set_index('Period start')
-        tidal_period_start = tidal_periods[tidal_periods.index <= time_start]
-        if tidal_period_start.empty:
-            tidal_period_start = tidal_periods.iloc[0]
-        else:
-            tidal_period_start = tidal_period_start.iloc[-1]
-        tidal_period_stop = tidal_periods[tidal_periods.index <= time_end]
-        if tidal_period_stop.empty:
-            tidal_period_stop = tidal_period_stop.iloc[-1]
-        else:
-            tidal_period_stop = tidal_period_stop.iloc[-1]
+
         net_ukcs = self.provide_minimum_available_water_depth_along_route(vessel, route, time_start, time_end, delay)
-        for loc,info in net_ukcs.iterrows():
-            tidal_periods = pd.DataFrame(self.hydrodynamic_information['Vertical tidal periods'].sel({'STATION':info.station}).to_dict()['data'],columns=['Period start','Tidal period'])
+        new_net_ukcs = pd.DataFrame()
+        for station in list(dict.fromkeys(net_ukcs['station'])):
+            tidal_periods = pd.DataFrame(self.hydrodynamic_information['Vertical tidal periods'].sel({'STATION': station}).to_dict()['data'], columns=['Period start', 'Tidal period'])
             tidal_periods = tidal_periods.reset_index(names='Period number')
             tidal_periods = tidal_periods.set_index('Period start')
-            tidal_period = tidal_periods[tidal_periods.index <= info.name]
-            if tidal_period.empty:
-                tidal_period = tidal_periods.iloc[0]
-            else:
-                tidal_period = tidal_period.iloc[-1]
-            net_ukcs.loc[loc,'Tidal period'] = tidal_period['Tidal period']
-            net_ukcs.loc[loc,'Period number'] = tidal_period['Period number']
+            net_ukc = net_ukcs[net_ukcs.station == station]
+            data = pd.concat([net_ukc, tidal_periods])
+            data = data.sort_index()
+            data[['Period number','Tidal period']] = data[['Period number','Tidal period']].fillna(method='ffill')
+            data[['Period number','Tidal period']] = data[['Period number','Tidal period']].fillna(method='bfill')
+            data = data.dropna()
+            new_net_ukcs = pd.concat([new_net_ukcs,data])
+
+        net_ukcs = new_net_ukcs.sort_index()
         net_ukcs['Period number'] = net_ukcs['Period number'].astype(int)
-        net_ukcs = pd.concat([net_ukcs, tidal_periods])
-        net_ukcs = net_ukcs.sort_index()
-        for column_name in ['Tidal period', 'Period number']:
-            net_ukcs[column_name] = net_ukcs[column_name].fillna(method='ffill')
-            net_ukcs[column_name] = net_ukcs[column_name].fillna(method='bfill')
         net_ukcs['Tidal period'] = [tidal_period.split(' ')[0] for tidal_period in net_ukcs['Tidal period']]
-        net_ukcs = net_ukcs.dropna()
         net_ukcs = net_ukcs[['Tidal period', 'Period number', 'min_net_ukc']]
 
         # Determine zero crossings
         zero_crossings = np.where(np.diff(np.sign(net_ukcs['min_net_ukc'])))[0]
+
         for iloc in zero_crossings:
             net_ukc = net_ukcs.iloc[iloc]
             if net_ukc['min_net_ukc'] > 0:
@@ -489,16 +500,21 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
 
         # Default values
         if net_ukcs.iloc[0]['min_net_ukc'] < 0:
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None))] = [tidal_period_start['Tidal period'].split(' ')[0], tidal_period_start['Period number'], 0,'Inaccessible']
+            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None))] = [np.NaN, np.NaN, 0,'Inaccessible']
         else:
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None))] = [tidal_period_start['Tidal period'].split(' ')[0], tidal_period_start['Period number'], 0, 'Accessible']
+            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None))] = [np.NaN, np.NaN, 0, 'Accessible']
+
         if vertical_tidal_accessibility.iloc[-1,-1] == 'Accessible':
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None))] = [tidal_period_stop['Tidal period'].split(' ')[0], tidal_period_stop['Period number'], 0,'Inaccessible']
+            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None))] = [np.NaN, np.NaN, 0,'Inaccessible']
         else:
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None))] = [tidal_period_stop['Tidal period'].split(' ')[0], tidal_period_stop['Period number'], 0, 'Accessible']
+            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None))] = [np.NaN, np.NaN, 0,'Accessible']
+
+
+        vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
+        vertical_tidal_accessibility[['Period number', 'Tidal period']] = vertical_tidal_accessibility[['Period number', 'Tidal period']].fillna(method='ffill')
+        vertical_tidal_accessibility[['Period number', 'Tidal period']] = vertical_tidal_accessibility[['Period number', 'Tidal period']].fillna(method='bfill')
 
         # Return the sail-in or -out-times given the vertical tidal restrictions over the route of the vessel
-        vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
         vertical_tidal_accessibility['Condition'] = 'Water level'
         vertical_tidal_accessibility = vertical_tidal_accessibility[~(vertical_tidal_accessibility['Accessibility'] == vertical_tidal_accessibility['Accessibility'].shift(1))]
         vertical_tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(vertical_tidal_accessibility.iloc[:-1].iterrows(),vertical_tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == 'Accessible']
@@ -544,6 +560,7 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
             currents_data,_ = self.provide_governing_current_velocity(vessel,station,time_start_index,time_end_index)
             tidal_periods = [condition for condition in hydrodynamic_data['Horizontal tidal periods'].values if condition[0] <= currents_time[-1] and condition[0] >= currents_time[0]]
             currents = pd.DataFrame({'Current velocity': currents_data}, index=currents_time)
+
             currents = abs(currents)
             tidal_periods = pd.DataFrame(tidal_periods,columns=['Period start','Tidal period'])
             tidal_periods = tidal_periods.reset_index(names='Period number')
@@ -672,7 +689,6 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
                         else:
                             next_horizontal_tidal_accessibility,station = calculate_horizontal_tidal_window(vessel,time_start_index,time_end_index,hydrodynamic_data,cross_current_limit,window_specifications,decreasing=True)
 
-
                     horizontal_tidal_restriction_nodes.append(node_name)
                     horizontal_tidal_restriction_stations.append(station)
                     next_horizontal_tidal_accessibility_time_correction = np.timedelta64(int(sailing_time_to_next_node['Time'].sum()), 's')
@@ -720,6 +736,7 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
             ax.legend([current_velocity, horizontal_tidal_window],['Current velocity', 'Horizontal tidal windows'],frameon=False, loc='upper left', bbox_to_anchor=(1.0, 1.0));
             plt.show()
 
+
         return horizontal_tidal_accessibility, horizontal_tidal_windows, horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations, window_specifications
 
     def combine_tidal_windows(self,accessibility_I, accessibility_II,current_velocity_windows=False):
@@ -763,7 +780,9 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
             tidal_accessibility = self.combine_tidal_windows(vertical_tidal_accessibility,horizontal_tidal_accessibility)
         else:
             tidal_accessibility = vertical_tidal_accessibility
+
         tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(tidal_accessibility.iloc[:-1].iterrows(), tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == 'Accessible']
+
         #Plot
         if plot:
             # Create figure
@@ -779,7 +798,7 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
             # Plot governing current velocity
             for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
                 governing_current_velocity,_ = self.provide_governing_current_velocity(vessel,station,time_start_index, time_end_index)
-                horizontal_tidal_accessibility_time_correction = np.timedelta64(int(self.provide_sailing_time(vessel, route[:(route.index(node) + 1)])['Time'].sum()), 's')+np.timedelta64(15,'m')
+                horizontal_tidal_accessibility_time_correction = np.timedelta64(int(self.provide_sailing_time(vessel, route[:(route.index(node) + 1)])['Time'].sum()), 's')
                 current_velocity, = ax_right.plot([time - horizontal_tidal_accessibility_time_correction for time in self.hydrodynamic_information.TIME.values[time_start_index:time_end_index]], governing_current_velocity,color='firebrick', linewidth=2,zorder=1)
                 if window_specifications.window_method == 'Maximum':
                     critical_current_velocity = ax_right.axhline(window_specifications.current_velocity_values['Flood'], color='firebrick',linestyle='--', linewidth=2)
@@ -824,14 +843,14 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
                 for polygon in vertical_tidal_window_polygons.geoms:
                     polygon_x = []
                     for timestamp in polygon.exterior.xy[0]:
-                        polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
+                        polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp)))
                     polygon_y = list(polygon.exterior.xy[1])
                     vertical_tidal_window, = ax_left.fill(polygon_x, polygon_y, facecolor='C0', alpha=0.25, edgecolor='none',zorder=0)
             elif isinstance(vertical_tidal_window_polygons, Polygon):
                 polygon = vertical_tidal_window_polygons
                 polygon_x = []
                 for timestamp in polygon.exterior.xy[0]:
-                    polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
+                    polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp)))
                 polygon_y = list(polygon.exterior.xy[1])
                 vertical_tidal_window, = ax_left.fill(polygon_x, polygon_y, facecolor='C0', alpha=0.25, edgecolor='none',zorder=0)
 
@@ -840,14 +859,14 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
                 for polygon in horizontal_tidal_window_polygons.geoms:
                     polygon_x = []
                     for timestamp in polygon.exterior.xy[0]:
-                        polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
+                        polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp)))
                     polygon_y = list(polygon.exterior.xy[1])
                     horizontal_tidal_window, = ax_left.fill(polygon_x, polygon_y, facecolor='firebrick', alpha=0.25,edgecolor='none',zorder=0)
             elif isinstance(horizontal_tidal_window_polygons, Polygon):
                 polygon = horizontal_tidal_window_polygons
                 polygon_x = []
                 for timestamp in polygon.exterior.xy[0]:
-                    polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
+                    polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp)))
                 polygon_y = list(polygon.exterior.xy[1])
                 horizontal_tidal_window, = ax_left.fill(polygon_x, polygon_y, facecolor='firebrick', alpha=0.25,edgecolor='none',zorder=0)
 

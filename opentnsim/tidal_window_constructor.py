@@ -170,7 +170,6 @@ class NetworkProperties:
             vessel_characteristics_value = []
             vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
             for info in vessel_characteristics:
-                print(vessel_characteristics_spec)
                 vessel_characteristics_type.append(info)
                 vessel_characteristics_spec.append(vessel_characteristics[info][0])
                 vessel_characteristics_value.append(vessel_characteristics[info][1])

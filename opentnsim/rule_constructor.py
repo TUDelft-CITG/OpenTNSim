@@ -20,6 +20,8 @@ class vessel_characteristics(Enum):
     type = ['Type', '==']
     terminal = ['Terminal','.isin(']
     visited_terminal = ['Previous terminal','.isin(']
+    bound_from = ['Bound from','==']
+    bound_to = ['Bound to','==']
 
 class vessel_direction(Enum):
     inbound = 'inbound'

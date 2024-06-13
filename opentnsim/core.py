@@ -17,6 +17,7 @@ import pyproj
 import shapely
 import shapely.geometry
 import shapely.ops
+import time
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -76,10 +77,10 @@ class HasLength(SimpyObject): #used by IsLock and IsLineUpArea to regulate numbe
     level: amount the container holds initially
     total_requested: a counter that helps to prevent over requesting"""
 
-    def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
+    def __init__(self, length, init=0, total_requested=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.length = simpy.Container(self.env, capacity = length, init=remaining_length)
+        self.length = simpy.Container(self.env, capacity = length, init=init)
 
 
 class HasContainer(SimpyObject):

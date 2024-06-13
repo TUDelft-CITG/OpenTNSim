@@ -4,7 +4,7 @@ import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import time as timepy
+import time
 from copy import deepcopy
 import datetime
 import pytz
@@ -110,23 +110,191 @@ class IsTurningBasin(core.HasResource, core.Identifiable, core.Log, output.HasOu
         super().__init__(capacity=1,*args, **kwargs)
         self.length = information['Length']
 
-class IsTerminal(core.HasType, core.HasLength, core.HasResource, core.Identifiable, core.Log, output.HasOutput):
+class IsQuayTerminal(core.Identifiable, core.Log, output.HasOutput):
 
-    def __init__(self,type,information,*args,**kwargs):
+    def __init__(self,env,information,*args,**kwargs):
+        self.occupying_vessels = simpy.Resource(env=env, capacity=1000)
+        self.quays = {}
+        for name,info in information.iterrows():
+            self.quays[name] = core.HasLength(env=env,length=info.Length,init=info.Length)
+            self.quays[name].available_quay_lengths = [[0, 0], [0, info.Length]]
+        super().__init__(env=env,*args, **kwargs)
 
-        if type == 'quay':
-            self.length = information['Length']
-            self.depth = information['Depth']
-            self.available_quay_lengths = [[0,0],[0,length]]
-            capacity = 100
+    def release_terminal_access(self,vessel,berth_name=None,delay=0):
+        if not berth_name:
+            berth_name = vessel.metadata['berth_of_call'][0]
+        if vessel.port_accessible:
+            # Determine the old maximum available length of the quay
+            old_level = self.calculate_quay_length_level(berth_name)
 
-        elif type == 'jetty':
-            self.jetty_depths = information['Depth']
-            self.jetty_lengths = information['Length']
-            self.length = np.sum(self.jetty_lengths)
-            capacity = len(self.jetty_lengths)
+            # Readjust the available quay lengths as the vessel is leaving the terminal
+            self.quays[berth_name].available_quay_lengths = self.readjust_available_quay_lengths(vessel,berth_name=berth_name)
+            # Calculate the new maximum available quay length
+            new_level = self.calculate_quay_length_level(berth_name)
+            # If this length does not equal the current maximum available quay length (is smaller), then put this length back to the quay
+            if old_level != new_level:
+                self.quays[berth_name].length.put(new_level - old_level)
+            # Give vessel length back to keep track of the total claimed vessel length and log this value and the departure event in the logfile of the terminal, and release the request of the vessel to access the terminal
+        self.occupying_vessels.release(vessel.accessed_terminal)
 
-        super().__init__(type=type,capacity=capacity,length=self.length, *args, **kwargs)
+    def request_quay_position(self, vessel):
+        """ Function that claims a length along the quay equal to the length of the vessel itself and calculates the relative position of the vessel along the quay. If there are multiple
+            relative positions possible, the vessel claims the first position. If there is no suitable position availalble (vessel does not fit), then it returns the action
+            of moving to the anchorage area.
+
+            Input:
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
+
+        """
+
+        # Set some default parameters
+        berth_name = vessel.metadata['berth_of_call'][0]
+        available_quay_lengths = [0]
+        aql = self.quays[berth_name].available_quay_lengths #the current configuration of vessels located at the quay
+        index_quay_position = 0
+        move_to_anchorage = False
+
+        # Loop over the locations of the current configuration of vessels located at the quay
+        for index in range(len(aql)):
+            # If the index of the locaton is 0, or if the previous location is the same as the current location (and hence the index of the location is not 0) or if the location is not available (value = 1):
+            if index == 0 or aql[index][1] == aql[index - 1][1] or aql[index][0] == 1:
+                # Continue, else if its the last index and there is not yet a suitable index found for an available location: return that vessel has to move to anchorage
+                if index == len(aql) - 1 and not index_quay_position:
+                    move_to_anchorage = True
+                continue
+
+            # If there is an available location: append indexes to list
+            available_quay_lengths.append(aql[index][1] - aql[index - 1][1])
+
+            # Loop over the list:
+            for jndex in range(len(available_quay_lengths)):
+                # If there is the available location is suitable (available length of that location is greater than the vessel length): return index and break loop
+                if vessel.L <= available_quay_lengths[jndex]:
+                    index_quay_position = index
+                    break
+
+                # Else: if there were not available locations found: return that vessel has to move to anchorage
+                elif jndex == len(available_quay_lengths) - 1 and not index_quay_position:
+                    move_to_anchorage = True
+
+            # The index can only still be default if the vessel has to move to the anchorage area: so break the loop then
+            if index_quay_position != 0:
+                break
+
+        return index_quay_position, move_to_anchorage
+
+    def calculate_quay_length_level(self, berth_name):
+        """ Function that keeps track of the maximum length that is available at the quay
+
+            Input:
+                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
+
+        """
+
+        # Set default parameters
+        aql = self.quays[berth_name].available_quay_lengths
+        new_level = np.max(aql)
+        available_quay_lengths = [0]
+
+        # Loop over the position indexes
+        for index in range(len(aql)):
+            # If the index of the locaton is 0, or if the previous location is the same as the current location (and hence the index of the location is not 0) or if the location is not available (value = 1):
+            if index == 0 or aql[index][1] == aql[index - 1][1] or aql[index][0] == 1:
+                # Continue, else if its the last index and there is not yet a suitable index found for an available location: return that available length is the last one in the list (=0)
+                if index == len(aql) - 1:
+                    new_level = available_quay_lengths[-1]
+                continue
+
+            # If there is an available location: append length to list and return the maximum of the list
+            available_quay_lengths.append(aql[index][1] - aql[index - 1][1])
+            new_level = np.max(available_quay_lengths)
+        return new_level
+
+
+
+    def adjust_available_quay_lengths(self, vessel, berth_name=None):
+        """ Function that adjusts the available quay lenghts and positions given a honored request of a vessel at a given position
+
+            Input:
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
+                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
+                - index_quay_position: quay position index at which the vessel is located at the quay with respect to the other vessels
+
+        """
+        if not berth_name:
+            berth_name = vessel.metadata['berth_of_call'][0]
+        index_quay_position = vessel.index_quay_position
+
+        # Import the locations of the current configuration of vessels located at the quay
+        aql = self.quays[berth_name].available_quay_lengths
+
+        # Determine the current maximum available length of the terminal
+        old_level = self.calculate_quay_length_level(berth_name)
+        # If the value of the position index before the honered quay position (start of the available position) is still available (=0), change it to 1
+        if aql[index_quay_position - 1][0] == 0:
+            aql[index_quay_position - 1][0] = 1
+
+        # If the value of the honered quay position (end of the available position) is still available (=0) and the end of this position equals the start of the position added with the vessel length, change it to 1
+        if aql[index_quay_position][0] == 0 and aql[index_quay_position][1] == aql[index_quay_position - 1][1] + vessel.L:
+            aql[index_quay_position][0] = 1
+
+        # Else insert a new stopping location in the locations of the current configuration of vessels located at the quay by twice adding the vessel length to the start position of the location, once with a occupied value (=1), followed by a available value (=0)
+        else:
+            aql.insert(index_quay_position, [1, vessel.L + aql[index_quay_position - 1][1]])
+            aql.insert(index_quay_position + 1, [0, vessel.L + aql[index_quay_position - 1][1]])
+
+        # Replace the list of the locations of the current configuration of vessels located at the quay of the terminal
+        self.quays[berth_name].available_quay_lengths = aql
+        # Calculate the quay position and append to the vessel (mid-length of the vessel + starting length of the position)
+        vessel.quay_position = 0.5 * vessel.L + aql[index_quay_position - 1][1]
+        # Determine the new current maximum available length of the terminal
+        new_level = self.calculate_quay_length_level(berth_name)
+
+        return old_level,new_level
+
+    def readjust_available_quay_lengths(self, vessel, berth_name=None):
+        """ Function that readjusts the available quay lenghts and positions given a release of a request of a vessel at a given position
+
+            Input:
+                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
+                - position: quay position index at which the vessel is located at the quay with respect to the other vessels
+
+        """
+        if not berth_name:
+            berth_name = vessel.metadata['berth_of_call'][0]
+        position = vessel.index_quay_position
+
+        # Import the locations of the current configuration of vessels located at the quay
+        aql = self.quays[berth_name].available_quay_lengths
+        # Loop over the position indexes
+        for index in range(len(aql)):
+            # Skip the first position index
+            if index == 0:
+                continue
+            # If the position of the vessel falls within the position bounds in the current configuration: break loop (save index)
+            if aql[index - 1][1] < position and aql[index][1] > position:
+                break
+
+        # Set both values of these position bounds to zero (available again)
+        aql[index - 1][0] = 0
+        aql[index][0] = 0
+
+        # Set a default list of redundant indexes to be removed
+        to_remove = []
+        # Nested loop over the position indexes
+        for index in enumerate(aql):
+            for jndex in enumerate(aql):
+                # If the two indexes are not equal and the value at position index 1 and index 2 are both zero (available) and the locations of the two indexes are equal: remove the first positional index
+                if index[0] != jndex[0] and index[1][0] == 0 and jndex[1][0] == 0 and index[1][1] == jndex[1][1]:
+                    to_remove.append(index[0])
+
+        # If there are indexes to be removed, loop over these indexes and remove them
+        for index in list(reversed(to_remove)):
+            aql.pop(index)
+
+        # Return the locations of the new configuration of vessels located at the quay
+        return aql
 
 class PriorityFilterStore(simpy.FilterStore):
 
@@ -145,23 +313,25 @@ class PriorityFilterStore(simpy.FilterStore):
             self.get_queue.insert(number_in_line, self.get_queue.pop())
         return request
 
-class IsJettyTerminal(core.HasType, core.Identifiable, core.Log, output.HasOutput):
+class IsJettyTerminal(core.Identifiable, core.Log, output.HasOutput):
 
-    def __init__(self,env,name,type,information,*args,**kwargs):
+    def __init__(self,env,name,information,*args,**kwargs):
         self.resource = PriorityFilterStore(env)
         self.occupying_vessels = simpy.Resource(env, capacity=len(information))
         for berth_name,berth_info in information.iterrows():
             self.resource.put(IsJetty(berth_name,berth_info.Length,berth_info.MBL))
-        super().__init__(env=env, name=name, type=type, *args, **kwargs)
+        super().__init__(env=env, name=name, *args, **kwargs)
 
     def request_terminal(self,vessel):
         waiting_in_anchorage = False
         kicked_vessel = False
         vessels_in_waiting_area_old = self.resource.get_queue.copy()
         if 'berth_of_call' in vessel.metadata.keys():
-            request = self.resource.get_with_priority(vessel,(lambda request: request.name == vessel.metadata['berth_of_call'][0]),priority=vessel.metadata['priority'])
+            request = self.resource.get_with_priority(vessel,(lambda request: request.name == vessel.metadata['berth_of_call'][0]),
+                                                      priority=vessel.metadata['priority'])
         else:
-            request = self.resource.get_with_priority(vessel,(lambda request: request.depth > vessel.T) and (lambda request: request.length > vessel.L),priority=vessel.metadata['priority'])
+            request = self.resource.get_with_priority(vessel,(lambda request: request.depth > vessel.T) and (lambda request: request.length > vessel.L),
+                                                      priority=vessel.metadata['priority'])
 
         vessels_in_waiting_area_new = self.resource.get_queue
         if vessels_in_waiting_area_new != vessels_in_waiting_area_old:
@@ -196,7 +366,6 @@ class PassTerminal:
         """
 
         # Set some default parameters:
-        #vessel.waiting_in_anchorage = True
         node_anchorage = vessel.env.vessel_traffic_service.provide_nearest_anchorage_area(vessel,vessel.route[node])
         # If there is not an available anchorage area: leave the port after entering the anchorage area
         if not node_anchorage:
@@ -219,6 +388,7 @@ class PassTerminal:
 
         """
         # Set default parameter and extract information of anchorage area
+        arrival_time = vessel.env.now
         anchorage = vessel.env.FG.nodes[node]['Anchorage'][0]
         if 'route_after_anchorage' not in dir(vessel):
             vessel.route_after_anchorage = nx.dijkstra_path(vessel.env.FG,node,vessel.route_after_terminal[0])
@@ -248,45 +418,57 @@ class PassTerminal:
 
         if 'waiting_for_available_berth' in dir(vessel):
             vessel.update_waiting_status(availability=True)
-            vessel.log_entry_v0("Waiting for available berth in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
-            for user in terminal.occupying_vessels.users:
-                if user.vessel.berth.name == vessel.metadata['berth_of_call'][0]:
-                    yield vessel.env.timeout(np.max([0,(user.vessel.etd-vessel.env.now-vessel.env.vessel_traffic_service.provide_sailing_time(vessel,vessel.route_after_anchorage[:-1])['Time'].sum())]))
-                    if 'accessed_terminal' in dir(user.vessel):
-                        terminal.release_terminal(user.vessel.accessed_terminal.value)
-                        del(user.vessel.accessed_terminal)
+            vessel.log_entry_v0("Waiting for available berth in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+            if isinstance(terminal,IsJettyTerminal):
+                for user in terminal.occupying_vessels.users:
+                    if user.vessel.berth.name == vessel.metadata['berth_of_call'][0]:
+                        yield vessel.env.timeout(np.max([0,(user.vessel.etd-vessel.env.now-vessel.env.vessel_traffic_service.provide_sailing_time(vessel,vessel.route_after_anchorage[:-1])['Time'].sum())]))
+                        if 'accessed_terminal' in dir(user.vessel):
+                            terminal.release_terminal(user.vessel.accessed_terminal.value)
+                            del(user.vessel.accessed_terminal)
             yield vessel.waiting_for_available_berth
+            if isinstance(terminal, IsQuayTerminal):
+                terminal.adjust_available_quay_lengths(vessel)
             vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + 2 * vessel.metadata['t_berthing'] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route_after_anchorage[:-1])['Time'].sum()
             vessel.update_waiting_status(availability=True,waiting_stop=True)
             vessel.log_entry_v0("Waiting for available berth in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
 
-        vessel.waiting_for_inbound_tidal_window = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route_after_anchorage[:-1], delay=0, plot=False)
-        if vessel.waiting_for_inbound_tidal_window:
-            vessel.update_waiting_status(tidal_window=True)
-            vessel.log_entry_v0("Waiting for tidal window in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
-            yield vessel.env.timeout(vessel.waiting_for_inbound_tidal_window) | vessel.env.timeout(vessel.metadata['max_waiting_time']-(vessel.arrival_time_in_anchorage-vessel.env.now))
-            vessel.etd += vessel.waiting_for_inbound_tidal_window
-            vessel.update_waiting_status(tidal_window=True, waiting_stop=True)
-            vessel.log_entry_v0("Waiting for tidal window in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+        if vessel.port_accessible:
+            calculate_tidal_window = True
+            if 'expected_departure_time_from_anchorage' in dir(vessel):
+                calculate_tidal_window = False
+                vessel.waiting_for_inbound_tidal_window = np.max([0.0,vessel.expected_departure_time_from_anchorage-arrival_time])
+                if not vessel.waiting_for_inbound_tidal_window:
+                    calculate_tidal_window = True
+
+            print(vessel.waiting_for_inbound_tidal_window)
+            if calculate_tidal_window:
+                vessel.waiting_for_inbound_tidal_window = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route_after_anchorage, delay=0, plot=False)
+                print(vessel.waiting_for_inbound_tidal_window,vessel.id)
+
+            if vessel.waiting_for_inbound_tidal_window:
+                vessel.update_waiting_status(tidal_window=True)
+                vessel.log_entry_v0("Waiting for tidal window in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+                yield vessel.env.timeout(vessel.waiting_for_inbound_tidal_window) | vessel.env.timeout(vessel.metadata['max_waiting_time']-(vessel.arrival_time_in_anchorage-vessel.env.now))
+                vessel.etd += vessel.waiting_for_inbound_tidal_window
+                vessel.update_waiting_status(tidal_window=True, waiting_stop=True)
+                vessel.log_entry_v0("Waiting for tidal window in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
 
         if vessel.env.now - vessel.arrival_time_in_anchorage > vessel.metadata['max_waiting_time']:
             vessel.port_accessible = False
 
-        # if vessel.port_accessible and 'waiting_for_outbound_tidal_window' not in dir(vessel):
-        #     vessel.waiting_for_outbound_tidal_window = vessel.env.vessel_traffic_service.provide_waiting_time_for_outbound_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel.etd, plot=False)
-        #     vessel.etd += vessel.waiting_for_outbound_tidal_window
-        #     if vessel.waiting_for_outbound_tidal_window >= vessel.metadata['max_waiting_time']:
-        #         vessel.port_accessible = False
-
         if not vessel.port_accessible:
-            if vessel.terminal.type == 'jetty':
+            vessel.accessed_terminal = vessel.access_terminal
+            del(vessel.access_terminal)
+            if isinstance(vessel.terminal,IsJettyTerminal):
                 vessel.terminal.release_terminal(vessel.access_terminal.value)
-            else:
-                PassTerminal.release_terminal_access(vessel, vessel.terminal, vessel.route_after_terminal[0], delay=0)
+            elif isinstance(vessel.terminal,IsQuayTerminal):
+                vessel.terminal.release_terminal_access(vessel, delay=0)
             vessel.route.reverse()
         else:
             vessel.route = vessel.route_after_anchorage
-            vessel.berth = vessel.access_terminal.value
+            if isinstance(vessel.terminal, IsJettyTerminal):
+                vessel.berth = vessel.access_terminal.value
             vessel.reservation = terminal.occupying_vessels.request()
             vessel.reservation.vessel = vessel
             yield vessel.reservation
@@ -300,191 +482,6 @@ class PassTerminal:
         anchorage.resource.release(vessel.anchorage_access)
         anchorage.log_entry_v0("Vessel departure", vessel.env.now, deepcopy(anchorage.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]])
 
-    def request_quay_position(vessel, terminal):
-        """ Function that claims a length along the quay equal to the length of the vessel itself and calculates the relative position of the vessel along the quay. If there are multiple
-            relative positions possible, the vessel claims the first position. If there is no suitable position availalble (vessel does not fit), then it returns the action
-            of moving to the anchorage area.
-
-            Input:
-                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
-
-        """
-
-        # Set some default parameters
-        available_quay_lengths = [0]
-        aql = terminal.available_quay_lengths #the current configuration of vessels located at the quay
-        index_quay_position = 0
-        move_to_anchorage = False
-
-        # Loop over the locations of the current configuration of vessels located at the quay
-        for index in range(len(aql)):
-            # If the index of the locaton is 0, or if the previous location is the same as the current location (and hence the index of the location is not 0) or if the location is not available (value = 1):
-            if index == 0 or aql[index][1] == aql[index - 1][1] or aql[index][0] == 1:
-                # Continue, else if its the last index and there is not yet a suitable index found for an available location: return that vessel has to move to anchorage
-                if index == len(aql) - 1 and not index_quay_position:
-                    move_to_anchorage = True
-                continue
-
-            # If there is an available location: append indexes to list
-            available_quay_lengths.append(aql[index][1] - aql[index - 1][1])
-
-            # Loop over the list:
-            for jndex in range(len(available_quay_lengths)):
-                # If there is the available location is suitable (available length of that location is greater than the vessel length): return index and break loop
-                if vessel.L <= available_quay_lengths[jndex]:
-                    index_quay_position = index
-                    break
-
-                # Else: if there were not available locations found: return that vessel has to move to anchorage
-                elif jndex == len(available_quay_lengths) - 1 and not index_quay_position:
-                    move_to_anchorage = True
-
-            # The index can only still be default if the vessel has to move to the anchorage area: so break the loop then
-            if index_quay_position != 0:
-                break
-
-        return index_quay_position, move_to_anchorage
-
-    def calculate_quay_length_level(terminal):
-        """ Function that keeps track of the maximum length that is available at the quay
-
-            Input:
-                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
-
-        """
-
-        # Set default parameters
-        aql = terminal.available_quay_lengths
-        new_level = np.max(aql)
-        available_quay_lengths = [0]
-
-        # Loop over the position indexes
-        for index in range(len(aql)):
-            # If the index of the locaton is 0, or if the previous location is the same as the current location (and hence the index of the location is not 0) or if the location is not available (value = 1):
-            if index == 0 or aql[index][1] == aql[index - 1][1] or aql[index][0] == 1:
-                # Continue, else if its the last index and there is not yet a suitable index found for an available location: return that available length is the last one in the list (=0)
-                if index == len(aql) - 1:
-                    new_level = available_quay_lengths[-1]
-                continue
-
-            # If there is an available location: append length to list and return the maximum of the list
-            available_quay_lengths.append(aql[index][1] - aql[index - 1][1])
-            new_level = np.max(available_quay_lengths)
-        return new_level
-
-    def adjust_available_quay_lengths(vessel, terminal, index_quay_position):
-        """ Function that adjusts the available quay lenghts and positions given a honored request of a vessel at a given position
-
-            Input:
-                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
-                - index_quay_position: quay position index at which the vessel is located at the quay with respect to the other vessels
-
-        """
-
-        # Import the locations of the current configuration of vessels located at the quay
-        aql = terminal.available_quay_lengths
-
-        # Determine the current maximum available length of the terminal
-        old_level = PassTerminal.calculate_quay_length_level(terminal)
-
-        # If the value of the position index before the honered quay position (start of the available position) is still available (=0), change it to 1
-        if aql[index_quay_position - 1][0] == 0:
-            aql[index_quay_position - 1][0] = 1
-
-        # If the value of the honered quay position (end of the available position) is still available (=0) and the end of this position equals the start of the position added with the vessel length, change it to 1
-        if aql[index_quay_position][0] == 0 and aql[index_quay_position][1] == aql[index_quay_position - 1][1] + vessel.L:
-            aql[index_quay_position][0] = 1
-
-        # Else insert a new stopping location in the locations of the current configuration of vessels located at the quay by twice adding the vessel length to the start position of the location, once with a occupied value (=1), followed by a available value (=0)
-        else:
-            aql.insert(index_quay_position, [1, vessel.L + aql[index_quay_position - 1][1]])
-            aql.insert(index_quay_position + 1, [0, vessel.L + aql[index_quay_position - 1][1]])
-
-        # Replace the list of the locations of the current configuration of vessels located at the quay of the terminal
-        terminal.available_quay_lengths = aql
-        # Calculate the quay position and append to the vessel (mid-length of the vessel + starting length of the position)
-        vessel.quay_position = 0.5 * vessel.L + aql[index_quay_position - 1][1]
-        # Determine the new current maximum available length of the terminal
-        new_level = PassTerminal.calculate_quay_length_level(terminal)
-        # If the old level does not equal (is greater than) the new level and the vessel does not have to wait in the anchorage first: then claim the difference between these lengths
-        if old_level != new_level and vessel.waiting_in_anchorage != True:
-            terminal.length.get(old_level - new_level)
-        # Else if the vessel has to wait in the anchorage first: calculate the difference between the lengths corrected by the vessel length to be claimed by the vessel (account for this vessel, so that it has priority over new vessels)
-        elif vessel.waiting_in_anchorage == True:
-            new_level = old_level-vessel.L-new_level
-            # If this difference is negative: give absolute length back to terminal
-            if new_level < 0:
-                terminal.length.put(-new_level)
-            # Else if this difference is positive: claim this length of the terminal
-            elif new_level > 0:
-                terminal.length.get(new_level)
-        return
-
-    def readjust_available_quay_lengths(terminal, position):
-        """ Function that readjusts the available quay lenghts and positions given a release of a request of a vessel at a given position
-
-            Input:
-                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
-                - position: quay position index at which the vessel is located at the quay with respect to the other vessels
-
-        """
-
-        # Import the locations of the current configuration of vessels located at the quay
-        aql = terminal.available_quay_lengths
-        # Loop over the position indexes
-        for index in range(len(aql)):
-            # Skip the first position index
-            if index == 0:
-                continue
-            # If the position of the vessel falls within the position bounds in the current configuration: break loop (save index)
-            if aql[index - 1][1] < position and aql[index][1] > position:
-                break
-
-        # Set both values of these position bounds to zero (available again)
-        aql[index - 1][0] = 0
-        aql[index][0] = 0
-
-        # Set a default list of redundant indexes to be removed
-        to_remove = []
-        # Nested loop over the position indexes
-        for index in enumerate(aql):
-            for jndex in enumerate(aql):
-                # If the two indexes are not equal and the value at position index 1 and index 2 are both zero (available) and the locations of the two indexes are equal: remove the first positional index
-                if index[0] != jndex[0] and index[1][0] == 0 and jndex[1][0] == 0 and index[1][1] == jndex[1][1]:
-                    to_remove.append(index[0])
-
-        # If there are indexes to be removed, loop over these indexes and remove them
-        for index in list(reversed(to_remove)):
-            aql.pop(index)
-
-        # Return the locations of the new configuration of vessels located at the quay
-        return aql
-
-    def release_terminal_access(vessel,terminal,index,delay):
-        ##TODO: keep track of total length instead of maximum length
-        if terminal.type == 'quay':
-            if vessel.port_accessible:
-                # Determine the old maximum available length of the quay
-                old_level = PassTerminal.calculate_quay_length_level(terminal)
-
-                # Readjust the available quay lengths as the vessel is leaving the terminal
-                terminal.available_quay_lengths = PassTerminal.readjust_available_quay_lengths(terminal,vessel.quay_position)
-                # Calculate the new maximum available quay length
-                new_level = PassTerminal.calculate_quay_length_level(terminal)
-                # If this length does not equal the current maximum available quay length (is smaller), then put this length back to the quay
-                if old_level != new_level:
-                    terminal.length.put(new_level - old_level)
-                # Give vessel length back to keep track of the total claimed vessel length and log this value and the departure event in the logfile of the terminal, and release the request of the vessel to access the terminal
-                terminal.log_entry_v0("Departure of vessel", vessel.env.now+delay, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
-            terminal.resource.release(vessel.accessed_terminal)
-
-        # Else if the terminal is of type 'jetty': adjust number of vessels occupying a jetty, log the departure of this vessel and this number, and release the request of the vessel for the specific jetty
-        elif terminal.type == 'jetty':
-            if vessel.port_accessible:
-                terminal.log_entry_v0("Departure of vessel", vessel.env.now+delay, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
-            terminal.resource.release(vessel.accessed_terminal)
 
     def request_terminal_access(vessel, edge, node):
         """ Function: function that handles the request of a vessel to access the terminal of call: it lets the vessel move to the correct terminal (quay position and jetty) or moves it to the
@@ -523,7 +520,7 @@ class PassTerminal:
 
         # Request terminal access and check tidal window
         if vessel.port_accessible:
-            if terminal.type == 'jetty':
+            if isinstance(terminal,IsJettyTerminal):
                 if 'additional_waiting_time' in vessel.metadata.keys() and vessel.metadata['additional_waiting_time']:
                     if ("Terminal" in vessel.env.FG.edges[vessel.route[0], vessel.route[1], k] or vessel.route[0] != '8866969'):
                         vessel.update_waiting_status(priority=True)
@@ -546,45 +543,56 @@ class PassTerminal:
                     vessel.move_to_anchorage = True
                 vessel.access_terminal.obj = vessel
 
-            # elif terminal.type == 'quay':
-            #     # If the queue of vessels waiting for an available quay length is still empty: request quay position
-            #     ##TODO: quays can also be subdivided in areas with different allowable vessel dimensions, this needs to be added
-            #     ##TODO: include priority
-            #     if terminal.length.get_queue == []:
-            #         vessel.index_quay_position,vessel.move_to_anchorage = PassTerminal.request_quay_position(vessel, terminal)
-            #         vessel.access_terminal = terminal.length.get(vessel.L)
-            #         vessel.status = 'moving to terminal'
-            #     # Else if this queue is not empty: vessel has to move to anchorage area (according to FCFS-policy)
-            #     else:
-            #         vessel.move_to_anchorage = True
-            #         vessel.waiting_for_availability_terminal = True
-            #         vessel.waiting_time_in_anchorage = vessel.access_terminal = terminal.length.get(vessel.L)
-            #
-            #     PassTerminal.adjust_available_quay_lengths(vessel, terminal, vessel.index_quay_position)
+            elif isinstance(terminal,IsQuayTerminal):
+                # If the queue of vessels waiting for an available quay length is still empty: request quay position
+                ##TODO: quays can also be subdivided in areas with different allowable vessel dimensions, this needs to be added in a later stage
+                ##TODO: include priority in a later stage
+                berth_name = vessel.metadata['berth_of_call'][0]
+                vessel.index_quay_position,vessel.move_to_anchorage = terminal.request_quay_position(vessel)
+                old_level,new_level = terminal.adjust_available_quay_lengths(vessel)
+                # If the old level does not equal (is greater than) the new level and the vessel does not have to wait in the anchorage first: then claim the difference between these lengths
+                if old_level != new_level:
+                    vessel.access_terminal = terminal.quays[berth_name].length.get(old_level - new_level)
+                else:
+                    vessel.move_to_anchorage = True
+                    vessel.access_terminal = terminal.quays[berth_name].length.get(vessel.L)
+
+                if vessel.move_to_anchorage:
+                    vessel.waiting_for_available_berth = vessel.access_terminal
+                else:
+                    yield vessel.access_terminal
+
 
             # calculate waiting time due to tidal window
             vessel.update_waiting_status()
             if vessel.waiting_for_availability_terminal and ("Terminal" in vessel.env.FG.edges[vessel.route[0], vessel.route[1],k] or vessel.route[0] not in ['8866969','anchorage']):
                 #vessel.output['waiting_time'] = {'Priority': pd.Timedelta(0, 's'),'Availability': pd.Timedelta(0, 's'),'Tidal window': pd.Timedelta(0, 's')}
-                try:
-                    vessel.access_terminal.value
-                except:
-                    vessel.update_waiting_status(availability=True, waiting_stop=False)
-                    vessel.log_entry_v0("Waiting in terminal for available berth start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
-                    for user in terminal.occupying_vessels.users:
-                        if user.vessel.berth.name == vessel.metadata['berth_of_call'][0]:
-                            yield vessel.env.timeout(np.max([0,(user.vessel.etd-vessel.env.now-vessel.env.vessel_traffic_service.provide_sailing_time(vessel,vessel.route[:-1])['Time'].sum())]))
-                            if 'accessed_terminal' in dir(user.vessel):
-                                terminal.release_terminal(user.vessel.accessed_terminal.value)
-                                del (user.vessel.accessed_terminal)
+                if isinstance(vessel.terminal, IsJettyTerminal):
+                    try:
+                        vessel.access_terminal.value
+                    except:
+                        vessel.update_waiting_status(availability=True, waiting_stop=False)
+                        vessel.log_entry_v0("Waiting in terminal for available berth start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+                        if isinstance(terminal,IsJettyTerminal):
+                            for user in terminal.occupying_vessels.users:
+                                if user.vessel.berth.name == vessel.metadata['berth_of_call'][0]:
+                                    yield vessel.env.timeout(np.max([0,(user.vessel.etd-vessel.env.now-vessel.env.vessel_traffic_service.provide_sailing_time(vessel,vessel.route[:-1])['Time'].sum())]))
+                                    if 'accessed_terminal' in dir(user.vessel):
+                                        terminal.release_terminal(user.vessel.accessed_terminal.value)
+                                        del (user.vessel.accessed_terminal)
+                        yield vessel.access_terminal
+                        vessel.update_waiting_status(availability=True, waiting_stop=True)
+                        vessel.log_entry_v0("Waiting in terminal for available berth stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+                    else:
+                        yield vessel.access_terminal
+                elif isinstance(vessel.terminal, IsQuayTerminal):
                     yield vessel.access_terminal
-                    vessel.update_waiting_status(availability=True, waiting_stop=True)
-                    vessel.log_entry_v0("Waiting in terminal for available berth stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
-                else:
-                    yield vessel.access_terminal
-                vessel.berth = vessel.access_terminal.value
+
+                if isinstance(vessel.terminal, IsJettyTerminal):
+                    vessel.berth = vessel.access_terminal.value
                 vessel.reservation = terminal.occupying_vessels.request()
                 vessel.reservation.vessel = vessel
+
                 vessel.waiting_time_in_anchorage = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route, delay=0, plot=False)
                 vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + 2 * vessel.metadata['t_berthing'] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route[:-1])['Time'].sum()+vessel.waiting_time_in_anchorage
                 yield vessel.reservation
@@ -597,14 +605,18 @@ class PassTerminal:
 
             if not vessel.waiting_for_availability_terminal:
                 vessel.waiting_time_in_anchorage = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route, delay=0, plot=False)
+                print(vessel.route)
+                print(vessel.waiting_time_in_anchorage,vessel.id)
                 vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + 2 * vessel.metadata['t_berthing'] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route[:-1])['Time'].sum() + vessel.waiting_time_in_anchorage
                 if vessel.waiting_time_in_anchorage >= vessel.metadata['max_waiting_time']:
                     vessel.port_accessible = False
                     vessel.move_to_anchorage = True
                 elif vessel.waiting_time_in_anchorage:
                     vessel.move_to_anchorage = True
+                    vessel.expected_departure_time_from_anchorage = vessel.env.now+vessel.waiting_time_in_anchorage
                 else:
-                    vessel.berth = vessel.access_terminal.value
+                    if isinstance(vessel.terminal, IsJettyTerminal):
+                        vessel.berth = vessel.access_terminal.value
                     vessel.reservation = terminal.occupying_vessels.request()
                     vessel.reservation.vessel = vessel
                     yield vessel.reservation
@@ -612,7 +624,8 @@ class PassTerminal:
             if vessel.move_to_anchorage and ("Terminal" in vessel.env.FG.edges[vessel.route[0], vessel.route[1],k] or vessel.route[0] not in ['8866969','anchorage']):
                 yield vessel.env.timeout(vessel.waiting_time_in_anchorage)
                 vessel.move_to_anchorage = False
-                vessel.berth = vessel.access_terminal.value
+                if isinstance(vessel.terminal, IsJettyTerminal):
+                    vessel.berth = vessel.access_terminal.value
                 vessel.reservation = terminal.occupying_vessels.request()
                 vessel.reservation.vessel = vessel
                 yield vessel.reservation
@@ -625,12 +638,6 @@ class PassTerminal:
 
         if not vessel.move_to_anchorage:
             vessel.route_after_terminal = nx.dijkstra_path(vessel.env.FG, vessel.route[-1], vessel.route[0])
-            # vessel.waiting_for_outbound_tidal_window = vessel.env.vessel_traffic_service.provide_waiting_time_for_outbound_tidal_window(vessel, route=vessel.route_after_terminal,delay=vessel.etd, plot=False)
-            # vessel.etd += vessel.waiting_for_outbound_tidal_window
-            # if vessel.waiting_for_outbound_tidal_window >= vessel.metadata['max_waiting_time'] and not "Terminal" in vessel.env.FG.edges[vessel.route[0], vessel.route[1],k] and not vessel.route[0] != '8866969':
-            #     vessel.port_accessible = False
-            #     yield from PassTerminal.move_to_anchorage(vessel, node_index)
-            #     terminal.occupying_vessels.release(vessel.reservation)
 
     def pass_terminal(vessel,edge):
         """ Function: function that handles the vessel at the terminal
@@ -643,7 +650,8 @@ class PassTerminal:
 
         # Import information about the terminal and the corresponding index of the start of the edge at which the terminal is located
         terminal = vessel.env.FG.edges[edge]["Terminal"][vessel.metadata['terminal_of_call'][0]]
-        berth = vessel.access_terminal.value
+        if isinstance(vessel.terminal, IsJettyTerminal):
+            vessel.berth = vessel.access_terminal.value
         vessel.accessed_terminal = vessel.access_terminal
         del(vessel.access_terminal)
         index = vessel.route[vessel.route.index(edge[1]) - 1]
@@ -666,8 +674,8 @@ class PassTerminal:
                                                               vessel.env.FG.nodes[vessel.route[-1]]['geometry'].y]
 
         # If the terminal is of type 'quay': log in logfile of terminal keeping track of the available length (by getting the so-called position length)
-        vessel.update_terminal_berth_status_report(terminal,berth)
-        terminal.log_entry_v0("Arrival of vessel", vessel.env.now, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
+        vessel.update_terminal_berth_status_report(terminal)
+        terminal.log_entry_v0("Arrival of vessel", vessel.env.now, deepcopy(terminal.output), nx.get_node_attributes(vessel.env.FG, "geometry")[index])
 
         route_to_nearest_turning_basin = []
         for node in vessel.route_after_terminal:
@@ -708,6 +716,7 @@ class PassTerminal:
         vessel.log_entry_v0("(Un)loading stop", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
         vessel.route = route_after_terminal
         vessel.bound = 'outbound'
+        visited_berth_name = vessel.metadata['berth_of_call'].copy()[0]
         vessel.metadata['berth_of_call'] = np.delete(vessel.metadata['berth_of_call'], 0, 0)
         vessel.metadata['terminal_of_call'] = np.delete(vessel.metadata['terminal_of_call'], 0, 0)
         vessel.destination = vessel.metadata['next_destination'][0]
@@ -722,28 +731,26 @@ class PassTerminal:
         if "Terminal" in vessel.env.FG.edges[route_after_terminal[-1], route_after_terminal[-2], k] and len(vessel.metadata['berth_of_call'])>1:
             yield from PassTerminal.request_terminal_access(vessel, [route_after_terminal[-1],route_after_terminal[-2],k], route_after_terminal[-1])
 
-        # elif vessel.waiting_for_outbound_tidal_window:
-        #     vessel.log_entry_v0(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Waiting for tidal window start", deepcopy(vessel.output))
-        #     yield vessel.env.timeout(np.max([0, vessel.waiting_for_outbound_tidal_window]))
-        #     vessel.log_entry_v0(vessel.env.now, shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon), "Waiting for tidal window stop", deepcopy(vessel.output))
-
-        # Deberthing: if the terminal is part of an section, request access to this section first
+        #Deberthing: if the terminal is part of an section, request access to this section first
         #if 'Junction' in vessel.env.FG.nodes[edge[1]].keys():
         #    yield from waterway.PassWaterway.request_access_next_section(vessel, edge[0])
 
         # Deberthing: log the start and stop of this event in log file of vessel including the calculated net ukc, and yield timeout equal to the time it takes to deberth
         vessel.log_entry_v0("Deberthing start", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
         yield vessel.env.timeout(vessel.metadata['t_berthing'])
-        vessel.update_terminal_berth_status_report(terminal, berth, departure=True)
+        vessel.update_terminal_berth_status_report(terminal, berth_name=visited_berth_name,departure=True)
         vessel.log_entry_v0("Deberthing stop", vessel.env.now, deepcopy(vessel.output), shapely.geometry.Point(vessel.terminal_pos_lat, vessel.terminal_pos_lon))
-        terminal.log_entry_v0("Departure of vessel", vessel.env.now, deepcopy(terminal.output)[berth.name], nx.get_node_attributes(vessel.env.FG, "geometry")[index])
+        terminal.log_entry_v0("Departure of vessel", vessel.env.now, deepcopy(terminal.output), nx.get_node_attributes(vessel.env.FG, "geometry")[index])
 
         if 'accessed_terminal' in dir(vessel):
-            terminal.release_terminal(vessel.accessed_terminal.value)
-            del(vessel.accessed_terminal)
+            if isinstance(terminal,IsJettyTerminal):
+                terminal.release_terminal(vessel.accessed_terminal.value)
+                del(vessel.accessed_terminal)
+            elif isinstance(terminal,IsQuayTerminal):
+                terminal.release_terminal_access(vessel,berth_name=visited_berth_name)
+
         terminal.occupying_vessels.release(vessel.reservation)
 
-        #terminal.occupying_vessels.release(vessel.reservation)
         # Move vessel to start node of the terminal, release request of this section, and change vessel route by removing the first node of the route (as vessel will already be located in the second node of the route after the move event)
         #waterway.PassWaterway.release_access_previous_section(vessel, edge[0])
 
