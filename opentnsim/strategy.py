@@ -13,7 +13,7 @@ This package combine with "optimal sailing stratigies notebook" provides stratig
 # 5) add "get_optimal_refueling_amount" function. It's not always beneficial to be fully refueled with fuel for sailing, since more fuel on board leads to less cargo and there might still be residual fuel in the tank after a round trip if refuel too much. Therefore, it's needed to calculate the optimal refuling amount for each unique sailing case (route, vessel size & type, payload, time plan, refueling spots along the route).  The optimal refueling amount for a transport case determined by both the fuel consumption in time and space and the locations of refuling spots.
 # 6) consider writting the "fix power or fix speed" example which is in the paper as a function into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it benefit if adds this function?
 
-
+import copy
 import functools
 import itertools
 
@@ -273,6 +273,9 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     power-allowed velocity, considering squat. This velocity can be used as upperbound in the
     power2v function in energy.py. The "upperbound" is the maximum value in velocity searching
     range."""
+
+    # make a copy of the vessel, so that we don't store the upperbound values of R_0
+    vessel = copy.deepcopy(vessel)
 
     # estimate the grounding velocity
     # here we optionally try to take sinkage into account and try to compute the maximum velocity where we still have underkeel clearance
