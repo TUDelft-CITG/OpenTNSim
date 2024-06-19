@@ -63,7 +63,7 @@ class IsOneWayTrafficRegulation:
                                                  node=self.node_waiting_area_start_II,
                                                  distance_from_node=self.distance_to_regulation_II)
 
-class HasOneWayTrafficRegulation(lock.HasLock,lock.HasLineUpArea,lock.HasWaitingArea):
+class HasOneWayTrafficRegulation(lock.HasLockComplex):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

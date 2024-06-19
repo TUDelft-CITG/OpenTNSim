@@ -5,6 +5,27 @@ import opentnsim.vessel_traffic_service as vessel_traffic_service
 import numpy as np
 import pandas as pd
 import typing
+import itertools
+
+class vessel_characteristic_conditions(Enum):
+    min_ge_Length = ['min_ge_Length', '>=']
+    min_gt_Length = ['min_gt_Length', '>']
+    max_le_Length = ['max_le_Length', '<=']
+    max_lt_Length = ['max_lt_Length', '<']
+    min_ge_Draught = ['min_ge_Draught', '>=']
+    min_gt_Draught = ['min_gt_Draught', '>']
+    max_le_Draught = ['max_le_Draught', '<=']
+    max_lt_Draught = ['max_lt_Draught', '<']
+    min_ge_UKC = ['min_ge_UKC', '>=']
+    min_gt_UKC = ['min_gt_UKC', '>']
+    max_le_UKC = ['max_le_UKC', '<=']
+    max_lt_UKC = ['max_lt_UKC', '<']
+    type = ['type', '==']
+    terminal = ['terminal','.isin(']
+    visited_terminal = ['visited_terminal','.isin(']
+    bound_from = ['bound_from','==']
+    bound_to = ['bound_to','==']
+
 
 class horizontal_tidal_window_method(Enum):
     maximum = 'Maximum'
@@ -22,7 +43,12 @@ class tidal_period(Enum):
 class vessel_specifications:
     vessel_characteristics: dict  # {item of vessel_characteristics class: user-defined value,...}
     vessel_method: str  # string containing the operators between the vessel characteristics (symbolized by x): e.g. '(x and x) or x'
-    vessel_direction: str  # item of vessel_direction class
+
+    def __post_init__(self):
+        if not self.vessel_characteristics:
+            self.vessel_characteristics = {}
+        if not self.vessel_method:
+            self.vessel_method = ''
 
     def characteristic_dicts(self):
         characteristic_dicts = {}
@@ -44,6 +70,16 @@ class vertical_tidal_window_specifications:
     ukc_r: list = field(default_factory=list)  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
     fwa: list = field(default_factory=list)  # {tidal_period.Flood.value: user-defined value or item from accessibility class,...}
 
+    def __post_init__(self):
+        if not self.ukc_s:
+            self.ukc_s = 0.0
+        if not self.ukc_p:
+            self.ukc_p = 0.0
+        if not self.ukc_r:
+            self.ukc_r = [0.0,0.0]
+        if not self.fwa:
+            self.ukc_s = 0.0
+
 @dataclass
 class vertical_tidal_window_input:
     vessel_specifications: vessel_specifications  # class
@@ -53,7 +89,6 @@ class vertical_tidal_window_input:
 class horizontal_tidal_window_input:
     vessel_specifications: vessel_specifications  # class
     window_specifications: horizontal_tidal_window_specifications  # class
-    condition: dict  # {'Origin':node, 'Destination': node}
     data: list  # Calculated input: [node,]
 
 class NetworkProperties:
@@ -68,27 +103,21 @@ class NetworkProperties:
                 - node: the name string of the node in the given network
                 - vertical_tidal_window_input: assembly of specific information that defines the restriction (see specific input classes in the notebook)
         """
-        #Specifies two parameters in the dictionary with a corresponding data structure of lists
-        if 'Type' not in network.nodes[node]['Vertical tidal restriction']:
-            network.nodes[node]['Vertical tidal restriction']['Type'] = [[], [], [], []]
-            network.nodes[node]['Vertical tidal restriction']['Specification'] = [[], [], [], [], [], []]
+        # Loops over the number of types of restrictions that may hold for different classes of vessels
+        columns = vessel_characteristic_conditions.__members__.keys()
+        column_operators = [values.value[1] for values in vessel_characteristic_conditions.__members__.values()]
+
+        specification_df = pd.DataFrame(columns=columns)
+        if 'Vertical tidal restriction' not in network.nodes[node]:
+            network.nodes[node]['Vertical tidal restriction'] = {}
+        if 'Specifications' not in network.nodes[node]['Vertical tidal restriction']:
+            network.nodes[node]['Vertical tidal restriction']['Specifications'] = specification_df
+        else:
+            specification_df = network.nodes[node]['Vertical tidal restriction']['Specifications']
 
         #Loops over the number of types of restrictions that may hold for different classes of vessels
         for input_data in vertical_tidal_window_input:
-            for field in fields(input_data.window_specifications):
-                data = getattr(input_data.window_specifications, field.name)
-                if data:
-                    globals()[field.name] = data
-                else:
-                    globals()[field.name] = 0
-                    if field.name == 'ukc_r':
-                        globals()[field.name] = [0,0]
-
-            # Appends the specific data regarding the type of the restriction to data structure
-            network.nodes[node]['Vertical tidal restriction']['Type'][0].append(ukc_s)
-            network.nodes[node]['Vertical tidal restriction']['Type'][1].append(ukc_p)
-            network.nodes[node]['Vertical tidal restriction']['Type'][2].append(ukc_r)
-            network.nodes[node]['Vertical tidal restriction']['Type'][3].append(fwa)
+            window_specifications = input_data.window_specifications
 
             # Unpacks the data for the different vessel criteria and appends it to a list
             vessel_characteristics_type = []
@@ -102,19 +131,41 @@ class NetworkProperties:
 
             # Unravels the boolean operators between the restrictions and appends it to a list
             vessel_method_list = []
-            sign_list = input_data.vessel_specifications.vessel_method.split()
-            for sign in sign_list:
-                if sign[0] != '(' and sign[-1] != ')' and sign != 'x':
-                    vessel_method_list.append(sign)
+            index = len(specification_df)
 
-            # Appends the specific data regarding the properties for which the restriction holds to data structure
-            network.nodes[node]['Vertical tidal restriction']['Specification'][0].append(vessel_characteristics_type)
-            network.nodes[node]['Vertical tidal restriction']['Specification'][1].append(vessel_characteristics_value)
-            network.nodes[node]['Vertical tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
-            network.nodes[node]['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Vertical tidal restriction']['Specification'][4].append(vessel_method_list)
-            network.nodes[node]['Vertical tidal restriction']['Specification'][5].append([])
+            sign = input_data.vessel_specifications.vessel_method
+            combinations = sign.split(' or ')
+            new_combination_indexes = []
+            new_combination_index = index
+            for combination in combinations:
+                new_combination_index += combination.count('x')
+                new_combination_indexes.append(new_combination_index)
+            # Unpacks the data for the different vessel criteria and appends it to a list
+            vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
+            values = {key: value[1] for key, value in vessel_characteristics.items()}
+            values = {key: value if isinstance(value, list) else [value] for key, value in values.items()}
+            value_keys = values.keys()
+            values = itertools.product(*(values[Name] for Name in values))
+            new_values = []
+            for combination in values:
+                new_values.append({key: value for key, value in zip(value_keys, combination)})
+
+            for i, combination in enumerate(new_values):
+                for restriction_type,restriction in combination.items():
+                    specification_df.loc[index+i, 'Data'] = node
+                    specification_df.loc[index+i, 'Restriction'] = window_specifications
+                    specification_df.loc[index+i, restriction_type] = restriction
+                    if index in new_combination_indexes:
+                        index += 1
+
+        specification_df = specification_df.reset_index(drop=True)
+        for column, operator in zip(columns, column_operators):
+            if operator in ['>=', '>']:
+                specification_df.loc[specification_df[specification_df[column].isna()].index, column] = -999.
+            elif operator in ['<=', '<']:
+                specification_df.loc[specification_df[specification_df[column].isna()].index, column] = 999.
+
+        network.nodes[node]['Vertical tidal restriction']['Specifications'] = specification_df
 
     def append_horizontal_tidal_restriction_to_network(self,network,node,horizontal_tidal_window_input):
         """ Function: appends horizontal tidal restrictions to the node of the network
@@ -125,66 +176,56 @@ class NetworkProperties:
                 - horizontal_tidal_window_input: assembly of specific information that defines the restriction (see specific input classes in the notebook)
         """
         # Loops over the number of types of restrictions that may hold for different classes of vessels
-        if 'Data' not in network.nodes[node]['Horizontal tidal restriction']:
-            network.nodes[node]['Horizontal tidal restriction']['Data'] = []
-            network.nodes[node]['Horizontal tidal restriction']['Limit'] = []
-            network.nodes[node]['Horizontal tidal restriction']['Type'] = []
-            network.nodes[node]['Horizontal tidal restriction']['Specification'] = [[], [], [], [], [], []]
+        columns = vessel_characteristic_conditions.__members__.keys()
+        column_operators = [values.value[1] for values in vessel_characteristic_conditions.__members__.values()]
+
+        specification_df = pd.DataFrame(columns=columns)
+        if 'Horizontal tidal restriction' not in network.nodes[node]:
+            network.nodes[node]['Horizontal tidal restriction'] = {}
+        if 'Specifications' not in network.nodes[node]['Horizontal tidal restriction']:
+            network.nodes[node]['Horizontal tidal restriction']['Specifications'] = specification_df
+        else:
+            specification_df = network.nodes[node]['Horizontal tidal restriction']['Specifications']
 
         for input_data in horizontal_tidal_window_input:
             # Unpacks the data for flood and ebb and appends it to a list
             window_specifications = input_data.window_specifications
             current_velocity_data = input_data.data
-            network.nodes[node]['Horizontal tidal restriction']['Limit'].append({})
-            if window_specifications.window_method == 'Maximum':
-                max_flood_current = input_data.window_specifications.current_velocity_values['Flood']
-                max_ebb_current = input_data.window_specifications.current_velocity_values['Ebb']
-                # tidal_periods = input_data.data['Horizontal tidal periods'].values
-                # flood_start_times = [np.datetime64(time[0]) for time in tidal_periods if time[1] == 'Flood Start']
-                # ebb_start_times = [np.datetime64(time[0]) for time in tidal_periods if time[1] == 'Ebb Start']
-                # cross_current_limit_dataframe = pd.DataFrame(columns=['Limit', 'Tide'])
-                # for flood_start, ebb_start in zip(flood_start_times, ebb_start_times):
-                #     cross_current_limit_dataframe.at[flood_start - np.timedelta64(1, 'ns'), 'Limit'] = max_ebb_current
-                #     cross_current_limit_dataframe.at[flood_start - np.timedelta64(1, 'ns'), 'Tide'] = 'Ebb'
-                #     cross_current_limit_dataframe.at[flood_start, 'Limit'] = max_flood_current
-                #     cross_current_limit_dataframe.at[flood_start, 'Tide'] = 'Flood'
-                #     cross_current_limit_dataframe.at[ebb_start - np.timedelta64(1, 'ns'), 'Limit'] = max_flood_current
-                #     cross_current_limit_dataframe.at[ebb_start - np.timedelta64(1, 'ns'), 'Tide'] = 'Flood'
-                #     cross_current_limit_dataframe.at[ebb_start, 'Limit'] = max_ebb_current
-                #     cross_current_limit_dataframe.at[ebb_start, 'Tide'] = 'Ebb'
-                # cross_current_limit_dataframe['Limit'] = cross_current_limit_dataframe.Limit.astype(float)
-                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Flood'] = max_flood_current
-                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Ebb'] = max_ebb_current
-
-            elif window_specifications.window_method == 'Point-based':
-                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Flood'] = input_data.window_specifications.current_velocity_values['Flood']
-                network.nodes[node]['Horizontal tidal restriction']['Limit'][-1]['Ebb'] = input_data.window_specifications.current_velocity_values['Ebb']
-
-            # Appends the specific data regarding the type of the restriction to data structure
-            network.nodes[node]['Horizontal tidal restriction']['Data'].append(current_velocity_data)
-            network.nodes[node]['Horizontal tidal restriction']['Type'].append(window_specifications)
-
-            # Unpacks the data for the different vessel criteria and appends it to a list
-            vessel_characteristics_type = []
-            vessel_characteristics_spec = []
-            vessel_characteristics_value = []
-            vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
-            for info in vessel_characteristics:
-                vessel_characteristics_type.append(info)
-                vessel_characteristics_spec.append(vessel_characteristics[info][0])
-                vessel_characteristics_value.append(vessel_characteristics[info][1])
 
             # Unravels the boolean operators between the restrictions and appends it to a list
             vessel_method_list = []
-            sign_list = input_data.vessel_specifications.vessel_method.split()
-            for sign in sign_list:
-                if sign[0] != '(' and sign[-1] != ')' and sign != 'x':
-                    vessel_method_list.append(sign)
+            index = len(specification_df)
 
-            # Appends the specific data regarding the properties for which the restriction holds to data structure
-            network.nodes[node]['Horizontal tidal restriction']['Specification'][0].append(vessel_characteristics_type)
-            network.nodes[node]['Horizontal tidal restriction']['Specification'][1].append(vessel_characteristics_value)
-            network.nodes[node]['Horizontal tidal restriction']['Specification'][2].append(input_data.vessel_specifications.vessel_direction)
-            network.nodes[node]['Horizontal tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
-            network.nodes[node]['Horizontal tidal restriction']['Specification'][4].append(vessel_method_list)
-            network.nodes[node]['Horizontal tidal restriction']['Specification'][5].append([input_data.condition['Origin'], input_data.condition['Destination']])
+            sign = input_data.vessel_specifications.vessel_method
+            combinations = sign.split(' or ')
+            new_combination_indexes = []
+            new_combination_index = index
+            for combination in combinations:
+                new_combination_index += combination.count('x')
+                new_combination_indexes.append(new_combination_index)
+            # Unpacks the data for the different vessel criteria and appends it to a list
+            vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
+            values = {key: value[1] for key, value in vessel_characteristics.items()}
+            values = {key: value if isinstance(value, list) else [value] for key, value in values.items()}
+            value_keys = values.keys()
+            values = itertools.product(*(values[Name] for Name in values))
+            new_values = []
+            for combination in values:
+                new_values.append({key:value for key,value in zip(value_keys,combination)})
+
+            for i, combination in enumerate(new_values):
+                for restriction_type,restriction in combination.items():
+                    specification_df.loc[index+i, 'Data'] = current_velocity_data
+                    specification_df.loc[index+i, 'Restriction'] = window_specifications
+                    specification_df.loc[index+i, restriction_type] = restriction
+                    if index in new_combination_indexes:
+                        index += 1
+
+        specification_df = specification_df.reset_index(drop=True)
+        for column,operator in zip(columns,column_operators):
+            if operator in ['>=','>']:
+                specification_df.loc[specification_df[specification_df[column].isna()].index,column] = -999.
+            elif operator in ['<=','<']:
+                specification_df.loc[specification_df[specification_df[column].isna()].index,column] = 999.
+
+        network.nodes[node]['Horizontal tidal restriction']['Specifications'] = specification_df

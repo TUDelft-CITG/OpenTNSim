@@ -393,12 +393,20 @@ class HasMultiDiGraph:
     @property
     def multidigraph(self):
         # create a multidigraph copy of graph if it was not done before
-        if not hasattr(self.env, "_multidigraph"):
-            self.env._multidigraph = self.copy()
-        return self.env._multidigraph
+        if hasattr(self,"env"):
+            graph_class = self.env
+        else:
+            graph_class = self
+        if not hasattr(graph_class, "_multidigraph"):
+            graph_class._multidigraph = self.copy()
+        return graph_class._multidigraph
 
     def copy(self):
-        multidigraph = self.env.FG
-        if not isinstance(self.env.FG, nx.MultiDiGraph):
+        if hasattr(self,"env"):
+            graph_class = self.env
+        else:
+            graph_class = self
+        multidigraph = graph_class.FG
+        if not isinstance(graph_class.FG, nx.MultiDiGraph):
             multidigraph = nx.MultiDiGraph(multidigraph)
         return multidigraph

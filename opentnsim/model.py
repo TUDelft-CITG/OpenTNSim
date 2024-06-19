@@ -150,13 +150,24 @@ class VesselGenerator:
             process = environment.process(vessel.move())
             vessel.process = process
 
+class Hydrodata:
+    def __init__(self,hydrodynamic_data):
+        self.hydrodynamic_data = hydrodynamic_data
+        return
 
 class Simulation(core.Identifiable):
     """
     A class to generate vessels from a database
     """
 
-    def __init__(self, graph, simulation_start=datetime.datetime.now(),simulation_duration=None, simulation_stop=None, hydrodynamic_data=None, vessel_speed_data=None, scenario=None):
+    def __init__(self,
+                 graph,
+                 simulation_start=datetime.datetime.now(),
+                 simulation_duration=None,
+                 simulation_stop=None,
+                 hydrodynamic_start_time=datetime.datetime.now(),
+                 hydrodynamic_data_path=None,
+                 vessel_speed_data_path=None, scenario=None):
         """ 
         Initialization 
         
@@ -186,35 +197,10 @@ class Simulation(core.Identifiable):
         self.environment.vessels = []
         self.output = {}
 
-        if not vessel_speed_data:
-            vessel_speed_data = None
-            # vessel_speed_data = pd.DataFrame(columns=['edge', 'speed'])
-            # for idx, edge in enumerate(graph.edges):
-            #     vessel_speed_data.at[idx, 'edge'] = edge
-            #     vessel_speed_data.at[idx, 'speed'] = np.NaN
-            # vessel_speed_data.set_index('edge')
-
-        if not hydrodynamic_data:
-            hydrodynamic_data = None
-            # hydrodynamic_data = xr.Dataset()
-            # stations = list(graph.nodes)
-            # times = [simulation_start, simulation_stop]
-            # layers = [0]
-            # static_data = [np.NaN] * len(graph.nodes)
-            # dynamic_time_data = [[np.NaN, np.NaN]] * len(graph.nodes)
-            # dynamic_time_layer_data = [[[np.NaN], [np.NaN]]] * len(graph.nodes)
-            # MBL = xr.DataArray(data=static_data, dims='STATION', coords=dict(STATION=stations))
-            # wlev = xr.DataArray(data=dynamic_time_data, dims=['STATION', 'TIME'],
-            #                     coords=dict(STATION=stations, TIME=times))
-            # cvel = xr.DataArray(data=dynamic_time_layer_data, dims=['STATION', 'TIME', 'LAYER'],
-            #                     coords=dict(STATION=stations, TIME=times, LAYER=layers))
-            # hydrodynamic_data['MBL'] = MBL
-            # hydrodynamic_data['Water level'] = wlev
-            # hydrodynamic_data['Current velocity'] = cvel
-
-        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(env=self.environment,
-                                                                                              hydrodynamic_data=hydrodynamic_data,
-                                                                                              vessel_speed_data=vessel_speed_data)
+        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(FG=graph,
+                                                                                              hydrodynamic_start_time = hydrodynamic_start_time,
+                                                                                              hydrodynamic_information_path = hydrodynamic_data_path,
+                                                                                              vessel_speed_data_path=vessel_speed_data_path)
 
     def add_vessels(
         self,

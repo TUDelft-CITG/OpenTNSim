@@ -227,7 +227,7 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
         self.distance_to_lock_doors = distance_to_lock_doors
         self.passing_allowed = passing_allowed
         self.speed_reduction_factor = speed_reduction_factor
-        super().__init__(length = self.effective_lineup_area_length, remaining_length = self.effective_lineup_area_length, *args, **kwargs)
+        super().__init__(length = self.effective_lineup_area_length, init = self.effective_lineup_area_length, *args, **kwargs)
 
         """Initialization"""
         # Lay-Out
@@ -348,7 +348,7 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
                                                          codes=[[], []],
                                                          names=['Name', 'VesselName']),
                                      columns=['direction','ETA','ETD','Length','Beam','Draught','VesselType','Priority'])
-        super().__init__(capacity=100,length = lock_length, remaining_length = lock_length, *args, **kwargs)
+        super().__init__(capacity=100,length = lock_length, init = lock_length, *args, **kwargs)
         self.simulation_start = self.env.simulation_start.timestamp()
         self.next_lockage = {start_node: simpy.PriorityResource(self.env, capacity=100),
                              end_node: simpy.PriorityResource(self.env, capacity=100),}

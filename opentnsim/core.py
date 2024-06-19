@@ -319,6 +319,7 @@ class Movable(Locatable, Routable, Log):
         # default velocity based on current speed.
         timeout = self.distance / self.current_speed
         yield self.env.timeout(timeout)
+
         if next_node:
             status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))
         else:
@@ -354,7 +355,7 @@ class Movable(Locatable, Routable, Log):
             self.v = self.power2v(self, edge, upperbound)
 
         if 'vessel_traffic_service' in dir(self.env):
-            self.v = self.env.vessel_traffic_service.provide_speed((self.origin,self.destination))
+            self.v = self.env.vessel_traffic_service.provide_speed_over_edge(self,(self.origin,self.destination))
 
         return self.v
 
