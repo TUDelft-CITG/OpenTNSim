@@ -6,6 +6,7 @@ import opentnsim.plot as plot
 import opentnsim.model as model
 import opentnsim.energy as energy
 import opentnsim.strategy as strategy
+import opentnsim.displacement as displacement
 
 """Top-level package for OpenTNSim."""
 
