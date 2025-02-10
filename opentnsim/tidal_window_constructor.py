@@ -119,16 +119,6 @@ class NetworkProperties:
         for input_data in vertical_tidal_window_input:
             window_specifications = input_data.window_specifications
 
-            # Unpacks the data for the different vessel criteria and appends it to a list
-            vessel_characteristics_type = []
-            vessel_characteristics_spec = []
-            vessel_characteristics_value = []
-            vessel_characteristics = input_data.vessel_specifications.characteristic_dicts()
-            for info in vessel_characteristics:
-                vessel_characteristics_type.append(info)
-                vessel_characteristics_spec.append(vessel_characteristics[info][0])
-                vessel_characteristics_value.append(vessel_characteristics[info][1])
-
             # Unravels the boolean operators between the restrictions and appends it to a list
             vessel_method_list = []
             index = len(specification_df)
@@ -151,14 +141,16 @@ class NetworkProperties:
                 new_values.append({key: value for key, value in zip(value_keys, combination)})
 
             for i, combination in enumerate(new_values):
+                if not combination:
+                    specification_df.loc[index + i, 'Data'] = node
+                    specification_df.loc[index + i, 'Restriction'] = window_specifications
                 for restriction_type,restriction in combination.items():
-                    specification_df.loc[index+i, 'Data'] = node
-                    specification_df.loc[index+i, 'Restriction'] = window_specifications
-                    specification_df.loc[index+i, restriction_type] = restriction
+                    specification_df.loc[index + i, 'Data'] = node
+                    specification_df.loc[index + i, 'Restriction'] = window_specifications
+                    specification_df.loc[index + i, restriction_type] = restriction
                     if index in new_combination_indexes:
                         index += 1
 
-        specification_df = specification_df.reset_index(drop=True)
         for column, operator in zip(columns, column_operators):
             if operator in ['>=', '>']:
                 specification_df.loc[specification_df[specification_df[column].isna()].index, column] = -999.

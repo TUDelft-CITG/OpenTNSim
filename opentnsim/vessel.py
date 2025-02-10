@@ -4,6 +4,7 @@ import networkx as nx
 import numpy as np
 import math
 import bisect
+import pandas as pd
 
 from opentnsim import core, output, graph
 
@@ -53,6 +54,7 @@ class VesselProperties:
         B,
         L,
         v = 4,
+        bound = 'inbound',
         h_min=None,
         T=None,
         H=None,
@@ -88,7 +90,7 @@ class VesselProperties:
         self._h_min = h_min
         # alternative options for port accessibility
         self.v = v
-        self.bound = 'inbound'
+        self.bound = bound
         # alternative options for energy consumption
         self.safety_margin = safety_margin
         self.h_squat = h_squat
@@ -209,4 +211,6 @@ class IsVessel(core.Identifiable,
                output.HasOutput):
 
     def __init__(self, *args, **kwargs):
+        self.overruled_speed = pd.DataFrame(data=[], columns=['Speed'],index=pd.MultiIndex.from_arrays([[], [], []], names=('node_start', 'node_stop', 'k')))
         super().__init__(*args, **kwargs)
+

@@ -20,6 +20,7 @@ import pytz
 import shapely.geometry
 import simpy
 import xarray as xr
+from netCDF4 import Dataset
 
 from opentnsim import core, output, graph
 
@@ -68,6 +69,7 @@ class HasLockChamber(core.Movable, graph.HasMultiDiGraph):
                     direction = 0
 
                 if not lock.next_lockage[end_node].users:
+                    #print('Request', self.id, datetime.datetime.fromtimestamp(self.env.now))
                     self.lock_information[lock.name].next_lockage = lock.next_lockage[end_node].request()
                     self.lock_information[lock.name].next_lockage.obj = self
                     self.lock_information[lock.name].next_lockage_length = lock.next_lockage_length[end_node].get(self.L)
@@ -77,10 +79,12 @@ class HasLockChamber(core.Movable, graph.HasMultiDiGraph):
                     if not lock.next_lockage[start_node].users:
                         self.lock_information[lock.name].access_lock_door2 = doors2.request(priority=-1)
                         self.lock_information[lock.name].access_lock_door2.obj = self
-                        if lock.node_open != start_node:
+                        if lock.node_open != start_node and not len(lock.resource.users):
                             lineup_area = lock.find_previous_lineup_area(self,direction)
+                            #print('empty conversion wayyyy before')
                             yield from lock.request_empty_lock_conversion(lineup_area,self,start_node,timeout_required=False)
                 else:
+                    #print('Request',self.id,datetime.datetime.fromtimestamp(self.env.now))
                     self.lock_information[lock.name].next_lockage = lock.next_lockage[end_node].request()
                     self.lock_information[lock.name].next_lockage.obj = self
                     self.lock_information[lock.name].next_lockage_length = lock.next_lockage_length[end_node].get(self.L)
@@ -349,7 +353,13 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
                                                          names=['Name', 'VesselName']),
                                      columns=['direction','ETA','ETD','Length','Beam','Draught','VesselType','Priority'])
         super().__init__(capacity=100,length = lock_length, init = lock_length, *args, **kwargs)
-        self.simulation_start = self.env.simulation_start.timestamp()
+        if self.env.vessel_traffic_service.hydrodynamic_information_path:
+            global hydrodynamic_data
+            hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
+            global hydrodynamic_times
+            hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + self.env.vessel_traffic_service.hydrodynamic_start_time
+
+        self.lock_pos_length = simpy.Container(self.env, capacity=lock_length, init=lock_length)
         self.next_lockage = {start_node: simpy.PriorityResource(self.env, capacity=100),
                              end_node: simpy.PriorityResource(self.env, capacity=100),}
         self.next_lockage_length = {start_node: simpy.Container(self.env, capacity=lock_length, init=lock_length),
@@ -372,13 +382,17 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
             self.node_open = random.choice([start_node, end_node])
         index_node_open = list(self.multidigraph.nodes).index(self.node_open)
 
-        if 'hydrodynamic_information' in dir(self.env.vessel_traffic_service):
-            iter_data = self.env.vessel_traffic_service.hydrodynamic_information.sel(STATIONS=index_node_open).interp(TIME=np.arange(self.env.simulation_start, self.env.simulation_stop, datetime.timedelta(seconds=self.time_step)))
-            self.water_level = iter_data['Water level'].copy()
-            self.salinity = iter_data['Salinity'].copy()
-            self.discharge_res = np.abs(self.water_level.rename('Residual discharge').copy())*0
-            self.discharge_saline = np.abs(self.water_level.rename('Saline discharge').copy())*0
-            self.discharge_fresh = np.abs(self.water_level.rename('Fresh discharge').copy())*0
+        if self.start_node == hydrodynamic_data['STATION'][0]:
+            index_node_open = 0
+        else:
+            index_node_open = 1
+
+        if self.env.vessel_traffic_service.hydrodynamic_information_path:
+            self.water_level = hydrodynamic_data['Water level'][index_node_open,:]
+            #self.salinity = iter_data['Salinity'].copy()
+            # self.discharge_res = np.abs(self.water_level.rename('Residual discharge').copy())*0
+            # self.discharge_saline = np.abs(self.water_level.rename('Saline discharge').copy())*0
+            # self.discharge_fresh = np.abs(self.water_level.rename('Fresh discharge').copy())*0
 
         for detector_node,lock_node in zip(self.detector_nodes,[self.start_node,self.end_node]):
             if 'Detector' not in self.multidigraph.nodes[detector_node]:
@@ -427,9 +441,11 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
             yield vessel.lock_information[self.name].waiting_during_converting
         if not hold_request:
             if timeout_required:
+                #print('empty converting bro')
                 yield from self.convert_chamber(vessel.env, approach_node, vessel)
                 delattr(vessel.lock_information[self.name], "empty_converting")
             else:
+                #print('empty converting bro')
                 yield from self.convert_chamber(vessel.env, approach_node, vessel, timeout_required=False)
         lineup_area.converting_while_in_line_up_area[lineup_area.start_node].release(
             vessel.lock_information[self.name].waiting_during_converting
@@ -505,213 +521,6 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
 
         return waiting_area
 
-    def exchange_flux_time_series_calculator(self, T_door_open, time_index):
-        index_start_node = list(self.multidigraph.nodes).index(self.start_node)
-        index_end_node = list(self.multidigraph.nodes).index(self.end_node)
-        index_node_open = list(self.multidigraph.nodes).index(self.node_open)
-        time_value = self.salinity.TIME[time_index].values
-        S_lock = self.salinity[time_index]
-        S_lock_harbour = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_node_open].interp(TIME=time_value).values
-        )
-        S_lock_average = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_start_node].interp(TIME=time_value).values
-            + self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_end_node].interp(TIME=time_value).values
-        ) / 2
-        Wlev_lock = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_node_open].interp(TIME=time_value).values
-        )
-        V_lock = self.lock_length * self.lock_width * (Wlev_lock + self.lock_depth)
-        v_exch = 0.5 * np.sqrt(
-            self.grav_acc * (0.8 * abs(S_lock_harbour - S_lock) / (1000 + 0.8 * S_lock_average)) * (Wlev_lock + self.lock_depth)
-        )
-        if v_exch != 0:
-            T_LE = (2 * self.lock_length) / v_exch
-        else:
-            T_LE = 0
-
-        time = np.arange(0, np.min([T_door_open, 2 * 3600]), self.time_step)
-        Q = []
-        V_tot = 0
-        for t in enumerate(time):
-            if t[0] == 0:
-                continue
-            delta_t = t[1] - time[t[0] - 1]
-            if T_LE != 0:
-                delta_V = V_lock * (np.tanh(t[1] / T_LE) - np.tanh(time[t[0] - 1] / T_LE))
-            else:
-                delta_V = 0
-            V_tot += delta_V
-            V_tot += delta_V
-            Q.append(delta_V / delta_t)
-            M = (S_lock_harbour - self.salinity[time_index].values) * delta_V
-            S_lock = (S_lock * V_lock + M) / V_lock
-            self.salinity[time_index + t[0]] = S_lock.values
-            if not self.discharge_saline[time_index + t[0]].values:
-                self.discharge_saline[time_index + t[0]] += delta_V / delta_t
-            if not self.discharge_fresh[time_index + t[0]].values:
-                self.discharge_fresh[time_index + t[0]] += -delta_V / delta_t
-            if np.abs(S_lock.values - S_lock_harbour) < 0.25:
-                outer_salinity = self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_node_open].interp(
-                    TIME=np.arange(self.env.simulation_start, self.env.simulation_stop, datetime.timedelta(seconds=self.time_step))
-                )
-                self.salinity[time_index + t[0] :] = outer_salinity[time_index + t[0] :]
-                break
-
-    def levelling_to_harbour(self, V_ship, levelling_time, side, delay=0):
-        index_start_node = list(self.multidigraph.nodes).index(self.start_node)
-        index_end_node = list(self.multidigraph.nodes).index(self.end_node)
-        time_index = np.absolute(
-            self.env.vessel_traffic_service.hydrodynamic_information.TIME.values
-            - np.datetime64(datetime.datetime.fromtimestamp(self.env.now + delay))
-        ).argmin()
-        time_index_start = np.absolute(
-            self.salinity.TIME.values - np.datetime64(datetime.datetime.fromtimestamp(self.env.now + delay))
-        ).argmin()
-        time_value_start = self.salinity.TIME.values[time_index_start]
-        time_index_stop = np.absolute(
-            self.salinity.TIME.values - np.datetime64(datetime.datetime.fromtimestamp(self.env.now + levelling_time + delay))
-        ).argmin()
-        time = np.arange(self.env.now + delay, self.env.now + levelling_time + delay, self.time_step)
-        S_lock_start = self.salinity.values[time_index_start]
-        WLev_lock_inner = self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_end_node].interp(
-            TIME=time_value_start
-        )
-        V_lock_inner = self.lock_length * self.lock_width * (WLev_lock_inner.values + self.lock_depth)
-        WLev_lock_outer = self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_start_node].interp(
-            TIME=time_value_start
-        )
-        V_lock_outer = self.lock_length * self.lock_width * (WLev_lock_outer.values + self.lock_depth)
-        if side == self.start_node:
-            WLev_to_side = WLev_lock_inner
-            WLev_from_side = WLev_lock_outer
-            V_to_side = V_lock_inner
-            V_from_side = V_lock_outer
-            if WLev_from_side < WLev_to_side:
-                filling = True
-                S_to_side = self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_end_node].values[
-                    time_index
-                ]
-            else:
-                filling = False
-        else:
-            WLev_to_side = WLev_lock_outer
-            WLev_from_side = WLev_lock_inner
-            V_to_side = V_lock_outer
-            V_from_side = V_lock_inner
-            if WLev_from_side < WLev_to_side:
-                filling = True
-                S_to_side = self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_start_node].values[
-                    time_index
-                ]
-            else:
-                filling = False
-
-        if filling:
-            V_levelling = self.lock_length * self.lock_width * (WLev_to_side - WLev_from_side)
-            S_lock_final = S_lock = (S_lock_start * (V_from_side - V_ship) + V_levelling * S_to_side) / (V_to_side - V_ship)
-            dt = (self.water_level.TIME.values[1] - self.water_level.TIME.values[0]) / np.timedelta64(1, "s")
-            for t in enumerate(time):
-                sum_disch = abs((self.discharge_res[time_index_start : (time_index_start + t[0])]).sum())
-                S_lock = (S_lock_start * (V_from_side - V_ship) + sum_disch * dt * S_to_side) / (
-                    (V_from_side + sum_disch * dt) - V_ship
-                )
-                self.salinity[time_index_start + t[0]] = S_lock
-            V_loss_lev = 0
-
-        else:
-            V_levelling = self.lock_length * self.lock_width * (WLev_from_side - WLev_to_side)
-            S_lock_final = S_lock = S_lock_start
-            V_loss_lev = V_levelling
-
-        self.salinity[time_index_stop:] = S_lock
-        return V_levelling, S_lock_final, V_loss_lev
-
-    def sailing_out_to_harbour(self, V_ship, time_index):
-        index_node_open = list(self.multidigraph.nodes).index(self.node_open)
-        S_lock = self.salinity[time_index]
-        time_value = self.salinity.TIME.values[time_index]
-        WLev_lock_harbour = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_node_open].interp(TIME=time_value).values
-        )
-        S_lock_harbour = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_node_open].interp(TIME=time_value).values
-        )
-        V_lock_harbour = self.lock_length * self.lock_width * (WLev_lock_harbour + self.lock_depth)
-        S_lock = (S_lock * (V_lock_harbour - V_ship) + V_ship * S_lock_harbour) / V_lock_harbour
-        start_time_passing_door = self.env.now
-        end_time_passing_door = self.env.now + 0.5 * self.doors_open
-        passing_time_door = np.arange(start_time_passing_door, end_time_passing_door, self.time_step)
-        if self.node_open == self.start_node:
-            for t in enumerate(passing_time_door):
-                if time_index + t[0] < len(self.discharge_fresh):
-                    self.discharge_saline[time_index + t[0]] += V_ship / (end_time_passing_door - start_time_passing_door)
-                    self.discharge_res[time_index + t[0]] += V_ship / (end_time_passing_door - start_time_passing_door)
-        else:
-            for t in enumerate(passing_time_door):
-                if time_index + t[0] < len(self.discharge_fresh):
-                    self.discharge_fresh[time_index + t[0]] += -V_ship / (end_time_passing_door - start_time_passing_door)
-                    self.discharge_res[time_index + t[0]] += -V_ship / (end_time_passing_door - start_time_passing_door)
-        return S_lock
-
-    def door_open_harbour(self, T_door_open, time_index_start):
-        index_start_node = list(self.multidigraph.nodes).index(self.start_node)
-        index_end_node = list(self.multidigraph.nodes).index(self.end_node)
-        index_node_open = list(self.multidigraph.nodes).index(self.node_open)
-        time_value = self.salinity.TIME[time_index_start].values
-        S_lock = self.salinity[time_index_start]
-        S_lock_harbour = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_node_open].interp(TIME=time_value).values
-        )
-        S_lock_average = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_start_node].interp(TIME=time_value).values
-            + self.env.vessel_traffic_service.hydrodynamic_information["Salinity"][index_end_node].interp(TIME=time_value).values
-        ) / 2
-        WLev_lock_harbour = (
-            self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_node_open].interp(TIME=time_value).values
-        )
-        V_lock_harbour = self.lock_length * self.lock_width * (WLev_lock_harbour + self.lock_depth)
-        self.exchange_flux_time_series_calculator(T_door_open, time_index_start)
-
-        # A loop that breaks at a certain moment assigning discharges to the sluice? (discharge should be separated for positive negative (and maybe sluice gates))
-        if S_lock_harbour != S_lock:
-            T_exch = self.lock_length / (
-                0.5
-                * np.sqrt(
-                    self.grav_acc
-                    * (0.8 * abs(S_lock_harbour - S_lock) / (1000 + 0.8 * S_lock_average))
-                    * (WLev_lock_harbour + self.lock_depth)
-                )
-            )
-            V_exch = V_lock_harbour * np.tanh(T_door_open / (2 * T_exch))
-        else:
-            V_exch = 0
-        M_exch = (S_lock_harbour - S_lock) * V_exch
-        S_lock = (S_lock * V_lock_harbour + M_exch) / V_lock_harbour
-        return S_lock
-
-    def sailing_in_from_harbour(self, V_ship, time_index):
-        S_lock = self.salinity[time_index]
-        start_time_passing_door = self.env.now
-        end_time_passing_door = start_time_passing_door + 0.5 * self.doors_close
-        passing_time_door = np.arange(start_time_passing_door, end_time_passing_door, self.time_step)
-        if self.node_open == self.end_node:
-            for t in enumerate(passing_time_door):
-                if time_index + t[0] < len(self.discharge_saline) - 1:
-                    self.discharge_saline[time_index + t[0]] = V_ship / (end_time_passing_door - start_time_passing_door)
-                    self.discharge_res[time_index + t[0]] = V_ship / (end_time_passing_door - start_time_passing_door)
-        if self.node_open == self.start_node:
-            for t in enumerate(passing_time_door):
-                if time_index + t[0] < len(self.discharge_fresh) - 1:
-                    self.discharge_fresh[time_index + t[0]] = -V_ship / (end_time_passing_door - start_time_passing_door)
-                    self.discharge_res[time_index + t[0]] = -V_ship / (end_time_passing_door - start_time_passing_door)
-        return S_lock
-
-    def total_ship_volume_in_lock(self):
-        volume = 0
-        for user in self.resource.users:
-            volume += user.obj.B * user.obj.L * user.obj.T
-        return volume
 
     def determine_levelling_time(self, new_level, delay=0):
         """Function which calculates the operation time: based on the constant or nearest in the signal of the water level difference
@@ -719,112 +528,50 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         Input:
             - environment: see init function"""
 
-        def calculate_discharge(lock, z, to_wlev, from_wlev, time_index, time_step):
-            two_gz = np.sqrt(2 * 9.81 * z)
-            if to_wlev[time_step] <= from_wlev[time_step]:
-                lock.water_level[time_index + time_step] = z + to_wlev[time_step]
-                if z != 0:
-                    if lock.node_open == lock.end_node:
-                        lock.discharge_res[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
-                        lock.discharge_fresh[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
-                    else:
-                        lock.discharge_res[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
-                        lock.discharge_saline[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
-                else:
-                    lock.discharge_res[time_step + time_index] = 0
-                    lock.discharge_fresh[time_step + time_index] = 0
-            else:
-                lock.water_level[time_index + time_step] = to_wlev[time_step] - z
-                if z != 0:
-                    if lock.node_open == lock.end_node:
-                        lock.discharge_res[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
-                        lock.discharge_saline[time_step + time_index] += lock.disch_coeff * lock.opening_area * two_gz
-                    else:
-                        lock.discharge_res[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
-                        lock.discharge_fresh[time_step + time_index] += -1 * lock.disch_coeff * lock.opening_area * two_gz
-                else:
-                    lock.discharge_res[time_step + time_index] += 0
-                    lock.discharge_fresh[time_step + time_index] += 0
-
         index_start_node = list(self.multidigraph.nodes).index(self.start_node)
         index_end_node = list(self.multidigraph.nodes).index(self.end_node)
-        if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
-            time = np.arange(
-                0,
-                2 * 3600,
-                (
-                    self.env.vessel_traffic_service.hydrodynamic_information["TIME"].values[1]
-                    - self.env.vessel_traffic_service.hydrodynamic_information["TIME"].values[0]
-                )
-                / np.timedelta64(1, "s"),
-            )
-            time_index = np.absolute(
-                self.env.vessel_traffic_service.hydrodynamic_information.TIME.values
-                - np.datetime64(datetime.datetime.fromtimestamp(self.env.now + delay))
-            ).argmin()
-            time_value = self.env.vessel_traffic_service.hydrodynamic_information.TIME.values[time_index]
-            wlev_outer = self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_start_node][
-                time_index : (time_index + len(time))
-            ].interp(TIME=np.arange(time_value, time_value + np.timedelta64(2, "h"), datetime.timedelta(seconds=self.time_step)))
-            wlev_inner = self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_end_node][
-                time_index : (time_index + len(time))
-            ].interp(TIME=np.arange(time_value, time_value + np.timedelta64(2, "h"), datetime.timedelta(seconds=self.time_step)))
-            H = abs(wlev_outer[0] - wlev_inner[0]).values
-            z = abs(wlev_outer[0] - wlev_inner[0]).values
+
+        if self.start_node == hydrodynamic_data['STATION'][0]:
+            index_start_node = 0
+            index_end_node = 1
+        else:
+            index_start_node = 1
+            index_end_node = 0
+
+        if self.env.vessel_traffic_service.hydrodynamic_information_path:
+            time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now + delay))).argmin()
+            wlev_outer = hydrodynamic_data["Water level"][index_start_node][time_index]
+            wlev_inner = hydrodynamic_data["Water level"][index_end_node][time_index]
+            H = abs(wlev_outer - wlev_inner)
+            z = abs(wlev_outer - wlev_inner)
             if self.node_open == self.end_node:
-                from_wlev = wlev_inner
-                to_wlev = wlev_outer
                 index_node_doors = index_start_node
             else:
-                from_wlev = wlev_outer
-                to_wlev = wlev_inner
                 index_node_doors = index_end_node
-            time_index = np.absolute(
-                self.discharge_res.TIME.values
-                - self.env.vessel_traffic_service.hydrodynamic_information["Water level"][index_start_node].TIME[time_index].values
-            ).argmin()
-            calculate_discharge(self, z, to_wlev, from_wlev, time_index, 0)
-            time_series = np.arange(0, 2 * 3600, self.time_step)
 
+            time_series = np.arange(0, 2 * 3600, self.time_step)
             for t in enumerate(time_series):
                 if t[0] == 0:
                     continue
+
                 if t[0] + time_index >= len(self.water_level) - 1:
                     levelling_time = t[1]
                     break
 
-                dz = (
-                    np.sqrt(H)
-                    - ((self.disch_coeff * self.opening_area * np.sqrt(2 * 9.81)) / (2 * (self.lock_length * self.lock_width)))
-                    * (t[1] + self.time_step / 2)
-                ) ** 2 - (
-                    np.sqrt(H)
-                    - ((self.disch_coeff * self.opening_area * np.sqrt(2 * 9.81)) / (2 * (self.lock_length * self.lock_width)))
-                    * (t[1] - self.time_step / 2)
-                ) ** 2
+                dz = ((np.sqrt(H) - ((self.disch_coeff * self.opening_area * np.sqrt(2 * 9.81)) / (2 * (self.lock_length * self.lock_width))) * (t[1] + self.time_step / 2)) ** 2 -
+                      (np.sqrt(H) - ((self.disch_coeff * self.opening_area * np.sqrt(2 * 9.81)) / (2 * (self.lock_length * self.lock_width))) * (t[1] - self.time_step / 2)) ** 2)
                 z += dz
-                calculate_discharge(self, z, to_wlev, from_wlev, time_index, t[0])
+                #calculate_discharge(self, z, to_wlev, from_wlev, time_index, t[0])
                 if z <= 0.05:
                     levelling_time = t[1]
-                    outer_water_level = self.env.vessel_traffic_service.hydrodynamic_information["Water level"][
-                        index_node_doors
-                    ].interp(
-                        TIME=np.arange(
-                            self.env.simulation_start, self.env.simulation_stop, datetime.timedelta(seconds=self.time_step)
-                        )
-                    )
-                    self.water_level[(t[0] + time_index + 1) :] = outer_water_level[(t[0] + time_index + 1) :]
+                    outer_water_level = hydrodynamic_data["Water level"][index_node_doors]
+                    self.water_level[(t[0] + time_index + 1):] = outer_water_level[(t[0] + time_index + 1):]
                     break
             else:
                 levelling_time = 0
 
         else:
             levelling_time = self.levelling_time
-
-        # V_levelling, S_lock, V_loss_lev are not used
-        if 'hydrodynamic_information' in dir(self.env.vessel_traffic_service):
-            _ = self.levelling_to_harbour(self.total_ship_volume_in_lock(), levelling_time, self.node_open, delay)
-
         return levelling_time
 
     def convert_chamber(self, environment, new_level, vessel, timeout_required=True):
@@ -837,61 +584,17 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
 
         self.converting_chamber = True
 
-        def door_open():
-            if len(self.logbook) > 4:
-                t_doors_open = time.mktime(pd.Timestamp(self.logbook[-4]["Timestamp"]).timetuple())
-            else:
-                t_doors_open = time.mktime(self.env.simulation_start.timetuple())
-
-            if timeout_required:
-                T_door_open = self.env.now - t_doors_open - 0.5 * self.doors_open
-            else:
-                T_door_open = self.env.now + self.doors_close - t_doors_open - 0.5 * self.doors_open
-
-            if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
-                time_index_start = np.absolute(
-                    self.water_level.TIME.values - np.datetime64(datetime.datetime.fromtimestamp(self.env.now - T_door_open))
-                ).argmin()
-                time_index_stop = np.absolute(
-                    self.water_level.TIME.values
-                    - np.datetime64(datetime.datetime.fromtimestamp(self.env.now - 0.5 * self.doors_close))
-                ).argmin()
-                S_lock = self.door_open_harbour(T_door_open - 0.5 * self.doors_close, time_index_start)
-                time_series = self.env.vessel_traffic_service.hydrodynamic_information["TIME"].values
-                if time_index_stop != len(time_series) - 2:
-                    self.salinity[time_index_stop:] = S_lock
-
         # Close the doors
         self.log_entry_v0("Lock doors closing start", self.env.now, self.output.copy(), self.node_open)
-        if "hydrodynamic_information" in dir(self.env.vessel_traffic_service):
-            time_index = np.max(
-                [
-                    0,
-                    np.absolute(
-                        self.salinity.TIME.values
-                        - np.datetime64(
-                            datetime.datetime.fromtimestamp(
-                                time.mktime(pd.Timestamp(self.logbook[-1]["Timestamp"]).timetuple()) + 0.5 * self.doors_close
-                            )
-                        )
-                    ).argmin(),
-                ]
-            )
-            if len(self.resource.users):
-                volume = 0
-                for user in self.resource.users:
-                    volume += user.obj.L * user.obj.B * user.obj.T
-                S_lock = self.sailing_in_from_harbour(volume, time_index)
-                self.salinity[time_index:] = S_lock
 
         if timeout_required:
             yield environment.timeout(self.doors_close)
             self.log_entry_v0("Lock doors closing stop", environment.now, self.output.copy(), self.node_open)
-            door_open()
+            #door_open()
             vessel.levelling_time = self.determine_levelling_time(new_level)
         else:
             self.log_entry_v0("Lock doors closing stop", environment.now + self.doors_close, self.output.copy(), self.node_open)
-            door_open()
+            #door_open()
             vessel.levelling_time = self.determine_levelling_time(new_level, delay=self.doors_close)
 
         # Convert the chamber
@@ -926,24 +629,6 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
                 self.node_open,
             )
 
-        if "hydrodynamic_information" in dir(vessel.env.vessel_traffic_service):
-            time_index = np.max(
-                [
-                    0,
-                    np.absolute(
-                        self.salinity.TIME.values
-                        - np.datetime64(
-                            datetime.datetime.fromtimestamp(time.mktime(pd.Timestamp(self.logbook[-1]["Timestamp"]).timetuple()))
-                        )
-                    ).argmin(),
-                ]
-            )
-            if len(self.resource.users):
-                volume = 0
-                for user in self.resource.users:
-                    volume += user.obj.L * user.obj.B * user.obj.T
-                S_lock = self.sailing_out_to_harbour(volume, time_index)
-                self.salinity[(time_index + int(0.5 * self.doors_open / self.time_step)) :] = S_lock
 
         if timeout_required:
             yield environment.timeout(self.doors_open)
@@ -991,12 +676,16 @@ class IsLockComplex(IsLockChamber):
                  passing_allowed_in_lineup_area_B=False,
                  speed_reduction_factor_lineup_area_A=0.75,
                  speed_reduction_factor_lineup_area_B=0.75,
+                 disch_coeff = 0.5,
+                 opening_area = 10,
                  k = 0,
                  *args,
                  **kwargs):
 
         super().__init__(*args, **kwargs)
         self.name = self.name
+        self.disch_coeff = disch_coeff
+        self.opening_area = opening_area
         self.start_node = self.start_node
         self.end_node = self.end_node
         self.lineup_area_A_length = lineup_area_A_length
@@ -1047,6 +736,7 @@ class IsLockComplex(IsLockChamber):
                                               effective_lineup_area_length=self.effective_lineup_area_B_length,
                                               passing_allowed=self.passing_allowed_in_lineup_area_B,
                                               speed_reduction_factor=self.speed_reduction_factor_lineup_area_B)
+
 
     def create_time_distance_diagram(self,
                                      vessels,
@@ -1503,6 +1193,7 @@ class PassLock:
             - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network"""
 
         # Imports the properties of the line-up area the vessel is assigned to
+        #print('in line up',vessel.id,datetime.datetime.fromtimestamp(vessel.env.now))
         k_lineup = sorted(
             vessel.multidigraph[start_node][end_node],
             key=lambda x: vessel.multidigraph[start_node][end_node][x]["geometry"].length
@@ -1590,6 +1281,7 @@ class PassLock:
                                     )
                                 yield vessel.env.timeout(waiting_time)
 
+
                 if vessel.logbook[-1]["Message"] == "Waiting in line-up area stop":
                     vessel.logbook[-1]["Timestamp"] = pd.Timestamp(
                         datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
@@ -1652,7 +1344,7 @@ class PassLock:
 
                     Input:
                         - timeout_required: a boolean which defines whether the requesting vessel receives a timeout."""
-
+                    #print('door 1 requested', vessel.id, datetime.datetime.fromtimestamp(vessel.env.now))
                     vessel.lock_information[lock.name].access_lock_door1 = door1.request(priority=priority)
                     vessel.lock_information[lock.name].access_lock_door1.obj = vessel
 
@@ -1690,12 +1382,15 @@ class PassLock:
                                     priority."""
 
                     if "access_lock_door2" not in dir(vessel.lock_information[lock.name]):
+                        #print('door 2 requested',vessel.id,datetime.datetime.fromtimestamp(vessel.env.now))
+                        #print(vessel.id,'door 2 claim')
                         vessel.lock_information[lock.name].access_lock_door2 = door2.request(priority=priority)
                         vessel.lock_information[lock.name].access_lock_door2.obj = vessel
-                        if hold_request:
+                        if hold_request and (len(door2.users) > 1):
                             door2.release(door2.users[0])
                         if timeout_required:
                             yield vessel.lock_information[lock.name].access_lock_door2
+                        #print('door 2 done')
 
                         priority = lock.check_priority(vessel, direction)
                         lock.schedule.loc[(lock.name, vessel.name), :] = [
@@ -1719,9 +1414,8 @@ class PassLock:
 
                     No input required."""
 
-                    yield from secure_lock_cycle(
-                        vessel, direction, lock, door2, priority=priority, timeout_required=timeout_required
-                    )
+                    yield from secure_lock_cycle(vessel, direction, lock, door2, priority=priority, timeout_required=timeout_required)
+                    #print(vessel.id, 'release door 2')
                     door2.release(vessel.lock_information[lock.name].access_lock_door2)
                     delattr(vessel.lock_information[lock.name], "access_lock_door2")
 
@@ -1736,92 +1430,109 @@ class PassLock:
                 # Request procedure of the lock doors, which is dependent on the current moment within the lock cycle:
                 # If lock is at same side:
                 if approach_node == lock.node_open:
+                    #print(vessel.id, 'lock at same side')
                     # Request to start the lock cycle
                     if lock.resource.users:
+                        #print(vessel.id, 'lock users')
+                        waiting_for_next_cycle = False
+                        if len(door2.users) and door2.users[0].obj.route != vessel.route:
+                            for waiting_vessel in door2.queue:
+                                route = waiting_vessel.obj.route
+                                if route == vessel.route:
+                                    waiting_for_next_cycle = True
+                                    break
+                        #print(waiting_for_next_cycle)
+                        if waiting_for_next_cycle:
+                            yield from wait_for_next_lockage(vessel, direction, lock, door2)
+
+                        #print('Lock users same side', vessel.id)
+                        #print('approaching lock')
+                        yield from request_approach_lock_chamber(vessel, direction, lock, door1, timeout_required=True)
                         if door1.users != [] and door1.users[0].priority == -1:
-                            yield from request_approach_lock_chamber(vessel, direction, lock, door1,
-                                                                     timeout_required=True)
-                            yield from secure_lock_cycle(vessel, direction, lock, door2, timeout_required=False)
+                            #print(vessel.id,'holding door 2')
+                            yield from secure_lock_cycle(vessel, direction, lock, door2, hold_request=True, timeout_required=False)
                         else:
-                            yield from request_approach_lock_chamber(vessel, direction, lock, door1,
-                                                                     timeout_required=True)
-                            yield from secure_lock_cycle(vessel, direction, lock, door2, hold_request=True,
-                                                         timeout_required=False)
+                            #print('woopsie')
+                            #print('requesting door 2')
+                            yield from secure_lock_cycle(vessel, direction, lock, door2, hold_request=True,timeout_required=False)
+                            #print('woopsie',len(door1.users),len(door2.users),vessel.id)
                     else:
+                        #print(vessel.id, 'no lock users')
+                        #print('No lock users same side',vessel.id)
                         for user in lineup_area.line_up_area[lineup_area.start_node].users:
                             if "empty_converting" in dir(user.obj.lock_information[lock.name]):
-                                if time.mktime(
-                                        pd.Timestamp(lock.logbook[-1]["Timestamp"]).timetuple()) - vessel.env.now > 0:
-                                    yield vessel.env.timeout(
-                                        time.mktime(
-                                            pd.Timestamp(lock.logbook[-1]["Timestamp"]).timetuple()) - vessel.env.now
-                                    )
+                                #print('waiting for empty conversion')
+                                if time.mktime(pd.Timestamp(lock.logbook[-1]["Timestamp"]).timetuple()) - vessel.env.now > 0:
+                                    yield vessel.env.timeout(time.mktime(pd.Timestamp(lock.logbook[-1]["Timestamp"]).timetuple()) - vessel.env.now)
 
-                        if (door2.users != [] and door2.users[0].priority == -1) or (
-                                door1.queue != [] and door1.queue[0].priority == 0
-                        ):
-                            yield from request_approach_lock_chamber(vessel, direction, lock, door1,
-                                                                     timeout_required=True)
-                            yield from secure_lock_cycle(vessel, direction, lock, door2, hold_request=True,
-                                                         timeout_required=False)
-                        elif door1.users != [] and door1.users[0].priority == -1:
+                        if door1.users != [] and door1.users[0].priority == -1:
+                            #print('waiting on next lock cycle start')
                             yield from wait_for_next_lockage(vessel, direction, lock, door2)
-                            yield from request_approach_lock_chamber(vessel, direction, lock, door1,
-                                                                     timeout_required=True)
-                            yield from secure_lock_cycle(vessel, direction, lock, door2, timeout_required=False)
+                            #print('waiting on next lock cycle stop')
+
+                        #print('approaching lock')
+                        yield from request_approach_lock_chamber(vessel, direction, lock, door1, timeout_required=True)
+
+                        if door2.users != [] and door2.users[0].priority == -1:
+                            #print('holding door 2')
+                            yield from secure_lock_cycle(vessel, direction, lock, door2, hold_request=True,timeout_required=False)
                         else:
-                            yield from request_approach_lock_chamber(vessel, direction, lock, door1,
-                                                                     timeout_required=False)
+                            #print('requesting door 2')
                             yield from secure_lock_cycle(vessel, direction, lock, door2, timeout_required=False)
 
                 # If lock is at other side
                 else:
+                    #print(vessel.id,'lock at other side')
                     # If there are no lock users or vessels waiting at the other side of the lock to enter:
                     if not lock.in_next_lockage[node_door1].users and not lock.resource.users:
-                        if door2.users and door2.users[0].priority:
-                            yield from request_approach_lock_chamber(
-                                vessel, direction, lock, door1, timeout_required=waiting_required
-                            )
-                            yield from secure_lock_cycle(
-                                vessel, direction, lock, door2, hold_request=True, timeout_required=waiting_required
-                            )
+                        #print(vessel.id, 'no lock users')
+                        #print('No lock users other side', vessel.id)
+                        if door2.users and door2.users[0].priority == -1:
+                            #print('approaching lock')
+                            yield from request_approach_lock_chamber(vessel, direction, lock, door1, timeout_required=waiting_required)
+                            #print('hi')
+                            if door2.users and door2.users[0].priority == -1:
+                                #print('holding door 2')
+                                yield from secure_lock_cycle(vessel, direction, lock, door2, hold_request=True, timeout_required=False)
+                            else:
+                                #print('requesting door 2')
+                                yield from secure_lock_cycle(vessel, direction, lock, door2, timeout_required=waiting_required)
+                            #print('ho')
                         else:
-                            yield from request_approach_lock_chamber(vessel, direction, lock, door1,
-                                                                     timeout_required=False)
+                            #print('going with the flowing')
+                            yield from request_approach_lock_chamber(vessel, direction, lock, door1, timeout_required=False)
                             yield from secure_lock_cycle(vessel, direction, lock, door2, timeout_required=False)
 
-                    # - Else, if no users on other side:
+                    # - Else, if users other side:
                     else:
+                        #print(vessel.id, 'lock users')
+                        #print(vessel.id,datetime.datetime.fromtimestamp(vessel.env.now),'waiting start')
+                        #print(len(door2.users),len(door1.users))
+                        #print('waiting on next lock cycle start')
                         yield from wait_for_next_lockage(vessel, direction, lock, door2)
+                        # print('waiting on next lock cycle start 2')
+                        # yield from wait_for_next_lockage(vessel, direction, lock, door1)
+                        #print(vessel.id,datetime.datetime.fromtimestamp(vessel.env.now),'waiting stop')
                         if approach_node != lock.node_open:
+                            #print('waiting on next lock cycle start 3')
                             yield from wait_for_next_lockage(vessel, direction, lock, door2)
+                        #print('waiting on next lock cycle stop -- approaching lock')
+                        yield from request_approach_lock_chamber(vessel, direction, lock, door1,timeout_required=waiting_required)
                         if door2.users != [] and door2.users[0].priority == -1:
-                            yield from request_approach_lock_chamber(
-                                vessel, direction, lock, door1, timeout_required=waiting_required
-                            )
-                            yield from secure_lock_cycle(
-                                vessel, direction, lock, door2, hold_request=True, timeout_required=waiting_required
-                            )
+                            #print('holding door2 hi')
+                            yield from secure_lock_cycle(vessel, direction, lock, door2, hold_request=True, timeout_required=False)
+                            #print('holding door2 ho')
                         else:
-                            yield from request_approach_lock_chamber(
-                                vessel, direction, lock, door1, timeout_required=waiting_required
-                            )
+                            #print('requesting door2')
                             yield from secure_lock_cycle(vessel, direction, lock, door2, timeout_required=False)
 
                 if approach_node != lock.node_open:
-                    if any(
-                            [
-                                "empty_converting" in dir(user.obj.lock_information[lock.name])
-                                for user in lock.in_next_lockage[node_door2].users
-                            ]
-                    ):
-                        yield from lock.request_empty_lock_conversion(
-                            lineup_area, vessel, approach_node, hold_request=True, timeout_required=waiting_required
-                        )
+                    if any(["empty_converting" in dir(user.obj.lock_information[lock.name]) for user in lock.in_next_lockage[node_door2].users]):
+                        #print(vessel.id, datetime.datetime.fromtimestamp(vessel.env.now), 'empty conversion -- holding request')
+                        yield from lock.request_empty_lock_conversion(lineup_area, vessel, approach_node, hold_request=True, timeout_required=waiting_required)
                     else:
-                        yield from lock.request_empty_lock_conversion(
-                            lineup_area, vessel, approach_node, timeout_required=waiting_required
-                        )
+                        #print(vessel.id, datetime.datetime.fromtimestamp(vessel.env.now), 'empty conversion before lock')
+                        yield from lock.request_empty_lock_conversion(lineup_area, vessel, approach_node, timeout_required=waiting_required)
 
             # Determines start time of potential waiting time
             vessel.lock_information[lock.name].distance_to_lock_doors1 = lineup_area.distance_to_lock_doors + vessel.lock_information[lock.name].lineup_dist
@@ -1893,18 +1604,24 @@ class PassLock:
                 priority,
             ]
 
+            lineup_position = vessel.lock_information[lock.name].lineup_position
+            if direction and not lock.lineup_area_A_length:
+                lineup_position = vessel.logbook[-1]["Geometry"]
+            elif not lock.lineup_area_B_length:
+                lineup_position = vessel.logbook[-1]["Geometry"]
+
             if vessel.env.now != start_waiting_time_in_lineup_area:
                 vessel.log_entry_v0(
                     "Waiting in line-up area start",
                     start_waiting_time_in_lineup_area,
                     vessel.output.copy(),
-                    vessel.lock_information[lock.name].lineup_position,
+                    lineup_position,
                 )
                 vessel.log_entry_v0(
                     "Waiting in line-up area stop",
                     vessel.env.now,
                     vessel.output.copy(),
-                    vessel.lock_information[lock.name].lineup_position,
+                    lineup_position,
                 )
 
             vessel.update_lineup_area_status_report(lineup_area, lineup_area.start_node)
@@ -1955,10 +1672,7 @@ class PassLock:
                 - node_lock: a string which includes the name of the node at which the lock chamber is located in the network """
 
         #Imports the properties of the lock chamber the vessel is assigned to
-        k = sorted(
-            vessel.multidigraph[start_node][end_node],
-            key=lambda x: vessel.multidigraph[start_node][end_node][x]["geometry"].length,
-        )[0]
+        k = sorted(vessel.multidigraph[start_node][end_node],key=lambda x: vessel.multidigraph[start_node][end_node][x]["geometry"].length,)[0]
         locks = vessel.multidigraph.edges[start_node, end_node, k]["Lock"]
         for lock in locks:
             if lock.name not in vessel.lock_information.keys():
@@ -1980,86 +1694,93 @@ class PassLock:
                 location_first_set_of_lock_doors = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel,previous_waiting_area.node,lock.start_node,lock.distance_doors_B_from_waiting_area_B+previous_waiting_area.distance_from_node)
                 vessel.lock_information[lock.name].lock_position = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel,lock.end_node, lock.start_node,lock.distance_doors_B_from_waiting_area_B + vessel.lock_information[lock.name].lock_dist + previous_waiting_area.distance_from_node)
 
-            vessel.log_entry_v0(
-                "Sailing to first set of lock doors start", vessel.env.now, vessel.output.copy(), vessel.logbook[-1]["Geometry"],
-            )
+            vessel.log_entry_v0("Sailing to first set of lock doors start", vessel.env.now, vessel.output.copy(), vessel.logbook[-1]["Geometry"],)
             yield vessel.env.timeout(np.max([0, distance_from_start_edge_to_lock_doors]) / vessel.v)
-            vessel.log_entry_v0(
-                "Sailing to first set of lock doors stop", vessel.env.now, vessel.output.copy(), location_first_set_of_lock_doors,
-            )
+            vessel.log_entry_v0("Sailing to first set of lock doors stop", vessel.env.now, vessel.output.copy(), location_first_set_of_lock_doors,)
 
-            vessel.log_entry_v0(
-                "Sailing to assigned location in lock start", vessel.env.now, vessel.output.copy(), location_first_set_of_lock_doors,
-            )
+            vessel.lock_information[lock.name].lock_dist = lock.lock_pos_length.level - 0.5*vessel.L
+            if direction:
+                distance = lock.distance_doors_A_from_waiting_area_A + lock.distance_waiting_area_A_from_start_node+vessel.lock_information[lock.name].lock_dist
+                vessel.lock_information[lock.name].lock_position = lock.env.vessel_traffic_service.provide_location_over_edges(vessel,lock.start_node,lock.end_node,distance)
+            else:
+                distance = lock.distance_doors_B_from_waiting_area_B + lock.distance_waiting_area_B_from_end_node + vessel.lock_information[lock.name].lock_dist
+                vessel.lock_information[lock.name].lock_position = lock.env.vessel_traffic_service.provide_location_over_edges(vessel,lock.end_node,lock.start_node,distance)
+            vessel.log_entry_v0("Sailing to assigned location in lock start", vessel.env.now, vessel.output.copy(), location_first_set_of_lock_doors,)
             yield vessel.env.timeout(np.max([0, (vessel.lock_information[lock.name].lock_dist)]) / vessel.v)
-            vessel.log_entry_v0(
-                "Sailing to assigned location in lock stop",
-                vessel.env.now,
-                vessel.output.copy(),
-                vessel.lock_information[lock.name].lock_position,
-            )
+            vessel.log_entry_v0("Sailing to assigned location in lock stop",vessel.env.now,vessel.output.copy(),vessel.lock_information[lock.name].lock_position,)
 
             if lock.mandatory_time_gap_between_entering_vessels is None:
                 if direction:
                     end_node = lock.end_node
+                    #print(vessel.id,'release door 2')
                     yield lock.doors_1[lock.start_node].release(vessel.lock_information[lock.name].access_lock_door1)
 
                 elif not direction:
                     end_node = lock.start_node
+                    #print(vessel.id, 'release door 2')
                     yield lock.doors_2[lock.end_node].release(vessel.lock_information[lock.name].access_lock_door1)
 
             # Determines current time and reports this to vessel's log as start time of lock passage
-            vessel.log_entry_v0(
-                "Passing lock start", vessel.env.now, vessel.output.copy(), vessel.lock_information[lock.name].lock_position,
-            )
+            vessel.log_entry_v0("Passing lock start", vessel.env.now, vessel.output.copy(), vessel.lock_information[lock.name].lock_position,)
 
             # Request access to pass the next line-up area after the lock chamber has levelled, so that vessels will leave the lock chamber one-by-one
             if not opposing_lineup_area.passing_allowed:
-                vessel.lock_information[lock.name].departure_lock = opposing_lineup_area.pass_line_up_area[
-                    opposing_lineup_area.start_node
-                ].request(priority=-1)
+                vessel.lock_information[lock.name].departure_lock = opposing_lineup_area.pass_line_up_area[opposing_lineup_area.start_node].request(priority=-1)
                 vessel.lock_information[lock.name].departure_lock.obj = vessel
 
             # Formal request access to lock chamber and calculate position within the lock chamber
-            for user in lock.in_next_lockage[end_node].users:
-                if user.obj.id != vessel.id:
-                    yield lock.length.put(lock.length.capacity - lock.length.level)
-                else:
-                    break
+            # for user in lock.in_next_lockage[end_node].users:
+            #     if user.obj.id != vessel.id:
+            #         yield lock.length.put(lock.length.capacity - lock.length.level)
+            #     else:
+            #         break
 
-            lock.length.get(vessel.L)
-            vessel.lock_information[lock.name].access_lock = lock.resource.request()
-            vessel.lock_information[lock.name].access_lock.obj = vessel
+            #lock.length.get(vessel.L)
             user_found = False
-            remaining_lock_capacity = lock.length.level
+            #print(lock.lock_pos_length.level,'arr')
+            remaining_lock_capacity = lock.lock_pos_length.level-vessel.L
             vessels_not_in_lock = []
+            #'Hi', vessels_not_in_lock, vessel.id, datetime.datetime.fromtimestamp(vessel.env.now))
+            #print(vessel.id,len(lock.next_lockage[end_node].users))
             for user in lock.next_lockage[end_node].users:
+                #print(user_found)
                 if user_found:
+                    #print(remaining_lock_capacity,user.obj.L,vessel.L)
                     if user.obj.L < remaining_lock_capacity:
                         vessels_not_in_lock.append(user.obj)
                         remaining_lock_capacity -= user.obj.L
-                        yield lock.length.get(lock.length.capacity)
-                        lock.length.put(lock.length.capacity)
-                        lock.length.get(vessel.L)
+                        #print(lock.length.level,lock.lock_pos_length.level)
+                        if lock.lock_pos_length.level == lock.length.level:
+                            yield lock.length.get(lock.length.capacity)
                         break
                     else:
                         break
                 if user.obj.id == vessel.id:
+                    #print(vessel.id,'hi')
                     user_found = True
-            lock.in_next_lockage[end_node].release(vessel.lock_information[lock.name].in_next_lockage)
 
+            vessel.lock_information[lock.name].access_lock = lock.resource.request()
+            vessel.lock_information[lock.name].access_lock.obj = vessel
+            lock.in_next_lockage[end_node].release(vessel.lock_information[lock.name].in_next_lockage)
+            lock.lock_pos_length.get(np.ceil(vessel.L))
+            #print('Other lock users?',vessels_not_in_lock,vessel.id,datetime.datetime.fromtimestamp(vessel.env.now))
             if vessels_not_in_lock and not lock.used_as_one_way_traffic_regulation:
                 vessel.lock_information[lock.name].in_lock = True
+                #print(vessel.id, 'Waiting for other vessel start',datetime.datetime.fromtimestamp(vessel.env.now))
                 yield lock.length.get(lock.length.capacity)
+                #print(vessel.id, 'Waiting for other vessel stop', datetime.datetime.fromtimestamp(vessel.env.now))
                 lock.length.put(lock.length.capacity)
+                # lock.length.get(vessel.L)
+                #print('after converting', lock.length.level)
+                vessel.update_lock_status_report(lock)
                 for lock_user in lock.resource.users:
                     if lock_user.obj.id != vessel.id:
                         continue
                     lock_user.obj.lock_information[lock.name].converting = True
                     if not opposing_lineup_area.passing_allowed:
                         yield vessel.lock_information[lock.name].departure_lock
-                if lock.resource.users[-1].obj.id == vessel.id:
-                    lock.length.put(lock.length.capacity - lock.length.level)
+                # if lock.resource.users[-1].obj.id == vessel.id:
+                #     lock.length.put(lock.length.capacity - lock.length.level)
 
             #Determines if the vessel explicitly has to request the conversion of the lock chamber (only the last entered vessel) or can go with a previously made request
             else:
@@ -2068,20 +1789,24 @@ class PassLock:
                 if lock.next_lockage_length[end_node].level and not lock.next_lockage_length[end_node].get_queue:
                     lock.next_lockage_length[end_node].get(lock.next_lockage_length[end_node].level)
                 vessel.update_lock_status_report(lock)
+                #print(vessel.id,'conversion start',datetime.datetime.fromtimestamp(vessel.env.now))
+                #print(vessel.id, datetime.datetime.fromtimestamp(vessel.env.now), 'conversion in lock')
                 yield from lock.convert_chamber(vessel.env, end_node,vessel)
+                #print(vessel.id,'conversion end',datetime.datetime.fromtimestamp(vessel.env.now))
                 old_level = lock.length.level
-                yield lock.length.put(lock.length.capacity - lock.length.level)
-                lock.length.get(lock.length.capacity - old_level)
+                #print('old level',old_level,lock.length.capacity - lock.length.level)
+                if lock.length.capacity - lock.length.level:
+                    lock.length.put(lock.length.capacity - lock.length.level)
+                #print('after converting',lock.length.level)
+
                 if not opposing_lineup_area.passing_allowed:
                     yield vessel.lock_information[lock.name].departure_lock
 
             #Calculates and reports the total locking time
-            vessel.log_entry_v0(
-                "Passing lock stop", vessel.env.now, vessel.output.copy(), vessel.lock_information[lock.name].lock_position,
-            )
-            vessel.lock_information[lock.name].lineup_position = vessel.multidigraph.nodes[opposing_lineup_area.end_node][
-                "geometry"
-            ]
+            lock.lock_pos_length.put(np.ceil(vessel.L))
+            #print(lock.lock_pos_length.level,'lft')
+            vessel.log_entry_v0("Passing lock stop", vessel.env.now, vessel.output.copy(), vessel.lock_information[lock.name].lock_position,)
+            vessel.lock_information[lock.name].lineup_position = vessel.multidigraph.nodes[opposing_lineup_area.end_node]["geometry"]
             next_waiting_areas = vessel.multidigraph.nodes[lock.end_node]['Waiting area']
             for next_waiting_area in next_waiting_areas:
                 if next_waiting_area.name == lock.name:
@@ -2118,20 +1843,15 @@ class PassLock:
                     lock.doors_1[lock.start_node].release(vessel.lock_information[lock.name].access_lock_door2)
 
                 lock.resource.release(vessel.lock_information[lock.name].access_lock)
-                departure_lock_length = lock.length.put(vessel.L)  # put length back in lock
-                yield departure_lock_length
+                #departure_lock_length = lock.length.put(vessel.L)  # put length back in lock
+                #yield departure_lock_length
 
             # Releases the vessel's formal request of the lock chamber and returns its occupied length in the lock chamber
             lock.resource.release(vessel.lock_information[lock.name].access_lock)
-            lock.length.put(vessel.L)
+            #lock.length.put(vessel.L)
 
-            if (
-                    not lock.resource.users
-                    and lock.next_lockage_length[end_node].capacity - lock.next_lockage_length[end_node].level
-            ):
-                lock.next_lockage_length[end_node].put(
-                    lock.next_lockage_length[end_node].capacity - lock.next_lockage_length[end_node].level
-                )
+            if (not lock.resource.users and lock.next_lockage_length[end_node].capacity - lock.next_lockage_length[end_node].level):
+                lock.next_lockage_length[end_node].put(lock.next_lockage_length[end_node].capacity - lock.next_lockage_length[end_node].level)
 
             lock.next_lockage[end_node].release(vessel.lock_information[lock.name].next_lockage)
 
@@ -2164,40 +1884,65 @@ class PassLock:
                 if waiting_area.name == lineup_area.name:
                     break
 
+            if direction:
+                distance_to_end_node_from_lineup_end = lock.distance_doors_B_from_waiting_area_B + lock.distance_waiting_area_B_from_end_node - (lock.distance_lineup_area_B_to_lock_doors_B+lock.lineup_area_B_length)
+            else:
+                distance_to_end_node_from_lineup_end = lock.distance_doors_A_from_waiting_area_A + lock.distance_waiting_area_A_from_start_node - (lock.distance_lineup_area_A_to_lock_doors_A+lock.lineup_area_A_length)
+
             distance_to_lineup_end_from_edge_end = lineup_area.lineup_area_length+waiting_area.distance_from_node
-            location_end_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel, start_node, end_node, distance_to_lineup_end_from_edge_end)
+            location_end_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel, start_node, end_node, distance_to_lineup_end_from_edge_end+distance_to_end_node_from_lineup_end)
             distance_to_lineup_start_from_edge_end = distance_to_lineup_end_from_edge_end - lineup_area.lineup_area_length
-            location_start_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel,start_node,end_node,distance_to_lineup_start_from_edge_end)
+            location_start_lineup_area = vessel.env.vessel_traffic_service.provide_location_over_edges(vessel,start_node,end_node,distance_to_lineup_start_from_edge_end+distance_to_end_node_from_lineup_end)
 
             vessel.lock_information[lock.name].in_lock = False
             if lineup_area.distance_to_lock_doors:
-                vessel.log_entry_v0(
-                    "Sailing to line-up area start", vessel.env.now, vessel.output.copy(), vessel.logbook[-1]["Geometry"],
-                )
+                vessel.log_entry_v0("Sailing to line-up area start", vessel.env.now, vessel.output.copy(), vessel.logbook[-1]["Geometry"],)
                 yield vessel.env.timeout(np.max([0, lineup_area.distance_to_lock_doors]) / vessel.v)
-                vessel.log_entry_v0(
-                    "Sailing to line-up area stop", vessel.env.now, vessel.output.copy(), location_end_lineup_area,
-                )
+                vessel.log_entry_v0("Sailing to line-up area stop", vessel.env.now, vessel.output.copy(), location_end_lineup_area,)
 
             vessel.log_entry_v0("Passing line-up area start", vessel.env.now, vessel.output.copy(), location_end_lineup_area)
             yield vessel.env.timeout(lineup_area.lineup_area_length / vessel.v)
             vessel.log_entry_v0("Passing line-up area stop", vessel.env.now, vessel.output.copy(), location_start_lineup_area)
             vessel.distance = waiting_area.distance_from_node
 
+            # Releases the vessel's request to enter the second line-up area
             if not lineup_area.passing_allowed:
+
                 # Releases the vessel's request of their second encountered set of lock doors
-                if (
-                        direction
-                        and lock.doors_2[lock.end_node].users
-                        and lock.doors_2[lock.end_node].users[0].obj.id == vessel.id
-                ):
+                if (direction and lock.doors_2[lock.end_node].users and lock.doors_2[lock.end_node].users[0].obj.id == vessel.id):
                     lock.doors_2[lock.end_node].release(vessel.lock_information[lock.name].access_lock_door2)
-                if (
-                        not direction
-                        and lock.doors_1[lock.start_node].users
-                        and lock.doors_1[lock.start_node].users[0].obj.id == vessel.id
-                ):
+                    #print('DOORS RELEASED', vessel.id, datetime.datetime.fromtimestamp(vessel.env.now))
+                if (not direction and lock.doors_1[lock.start_node].users and lock.doors_1[lock.start_node].users[0].obj.id == vessel.id):
                     lock.doors_1[lock.start_node].release(vessel.lock_information[lock.name].access_lock_door2)
-                # Releases the vessel's request to enter the second line-up area
-                lineup_area.pass_line_up_area[lineup_area.start_node].release(
-                    vessel.lock_information[lock.name].departure_lock)
+                    #print('DOORS RELEASED', vessel.id, datetime.datetime.fromtimestamp(vessel.env.now))
+            lineup_area.pass_line_up_area[lineup_area.start_node].release(vessel.lock_information[lock.name].departure_lock)
+
+            if direction:
+                distance = lock.distance_doors_B_from_waiting_area_B - lock.distance_lineup_area_B_to_lock_doors_B - lock.lineup_area_B_length
+                if distance:
+                    vessel.log_entry_v0("Sailing from line-up area to waiting area start", vessel.env.now, vessel.output.copy(),location_start_lineup_area)
+                    yield vessel.env.timeout(distance / vessel.v)
+                    #print(distance, 'I')
+                    location_waiting_area = lock.env.vessel_traffic_service.provide_location_over_edges(vessel,lock.end_node,lock.start_node,lock.distance_waiting_area_B_from_end_node)
+                    vessel.log_entry_v0("Sailing from line-up area to waiting area stop", vessel.env.now, vessel.output.copy(),location_waiting_area)
+                distance = lock.distance_waiting_area_B_from_end_node
+                if distance:
+                    vessel.log_entry_v0("Sailing from waiting area to edge end start", vessel.env.now,vessel.output.copy(), location_waiting_area)
+                    yield vessel.env.timeout(distance / vessel.v)
+                    vessel.log_entry_v0("Sailing from waiting area to edge end stop", vessel.env.now,vessel.output.copy(), self.env.FG.nodes[lock.end_node]['Geometry'])
+            else:
+                distance = lock.distance_doors_A_from_waiting_area_A - lock.distance_lineup_area_A_to_lock_doors_A - lock.lineup_area_A_length
+                if distance:
+                    vessel.log_entry_v0("Sailing from line-up area to waiting area start", vessel.env.now, vessel.output.copy(),location_start_lineup_area)
+                    yield vessel.env.timeout(distance / vessel.v)
+                    #print(distance,'II')
+                    location_waiting_area = lock.env.vessel_traffic_service.provide_location_over_edges(vessel,lock.start_node,lock.end_node,lock.distance_waiting_area_A_from_start_node)
+                    vessel.log_entry_v0("Sailing from line-up area to waiting area stop", vessel.env.now, vessel.output.copy(), location_waiting_area)
+                distance = lock.distance_waiting_area_A_from_start_node
+                if distance:
+                    vessel.log_entry_v0("Sailing from waiting area to edge end start", vessel.env.now,vessel.output.copy(), location_waiting_area)
+                    yield vessel.env.timeout(distance / vessel.v)
+                    vessel.log_entry_v0("Sailing from waiting area to edge end stop", vessel.env.now,vessel.output.copy(), self.env.FG.nodes[lock.start_node]['Geometry'])
+
+
+

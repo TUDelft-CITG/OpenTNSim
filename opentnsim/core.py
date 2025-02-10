@@ -206,6 +206,9 @@ class Movable(Locatable, Routable, Log):
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
         """
 
+        # Look first ahead
+        yield from self.look_ahead_to_node(self.origin)
+
         # time-out if arrival time lies in future
         yield self.env.timeout((self.metadata['arrival_time'] - self.env.simulation_start).total_seconds())
         self.arrival_time = self.env.now
@@ -239,49 +242,36 @@ class Movable(Locatable, Routable, Log):
 
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
-            self.current_node, self.next_node = edge # origin and destination
-            start_location = nx.get_node_attributes(self.env.FG, "geometry")[self.current_node]
-            end_location = nx.get_node_attributes(self.env.FG, "geometry")[self.next_node]
+            self.origin, self.destination = edge # origin and destination
+            start_location = nx.get_node_attributes(self.env.FG, "geometry")[self.origin]
+            end_location = nx.get_node_attributes(self.env.FG, "geometry")[self.destination]
 
             # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
-            k = sorted(self.multidigraph[self.current_node][self.next_node],key=lambda x: self.multidigraph[self.current_node][self.next_node][x]['geometry'].length)[0]
-            status_report = self.update_sailing_status_report(self.current_node, self.next_node, (self.current_node, self.next_node, k))
-            self.log_entry_v0("Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+            self.k = sorted(self.multidigraph[self.origin][self.destination],key=lambda x: self.multidigraph[self.origin][self.destination][x]['geometry'].length)[0]
+            status_report = self.update_sailing_status_report(self.origin, self.destination, (self.origin, self.destination, self.k))
+            self.log_entry_v0("Sailing from node {} to node {} start".format(self.origin, self.destination),
                               self.env.now, status_report, start_location)
 
-            try:
-                yield from self.pass_node(self.current_node)
-            except simpy.exceptions.Interrupt as e:
-                break
+            yield from self.pass_node(self.origin)
 
             # update to current position
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.origin]
             self.position_on_route = index
 
             # are we already at destination?
-            if self.next_node == self.current_node:
+            if self.destination == self.origin:
                 break
 
-            try:
-                yield from self.pass_edge(self.current_node, self.next_node, end_location)
-            except simpy.exceptions.Interrupt as e:
-                break
-
-            try:
-                yield from self.complete_pass_edge(self.next_node)
-            except simpy.exceptions.Interrupt as e:
-                break
+            yield from self.pass_edge(self.origin, self.destination, end_location)
+            yield from self.complete_pass_edge(self.destination)
 
             # we arrived at destination
             # update to new position
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.next_node]
-            self.current_node = self.next_node
+            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.destination]
             self.position_on_route = index + 1
 
-            try:
-                yield from self.look_ahead_to_node(self.next_node)
-            except simpy.exceptions.Interrupt as e:
-                break
+            yield from self.look_ahead_to_node(self.destination)
+
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
@@ -294,57 +284,58 @@ class Movable(Locatable, Routable, Log):
     def pass_node(self, node):
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
+            yield from on_pass_node_function(node)
+
+    def sailing_event(self,timeout):
+        sailing_start = self.env.now
+        current_speed = self.current_speed
+        while timeout > 0:
             try:
-                yield from on_pass_node_function(node)
-            except simpy.exceptions.Interrupt as e:
-                logger.debug("Re-routing", exc_info=True)
-                raise simpy.exceptions.Interrupt('Re-routing')
+                yield self.env.timeout(timeout)
+                timeout = 0
+            except simpy.Interrupt as e:
+                self.distance = self.distance - (self.env.now - sailing_start) * current_speed
+                current_speed = self.current_speed
+                timeout = self.distance / current_speed
+
 
     def pass_edge(self, origin, destination, end_location):
         self.origin = origin
         self.destination = destination
-        k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
-        self.distance = self.multidigraph.edges[origin, destination, k]['length']
+        self.k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
+        self.distance = self.multidigraph.edges[self.origin, self.destination, self.k]['length']
         next_node = None
         if self.route[-1] != destination:
             next_node = self.route[self.route.index(destination)+1]
 
         for on_pass_edge_function in self.on_pass_edge_functions:
-            try:
-                yield from on_pass_edge_function(origin, destination)
-            except simpy.exceptions.Interrupt as e:
-                logger.debug("Re-routing", exc_info=True)
-                raise simpy.exceptions.Interrupt('Re-routing')
+            yield from on_pass_edge_function(self, origin, destination)
 
         # default velocity based on current speed.
         timeout = self.distance / self.current_speed
-        yield self.env.timeout(timeout)
+        yield from self.sailing_event(timeout)
 
         if next_node:
-            status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))
+            status_report = self.update_sailing_status_report(self.destination,next_node,(self.origin, self.destination, self.k))
         else:
-            status_report = self.update_sailing_status_report(self.next_node,self.next_node,(self.current_node, self.next_node, k))
-        self.log_entry_v0("Sailing from node {} to node {} stop".format(self.current_node, self.next_node), self.env.now, status_report, end_location)
+            status_report = self.update_sailing_status_report(self.destination,self.destination,(self.origin, self.destination, self.k))
+        self.log_entry_v0("Sailing from node {} to node {} stop".format(self.origin, self.destination), self.env.now, status_report, end_location)
         self.geometry = end_location
+
 
     def complete_pass_edge(self,destination):
         for gen in self.on_complete_pass_edge_functions:
-            try:
-                yield from gen(destination)
-            except simpy.exceptions.Interrupt as e:
-                logger.debug("Completed", exc_info=True)
-                raise simpy.exceptions.Interrupt('Completed')
+            yield from gen(destination)
+
 
     def look_ahead_to_node(self,destination):
         for gen in self.on_look_ahead_to_node_functions:
-            try:
-                yield from gen(destination)
-            except simpy.exceptions.Interrupt as e:
-                logger.debug("Re-routing", exc_info=True)
-                raise simpy.exceptions.Interrupt('Re-routing')
+            yield from gen(destination)
+
 
     @property
     def current_speed(self):
+        edge = (self.origin,self.destination,self.k)
         if getattr(self, "P_tot_given", None) is not None:
             edge = self.graph.edges[self.origin, self.destination]
             depth = self.graph.get_edge_data(self.origin, self.destination)["Info"]["GeneralDepth"]
@@ -355,7 +346,11 @@ class Movable(Locatable, Routable, Log):
             self.v = self.power2v(self, edge, upperbound)
 
         if 'vessel_traffic_service' in dir(self.env):
-            self.v = self.env.vessel_traffic_service.provide_speed_over_edge(self,(self.origin,self.destination))
+            self.v = self.env.vessel_traffic_service.provide_speed_over_edge(self,edge)
+
+        if 'overruled_speed' in dir(self) and not self.overruled_speed.empty:
+            if edge in self.overruled_speed.index:
+                self.v = self.overruled_speed.loc[edge,'Speed']
 
         return self.v
 

@@ -16,30 +16,32 @@ class HasOutput:
             self.output['route'] = []
             self.output['bound'] = ''
             self.output['anchorage'] = ''
+            #Edge-dependent output
+            self.output['current_node'] = ''
             self.output['turning_basin'] = ''
             self.output['terminal'] = ''
             self.output['berth'] = ''
-            self.output['length'] = np.NaN
-            self.output['beam'] = np.NaN
-            self.output['draught'] = np.NaN
-            self.output['sailing_distance'] = np.NaN
-            self.output['sailing_time'] = np.NaN
-            self.output['waiting_times_in_anchorages'] = []
-            self.output['waiting_times_at_terminals'] = []
+            self.output['length'] = np.nan
+            self.output['beam'] = np.nan
+            self.output['draught'] = np.nan
+            self.output['sailing_distance'] = np.nan
+            self.output['sailing_time'] = np.nan
+            self.output['waiting_time'] = {}
+            self.output['waiting_time']['Anchorage'] = []
+            self.output['waiting_time']['Terminal'] = []
             self.output['turning_times'] = []
             self.output['(un)loading_times'] = []
 
-            #Edge-dependent output
-            self.output['current_node'] = ''
             self.output['next_node'] = ''
-            self.output['speed'] = np.NaN
-            self.output['heading'] = np.NaN
-            self.output['water_level'] = np.NaN
-            self.output['MBL'] = np.NaN
-            self.output['net_ukc'] = np.NaN
-            self.output['gross_ukc'] = np.NaN
+            self.output['speed'] = np.nan
+            self.output['heading'] = np.nan
+            self.output['available_water_depth'] = np.nan
+            self.output['required_water_depth'] = np.nan
+            self.output['MBL'] = np.nan
+            self.output['net_ukc'] = np.nan
+            self.output['gross_ukc'] = np.nan
             self.output['ship_related_ukc_factors'] = {}
-            self.output['limiting current velocity'] = np.NaN
+            self.output['limiting current velocity'] = np.nan
 
             #Historic output
             #self.output['vessel_arrival'] = deepcopy(self.metadata['arrival_time'])
@@ -55,38 +57,38 @@ class HasOutput:
         elif self.__class__.__name__ == 'IsJettyTerminal':
             for berth in [berth.name for berth in self.resource.items]:
                 #Visit-dependent output
-                self.output[berth] = {}
-                self.output[berth]['vessel_information'] = {}
-                self.output[berth]['vessel_arrival'] = pd.NaT
-                self.output[berth]['vessel_departure'] = pd.NaT
-                self.output[berth]['vessel_berthing_times'] = np.NaN
-                self.output[berth]['vessel_(un)loading_time'] = np.NaN
-                self.output[berth]['vessel_waiting_time'] = np.NaN
-                self.output[berth]['visited_vessels'] = []
+                self.output[self.name+' '+berth] = {}
+                self.output[self.name+' '+berth]['vessel_information'] = {}
+                self.output[self.name+' '+berth]['vessel_arrival'] = pd.NaT
+                self.output[self.name+' '+berth]['vessel_departure'] = pd.NaT
+                self.output[self.name+' '+berth]['vessel_berthing_times'] = np.nan
+                self.output[self.name+' '+berth]['vessel_(un)loading_time'] = np.nan
+                self.output[self.name+' '+berth]['vessel_waiting_time'] = np.nan
+                self.output[self.name+' '+berth]['visited_vessels'] = []
 
         elif self.__class__.__name__ == 'IsQuayTerminal':
             for berth in self.quays.keys():
-                self.output[berth] = {}
-                self.output[berth]['vessel_information'] = {}
-                self.output[berth]['vessel_arrival'] = pd.NaT
-                self.output[berth]['vessel_departure'] = pd.NaT
-                self.output[berth]['vessel_berthing_times'] = np.NaN
-                self.output[berth]['vessel_(un)loading_time'] = np.NaN
-                self.output[berth]['vessel_waiting_time'] = np.NaN
-                self.output[berth]['visited_vessels'] = []
+                self.output[self.name+' '+berth] = {}
+                self.output[self.name+' '+berth]['vessel_information'] = {}
+                self.output[self.name+' '+berth]['vessel_arrival'] = pd.NaT
+                self.output[self.name+' '+berth]['vessel_departure'] = pd.NaT
+                self.output[self.name+' '+berth]['vessel_berthing_times'] = np.nan
+                self.output[self.name+' '+berth]['vessel_(un)loading_time'] = np.nan
+                self.output[self.name+' '+berth]['vessel_waiting_time'] = np.nan
+                self.output[self.name+' '+berth]['visited_vessels'] = []
 
         elif self.__class__.__name__ == 'IsAnchorage':
             self.output['vessel_information'] = {}
             self.output['vessel_arrival'] = pd.NaT
             self.output['vessel_departure'] = pd.NaT
-            self.output['vessel_waiting_time'] = np.NaN
+            self.output['vessel_waiting_time'] = np.nan
             self.output['visited_vessels'] = []
 
         elif self.__class__.__name__ == 'IsTurningBasin':
             self.output['vessel_information'] = {}
             self.output['vessel_arrival'] = pd.NaT
             self.output['vessel_departure'] = pd.NaT
-            self.output['vessel_turning_time'] = np.NaN
+            self.output['vessel_turning_time'] = np.nan
             self.output['visited_vessels'] = []
 
         elif self.__class__.__name__ == 'IsLock':
@@ -113,11 +115,15 @@ class HasOutput:
             for node in self.route:
                 if 'Anchorage' in self.multidigraph.nodes[node]:
                     self.output['anchorage'] = self.multidigraph.nodes[node]['Anchorage'][0].name
-                if 'Turning basin' in self.multidigraph.nodes[node] and self.bound == 'inbound' and self.multidigraph.nodes[node]['Turning basin'][0].length <= self.L:
-                    self.output['turning_basin'] = self.multidigraph.nodes[node]['Turning basin'][0].name
-            if 'terminal_of_call' in self.metadata.keys() and self.metadata['terminal_of_call'].size:
+                if 'Turning basin' in self.multidigraph.nodes[node] and len(self.metadata['turning_basin_of_turn']) and self.bound == 'inbound':
+                    turning_basin = self.metadata['turning_basin_of_turn'][-1]
+                    if turning_basin in self.multidigraph.nodes[node]['Turning basin'].keys():
+                        turning_basin = self.multidigraph.nodes[node]['Turning basin'][turning_basin]
+                        if turning_basin.length <= self.L:
+                            self.output['turning_basin'] = self.multidigraph.nodes[node]['Turning basin'][0].name
+            if 'terminal_of_call' in self.metadata.keys() and len(self.metadata['terminal_of_call']):
                 self.output['terminal'] = self.metadata['terminal_of_call'][0]
-            if 'berth_of_call' in self.metadata.keys() and self.metadata['berth_of_call'].size:
+            if 'berth_of_call' in self.metadata.keys() and len(self.metadata['berth_of_call']):
                 self.output['berth'] = self.metadata['berth_of_call'][0]
 
         if move_stop and len(self.logbook):
@@ -162,18 +168,24 @@ class HasOutput:
             self.output['turning_times'].append(deepcopy(turning_basin.output)['vessel_turning_time'])
         return
 
-    def update_waiting_status(self,priority=False,availability=False,tidal_window=False,waiting_stop=False):
+    def update_waiting_status(self,priority=False,availability=False,tidal_window=False,waiting_stop=False,terminal=False):
+        type = 'Anchorage'
+        if terminal:
+            type = 'Terminal'
+
         if not waiting_stop:
             self.output['waiting_start'] = self.env.now
-            if 'waiting_time' not in self.output.keys():
-                self.output['waiting_time'] = {'Priority':pd.Timedelta(0,'s'),'Availability': pd.Timedelta(0, 's'), 'Tidal window': pd.Timedelta(0, 's')}
+            self.output['waiting_time'][type].append({'Priority': pd.Timedelta(0,'s'), 'Availability': pd.Timedelta(0,'s'), 'Tidal window': pd.Timedelta(0,'s')})
         else:
             if availability:
-                self.output['waiting_time']['Availability'] = pd.Timedelta(int(self.env.now-self.output['waiting_start']),'s')
+                self.output['waiting_time'][type][-1]['Availability'] += pd.Timedelta(int(self.env.now-self.output['waiting_start']),'s')
+                self.output['waiting_start'] = self.env.now
             elif tidal_window:
-                self.output['waiting_time']['Tidal window'] = pd.Timedelta(int(self.env.now-self.output['waiting_start']),'s')
+                self.output['waiting_time'][type][-1]['Tidal window'] += pd.Timedelta(int(self.env.now-self.output['waiting_start']),'s')
+                self.output['waiting_start'] = self.env.now
             elif priority:
-                self.output['waiting_time']['Priority'] = pd.Timedelta(int(self.env.now - self.output['waiting_start']), 's')
+                self.output['waiting_time'][type][-1]['Priority'] += pd.Timedelta(int(self.env.now - self.output['waiting_start']), 's')
+                self.output['waiting_start'] = self.env.now
         return
 
     def update_anchorage_status_report(self,anchorage,departure=False):
@@ -186,28 +198,20 @@ class HasOutput:
             self.output['visited_anchorages'].append(anchorage.name)
             anchorage.output['visited_vessels'].append(self.name)
             anchorage.output['vessel_departure'] = self.env.now
-            anchorage.output['vessel_waiting_time'] = deepcopy(self.output)['waiting_time']
-            self.output['waiting_times_in_anchorages'].append(deepcopy(self.output)['waiting_time'])
+            anchorage.output['vessel_waiting_time'] = deepcopy(self.output)['waiting_time']['Anchorage'][-1]
             try:
                 del(self.output['waiting_start'])
-                del(self.output['waiting_time'])
             except:
                 pass
         return
 
     def update_terminal_berth_status_report(self,terminal,berth_name=None,departure=False):
         if not departure:
-            berth_name = self.metadata['berth_of_call'][0]
+            berth_name = self.metadata['terminal_of_call'][0]+' '+self.metadata['berth_of_call'][0]
         terminal.output[berth_name]['vessel_information'] = deepcopy(self.output)
         if not departure:
             terminal.output[berth_name]['vessel_arrival'] = self.env.now
             terminal.output[berth_name]['vessel_berthing_times'] = self.metadata['t_berthing']
-            if 'waiting_time' in self.output.keys():
-                self.output['waiting_times_at_terminals'].append([deepcopy(self.output)['waiting_time']])
-                del (self.output['waiting_time'])
-            else:
-                self.output['waiting_times_at_terminals'].append([{'Priority': pd.Timedelta(0, 's'), 'Availability': pd.Timedelta(0, 's'), 'Tidal window': pd.Timedelta(0, 's')}])
-            terminal.output[berth_name]['vessel_waiting_time'] = deepcopy(self.output)['waiting_times_at_terminals'][-1]
             self.output['(un)loading_times'].append(self.metadata['t_(un)loading'][0])
             terminal.output[berth_name]['vessel_berthing_times'] = self.metadata['t_berthing']
             terminal.output[berth_name]['vessel_(un)loading_time'] = self.metadata['t_(un)loading'][0]
@@ -216,42 +220,32 @@ class HasOutput:
             self.output['visited_berths'].append(berth_name)
             terminal.output[berth_name]['visited_vessels'].append(self.name)
             terminal.output[berth_name]['vessel_departure'] = self.env.now
-            if 'waiting_time' in self.output.keys():
-                self.output['waiting_times_at_terminals'][-1].append(deepcopy(self.output)['waiting_time'])
-            else:
-                self.output['waiting_times_at_terminals'][-1].append({'Priority': pd.Timedelta(0, 's'), 'Availability': pd.Timedelta(0, 's'), 'Tidal window': pd.Timedelta(0, 's')})
-            terminal.output[berth_name]['vessel_waiting_time'] = deepcopy(self.output)['waiting_times_at_terminals'][-1]
+            terminal.output[berth_name]['vessel_waiting_time'] = deepcopy(self.output)['waiting_time']['Terminal'][-1]
             try:
                 del(self.output['waiting_start'])
-                del(self.output['waiting_time'])
             except:
                 pass
         return
 
     def update_sailing_status_report(self,current_node,next_node,edge):
-        # self.output['current_node'] = current_node
-        # self.output['next_node'] = next_node
-        # self.output['limiting current velocity'] = np.NaN
-        # if "Terminal" in self.multidigraph.edges[edge].keys() and self.metadata['terminal_of_call'].size and self.metadata['terminal_of_call'][0] in self.multidigraph.edges[edge]['Terminal'].keys():
-        #     self.output['speed'] = 0.
-        # else:
-        #     self.output['speed'] = self.env.vessel_traffic_service.provide_speed(self,edge[:2])
-        # if self.bound == 'outbound':
-        #     self.output['heading'] = 180 - self.env.vessel_traffic_service.provide_heading(self,edge)
-        # else:
-        #     self.output['heading'] = self.env.vessel_traffic_service.provide_heading(self,edge)
-        # if current_node == edge[1]:
-        #     self.output['sailing_distance'] += self.multidigraph.edges[edge]['length']
-        #     self.output['sailing_time'] += self.multidigraph.edges[edge]['length']/self.output['speed']
-        # if '=hydrodynamic_information_path' in dir(self.env.vessel_traffic_service):
-        #     self.output['MBL'],self.output['water_level'],_ = self.env.vessel_traffic_service.provide_water_depth(self,current_node)
-        #
-        # #Rule-dependent vessel output
-        # if 'Vertical tidal restriction' in self.multidigraph.nodes[current_node].keys():
-        #     self.output['net_ukc'],self.output['gross_ukc'],_,_,self.output['ship_related_ukc_factors'],_ = self.env.vessel_traffic_service.provide_ukc_clearance(self,current_node)
-        #
-        # if 'Horizontal tidal restriction' in self.multidigraph.nodes[current_node].keys():
-        #     time_index = np.absolute(self.env.vessel_traffic_service.hydrodynamic_times - pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now,tz=pytz.utc)).to_datetime64()).argmin()
-        #     _,self.output['limiting current velocity'] = self.env.vessel_traffic_service.provide_governing_current_velocity(self,current_node,time_index,time_index+2)
+        self.output['current_node'] = current_node
+        self.output['next_node'] = next_node
+        self.output['limiting current velocity'] = np.nan
+        self.output['heading'] = self.env.vessel_traffic_service.provide_heading(self, edge)
+        if "Terminal" in self.multidigraph.edges[edge].keys() and len(self.metadata['terminal_of_call']) and self.metadata['terminal_of_call'][0] in self.multidigraph.edges[edge]['Terminal'].keys():
+            self.output['speed'] = 0.
+        else:
+            self.output['speed'] = self.current_speed
+
+        if current_node == edge[1]:
+            self.output['sailing_distance'] += self.distance
+            self.output['sailing_time'] += self.distance/self.current_speed
+
+        #Rule-dependent vessel output
+        if 'vertical_tidal_restriction' in dir(self) and self.vertical_tidal_restriction:
+            self.output['net_ukc'],self.output['gross_ukc'],self.output['available_water_depth'],self.output['required_water_depth'],self.output['ship_related_ukc_factors'],self.output['MBL'] = self.env.vessel_traffic_service.provide_ukc_clearance(self,current_node)
+        if 'horizontal_tidal_restriction' in dir(self) and self.horizontal_tidal_restriction:
+            time_index = np.absolute(self.env.vessel_traffic_service.hydrodynamic_times - pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now,tz=pytz.utc)).to_datetime64()).argmin()
+            _,self.output['limiting current velocity'] = self.env.vessel_traffic_service.provide_governing_current_velocity(self,current_node,time_index,time_index+2)
 
         return deepcopy(self.output)

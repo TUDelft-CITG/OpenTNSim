@@ -27,6 +27,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     """Class: a collection of functions that processes requests of vessels regarding the nautical processes on ow to enter the port safely"""
 
     def __init__(self,FG,hydrodynamic_start_time=None,hydrodynamic_information_path=None,vessel_speed_data_path=None,*args,**kwargs):
+        self.hydrodynamic_start_time = hydrodynamic_start_time
         super().__init__(*args,**kwargs)
         self.FG = FG
 
@@ -40,16 +41,18 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         restricted_vessel_speeds = pd.DataFrame()
 
         global edges_info
-        edges_info = pd.DataFrame(columns=['Distance','MBL'])
+        edges_info = pd.DataFrame(columns=['Edge','Distance','MBL'])
         for edge in FG.edges:
             edge_info = FG.edges[edge]
             index = len(edges_info)
+            edges_info.loc[index, 'Edge'] = edge
             if 'length' in edge_info.keys():
                 edges_info.loc[index,'Distance'] = edge_info['length']
             if 'MBL' in edge_info.keys():
                 edges_info.loc[index,'MBL'] = edge_info['length']
             else:
                 edges_info.loc[index, 'MBL'] = 999.
+        edges_info = edges_info.set_index('Edge')
 
         index = 0
         for node in FG.nodes:
@@ -88,7 +91,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             data[tide_index] = (np.datetime64(new_time), tide)
         return data
 
-    
+
     def provide_waiting_time_for_inbound_tidal_window(self,vessel,route,time_start=None,time_stop=None,delay=0,plot=False):
         """ Function: calculates the time that a vessel has to wait depending on the available tidal windows
 
@@ -105,8 +108,6 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             time_start = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
         if not time_stop:
             time_stop = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + vessel.metadata['max_waiting_time'])).to_datetime64()
-
-
         _,tidal_windows = self.provide_tidal_windows(vessel,route,time_start,time_stop,delay,plot=plot)
 
         waiting_time = pd.Timedelta(vessel.metadata['max_waiting_time'],'s')
@@ -134,24 +135,30 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     
     def provide_speed_over_edge(self,vessel,edge):
         v = vessel.v
-        restricted_vessel_speeds_edge = restricted_vessel_speeds[restricted_vessel_speeds.isin([edge])]
+        restricted_vessel_speeds_edge = restricted_vessel_speeds[restricted_vessel_speeds.index.isin([edge])]
         if not restricted_vessel_speeds_edge.empty:
             v = restricted_vessel_speeds_edge.Speed.iloc[0]
         if math.isnan(v):
             v = vessel.v
+        if 'restricted_speed' in dir(vessel):
+            v = vessel.restricted_speed
         return v
 
     
     def provide_speed_over_route(self,vessel,route,edges=[]):
         if not edges:
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
-                edges.append((u,v))
+                k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
+                edges.append((u,v,k))
 
         if not restricted_vessel_speeds.empty:
             vessel_speed_over_route = restricted_vessel_speeds[restricted_vessel_speeds.index.isin(edges)]
 
         vessel_speed_over_route = vessel_speed_over_route.reindex(edges)
         vessel_speed_over_route[vessel_speed_over_route.Speed.isna() | (vessel_speed_over_route.Speed == 0)] = vessel.v
+        if 'restricted_speed' in dir(vessel):
+            for edge,overruled_speed_limit in vessel.overruled_speed.iterrows():
+                vessel_speed_over_route.loc[edge,'Speed'] = overruled_speed_limit
         return vessel_speed_over_route
 
     
@@ -179,7 +186,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             k = sorted(self.multidigraph[node_I][node_II], key=lambda x: self.multidigraph[node_I][node_II][x]['geometry'].length)[0]
             edge_geometry = self.multidigraph.edges[node_I, node_II, k]['geometry']
             if geometry:
-                geometry = ops.linemerge(MultiLineString([geometry, edge_geometry]))
+                geometry = shapely.ops.linemerge(MultiLineString([geometry, edge_geometry]))
             else:
                 geometry = edge_geometry
         return geometry
@@ -205,17 +212,17 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             distance_to_go = geod.geometry_length(geometries[1])
         return distance_sailed,distance_to_go
 
-    
-    def provide_location_over_edges(self,vessel,node_1,node_2,interpolation_length):
+
+    def provide_location_over_edges(self,node_1,node_2,interpolation_length):
         geod = pyproj.Geod(ellps="WGS84")
         geometry = self.provide_trajectory(node_1, node_2)
         total_geometry_length = 0
         for point_I, point_II in zip(geometry.coords[:-1], geometry.coords[1:]):
             sub_edge_geometry = LineString([Point(point_I), Point(point_II)])
-            total_geometry_length += geod.geometry_length(sub_edge_geometry)
-            if total_geometry_length < interpolation_length:
+            if geod.geometry_length(sub_edge_geometry) < interpolation_length:
                 interpolation_length -= geod.geometry_length(sub_edge_geometry)
                 continue
+
             az, _, dist = geod.inv(sub_edge_geometry.xy[0][0],
                                    sub_edge_geometry.xy[1][0],
                                    sub_edge_geometry.xy[0][1],
@@ -226,6 +233,49 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             break
         return Point(interpolation_point_x, interpolation_point_y)
 
+
+    def provide_distance_from_location_over_edge(self,edge,location,tolerance=0.0001):
+        geod = pyproj.Geod(ellps="WGS84")
+        if len(edge) == 2:
+            k = sorted(self.multidigraph[edge[0]][edge[1]],
+                       key=lambda x: self.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
+            edge = (edge[0],edge[1],k)
+        geometry = self.multidigraph.edges[(edge[0],edge[1],edge[2])]['geometry']
+
+        distance_sailed = 0
+        distance_to_go = 0
+        if geometry.coords[0] == location.coords[0]:
+            distance_to_go = self.multidigraph.edges[(edge[0],edge[1],edge[2])]['length']
+        elif geometry.coords[-1] == location.coords[0]:
+            distance_sailed = self.multidigraph.edges[(edge[0],edge[1],edge[2])]['length']
+        else:
+            lines = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance), location).geoms
+            for index, line in enumerate(lines):
+                distance = 0
+                for point_I, point_II in zip(line.coords[:-1], line.coords[1:]):
+                    sub_edge_geometry = LineString([Point(point_I), Point(point_II)])
+                    distance += geod.geometry_length(sub_edge_geometry)
+                if not index:
+                    distance_sailed = distance
+                else:
+                    distance_to_go = distance
+        return distance_sailed, distance_to_go
+
+
+
+    def provide_edge_by_distance_from_node(self,env,node_1,node_2,distance):
+        route = nx.dijkstra_path(self.multidigraph, node_1, node_2)
+        total_length = 0
+        for node_I, node_II in zip(route[:-1], route[1:]):
+            k = sorted(self.multidigraph[node_I][node_II],
+                       key=lambda x: self.multidigraph[node_I][node_II][x]['geometry'].length)[0]
+            edge_length = self.multidigraph.edges[node_I,node_II,k]['length']
+            total_length += edge_length
+            if total_length < distance:
+                continue
+            break
+        return (node_I,node_II,k)
+
     
     def provide_sailing_distance(self,vessel,edge):
         k = sorted(vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
@@ -233,25 +283,40 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         return sailing_distance
 
     
-    def provide_sailing_distance_over_route(self,vessel,route, edges=[]):
+    def provide_sailing_distance_over_route(self, route, edges=None):
         if not edges:
+            edges = []
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
-                edges.append((u,v))
+                k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
+                edges.append((u,v,k))
         sailing_distance_over_route = edges_info[edges_info.index.isin(edges)]
         return sailing_distance_over_route
 
-    
-    def provide_sailing_time(self,vessel,route, edges=[]):
+
+    def provide_sailing_time(self, vessel, route, edges=None):
         if not edges:
+            edges = []
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
-                edges.append((u,v))
-        sailing_distance_over_route = self.provide_sailing_distance_over_route(vessel,route,edges)
-        sailing_time_over_route = self.provide_speed_over_route(vessel,route,edges)
+                k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
+                edges.append((u,v,k))
+        sailing_distance_over_route = self.provide_sailing_distance_over_route(route, edges)
+        sailing_time_over_route = self.provide_speed_over_route(vessel, route, edges)
         sailing_time_over_route['Distance'] = sailing_distance_over_route['Distance']
         sailing_time_over_route['Time'] = sailing_time_over_route['Distance']/sailing_time_over_route['Speed']
         return sailing_time_over_route
 
-    
+    def provide_sailing_time_distance_on_edge_to_distance_on_another_edge(self, vessel, route, distance_sailed_on_first_edge=0, distance_sailed_on_last_edge=0, edges=None):
+        sailing_time = self.provide_sailing_time(vessel=vessel, route=route, edges=edges)
+        index_first_edge = pd.Index([sailing_time.iloc[0].name])
+        index_last_edge = pd.Index([sailing_time.iloc[-1].name])
+        distance_to_sail_on_first_edge = (sailing_time.loc[index_first_edge, 'Distance']-distance_sailed_on_first_edge)
+        sailing_time.loc[index_first_edge, 'Time'] = sailing_time.loc[index_first_edge, 'Time']*(distance_to_sail_on_first_edge/sailing_time.loc[index_first_edge, 'Distance'])
+        sailing_time.loc[index_first_edge, 'Distance'] = distance_to_sail_on_first_edge
+        sailing_time.loc[index_last_edge, 'Time'] = sailing_time.loc[index_last_edge, 'Time']*(distance_sailed_on_last_edge/sailing_time.loc[index_last_edge, 'Distance'])
+        sailing_time.loc[index_last_edge, 'Distance'] = distance_sailed_on_last_edge
+        return sailing_time
+
+
     def provide_nearest_anchorage_area(self,vessel,node):
         nodes_of_anchorages = []
         capacity_of_anchorages = []

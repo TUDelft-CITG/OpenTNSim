@@ -202,6 +202,17 @@ class Simulation(core.Identifiable):
                                                                                               hydrodynamic_information_path = hydrodynamic_data_path,
                                                                                               vessel_speed_data_path=vessel_speed_data_path)
 
+
+    def create_vessel_speed_data_file(self, data):
+        '''
+        Function to create a vessel speed dataframe file.
+        '''
+        speed_df = pd.DataFrame(columns=['Speed', 'Distance', 'Time'],
+                                index=pd.MultiIndex(levels=[[], [], []], codes=[[], [], []],
+                                                    names=["start_node", "stop_node", "k_edge"]))
+        return speed_df
+
+
     def add_vessels(
         self,
         origin=None,

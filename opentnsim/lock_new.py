@@ -1,0 +1,2366 @@
+"""This is the lock module as part of the OpenTNSim package. See the locking examples in the book for detailed descriptions."""
+
+# package(s) related to the simulation
+import bisect
+import datetime
+import math
+import random
+import re
+import time
+
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+import pandas as pd
+
+# spatial libraries
+from collections import namedtuple
+import pyproj
+import pytz
+import shapely.geometry
+import simpy
+import xarray as xr
+from netCDF4 import Dataset
+from IPython.display import display
+
+from opentnsim import core, output, graph
+
+# Constants
+knots_to_ms = knots = 0.514444444
+
+class HasLockInformation:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class PassesLockComplex(core.Movable, graph.HasMultiDiGraph):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_look_ahead_to_node_functions.append(self.pre_register_to_lock_master)
+        self.on_pass_node_functions.append(self.register_to_lock_master)
+
+    def pre_register_to_lock_master(self,origin):
+        route = self.route
+        origin_index = route.index(origin)
+        lock_found = False
+        lock_edge = []
+        detector_node = []
+        for node in route[origin_index:]:
+            node_info = self.multidigraph.nodes[node]
+            if 'Detector' in node_info.keys():
+                lock_edge = node_info['Detector']
+                detector_node = node
+            if node in lock_edge and 'Lock' in self.multidigraph.edges[lock_edge].keys():
+                lock_found = True
+                lock = self.multidigraph.edges[lock_edge]['Lock'][0]
+                break
+
+        #TODO: if already registered, vessel registration should be updated, add this functionality
+        if lock_found and lock.predictive:
+            arrival_time = np.max([self.metadata['arrival_time'],pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))])
+            for origin, destination in zip(route[:-1], route[1:]):
+                k = sorted(self.multidigraph[origin][destination],key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
+                if origin == detector_node:
+                    break
+                arrival_time += edge['length'] / self.env.vessel_traffic_service.provide_speed_over_edge(self,(origin, destination, k))
+
+            direction = 1
+            if lock_edge[0] == lock.start_node:
+                direction = 0
+
+            lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
+            operation_index, add_operation = lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
+            lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
+
+        yield from []
+
+    def register_to_lock_master(self,origin):
+        if 'Detector' in self.multidigraph.nodes[origin].keys():
+            edge = self.multidigraph.nodes[origin]['Detector']
+            if 'Lock' in self.multidigraph.edges[edge].keys():
+                lock = self.multidigraph.edges[edge]['Lock'][0]
+                yield from lock.register_vessel(self)
+
+class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.HasOutput, graph.HasMultiDiGraph):
+    """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
+    creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity
+    """
+
+    def __init__(
+        self, edge, distance_from_node, *args, **kwargs  # a string which indicates the location of the start of the waiting area
+    ):
+        node = edge[0]
+        self.node = node
+        self.edge = edge
+        self.distance_from_node = distance_from_node
+        super().__init__(*args, **kwargs)
+        """Initialization"""
+
+        waiting_area_resources = 100
+        self.waiting_area = {node: simpy.PriorityResource(self.env, capacity=waiting_area_resources),}
+        self.location = self.env.vessel_traffic_service.provide_location_over_edges(edge[0],edge[1],distance_from_node)
+
+        # Add to the graph:
+        if "FG" in dir(self.env):
+            if "Waiting area" not in self.multidigraph.nodes[node].keys():
+                self.multidigraph.nodes[node]["Waiting area"] = [self]
+            else:
+                self.multidigraph.nodes[node]["Waiting area"].append(self)
+
+
+class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core.Log, output.HasOutput, graph.HasMultiDiGraph):
+    """Mixin class: Something has line-up area object properties as part of the lock complex [in SI-units]:
+            creates a line-up area with the following resources:
+                - enter_line_up_area: resource used when entering the line-up area (assures one-by-one entry of the line-up area by vessels)
+                - line_up_area: resource with unlimited capacity used to formally request access to the line-up area
+                - converting_while_in_line_up_area: resource used when requesting for an empty conversion of the lock chamber
+                - pass_line_up_area: resource used to pass the second encountered line-up area"""
+
+    def __init__(
+        self,
+        start_node, #a string which indicates the location of the start of the line-up area
+        end_node, #a string which indicates the location of the start of the line-up area
+        lineup_area_length, #a float which contains the length of the line-up area
+        distance_from_start_edge,
+        effective_lineup_area_length = None,
+        passing_allowed = False,
+        speed_reduction_factor = 0.75,
+        k=0,
+        *args,
+        **kwargs):
+
+        self.start_node = start_node
+        self.end_node = end_node
+        self.k = k
+        self.lineup_area_length = self.effective_lineup_area_length = lineup_area_length
+        self.distance_from_start_edge = distance_from_start_edge
+        if effective_lineup_area_length:
+            self.effective_lineup_area_length = effective_lineup_area_length
+        self.passing_allowed = passing_allowed
+        self.speed_reduction_factor = speed_reduction_factor
+        super().__init__(length = self.effective_lineup_area_length, init = self.effective_lineup_area_length, *args, **kwargs)
+
+        """Initialization"""
+        # Geometry
+        self.start_location = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, distance_from_start_edge)
+        self.end_location = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, distance_from_start_edge+lineup_area_length)
+
+        # Lay-Out
+        self.enter_line_up_area = {
+            start_node: simpy.PriorityResource(self.env, capacity=1),
+        }  # used to regulate one by one entering of line-up area, so capacity must be 1
+        self.line_up_area = {
+            start_node: simpy.PriorityResource(self.env, capacity=100),
+        }  # line-up area itself, infinite capacity, as this is regulated by the HasLength, so capacity = inf
+        self.converting_while_in_line_up_area = {
+            start_node: simpy.PriorityResource(self.env, capacity=1),
+        }  # used to minimize the number of empty convertion requests by one by multiple waiting vessels, so capacity must be 1
+        self.pass_line_up_area = {
+            start_node: simpy.PriorityResource(self.env, capacity=1),
+        }  # used to prevent vessel from entering the lock before all previously locked vessels have passed the line-up area one by one, so capacity must be 1
+
+        # Add to the graph:
+        if "FG" in dir(self.env):
+            k = sorted(self.multidigraph[self.start_node][self.end_node],
+                       key=lambda x: self.multidigraph[self.start_node][self.end_node][x]['geometry'].length)[0]
+            if "Line-up area" not in self.multidigraph.edges[self.start_node, self.end_node, k].keys():
+                self.multidigraph.edges[self.start_node, self.end_node, k]["Line-up area"] = [self]
+            else:
+                self.multidigraph.edges[self.start_node, self.end_node, k]["Line-up area"].append(self)
+
+
+class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Log, output.HasOutput, graph.HasMultiDiGraph):
+    """Mixin class: Something which has lock chamber object properties as part of a lock complex [in SI-units] """
+
+    def __init__(
+        self,
+        start_node, #a string which indicates the location of the first pair of lock doors
+        end_node, #a string which indicates the location of the second pair of lock doors
+        lock_length, #a float which contains the length of the lock chamber
+        lock_width, #a float which contains the width of the lock chamber
+        lock_depth, #a float which contains the depth of the lock chamber
+        k = 0,
+        distance_from_start_node_to_lock_doors_A = 0,
+        distance_from_end_node_to_lock_doors_B = 0,
+        detector_nodes = [],
+        doors_opening_time = 0,  # a float which contains the time it takes to open the doors
+        doors_closing_time = 0,  # a float which contains the time it takes to close the doors
+        disch_coeff = 0,  # a float which contains the discharge coefficient of filling system
+        opening_area = 0,  # a float which contains the cross-sectional area of filling system
+        opening_depth = 0,  # a float which contains the depth at which filling system is located
+        speed_reduction_factor_lock_chamber = 0.3,
+        start_sailing_out_time_after_doors_have_been_opened = 60,
+        sailing_time_before_opening_lock_doors = 180,
+        sailing_time_before_closing_lock_doors = 60,
+        sailing_distance_to_crossing_point = 500,
+        passage_time_door = 300,
+        sailing_in_time_gap = 180,
+        sailing_out_time_gap = 180,
+        sailing_in_speed = 2*knots,
+        sailing_out_speed = 2*knots,
+        minimum_manoeuvrability_speed = 2*knots,
+        levelling_time = 0,
+        grav_acc = 9.81, #a float which contains the gravitational acceleration
+        time_step = 10,
+        gate_opening_time = 60,
+        node_open = None,
+        conditions = None,
+        priority_rules = None,
+        used_as_one_way_traffic_regulation = False,
+        *args,
+        **kwargs):
+
+        """Initialization"""
+        # Properties
+        self.lock_length = lock_length
+        self.lock_width = lock_width
+        self.lock_depth = lock_depth
+        self.disch_coeff = disch_coeff
+        self.grav_acc = grav_acc
+        self.opening_area = opening_area
+        self.opening_depth = opening_depth
+        self.levelling_time = levelling_time
+        self.start_sailing_out_time_after_doors_have_been_opened = start_sailing_out_time_after_doors_have_been_opened
+        self.sailing_time_before_opening_lock_doors = sailing_time_before_opening_lock_doors
+        self.sailing_time_before_closing_lock_doors = sailing_time_before_closing_lock_doors
+        self.sailing_distance_to_crossing_point = sailing_distance_to_crossing_point
+        self.sailing_in_time_gap = sailing_in_time_gap
+        self.sailing_out_time_gap = sailing_out_time_gap
+        self.speed_reduction_factor = speed_reduction_factor_lock_chamber
+        self.sailing_in_speed = sailing_in_speed
+        self.sailing_out_speed = sailing_out_speed
+        self.passage_time_door = passage_time_door
+        self.start_node = start_node
+        self.end_node = end_node
+        self.k = k
+        self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed
+        self.node_open = node_open
+        self.conditions = conditions
+        self.time_step = time_step
+        self.priority_rules = priority_rules
+        self.detector_nodes = detector_nodes
+        self.gate_opening_time = gate_opening_time
+        self.door_A_open = True
+        self.door_B_open = True
+        if not detector_nodes:
+            self.detector_nodes = [start_node,end_node]
+        self.distance_from_start_node_to_lock_doors_A = distance_from_start_node_to_lock_doors_A
+        self.distance_from_end_node_to_lock_doors_B = distance_from_end_node_to_lock_doors_B
+        self.used_as_one_way_traffic_regulation = used_as_one_way_traffic_regulation
+        self.converting_chamber = False
+        self.vessel_planning = pd.DataFrame(index=pd.Index([],name='id'),columns=['bound',
+                                                                                  'L',
+                                                                                  'B',
+                                                                                  'T',
+                                                                                  'operation_index',
+                                                                                  'time_of_registration',
+                                                                                  'time_of_acceptance',
+                                                                                  'time_arrival_at_waiting_area',
+                                                                                  'time_arrival_at_lineup_area',
+                                                                                  'time_lock_passing_start',
+                                                                                  'time_lock_entry_start',
+                                                                                  'time_lock_entry_stop',
+                                                                                  'time_lock_departure_start',
+                                                                                  'time_lock_departure_stop',
+                                                                                  'time_lock_passing_stop'])
+        self.vessel_pre_planning = self.vessel_planning.copy()
+        self.operation_planning = pd.DataFrame(index=pd.Index([],name='lock_operation'),columns=['bound',
+                                                                                                 'vessels',
+                                                                                                 'capacity_L',
+                                                                                                 'capacity_B',
+                                                                                                 'time_potential_lock_door_opening_stop',
+                                                                                                 'time_operation_start',#See comments below
+                                                                                                 'time_entry_start',    #See comments below
+                                                                                                 'time_entry_stop',
+                                                                                                 'time_door_closing_start',
+                                                                                                 'time_door_closing_stop',
+                                                                                                 'time_levelling_start',
+                                                                                                 'time_levelling_stop',
+                                                                                                 'time_door_opening_start',
+                                                                                                 'time_door_opening_stop',
+                                                                                                 'time_departure_start',
+                                                                                                 'time_departure_stop', # Note that start and stop times of different operations can overlap, but entry start and departure stop can not
+                                                                                                 'time_operation_stop', # Operation start and stop times are solely required when leaving and entering vessels need to pass each other at the safe crossing point
+                                                                                                 'time_potential_lock_door_closure_start',
+                                                                                                 'wlev_A',
+                                                                                                 'wlev_B',
+                                                                                                 'maximum_individual_delay',
+                                                                                                 'total_delay',
+                                                                                                 'status'])
+        self.operation_pre_planning = self.operation_planning.copy()
+        super().__init__(lock_complex=self,capacity=100,length = lock_length, init = lock_length, *args, **kwargs)
+        if self.env.vessel_traffic_service.hydrodynamic_information_path:
+            global hydrodynamic_data
+            hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
+            global hydrodynamic_times
+            hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + self.env.vessel_traffic_service.hydrodynamic_start_time
+
+        if self.closing_doors_in_between_operations:
+            self.door_A_open = False
+            self.door_B_open = False
+        else:
+            if self.node_open == self.start_node:
+                self.door_B_open = False
+            else:
+                self.door_A_open = False
+
+        #Geometry on edge
+        edge = self.env.FG.edges[start_node,end_node,0]
+        length_edge = edge['length']
+        if distance_from_start_node_to_lock_doors_A == 0 and distance_from_end_node_to_lock_doors_B == 0:
+            self.distance_from_start_node_to_lock_doors_A = self.distance_from_end_node_to_lock_doors_B = length_edge / 2 - lock_length / 2
+            self.location_lock_doors_A = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, self.distance_from_start_node_to_lock_doors_A)
+            self.location_lock_doors_B = self.env.vessel_traffic_service.provide_location_over_edges(end_node, start_node, self.distance_from_end_node_to_lock_doors_B)
+        if distance_from_start_node_to_lock_doors_A != 0:
+            self.distance_from_end_node_to_lock_doors_B = length_edge - (distance_from_start_node_to_lock_doors_A+lock_length)
+            self.location_lock_doors_A = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, self.distance_from_start_node_to_lock_doors_A)
+            self.location_lock_doors_B = self.env.vessel_traffic_service.provide_location_over_edges(end_node, start_node, self.distance_from_end_node_to_lock_doors_B)
+
+        self.lock_pos_length = simpy.Container(self.env, capacity=lock_length, init=lock_length)
+        self.door_A= simpy.PriorityResource(self.env, capacity = 1)
+        self.levelling = simpy.Resource(self.env, capacity=1)
+        self.door_B = simpy.PriorityResource(self.env, capacity = 1)
+        self.wait_for_other_vessel_to_arrive = simpy.FilterStore(self.env,capacity=100000000)
+        self.wait_for_levelling = simpy.FilterStore(self.env,capacity=100000000)
+        self.wait_for_other_vessels = simpy.FilterStore(self.env,capacity=100000000)
+
+        # Operating
+        self.doors_opening_time = doors_opening_time
+        self.doors_closing_time = doors_closing_time
+
+        # Water level
+        assert start_node != end_node
+
+        if not self.node_open:
+            self.node_open = random.choice([start_node, end_node])
+
+        if self.node_open == self.start_node:
+            index_node_open = 0
+        else:
+            index_node_open = 1
+
+        if self.env.vessel_traffic_service.hydrodynamic_information_path:
+            self.water_level = hydrodynamic_data['Water level'][index_node_open,:].copy()
+
+        for detector_node, lock_edge in zip(self.detector_nodes,[(self.start_node,self.end_node,self.k),(self.end_node,self.start_node,self.k)]):
+            if 'Detector' not in self.multidigraph.nodes[detector_node]:
+                self.multidigraph.nodes[detector_node]['Detector'] = lock_edge
+
+        # Add to the graph:
+        if "FG" in dir(self.env):
+            k = sorted(self.multidigraph[self.start_node][self.end_node],
+                       key=lambda x: self.multidigraph[self.start_node][self.end_node][x]['geometry'].length)[0]
+            # Add the lock to the edge or append it to the existing list
+            if "Lock" not in self.multidigraph.edges[self.start_node, self.end_node, k].keys():
+                self.multidigraph.edges[self.start_node, self.end_node, k]["Lock"] = [self]
+                self.multidigraph.edges[self.end_node, self.start_node, k]["Lock"] = [self]
+            else:
+                self.multidigraph.edges[self.start_node, self.end_node, k]["Lock"].append(self)
+                self.multidigraph.edges[self.end_node, self.start_node, k]["Lock"].append(self)
+
+
+    def vessel_sailing_in_speed(self, vessel, direction):
+        if not direction:
+            edge = (self.start_node,self.end_node,self.k)
+        elif direction:
+            edge = (self.end_node,self.start_node,self.k)
+
+        speed = self.env.vessel_traffic_service.provide_speed_over_edge(vessel,edge)
+        if 'overruled_speed' in dir(vessel) and not vessel.overruled_speed.empty:
+            if edge in vessel.overruled_speed.index:
+                speed = vessel.overruled_speed.loc[edge,'Speed']
+        return speed
+
+
+    def vessel_sailing_out_speed(self, vessel, direction):
+        if not direction:
+            edge = (self.start_node, self.end_node, self.k)
+        elif direction:
+            edge = (self.end_node, self.start_node, self.k)
+
+        speed = self.env.vessel_traffic_service.provide_speed_over_edge(vessel,edge)
+        if 'overruled_speed' in dir(vessel) and not vessel.overruled_speed.empty:
+            if edge in vessel.overruled_speed.index:
+                speed = vessel.overruled_speed.loc[edge, 'Speed']
+
+        return speed
+
+
+    def determine_levelling_time(self, t_start, direction=None, wlev_init=None, same_direction=False, prediction=False, plot=False):
+        # Initialize time and water level arrays
+        A_ch = self.lock_length * self.lock_width
+        m = self.disch_coeff
+        g = self.grav_acc
+        dt = self.time_step
+        T1 = self.gate_opening_time
+        t_final = 3600*12.5
+        t = np.arange(0, t_final + float(dt), float(dt))
+        z = np.zeros_like(t)
+        A_s = np.linspace(0, self.opening_area, int(T1 / float(dt)))
+        A_s = np.append(A_s, [self.opening_area] * (len(z) - len(A_s)))
+        if isinstance(t_start,float):
+            t_start = np.datetime64(datetime.datetime.fromtimestamp(t_start))
+        elif isinstance(t_start,datetime.datetime):
+            t_start = np.datetime64(t_start)
+        elif isinstance(t_start,pd.Timestamp):
+            t_start = np.array([t_start], dtype=np.datetime64)[0]
+        time_index = np.absolute(hydrodynamic_times - t_start).argmin()
+        H_A = hydrodynamic_data["Water level"][0].copy()
+        H_B = hydrodynamic_data["Water level"][1].copy()
+        H_time = hydrodynamic_times.astype(float)
+        H_A_init = H_A[time_index]
+        H_B_init = H_B[time_index]
+
+        if direction is None:
+            if self.node_open == self.start_node:
+                direction = 0
+            else:
+                direction = 1
+
+        if same_direction:
+            direction = 1 - direction
+
+        if prediction and not wlev_init:
+            if not direction:
+                wlev_init = H_A_init
+            else:
+                wlev_init = H_B_init
+
+        if not wlev_init:
+            wlev_init = self.water_level[time_index]
+
+        if not direction:
+            z[0] = H_B_init - wlev_init
+        else:
+            z[0] = H_A_init - wlev_init
+
+        # Euler's method
+        for i in range(len(t) - 1):
+            H_Ai = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A)
+            H_Aii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A)
+            H_Bi = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B)
+            H_Bii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B)
+            deltaH_A = H_Aii - H_Ai
+            deltaH_B = H_Bii - H_Bi
+            z_i = abs(z[i])
+            if not direction:
+                to_wlev_change = - deltaH_B
+            else:
+                to_wlev_change = - deltaH_A
+
+            dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch
+            if z[i] < 0:
+                dz_dt = -dz_dt
+
+            dz = dz_dt * float(dt) + to_wlev_change
+            z[i + 1] = z[i] + dz
+            if np.sign(z[i + 1]) != np.sign(z[i]):
+                z[i + 1] = 0
+
+            if np.abs(z[i + 1]) <= 0.05:
+                z[(i + 1):] = np.nan
+                break
+
+        if len(np.argwhere(np.isnan(z))):
+            levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
+
+        direction = 1 - direction
+
+        if not prediction:
+            t_index_final = np.absolute(hydrodynamic_times - (t_start+np.timedelta64(int(levelling_time),'s'))).argmin()
+            if not direction:
+                self.water_level[t_index_final:] = H_A[t_index_final:].copy()
+            else:
+                self.water_level[t_index_final:] = H_B[t_index_final:].copy()
+
+        if plot:
+            plt.figure()
+            plt.plot(t, z)
+            plt.xlabel('Time (s)')
+            plt.ylabel('Water Level (m)')
+            plt.title('Water Level vs. Time')
+            plt.grid(True)
+            plt.show()
+
+        return levelling_time, z
+
+
+class IsLockMaster(core.SimpyObject):
+    def __init__(self,
+                 lock_complex,
+                 min_vessels_in_operation = 0,
+                 max_vessels_in_operation = 100,
+                 clustering_time = 0.5*60*60,
+                 max_additional_delay = 0.5*60*60,
+                 minimize_door_open_times=False,
+                 closing_doors_in_between_operations = False,
+                 close_doors_before_vessel_is_laying_still = False,
+                 predictive=False,
+                 operational_hours=pd.DataFrame(columns=['start_time','stop_time']),
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lock_complex = lock_complex
+        self.min_vessels_in_operation = min_vessels_in_operation
+        self.max_vessels_in_operation = max_vessels_in_operation
+        self.clustering_time = clustering_time
+        self.max_additional_delay = max_additional_delay
+        self.minimize_door_open_times = minimize_door_open_times
+        self.closing_doors_in_between_operations = closing_doors_in_between_operations
+        self.close_doors_before_vessel_is_laying_still = close_doors_before_vessel_is_laying_still
+        self.predictive = predictive
+        if operational_hours.empty:
+            operational_hours.loc[0,:] = [self.env.simulation_start,self.env.simulation_stop]
+        self.operational_hours = operational_hours
+
+
+    def interrupt_process(self, vessel):
+        vessel.process.interrupt()
+        yield from []
+
+
+    def register_vessel(self, vessel):
+        # Determine the orientation of the vessel
+        if vessel.origin == self.lock_complex.detector_nodes[0]:
+            direction = 0
+            lock_start_node = self.lock_complex.start_node
+            lock_end_node = self.lock_complex.end_node
+        else:
+            direction = 1
+            lock_start_node = self.lock_complex.end_node
+            lock_end_node = self.lock_complex.start_node
+
+        # Add vessel to vessel planning (already done when lock master is all-mighty predictive)
+        if not self.predictive:
+            self.add_vessel_to_vessel_planning(vessel, direction)
+
+        # Add vessel to lock operation planning (already done when lock master is all-mighty predictive), else subtract operation_index from pre-assignment
+        if not self.predictive:
+            operation_index, add_operation  = self.assign_vessel_to_lock_operation(vessel, direction)
+        else:
+            operation_index = self.vessel_pre_planning.loc[vessel.id,'operation_index']
+
+        # Update lock operation planning based on lockage assignment (already done when lock master is all-mighty predictive)
+        if not self.predictive:
+            self.update_operation_planning(vessel, direction, operation_index, add_operation)
+
+        # Check if vessel has to wait for other vessels (rule-based clustering policy)
+        vessel_planning = self.lock_complex.vessel_planning
+        operation_planning = self.lock_complex.operation_planning
+        if self.predictive:
+            vessel_planning = self.lock_complex.vessel_pre_planning
+            operation_planning = self.lock_complex.operation_pre_planning
+        operation_index = vessel_planning.loc[vessel.id,'operation_index']
+
+        vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
+        waiting_start = self.env.now
+        if len(vessels_in_operation) < self.min_vessels_in_operation:
+            waiting_start = vessel.env.now
+            vessel.log_entry_v0("Waiting for other vessel start", waiting_start, vessel.output.copy(), vessel.logbook[-1]['Geometry'],)
+            request = self.wait_for_other_vessel_to_arrive.get(lambda operation: operation.operation_index == operation_index)
+            while operation_planning.loc[operation_index,'status'] == 'waiting for vessel':
+                try:
+                    yield request
+                    operation_planning.loc[operation_index,'status'] = 'ready'
+                except simpy.Interrupt as e:
+                    operation_planning.loc[operation_index,'status'] = 'waiting for vessel'
+            vessel_index = operation_planning.loc[operation_index,'vessels'].index(vessel)
+            yield vessel.env.timeout(self.sailing_in_time_gap*(vessel_index+1))
+            vessel.overruled_speed = vessel.overruled_speed.iloc[0:0]
+            waiting_stop = vessel.env.now
+            vessel_planning.loc[vessel.id, 'time_lock_passing_start'] += pd.Timedelta(seconds=waiting_stop - waiting_start)
+            vessel_planning.loc[vessel.id, 'time_arrival_at_lineup_area'] += pd.Timedelta(seconds=waiting_stop - waiting_start)
+            vessel_planning.loc[vessel.id, 'time_lock_passing_start'] += pd.Timedelta(seconds=waiting_stop-waiting_start)
+            self.add_vessel_to_planned_lock_operation(vessel,operation_index,direction,pre_planning=self.predictive)
+            vessel.log_entry_v0("Waiting for other vessel stop", vessel.env.now, vessel.output.copy(),vessel.logbook[-1]['Geometry'],)
+
+        vessel_info = vessel_planning[vessel_planning.index == vessel.id].iloc[0]
+        sailing_to_lock_chamber_time = self.calculate_sailing_time_to_lock_door(vessel, direction)
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+        time_at_lock = current_time + sailing_to_lock_chamber_time
+        waiting_time = vessel_info.time_lock_entry_start-time_at_lock
+        operation_planning.loc[operation_index, 'status'] = 'ready'
+        first_in_lock = operation_planning.loc[operation_index, 'vessels'][0].id == vessel.id
+
+        remaining_static_waiting_time, waiting_time_while_sailing = self.determine_waiting_time_while_sailing_to_lock(vessel,lock_start_node,waiting_time.total_seconds())
+        if remaining_static_waiting_time or waiting_time_while_sailing:
+            remaining_static_waiting_time += waiting_time_while_sailing
+            waiting_time_while_sailing -= waiting_time_while_sailing
+
+        if waiting_time_while_sailing+remaining_static_waiting_time > 0:
+            vessel.log_entry_v0("Waiting start", vessel.env.now, vessel.output.copy(), vessel.logbook[-1]['Geometry'], )
+            while remaining_static_waiting_time > 0:
+                try:
+                    yield self.env.timeout(remaining_static_waiting_time)
+                    remaining_static_waiting_time = (vessel_info.time_lock_entry_start-pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))-sailing_to_lock_chamber_time).total_seconds()
+                except simpy.Interrupt as e:
+                    remaining_static_waiting_time -= self.env.now - waiting_start
+            vessel.log_entry_v0("Waiting stop", vessel.env.now, vessel.output.copy(), vessel.logbook[-1]['Geometry'], )
+
+        if waiting_time_while_sailing:
+            self.overrule_vessel_speed(vessel,lock_end_node,waiting_time=waiting_time_while_sailing)
+            self.env.process(self.interrupt_process(vessel))
+
+        vessel.on_pass_edge_functions.append(self.allow_vessel_to_sail_in_lock)
+        vessel.on_pass_edge_functions.append(self.initiate_levelling)
+        vessel.on_pass_edge_functions.append(self.allow_vessel_to_sail_out_of_lock)
+
+        door_is_or_will_be_closed = self.determine_if_door_is_or_will_be_closed(operation_index)
+        if first_in_lock and door_is_or_will_be_closed:
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            doors_required_to_be_open = operation_planning.loc[operation_index,'time_potential_lock_door_opening_stop']
+            doors_open_delay = self.determine_door_opening_time(vessel, operation_index)
+            delay = ((doors_required_to_be_open-current_time)-doors_open_delay).total_seconds()
+            vessel.door_open_request = self.env.process(self.open_door(to_level=lock_start_node, delay=delay, vessel=vessel))
+
+        next_operation = operation_planning.loc[operation_index]
+        if len(next_operation.vessels) > 1 and self.minimize_door_open_times:
+            other_vessel = next_operation.vessels[-2]
+            other_vessel_info = vessel_planning[vessel_planning.index == other_vessel.id].iloc[0]
+            preceding_vessel_waiting_time_to_shorten_door_open_time = vessel_info.time_lock_entry_start - datetime.timedelta(seconds=self.sailing_in_time_gap) - other_vessel_info.time_lock_entry_start
+            sailing_time = self.calculate_sailing_time_and_distance_to_lock(other_vessel, lock_end_node)
+            total_distance_to_lock = sailing_time.Distance.sum()
+            total_time_to_lock = sailing_time.Time.sum()
+            average_speed = total_distance_to_lock/total_time_to_lock
+
+            planned_arrival_time = other_vessel_info.time_lock_entry_start + preceding_vessel_waiting_time_to_shorten_door_open_time
+            if preceding_vessel_waiting_time_to_shorten_door_open_time:
+                overruled_speed = np.max([self.minimum_manoeuvrability_speed,total_distance_to_lock/(preceding_vessel_waiting_time_to_shorten_door_open_time.total_seconds()+total_time_to_lock)])
+                delay = total_distance_to_lock/overruled_speed-total_distance_to_lock/average_speed
+                difference_waiting_time = preceding_vessel_waiting_time_to_shorten_door_open_time.total_seconds() - delay
+                planned_arrival_time = planned_arrival_time - pd.Timedelta(seconds=difference_waiting_time)
+                arrival_time_difference = vessel_info.time_lock_entry_start - planned_arrival_time
+                if arrival_time_difference < pd.Timedelta(seconds=self.doors_closing_time + self.doors_opening_time):
+                    vessel_planning.loc[other_vessel.id,'time_lock_entry_start'] += datetime.timedelta(seconds=delay)
+                    if 'process' in dir(other_vessel):
+                        self.overrule_vessel_speed(other_vessel,lock_end_node,waiting_time=delay)
+                        other_vessel.process.interrupt()
+                        if 'door_open_request' in dir(other_vessel):
+                            other_vessel.door_open_request.interrupt()
+                    if other_vessel.id == next_operation.vessels[0].id:
+                        operation_planning.loc[operation_index,'time_sailing_in_start'] += datetime.timedelta(seconds=delay)
+
+
+    def determine_waiting_time_while_sailing_to_lock(self, vessel, lock_start_node, waiting_time):
+        route_other_vessel = nx.dijkstra_path(self.env.FG, vessel.origin, lock_start_node)
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+        last_event = pd.DataFrame(vessel.logbook).iloc[-1]
+        passed_time = 0
+        if 'Sailing' in last_event.Message:
+            passed_time = (last_event.Timestamp - current_time).total_seconds()
+        sailing_time = self.env.vessel_traffic_service.provide_sailing_time(vessel, route_other_vessel)
+        index_sailing_on_first_edge = sailing_time.iloc[0].name
+        index_mask = sailing_time.index == index_sailing_on_first_edge
+        interpolation = 1 - passed_time / sailing_time.iloc[0].Time
+        sailing_time.loc[sailing_time[index_mask].index, 'Distance'] = sailing_time.loc[sailing_time[index_mask].index, 'Distance'] * interpolation
+        sailing_time.loc[sailing_time[index_mask].index, 'Time'] = sailing_time.loc[sailing_time[index_mask].index, 'Time'] * interpolation
+        total_distance_to_lock = sailing_time.loc[:, 'Distance'].sum()
+        average_speed = total_distance_to_lock / sailing_time.loc[:, 'Time'].sum()
+        total_waiting_time_while_sailing = total_distance_to_lock / (average_speed - self.minimum_manoeuvrability_speed)
+        remaining_static_waiting_time = np.max([0,waiting_time - total_waiting_time_while_sailing])
+        waiting_time_while_sailing = waiting_time - remaining_static_waiting_time
+        return remaining_static_waiting_time,waiting_time_while_sailing
+
+
+    def calculate_sailing_time_and_distance_to_lock(self, vessel, lock_end_node):
+        last_event = pd.DataFrame(vessel.logbook).iloc[-1]
+        passed_time = 0
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+        if 'Sailing' in last_event.Message:
+            passed_time = (current_time - last_event.Timestamp).total_seconds()
+
+        distance = self.distance_from_start_node_to_lock_doors_A
+        if lock_end_node != self.end_node:
+            distance = self.distance_from_end_node_to_lock_doors_B
+
+        route_other_vessel = nx.dijkstra_path(self.env.FG, vessel.origin, lock_end_node)
+        sailing_time = self.env.vessel_traffic_service.provide_sailing_time(vessel, route_other_vessel)
+        column_names = list(sailing_time.columns)
+        distance_column_iloc = column_names.index('Distance')
+        time_column_iloc = column_names.index('Time')
+        speed_column_iloc = column_names.index('Speed')
+        sailing_time.iloc[-1, distance_column_iloc] = distance
+        sailing_time.iloc[-1, time_column_iloc] = distance / sailing_time.iloc[-1, speed_column_iloc]
+
+        if not vessel.overruled_speed.empty:
+            for edge, overruled_speed in vessel.overruled_speed.iterrows():
+                edge_index_mask = sailing_time.index == edge
+                sailing_time.loc[edge_index_mask, 'Speed'] = overruled_speed.Speed
+                sailing_time.loc[edge_index_mask, 'Time'] = sailing_time.loc[edge_index_mask, 'Distance'] / sailing_time.loc[edge_index_mask, 'Speed']
+
+        index_sailing_on_first_edge = sailing_time[sailing_time.index.isin([(vessel.origin,route_other_vessel[1],0)])].iloc[0].name
+        index_mask = sailing_time.index == index_sailing_on_first_edge
+        interpolation = 1 - passed_time / sailing_time.loc[index_mask].Time
+        sailing_time.loc[sailing_time[index_mask].index, 'Distance'] = sailing_time.loc[sailing_time[index_mask].index, 'Distance'] * interpolation
+        sailing_time.loc[sailing_time[index_mask].index, 'Time'] = sailing_time.loc[sailing_time[index_mask].index, 'Time'] * interpolation
+        return sailing_time
+
+    def overrule_vessel_speed(self, vessel, lock_end_node, waiting_time=0):
+        if not waiting_time:
+            return
+
+        sailing_time = self.calculate_sailing_time_and_distance_to_lock(vessel, lock_end_node)
+        average_speed = sailing_time.loc[:, 'Distance'].sum()/sailing_time.loc[:, 'Time'].sum()
+        overruled_speed = np.max([self.minimum_manoeuvrability_speed, sailing_time.loc[:, 'Distance'].sum()/(sailing_time.loc[:, 'Time'].sum() + waiting_time)])
+        sailing_time = sailing_time.iloc[::-1]
+        iteration = 0
+        while not np.abs(average_speed-overruled_speed) <= 0.00001:
+            if iteration == 100:
+                break
+            speed_difference = average_speed - overruled_speed
+            speed_mask = sailing_time.Speed > self.minimum_manoeuvrability_speed
+            sailing_time.loc[sailing_time[speed_mask].index, 'Speed'] -= speed_difference
+            sailing_time.loc[sailing_time[speed_mask].index, 'Time'] = sailing_time.loc[sailing_time[speed_mask].index, 'Distance'] / sailing_time.loc[sailing_time[speed_mask].index, 'Speed']
+            speed_mask = sailing_time.Speed < self.minimum_manoeuvrability_speed
+            sailing_time.loc[sailing_time[speed_mask].index, 'Speed'] = self.minimum_manoeuvrability_speed
+            sailing_time.loc[sailing_time[speed_mask].index, 'Time'] = sailing_time.loc[sailing_time[speed_mask].index, 'Distance'] / sailing_time.loc[sailing_time[speed_mask].index, 'Speed']
+            average_speed = sailing_time.Distance.sum()/sailing_time.Time.sum()
+            iteration += 1
+        for edge,sailing_time_info in sailing_time.iterrows():
+            vessel.overruled_speed.loc[edge] = sailing_time_info.Speed
+        self.vessel_planning.loc[vessel.id,'time_lock_entry_start'] += pd.Timedelta(seconds=waiting_time)
+
+    @staticmethod
+    def initiate_levelling(vessel, origin, destination, k=0):
+        if 'Lock' in vessel.multidigraph.edges[origin, destination, k].keys():
+            lock = vessel.multidigraph.edges[origin, destination, k]['Lock'][0]
+            vessel_planning = lock.vessel_planning
+            operation_planning = lock.operation_planning
+            if lock.predictive:
+                vessel_planning = lock.vessel_pre_planning
+                operation_planning = lock.operation_pre_planning
+
+            vessel_info = vessel_planning.loc[vessel.id]
+            vessel_operation_index = vessel_info.operation_index
+            this_operation = operation_planning.loc[vessel_operation_index]
+            current_node = lock.node_open
+            if current_node == lock.start_node:
+                direction = 0
+                next_node = lock.end_node
+            else:
+                direction = 1
+                next_node = lock.start_node
+
+            vessels = this_operation.vessels
+
+            #If vessel is the last assigned vessel in the lock
+            if vessel == vessels[-1]:
+                #Liberate waiting vessels in lock chamber
+                for other_vessel in vessels[:-1]:
+                    terminate_waiting_time_for_other_vessel = False
+                    while not terminate_waiting_time_for_other_vessel:
+                        try:
+                            yield lock.wait_for_other_vessels.put(other_vessel)
+                            terminate_waiting_time_for_other_vessel = True
+                        except simpy.Interrupt as e:
+                            terminate_waiting_time_for_other_vessel = False
+
+                #Convert lock chamber
+                close_doors = True
+                if lock.close_doors_before_vessel_is_laying_still and this_operation.time_door_closing_start < vessel_info.time_lock_entry_stop:
+                    close_doors = False
+
+                yield from lock.convert_chamber(next_node, vessel, close_doors, direction=direction)
+
+                #Liberate waiting vessels in lock chamber
+                for other_vessel in vessels[:-1]:
+                    terminate_levelling_for_other_vessel = False
+                    while not terminate_levelling_for_other_vessel:
+                        try:
+                            yield lock.wait_for_levelling.put(other_vessel)
+                            terminate_levelling_for_other_vessel = True
+                        except simpy.Interrupt as e:
+                            terminate_levelling_for_other_vessel = False
+
+            #If vessel is not the last assigned vessel
+            else:
+                #Wait for last assigned vessel of lock operation
+                waiting_for_other_vessels = True
+                while waiting_for_other_vessels:
+                    try:
+                        yield lock.wait_for_other_vessels.get(filter=(lambda request: request.id == vessel.id))
+                        waiting_for_other_vessels = False
+                    except simpy.Interrupt as e:
+                        waiting_for_other_vessels = True
+
+                #Follow the converting lock chamber
+                vessel.log_entry_v0("Levelling start", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+                waiting_for_levelling = True
+                while waiting_for_levelling:
+                    try:
+                        yield lock.wait_for_levelling.get(filter=(lambda request: request.id == vessel.id))
+                        waiting_for_levelling = False
+                    except simpy.Interrupt as e:
+                        waiting_for_levelling = True
+                vessel.log_entry_v0("Levelling stop", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+
+            #Determine and yield sailing out delay
+            sailing_out_delay = lock.calculate_vessel_departure_start_time(vessel, vessel_operation_index, direction, pre_planning=lock.predictive).total_seconds()
+            delay_start = vessel.env.now
+            while sailing_out_delay:
+                try:
+                    yield vessel.env.timeout(sailing_out_delay)
+                    sailing_out_delay = 0
+                except simpy.Interrupt as e:
+                    sailing_out_delay -= vessel.env.now - delay_start
+
+
+    @staticmethod
+    def allow_vessel_to_sail_out_of_lock(vessel, origin, destination, k=0):
+        if 'Lock' in vessel.multidigraph.edges[origin, destination, k].keys():
+            lock = vessel.multidigraph.edges[origin, destination, k]['Lock'][0]
+            vessel_planning = lock.vessel_planning
+            operation_planning = lock.operation_planning
+            if lock.predictive:
+                vessel_planning = lock.vessel_pre_planning
+                operation_planning = lock.operation_pre_planning
+
+            vessel_lock_info = vessel_planning[vessel_planning.index == vessel.id].iloc[0]
+            direction = vessel_lock_info.bound
+            vessel_operation_index = vessel_lock_info.operation_index
+            distance_in_lock_from_position = lock.lock_length - vessel.distance_position_from_first_lock_doors
+
+            # Sail to lock
+            if not direction:
+                second_lock_doors_position = lock.location_lock_doors_B
+                distance_from_lock_position = distance_in_lock_from_position
+                remaining_distance = lock.distance_from_end_node_to_lock_doors_B
+                lock_start_node = lock.start_node
+            else:
+                second_lock_doors_position = lock.location_lock_doors_A
+                distance_from_lock_position = distance_in_lock_from_position
+                remaining_distance = lock.distance_from_start_node_to_lock_doors_A
+                lock_start_node = lock.end_node
+
+            release_lock_access = False
+            while not release_lock_access:
+                try:
+                    yield lock.length.put(vessel.L)
+                    release_lock_access = True
+                except simpy.Interrupt as e:
+                    release_lock_access = True
+
+            vessel.log_entry_v0("Sailing to second lock doors start", vessel.env.now, vessel.output.copy(),vessel.position_in_lock, )
+
+            sailing_out_time = distance_from_lock_position/lock.vessel_sailing_in_speed(vessel, direction)
+            sailing_out_start = vessel.env.now
+            while sailing_out_time:
+                try:
+                    yield vessel.env.timeout(sailing_out_time)
+                    sailing_out_time = 0
+                except simpy.Interrupt as e:
+                    sailing_out_time = vessel.env.now - sailing_out_start
+            vessel.log_entry_v0("Sailing to second lock doors stop", vessel.env.now, vessel.output.copy(),second_lock_doors_position, )
+
+            vessel.distance = remaining_distance
+            vessel.on_pass_edge_functions.remove(lock.allow_vessel_to_sail_in_lock)
+            vessel.on_pass_edge_functions.remove(lock.initiate_levelling)
+            vessel.on_pass_edge_functions.remove(lock.allow_vessel_to_sail_out_of_lock)
+
+            made_operation = operation_planning.loc[vessel_operation_index]
+            vessels = made_operation.vessels
+            is_last_vessel_sailing_out = vessels[-1] == vessel
+
+            doors_can_be_closed = lock.determine_if_door_can_be_closed(vessel_operation_index)
+            if is_last_vessel_sailing_out and doors_can_be_closed:
+                current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+                door_closing_time = made_operation.time_potential_lock_door_closure_start
+                delay = (door_closing_time-current_time).total_seconds()
+                vessel.env.process(lock.close_door(delay=delay))
+
+
+    @staticmethod
+    def allow_vessel_to_sail_in_lock(vessel, origin, destination, k=0):
+        if 'Lock' in vessel.multidigraph.edges[origin,destination,k].keys():
+            lock = vessel.multidigraph.edges[origin,destination,k]['Lock'][0]
+            vessel_planning = lock.vessel_planning
+            operation_planning = lock.operation_planning
+            if lock.predictive:
+                vessel_planning = lock.vessel_pre_planning
+                operation_planning = lock.operation_pre_planning
+
+            vessel_lock_info = vessel_planning.loc[vessel.id]
+            direction = vessel_lock_info.bound
+
+            # Sail to lock
+            if not direction:
+                start_node = lock.start_node
+                distance_to_lock_position = lock.distance_from_start_node_to_lock_doors_A
+                first_lock_door_position = lock.location_lock_doors_A
+            else:
+                start_node = lock.end_node
+                distance_to_lock_position = lock.distance_from_end_node_to_lock_doors_B
+                first_lock_door_position = lock.location_lock_doors_B
+
+            vessel.log_entry_v0("Sailing to first lock doors start", vessel.env.now, vessel.output.copy(),vessel.multidigraph.nodes[start_node]["geometry"],)
+            start_sailing = vessel.env.now
+            remaining_sailing_time = distance_to_lock_position/lock.vessel_sailing_in_speed(vessel, direction)
+            while remaining_sailing_time:
+                try:
+                    yield vessel.env.timeout(remaining_sailing_time)
+                    remaining_sailing_time = 0
+                except simpy.Interrupt as e:
+                    remaining_sailing_time = vessel.env.now - start_sailing
+
+            lock_accessed = False
+            remaining_lock_length = lock.length.level
+            vessel.overruled_speed = vessel.overruled_speed.iloc[0:0]
+
+            while not lock_accessed:
+                try:
+                    yield lock.length.get(vessel.L)
+                    lock_accessed = True
+                except simpy.Interrupt as e:
+                    lock_accessed = False
+
+            vessel.log_entry_v0("Sailing to first lock doors stop", vessel.env.now, vessel.output.copy(),first_lock_door_position, )
+
+            # Checks if door should be closed intermediately
+            vessel_info = vessel_planning.loc[vessel.id]
+            operation_index = vessel_info.operation_index
+            this_operation = operation_planning.loc[operation_index]
+            vessels = this_operation.vessels
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+            delay_to_close_doors = vessel_planning.loc[vessel.id, 'time_potential_lock_door_closure_start'] - current_time
+
+            doors_can_be_closed_between_vessel_arrivals = lock.determine_if_doors_can_be_closed_between_vessel_arrivals(vessel, operation_index)
+            last_vessel_to_enter_lock = vessels[-1] == vessel
+            if doors_can_be_closed_between_vessel_arrivals or (last_vessel_to_enter_lock and lock.close_doors_before_vessel_is_laying_still and this_operation.time_door_closing_start < vessel_info.time_lock_entry_stop):
+                vessel.env.process(lock.close_door(delay=delay_to_close_doors.total_seconds()))
+
+            if doors_can_be_closed_between_vessel_arrivals:
+                vessel_index = vessels.index(vessel)
+                next_vessel = vessels[vessel_index + 1]
+                door_opening_time = lock.determine_door_opening_time(vessel, operation_index, vessel_perspective=True)
+                delay_to_open_doors = vessel_planning.loc[next_vessel.id, 'time_potential_lock_door_opening_stop'] - current_time - door_opening_time
+                vessel.env.process(lock.open_door(delay=delay_to_open_doors.total_seconds()))
+
+            vessel.log_entry_v0("Sailing to position in lock start", vessel.env.now, vessel.output.copy(),first_lock_door_position, )
+            vessel.distance_position_from_first_lock_doors = remaining_lock_length - 0.5*vessel.L
+            if not direction:
+                vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock.start_node,lock.end_node,lock.distance_from_start_node_to_lock_doors_A + vessel.distance_position_from_first_lock_doors)
+            elif direction:
+                vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock.end_node,lock.start_node,lock.distance_from_end_node_to_lock_doors_B + vessel.distance_position_from_first_lock_doors)
+
+            remaining_sailing_time = vessel.distance_position_from_first_lock_doors / lock.vessel_sailing_in_speed(vessel, direction)
+            while remaining_sailing_time > 0:
+                try:
+                    yield vessel.env.timeout(remaining_sailing_time)
+                    remaining_sailing_time = 0
+                except simpy.Interrupt as e:
+                    remaining_sailing_time = vessel.env.now - start_sailing
+            vessel.log_entry_v0("Sailing to position in lock stop", vessel.env.now, vessel.output.copy(),vessel.position_in_lock,)
+
+
+    def add_vessel_to_vessel_planning(self,vessel,direction, time_of_registration=None, pre_planning=False):
+        if time_of_registration is None:
+            time_of_registration = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+        vessel_planning = self.vessel_planning
+        if pre_planning:
+            vessel_planning = self.vessel_pre_planning
+        vessel_planning.loc[vessel.id, 'time_of_registration'] = time_of_registration
+        vessel_planning.loc[vessel.id, 'time_of_acceptance'] = time_of_registration
+        vessel_planning.loc[vessel.id, 'bound'] = direction
+        vessel_planning.loc[vessel.id, 'L'] = vessel.L
+        vessel_planning.loc[vessel.id, 'B'] = vessel.B
+        vessel_planning.loc[vessel.id, 'T'] = vessel.T
+        self.calculate_sailing_time_to_waiting_area(vessel, direction, pre_planning=pre_planning)
+        self.calculate_sailing_time_to_lineup_area(vessel, direction, pre_planning=pre_planning)
+        self.calculate_sailing_time_to_approach(vessel, direction, pre_planning=pre_planning)
+        self.calculate_sailing_time_to_lock_door(vessel, direction, pre_planning=pre_planning)
+
+
+    def add_empty_lock_operation_to_planning(self, operation_index, direction, pre_planning=False, time_final=None):
+        operation_planning = self.operation_planning
+        direction = 1 - direction
+
+        if pre_planning:
+            operation_planning = self.operation_pre_planning
+
+        preceding_operation = operation_planning.loc[operation_index-1]
+        first_empty_lock_operation_start = preceding_operation.time_potential_lock_door_closure_start
+
+        time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop = self.calculate_lock_operation_times(last_entering_time=first_empty_lock_operation_start,
+                                                                                                                                                                                          start_time=first_empty_lock_operation_start,
+                                                                                                                                                                                          direction=direction)
+        if time_final is not None and (time_final-(time_door_opening_stop-time_door_closing_start)) > first_empty_lock_operation_start:
+            time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop = self.calculate_lock_operation_times(last_entering_time=time_final-pd.Timedelta(seconds=self.doors_opening_time),
+                                                                                                                                                                                              start_time=time_final-pd.Timedelta(seconds=self.doors_opening_time),
+                                                                                                                                                                                              direction=direction)
+            time_door_opening_stop = time_final
+            time_levelling_stop = time_final-pd.Timedelta(seconds=self.doors_opening_time)
+            time_levelling_start = time_levelling_stop - (time_levelling_stop-time_levelling_start)
+            time_door_closing_stop = time_levelling_start
+            time_door_closing_start = time_levelling_start-pd.Timedelta(seconds=self.doors_closing_time)
+            first_empty_lock_operation_start = time_door_closing_start
+
+
+        wlev_A, wlev_B = self.determine_water_levels_before_and_after_levelling(time_levelling_start,time_levelling_stop, direction)
+        operation_planning.loc[operation_index, 'bound'] = direction
+        operation_planning.loc[operation_index, 'vessels'] = []
+        operation_planning.loc[operation_index, 'capacity_L'] = self.lock_complex.lock_length
+        operation_planning.loc[operation_index, 'capacity_B'] = self.lock_complex.lock_width
+        operation_planning.loc[operation_index, 'time_operation_start'] = first_empty_lock_operation_start
+        operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop'] = first_empty_lock_operation_start
+        operation_planning.loc[operation_index, 'time_entry_start'] = first_empty_lock_operation_start
+        operation_planning.loc[operation_index, 'time_entry_stop'] = first_empty_lock_operation_start
+        operation_planning.loc[operation_index, 'time_door_closing_start'] = time_door_closing_start
+        operation_planning.loc[operation_index, 'time_door_closing_stop'] = time_door_closing_stop
+        operation_planning.loc[operation_index, 'time_levelling_start'] = time_levelling_start
+        operation_planning.loc[operation_index, 'time_levelling_stop'] = time_levelling_stop
+        operation_planning.loc[operation_index, 'time_door_opening_start'] = time_levelling_stop
+        operation_planning.loc[operation_index, 'time_door_opening_stop'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'time_departure_start'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'time_departure_stop'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'time_potential_lock_door_closure_start'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'time_operation_stop'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'wlev_A'] = wlev_A
+        operation_planning.loc[operation_index, 'wlev_B'] = wlev_B
+        operation_planning.loc[operation_index, 'maximum_individual_delay'] = pd.Timedelta(seconds=0)
+        operation_planning.loc[operation_index, 'total_delay'] = pd.Timedelta(seconds=0)
+        operation_planning.loc[operation_index, 'status'] = ''
+
+
+    def calculate_sailing_time_to_waiting_area(self, vessel, direction, prognosis=False, pre_planning = False, overwrite=True):
+        vessel_planning = self.vessel_planning
+        if pre_planning:
+            vessel_planning = self.vessel_pre_planning
+
+        if not direction:
+            waiting_area_approach = self.lock_complex.waiting_area_A
+        else:
+            waiting_area_approach = self.lock_complex.waiting_area_B
+
+        # Calculate sailing time function
+        vessel_traffic_service = self.env.vessel_traffic_service
+        calculate_sailing_time = vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+
+        # Calculate sailing time to waiting area
+        distance_to_waiting_area_from_last_node = waiting_area_approach.distance_from_node
+        route_to_waiting_area = nx.dijkstra_path(self.env.FG, vessel.origin, waiting_area_approach.edge[1])
+        sailing_to_waiting_area = calculate_sailing_time(vessel,
+                                                         route=route_to_waiting_area,
+                                                         distance_sailed_on_last_edge=distance_to_waiting_area_from_last_node)
+        sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['Time'].sum())
+        if not prognosis and overwrite:
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            if pre_planning:
+                current_time = vessel_planning.loc[vessel.id, 'time_of_acceptance']
+            vessel_planning.loc[vessel.id, 'time_arrival_at_waiting_area'] = current_time + sailing_to_waiting_area_time
+
+        return sailing_to_waiting_area_time
+
+
+    def calculate_sailing_time_to_lineup_area(self, vessel, direction, prognosis=False, pre_planning=False, overwrite=True):
+        vessel_planning = self.vessel_planning
+        if pre_planning:
+            vessel_planning = self.vessel_pre_planning
+
+        if not direction:
+            lineup_area_approach = self.lock_complex.lineup_area_A
+        else:
+            lineup_area_approach = self.lock_complex.lineup_area_B
+
+        # Calculate sailing time function
+        vessel_traffic_service = self.env.vessel_traffic_service
+        calculate_sailing_time = vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+
+        # Calculate sailing time to lineup area
+        distance_to_lineup_area_from_last_node = lineup_area_approach.distance_from_start_edge
+        route_to_lineup_area = nx.dijkstra_path(self.env.FG,vessel.origin,lineup_area_approach.end_node)
+        sailing_to_lineup_area = calculate_sailing_time(vessel,
+                                                        route=route_to_lineup_area,
+                                                        distance_sailed_on_last_edge=distance_to_lineup_area_from_last_node)
+        sailing_to_lineup_area_time = pd.Timedelta(seconds=sailing_to_lineup_area['Time'].sum())
+        if not prognosis and overwrite:
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            if pre_planning:
+                current_time = vessel_planning.loc[vessel.id, 'time_of_acceptance']
+            vessel_planning.loc[vessel.id, 'time_arrival_at_lineup_area'] = current_time + sailing_to_lineup_area_time
+
+        return sailing_to_lineup_area_time
+
+
+    def calculate_sailing_time_to_approach(self, vessel, direction, prognosis=False, pre_planning=False, overwrite=True):
+        vessel_planning = self.vessel_planning
+        if pre_planning:
+            vessel_planning = self.vessel_pre_planning
+
+        sailing_time_to_lock_door = self.calculate_sailing_time_to_lock_door(vessel, direction, pre_planning=pre_planning, overwrite=overwrite)
+        sailing_distance_from_entry = self.sailing_distance_to_crossing_point
+        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction)
+        sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
+        sailing_time_to_start_approach = sailing_time_to_lock_door - sailing_time_entry
+        if not prognosis and overwrite:
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            if pre_planning:
+                current_time = vessel_planning.loc[vessel.id, 'time_of_acceptance']
+            vessel_planning.loc[vessel.id, 'time_lock_passing_start'] = current_time + sailing_time_to_start_approach
+        return sailing_time_to_start_approach
+
+
+    def calculate_sailing_time_to_lock_door(self, vessel, direction, prognosis=False, pre_planning=False, overwrite=True):
+        vessel_planning = self.vessel_planning
+        if pre_planning:
+            vessel_planning = self.vessel_pre_planning
+
+        if not direction:
+            lock_end_node = self.lock_complex.end_node
+        else:
+            lock_end_node = self.lock_complex.start_node
+
+        # Calculate sailing time function
+        vessel_traffic_service = self.env.vessel_traffic_service
+        calculate_sailing_time = vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+
+        # Calculate sailing time to lock chamber
+        route_to_lock_chamber = nx.dijkstra_path(self.env.FG,vessel.origin,lock_end_node)
+        sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
+        sailing_to_lock_chamber_distance = sailing_to_lock_chamber['Distance'].sum()
+        sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
+        if not direction:
+            distance_to_lock = self.distance_from_start_node_to_lock_doors_A
+        else:
+            distance_to_lock = self.distance_from_end_node_to_lock_doors_B
+        sailing_to_lock_chamber_distance += distance_to_lock
+        sailing_to_lock_chamber_time += distance_to_lock / self.vessel_sailing_in_speed(vessel, direction)
+        sailing_to_lock_chamber_time = pd.Timedelta(seconds=sailing_to_lock_chamber_time)
+        if not prognosis and overwrite:
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            if pre_planning:
+                current_time = vessel_planning.loc[vessel.id, 'time_of_acceptance']
+            vessel_planning.loc[vessel.id, 'time_lock_entry_start'] = current_time + sailing_to_lock_chamber_time
+        return sailing_to_lock_chamber_time
+
+
+    def calculate_sailing_time_in_lock(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        vessels = self.subtract_vessels_from_lock_operation(operation_index, pre_planning=pre_planning)
+        if not prognosis:
+            vessel_index = vessels.index(vessel)
+            sailing_distance_from_lock_doors = (self.lock_length - np.sum([vessel.L for vessel in vessels[:vessel_index]])) - 0.5 * vessel.L
+        else:
+            sailing_distance_from_lock_doors = (self.lock_length - np.sum([vessel.L for vessel in vessels]) - 0.5 * vessel.L)
+        sailing_speed_into_lock = self.vessel_sailing_in_speed(vessel, direction)
+        sailing_time_into_lock = pd.Timedelta(seconds=sailing_distance_from_lock_doors / sailing_speed_into_lock)
+        return sailing_time_into_lock
+
+
+    def calculate_vessel_entry_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False, overwrite=True):
+        vessels = self.subtract_vessels_from_lock_operation(operation_index, pre_planning=pre_planning)
+        vessel_planning = self.vessel_planning
+        if pre_planning:
+            vessel_planning = self.vessel_pre_planning
+
+        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index, pre_planning=pre_planning)
+        sailing_in_time_gap = pd.Timedelta(seconds=self.sailing_in_time_gap)
+
+        sailing_distance_from_entry = self.sailing_distance_to_crossing_point
+        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction)
+        sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+        sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis, pre_planning=pre_planning, overwrite=overwrite)
+        vessel_entry_start_timestamp = current_time + sailing_time_to_lock
+
+        vessel_index = -1
+        if not prognosis:
+            vessel_index = vessels.index(vessel)
+
+        if not first_vessel:
+            for index,other_vessel in enumerate(vessels):
+                other_vessel_info = vessel_planning.loc[other_vessel.id]
+                other_vessel_entry_start_timestamp = other_vessel_info.time_lock_entry_start
+                difference_entry_start_timestamp = vessel_entry_start_timestamp - other_vessel_entry_start_timestamp
+                if difference_entry_start_timestamp < sailing_in_time_gap:
+                    delay = sailing_in_time_gap-difference_entry_start_timestamp
+                    sailing_time_entry += delay
+                if index == vessel_index:
+                    break
+
+        if prognosis and len(vessels):
+            last_vessel = vessels[-1]
+            last_vessel_info = vessel_planning.loc[last_vessel.id]
+            last_vessel_entry_start_timestamp = last_vessel_info.time_lock_entry_start
+            difference_entry_start_timestamp = vessel_entry_start_timestamp - last_vessel_entry_start_timestamp
+            if difference_entry_start_timestamp < sailing_in_time_gap:
+                delay = sailing_in_time_gap-difference_entry_start_timestamp
+                sailing_time_entry += delay
+
+        return sailing_time_entry
+    
+    
+    def calculate_vessel_passing_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False, overwrite=True):
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+        if pre_planning:
+            current_time = self.vessel_pre_planning.loc[vessel.id].time_of_acceptance
+        sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis,pre_planning=pre_planning,overwrite=overwrite)
+        sailing_time_entry = self.calculate_vessel_entry_start_time(vessel, operation_index, direction, prognosis,pre_planning=pre_planning,overwrite=overwrite)
+        vessel_passing_start_timestamp = current_time + (sailing_time_to_lock - sailing_time_entry)
+        return vessel_passing_start_timestamp
+
+
+    def calculate_lock_operation_start_time(self, vessel, operation_index, direction, prognosis=False,pre_planning=False, overwrite=True):
+        operation_planning = self.operation_planning
+        if pre_planning:
+            operation_planning = self.operation_pre_planning
+
+        previous_operations = operation_planning[operation_planning.index < operation_index]
+        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
+        lock_operation_start_time = self.calculate_vessel_passing_start_time(first_vessel, operation_index, direction, prognosis,pre_planning=pre_planning,overwrite=overwrite)
+        if not previous_operations.empty:
+            previous_operation = previous_operations.iloc[-1]
+            previous_lock_operation_stop_time = previous_operation.time_operation_stop
+            if lock_operation_start_time < previous_lock_operation_stop_time:
+                lock_operation_start_time = previous_lock_operation_stop_time
+        return lock_operation_start_time
+
+
+    def calculate_lock_door_opening_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False, overwrite=True):
+        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
+        lock_entry_start_time = self.calculate_vessel_entry_start_time(first_vessel, operation_index, direction,prognosis, pre_planning=pre_planning, overwrite=overwrite)
+        lock_entry_start_time -= self.minimum_advance_to_open_doors(vessel, direction)
+        return lock_entry_start_time
+
+
+    def calculate_lock_entry_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False, overwrite=True):
+        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index, pre_planning=pre_planning)
+        lock_entry_start_time = self.calculate_vessel_entry_start_time(first_vessel, operation_index, direction, prognosis, pre_planning=pre_planning, overwrite=overwrite)
+        return lock_entry_start_time
+
+
+    def calculate_vessel_entry_stop_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False, overwrite=True):
+        vessel_entry_start_time = self.calculate_vessel_entry_start_time(vessel, operation_index, direction, prognosis, pre_planning=pre_planning, overwrite=overwrite)
+        sailing_time_in_lock = self.calculate_sailing_time_in_lock(vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        vessel_entry_stop_time = vessel_entry_start_time + sailing_time_in_lock
+        return vessel_entry_stop_time
+
+
+    def calculate_lock_entry_stop_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False, overwrite=True):
+        last_vessel = self.determine_last_vessel_of_lock_operation(vessel, operation_index, prognosis, pre_planning=pre_planning)
+        lock_entry_stop_time = self.calculate_vessel_entry_stop_time(last_vessel, operation_index, direction, prognosis, pre_planning=pre_planning,overwrite=overwrite)
+        return lock_entry_stop_time
+
+
+    def calculate_lock_operation_times(self, last_entering_time, start_time, vessel= None, direction=None, same_direction = False):
+        time_door_closing_start = start_time
+        if self.close_doors_before_vessel_is_laying_still and vessel is not None:
+            time_door_closing_start = last_entering_time + self.minimum_delay_to_close_doors(vessel, direction)
+        time_door_closing_stop = time_door_closing_start + pd.Timedelta(seconds=self.lock_complex.doors_closing_time)
+        time_levelling_start = time_door_closing_stop
+        time_levelling_stop,_ = self.lock_complex.determine_levelling_time(t_start=time_levelling_start, direction=direction, prediction=True, same_direction = same_direction)
+        time_levelling_stop = time_levelling_start + pd.Timedelta(seconds=time_levelling_stop)
+        time_door_opening_start = time_levelling_stop
+        time_door_opening_stop = time_levelling_stop + pd.Timedelta(seconds=self.lock_complex.doors_opening_time)
+        return time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop
+
+
+    def calculate_vessel_departure_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        vessels = self.subtract_vessels_from_lock_operation(operation_index, pre_planning=pre_planning)
+
+        if not prognosis:
+            vessel_index = vessels.index(vessel)
+        else:
+            vessel_index = -1
+
+        delay = pd.Timedelta(seconds= self.start_sailing_out_time_after_doors_have_been_opened)
+        for index, other_vessel in enumerate(vessels):
+            delay += pd.Timedelta(seconds = self.sailing_out_time_gap/self.vessel_sailing_out_speed(other_vessel, direction))
+            if index == vessel_index:
+                break
+        if prognosis:
+            delay += pd.Timedelta(seconds=self.sailing_out_time_gap / self.vessel_sailing_out_speed(vessel, direction))
+        return delay
+
+
+    def calculate_lock_departure_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index, pre_planning=pre_planning)
+        time_departure_start = self.calculate_vessel_departure_start_time(first_vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        return time_departure_start
+
+
+    def calculate_vessel_sailing_time_out_of_lock(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        vessels = self.subtract_vessels_from_lock_operation(operation_index,pre_planning=pre_planning)
+        # Time to sail out
+        if not prognosis:
+            vessel_index = vessels.index(vessel)
+            distance_to_lock = np.sum([vessel.L for vessel in vessels[:vessel_index]]) + 0.5 * vessel.L
+        else:
+            distance_to_lock = np.sum([vessel.L for vessel in vessels]) + 0.5 * vessel.L
+
+        sailing_out_time = pd.Timedelta(seconds=distance_to_lock / self.vessel_sailing_out_speed(vessel, direction))
+        return sailing_out_time
+
+
+    def calculate_vessel_departure_stop_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        time_departure_start = self.calculate_vessel_departure_start_time(vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        time_departure_stop = time_departure_start + sailing_out_time
+        return time_departure_stop
+
+
+    def calculate_lock_departure_stop_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        last_vessel = self.determine_last_vessel_of_lock_operation(vessel, operation_index, prognosis, pre_planning=pre_planning)
+        time_departure_stop = self.calculate_vessel_departure_stop_time(last_vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        return time_departure_stop
+
+
+    def calculate_vessel_passing_stop_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        time_departure_stop = self.calculate_vessel_departure_stop_time(vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        time_departure_stop += pd.Timedelta(seconds = self.sailing_distance_to_crossing_point/self.vessel_sailing_out_speed(vessel, direction))
+        return time_departure_stop
+
+
+    def calculate_lock_operation_stop_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        last_vessel = self.determine_last_vessel_of_lock_operation(vessel, operation_index, prognosis, pre_planning=pre_planning)
+        time_operation_stop = self.calculate_vessel_passing_stop_time(last_vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        return time_operation_stop
+
+
+    def minimum_delay_to_close_doors(self, vessel, direction):
+        minimum_delay_to_close_doors = pd.Timedelta(seconds=self.sailing_time_before_closing_lock_doors)
+        minimum_delay_to_close_doors += pd.Timedelta(seconds=vessel.L/self.vessel_sailing_out_speed(vessel,direction))
+        return minimum_delay_to_close_doors
+
+
+    def minimum_advance_to_open_doors(self, vessel, direction):
+        minimum_advance_to_open_doors = pd.Timedelta(seconds=self.sailing_time_before_opening_lock_doors)
+        minimum_advance_to_open_doors += pd.Timedelta(seconds=vessel.L/self.vessel_sailing_in_speed(vessel,direction))
+        return minimum_advance_to_open_doors
+
+
+    def calculate_lock_door_closing_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+        lock_doors_closing_time = self.calculate_lock_departure_stop_time(vessel, operation_index, direction,prognosis, pre_planning=pre_planning)
+        lock_doors_closing_time += self.minimum_delay_to_close_doors(vessel, direction)
+        return lock_doors_closing_time
+
+
+    def determine_first_vessel_of_lock_operation(self, vessel, operation_index, pre_planning=False):
+        vessels = self.subtract_vessels_from_lock_operation(operation_index,pre_planning=pre_planning)
+        first_vessel = vessel
+        if len(vessels):
+            first_vessel = vessels[0]
+        return first_vessel
+
+
+    def determine_last_vessel_of_lock_operation(self, vessel, operation_index, prognosis=False, pre_planning=False):
+        vessels = self.subtract_vessels_from_lock_operation(operation_index,pre_planning=pre_planning)
+        last_vessel = vessel
+        if not prognosis:
+            last_vessel = vessels[-1]
+        return last_vessel
+
+
+    def calculate_delay_to_open_doors(self, vessel):
+        vessel_planning = self.vessel_planning
+        if self.predictive:
+            vessel_planning = self.vessel_pre_planning
+        arrival_time_at_lock = vessel_planning.loc[vessel.id, 'time_lock_entry_start']
+        time_index = np.absolute(hydrodynamic_times - np.datetime64(arrival_time_at_lock) - np.timedelta64(int(self.doors_opening_time),'s')).argmin()
+        expected_levelling_time,_ = self.determine_levelling_time(t_start=hydrodynamic_times[time_index - 1], same_direction=True, prediction=True)
+        delay = self.sailing_time_before_opening_lock_doors + expected_levelling_time + self.doors_opening_time
+        return delay
+
+
+    def determine_if_doors_can_be_closed_between_vessel_arrivals(self, vessel, operation_index):
+        operation_planning = self.operation_planning
+        vessel_planning = self.vessel_planning
+        if self.predictive:
+            operation_planning = self.operation_pre_planning
+            vessel_planning = self.vessel_pre_planning
+        this_operation = operation_planning.loc[operation_index]
+        vessels = this_operation.vessels
+        vessel_index = vessels.index(vessel)
+        vessel_index = vessels.index(vessel)
+        doors_can_be_closed_between_vessel_arrivals = False
+        if vessel_index != len(vessels)-1:
+            next_vessel = this_operation.vessels[vessel_index+1]
+            vessel_info = vessel_planning.loc[vessel.id]
+            next_vessel_info =vessel_planning.loc[next_vessel.id]
+            time_in_between_door_closing_and_opening = next_vessel_info.time_potential_lock_door_opening_stop - vessel_info.time_potential_lock_door_closure_start
+            doors_closing_time = pd.Timedelta(seconds=self.doors_closing_time)
+            doors_opening_time = pd.Timedelta(seconds=self.doors_opening_time)
+            door_opening_and_closing_time = doors_closing_time + doors_opening_time
+            if time_in_between_door_closing_and_opening > door_opening_and_closing_time:
+                doors_can_be_closed_between_vessel_arrivals = True
+        return doors_can_be_closed_between_vessel_arrivals
+
+
+    def determine_door_opening_time(self, vessel, operation_index, vessel_perspective=False):
+        operation_planning = self.operation_planning
+        vessel_planning = self.vessel_planning
+        if self.predictive:
+            operation_planning = self.operation_pre_planning
+            vessel_planning = self.vessel_pre_planning
+
+        this_operation = operation_planning.loc[operation_index]
+        vessels = this_operation.vessels
+        vessel_index = vessels.index(vessel)
+        vessel_info = vessel_planning.loc[vessel.id]
+
+        time_door_was_closed = pd.Timestamp(self.env.simulation_start)
+        time_door_required_to_be_open = this_operation.time_potential_lock_door_opening_stop - pd.Timedelta(seconds=self.doors_opening_time)
+        direction_this_operation = direction = this_operation.bound
+        same_direction = False
+        if vessel_perspective:
+            next_vessel = vessels[vessel_index + 1]
+            next_vessel_info = vessel_planning.loc[next_vessel.id]
+
+        if operation_index != 0:
+            previous_lock_operation = operation_planning[operation_planning.index < operation_index].iloc[-1]
+            time_door_was_closed = previous_lock_operation.time_potential_lock_door_closure_start + pd.Timedelta(seconds=self.doors_closing_time)
+            direction_last_operation = previous_lock_operation.bound
+
+        else:
+            direction_last_operation = self.node_open != self.start_node
+            if not direction_last_operation:
+                direction_last_operation = 1
+            else:
+                direction_last_operation = 0
+
+        if vessel_perspective:
+            time_door_was_closed = vessel_info.time_potential_lock_door_closure_start + pd.Timedelta(seconds=self.doors_closing_time)
+            time_door_required_to_be_open = next_vessel_info.time_potential_lock_door_opening_stop - pd.Timedelta(seconds=self.doors_opening_time)
+
+        if direction_last_operation != direction_this_operation or vessel_perspective:
+            same_direction = True
+
+        time_index_closed = np.absolute(hydrodynamic_times - np.datetime64(time_door_was_closed)).argmin()
+        if not same_direction:
+            if not direction_last_operation:
+                wlev_init = hydrodynamic_data["Water level"][1][time_index_closed]
+            else:
+                wlev_init = hydrodynamic_data["Water level"][0][time_index_closed]
+        else:
+            if not direction_this_operation:
+                wlev_init = hydrodynamic_data["Water level"][0][time_index_closed]
+            else:
+                wlev_init = hydrodynamic_data["Water level"][1][time_index_closed]
+
+        expected_levelling_time, _ = self.determine_levelling_time(t_start=time_door_required_to_be_open,wlev_init=wlev_init,direction=direction,same_direction=same_direction,prediction=True)
+        expected_time_to_open_door = pd.Timedelta(seconds=expected_levelling_time) + pd.Timedelta(seconds=self.doors_opening_time)
+        return expected_time_to_open_door
+
+
+    def determine_if_door_can_be_closed(self, operation_index):
+        if not self.closing_doors_in_between_operations:
+            return False
+        if operation_index == -1:
+            return True
+
+        door_can_be_closed = False
+        operation_planning = self.operation_planning
+        if self.predictive:
+            operation_planning = self.operation_pre_planning
+
+        this_operation = operation_planning.loc[operation_index]
+        next_lock_operations = operation_planning[operation_planning.index > operation_index]
+        if not next_lock_operations.empty:
+            next_lock_operation = next_lock_operations.iloc[0]
+            time_door_required_to_be_open = next_lock_operation.time_potential_lock_door_opening_stop
+            time_door_can_be_closed = this_operation.time_potential_lock_door_closure_start
+            difference = time_door_required_to_be_open - time_door_can_be_closed
+            doors_closing_time = pd.Timedelta(seconds=self.doors_closing_time)
+            doors_opening_time = pd.Timedelta(seconds=self.doors_opening_time)
+            door_opening_and_closing_time = doors_closing_time + doors_opening_time + pd.Timedelta(5,'min')
+            if difference > door_opening_and_closing_time:
+                door_can_be_closed = True
+        else:
+            door_can_be_closed = True
+
+        return door_can_be_closed
+
+
+    def determine_if_door_is_or_will_be_closed(self, operation_index):
+        operation_planning = self.operation_planning
+        if self.predictive:
+            operation_planning = self.operation_pre_planning
+
+        if operation_index > 0 and not len(operation_planning.loc[operation_index-1,'vessels']):
+            door_is_or_will_be_closed = True
+        else:
+            door_is_or_will_be_closed = self.determine_if_door_can_be_closed(operation_index-1)
+        if operation_index > 0 and door_is_or_will_be_closed:
+            operation_planning.loc[operation_index-1,'status'] = 'not available'
+        return door_is_or_will_be_closed
+
+
+    def determine_if_previous_operation(self, operation_index):
+        operation_planning = self.operation_planning
+        if self.predictive:
+            operation_planning = self.operation_pre_planning
+
+        if_previous_operation = False
+        previous_operations = operation_planning[operation_planning.index < operation_index]
+        if not previous_operations.empty:
+            if_previous_operation = True
+        return if_previous_operation
+
+
+    def determine_water_levels_before_and_after_levelling(self,levelling_start,levelling_stop,direction):
+        index_start_node = 0  # list(self.multidigraph.nodes).index(self.start_node)
+        index_end_node = 1  # list(self.multidigraph.nodes).index(self.end_node)
+        wlev_A = np.nan
+        wlev_B = np.nan
+        if self.env.vessel_traffic_service.hydrodynamic_information_path:
+            time_index_start = np.absolute(hydrodynamic_times - np.datetime64(levelling_start)).argmin()
+            time_index_stop = np.absolute(hydrodynamic_times - np.datetime64(levelling_stop)).argmin()
+            if not direction:
+                wlev_A = hydrodynamic_data["Water level"][index_start_node][time_index_start]
+                wlev_B = hydrodynamic_data["Water level"][index_end_node][time_index_stop]
+            elif direction:
+                wlev_B = hydrodynamic_data["Water level"][index_end_node][time_index_start]
+                wlev_A = hydrodynamic_data["Water level"][index_start_node][time_index_stop]
+        return wlev_A, wlev_B
+
+
+    def subtract_vessels_from_lock_operation(self, operation_index, pre_planning=False):
+        vessels = []
+        operation_planning = self.operation_planning
+        if pre_planning:
+            operation_planning = self.operation_pre_planning
+
+        selected_operation = operation_planning[operation_planning.index == operation_index]
+        if not selected_operation.empty:
+            vessels = operation_planning.loc[operation_index, 'vessels'].copy()
+        return vessels
+
+
+    def update_operation_planning(self,vessel,direction,operation_index,add_operation,pre_planning=False):
+        operation_planning = self.lock_complex.operation_planning
+        vessel_planning = self.lock_complex.vessel_planning
+        if pre_planning:
+            operation_planning = self.lock_complex.operation_pre_planning
+            vessel_planning = self.lock_complex.vessel_pre_planning
+
+        if operation_planning.empty or add_operation:
+            self.add_vessel_to_new_lock_operation(vessel, operation_index, direction, pre_planning=pre_planning)
+        else:
+            self.add_vessel_to_planned_lock_operation(vessel, operation_index, direction, pre_planning=pre_planning)
+
+        operation_index = vessel_planning.loc[vessel.id,'operation_index']
+        operation_planning.loc[operation_index, 'maximum_individual_delay'] = np.max(vessel_planning[vessel_planning.operation_index == operation_index].delay)
+        operation_planning.loc[operation_index, 'total_delay'] = np.sum(vessel_planning[vessel_planning.operation_index == operation_index].delay)
+
+
+    def add_vessel_to_new_lock_operation(self, vessel, operation_index, direction, add_vessel_to_planning=True,pre_planning=False):
+        vessel_planning = self.lock_complex.vessel_planning
+        operation_planning = self.lock_complex.operation_planning
+        if pre_planning:
+            vessel_planning = self.lock_complex.vessel_pre_planning
+            operation_planning = self.lock_complex.operation_pre_planning
+        previously_planned_operations = operation_planning[operation_planning.index < operation_index]
+        later_planned_operations = operation_planning[operation_planning.index >= operation_index]
+        if not add_vessel_to_planning:
+            operation_planning = operation_planning.copy()
+
+        time_lock_operation_start = self.calculate_lock_operation_start_time(vessel, operation_index, direction,prognosis=True, pre_planning=pre_planning)
+        operational_hours = self.operational_hours
+        within_operation_hours = operational_hours[(time_lock_operation_start >= operational_hours.start_time) & (time_lock_operation_start <= operational_hours.stop_time)]
+        vessel_entry_delay = pd.Timedelta(seconds=0)
+        if within_operation_hours.empty:
+            first_available_hour = operational_hours[operational_hours.start_time >= time_lock_operation_start].iloc[0]
+            time_lock_operation_start = first_available_hour.start_time
+            vessel_entry_delay += first_available_hour.start_time - time_lock_operation_start
+
+        time_lock_entry_start = self.calculate_lock_entry_start_time(vessel, operation_index, direction, prognosis=True,pre_planning=pre_planning) + time_lock_operation_start
+        time_lock_door_opening_stop = self.calculate_lock_door_opening_time(vessel, operation_index, direction,prognosis=True,pre_planning=pre_planning) + time_lock_operation_start
+
+        if not previously_planned_operations.empty:
+            previous_operation = previously_planned_operations.iloc[-1]
+            if not previous_operation.bound != direction:
+                self.add_empty_lock_operation_to_planning(operation_index, direction, pre_planning=pre_planning,time_final=time_lock_door_opening_stop)
+                operation_index += 1
+            potential_delay = operation_planning.iloc[-1].time_potential_lock_door_closure_start - time_lock_door_opening_stop
+            if potential_delay > pd.Timedelta(seconds=0):
+                time_lock_operation_start += potential_delay
+                time_lock_entry_start += potential_delay
+                time_lock_door_opening_stop += potential_delay
+                vessel_entry_delay += potential_delay
+
+        time_lock_entry_stop = self.calculate_lock_entry_stop_time(vessel, operation_index, direction, prognosis=True, pre_planning=pre_planning)+time_lock_operation_start
+        time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop = self.calculate_lock_operation_times(last_entering_time=time_lock_entry_start,
+                                                                                                                                                                                          start_time=time_lock_entry_stop,
+                                                                                                                                                                                          vessel=vessel,
+                                                                                                                                                                                          direction=direction)
+        wlev_A, wlev_B = self.determine_water_levels_before_and_after_levelling(time_levelling_start, time_levelling_stop, direction)
+        vessels = [vessel]
+        time_lock_departure_start = self.calculate_lock_departure_start_time(vessel, operation_index, direction, prognosis=True, pre_planning=pre_planning) + time_door_opening_stop
+        time_lock_departure_stop = self.calculate_lock_departure_stop_time(vessel, operation_index, direction, prognosis=True, pre_planning=pre_planning) + time_lock_departure_start
+        time_lock_operation_stop = self.calculate_lock_operation_stop_time(vessel, operation_index, direction, prognosis=True, pre_planning=pre_planning) + time_lock_departure_stop
+        time_lock_door_closing_start = self.calculate_lock_door_closing_time(vessel, operation_index, direction, prognosis=True, pre_planning=pre_planning) + time_lock_departure_stop
+        operation_planning.loc[operation_index, 'bound'] = direction
+        operation_planning.loc[operation_index, 'vessels'] = vessels
+        operation_planning.loc[operation_index, 'capacity_L'] = self.lock_complex.lock_length-vessel.L
+        operation_planning.loc[operation_index, 'capacity_B'] = self.lock_complex.lock_width-vessel.B
+        operation_planning.loc[operation_index, 'time_operation_start'] = time_lock_operation_start
+        operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop'] = time_lock_door_opening_stop
+        operation_planning.loc[operation_index, 'time_entry_start'] = time_lock_entry_start
+        operation_planning.loc[operation_index, 'time_entry_stop'] = time_lock_entry_stop
+        operation_planning.loc[operation_index, 'time_door_closing_start'] = time_door_closing_start
+        operation_planning.loc[operation_index, 'time_door_closing_stop'] = time_door_closing_stop
+        operation_planning.loc[operation_index, 'time_levelling_start'] = time_levelling_start
+        operation_planning.loc[operation_index, 'time_levelling_stop'] = time_levelling_stop
+        operation_planning.loc[operation_index, 'time_door_opening_start'] = time_door_opening_start
+        operation_planning.loc[operation_index, 'time_door_opening_stop'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'time_departure_start'] = time_lock_departure_start
+        operation_planning.loc[operation_index, 'time_departure_stop'] = time_lock_departure_stop
+        operation_planning.loc[operation_index, 'time_operation_stop'] = time_lock_operation_stop
+        operation_planning.loc[operation_index, 'time_potential_lock_door_closure_start'] = time_lock_door_closing_start
+        operation_planning.loc[operation_index, 'wlev_A'] = wlev_A
+        operation_planning.loc[operation_index, 'wlev_B'] = wlev_B
+        if len(vessels) < self.min_vessels_in_operation:
+            operation_planning.loc[operation_index, 'status'] = 'waiting for vessel'
+        else:
+            operation_planning.loc[operation_index, 'status'] = 'ready'
+
+        vessel_planning.loc[vessel.id, 'time_potential_lock_door_opening_stop'] = time_lock_entry_start - self.minimum_advance_to_open_doors(vessel, direction)
+        vessel_planning.loc[vessel.id, 'time_potential_lock_door_closure_start'] = time_lock_entry_start + self.minimum_delay_to_close_doors(vessel, direction)
+        vessel_planning.loc[vessel.id, 'operation_index'] = operation_index
+        vessel_planning.loc[vessel.id, 'time_lock_passing_start'] = time_lock_operation_start
+        vessel_planning.loc[vessel.id, 'time_lock_entry_start'] = time_lock_entry_start
+        vessel_planning.loc[vessel.id, 'time_lock_entry_stop'] = time_lock_entry_stop
+        vessel_planning.loc[vessel.id, 'time_lock_departure_start'] = time_lock_departure_start
+        vessel_planning.loc[vessel.id, 'time_lock_departure_stop'] = time_lock_departure_stop
+        vessel_planning.loc[vessel.id, 'time_lock_passing_stop'] = time_lock_operation_stop
+        if vessel_entry_delay > pd.Timedelta(seconds=0):
+            vessel_planning.loc[vessel.id,'delay'] += vessel_entry_delay
+
+        if not later_planned_operations.empty and not self.closing_doors_in_between_operations:
+            self.add_empty_lock_operation_to_planning(operation_index, direction, pre_planning=pre_planning)
+
+
+    def add_vessel_to_planned_lock_operation(self, vessel, operation_index, direction, pre_planning=False):
+        operation_planning = self.operation_planning
+        vessel_planning = self.vessel_planning
+        if pre_planning:
+            operation_planning = self.operation_pre_planning
+            vessel_planning = self.vessel_pre_planning
+        vessel_info = vessel_planning.loc[vessel.id]
+
+        # Determine capacity parameters
+        vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
+        if vessel not in operation_planning.loc[operation_index, 'vessels']:
+            operation_planning.loc[operation_index, 'vessels'].append(vessel)
+            vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
+            if len(vessels_in_operation) == self.min_vessels_in_operation:
+                other_vessels_in_operation = vessels_in_operation[:-1]
+                if not pre_planning:
+                    operation_planning.loc[operation_index, 'vessels'] = []
+                    self.add_vessel_to_new_lock_operation(vessel, operation_index, direction, pre_planning=pre_planning)
+                    operation_planning.loc[operation_index, 'vessels'].extend(other_vessels_in_operation)
+                    operation_planning.loc[operation_index, 'status'] = 'ready'
+                    Operation = namedtuple('Operation', 'operation_index')
+                    operation = Operation(operation_index)
+                    self.wait_for_other_vessel_to_arrive.put(operation)
+                else:
+                    for vessel_index,other_vessel in enumerate(other_vessels_in_operation):
+                        vessel_planning.loc[other_vessel.id, 'time_lock_passing_start'] = vessel_planning.loc[vessel.id, 'time_lock_passing_start']
+                        vessel_planning.loc[other_vessel.id, 'time_lock_passing_start'] += pd.Timedelta(seconds=self.sailing_in_time_gap * (vessel_index + 1))
+
+        if len(vessels_in_operation) >= self.min_vessels_in_operation:
+            operation_planning.loc[operation_index, 'status'] = 'ready'
+
+        operation_planning.loc[operation_index, 'capacity_L'] -= vessel.L
+        operation_planning.loc[operation_index, 'capacity_B'] -= vessel.B
+
+        # Determine new entry times
+        operational_hours = self.operational_hours
+        other_vessels_in_operation = operation_planning.loc[operation_index, 'vessels'][:-1]
+        time_lock_operation_start = operation_planning.loc[operation_index, 'time_operation_start']
+        time_arrival_time_at_lock_entry = vessel_info.time_lock_passing_start
+        vessel_entry_delay = pd.Timedelta(seconds=0)
+        previous_operations = operation_planning[operation_planning.index < operation_index]
+        potential_lock_door_opening_stop = operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop']
+        first_vessel = operation_planning.loc[operation_index, 'vessels'][0]
+        sailing_after_door_opening = self.calculate_lock_door_opening_time(first_vessel, operation_index, direction, pre_planning=pre_planning, overwrite=False)
+
+        if potential_lock_door_opening_stop >= time_lock_operation_start:
+            vessel_entry_delay += (potential_lock_door_opening_stop - time_lock_operation_start) - sailing_after_door_opening
+            time_lock_operation_start += (potential_lock_door_opening_stop - time_lock_operation_start) - sailing_after_door_opening
+
+        if not previous_operations.empty:
+            previous_potential_lock_door_closure_start = previous_operations.iloc[-1].time_potential_lock_door_closure_start
+            if previous_potential_lock_door_closure_start > potential_lock_door_opening_stop:
+                vessel_entry_delay += (previous_potential_lock_door_closure_start-potential_lock_door_opening_stop)-sailing_after_door_opening
+                time_lock_operation_start = previous_potential_lock_door_closure_start-sailing_after_door_opening
+                potential_lock_door_opening_stop = previous_potential_lock_door_closure_start
+        if not len(other_vessels_in_operation):
+            time_arrival_time_at_lock_entry = time_lock_operation_start - vessel_entry_delay
+
+        within_operation_hours = operational_hours[(time_arrival_time_at_lock_entry + vessel_entry_delay >= operational_hours.start_time) & (time_arrival_time_at_lock_entry + vessel_entry_delay <= operational_hours.stop_time)]
+        if within_operation_hours.empty:
+            first_available_hour = operational_hours[operational_hours.start_time >= (time_arrival_time_at_lock_entry + vessel_entry_delay)].iloc[0]
+            vessel_entry_delay += first_available_hour.start_time - (time_arrival_time_at_lock_entry + vessel_entry_delay)
+            if time_lock_operation_start < first_available_hour.start_time:
+                time_lock_operation_start = first_available_hour.start_time
+        sailing_in_gap = pd.Timedelta(seconds=self.sailing_in_time_gap)
+        time_first_vessel_required_to_be_at_lock_approach = (time_arrival_time_at_lock_entry + vessel_entry_delay)
+        if len(other_vessels_in_operation):
+            time_first_vessel_required_to_be_at_lock_approach -= len(other_vessels_in_operation)*sailing_in_gap
+
+        within_operation_hours = operational_hours[(time_first_vessel_required_to_be_at_lock_approach >= operational_hours.start_time) & (time_first_vessel_required_to_be_at_lock_approach <= operational_hours.stop_time)]
+        if within_operation_hours.empty:
+            if len(other_vessels_in_operation):
+                vessel_entry_delay += vessel_planning.loc[other_vessels_in_operation[-1].id, 'time_lock_passing_start'] - (time_arrival_time_at_lock_entry + vessel_entry_delay) + sailing_in_gap
+            else:
+                vessel_entry_delay += operation_planning.loc[operation_index, 'time_operation_start'] - (time_arrival_time_at_lock_entry + vessel_entry_delay)
+            time_first_vessel_required_to_be_at_lock_approach = operation_planning.loc[operation_index, 'time_operation_start']
+
+        if time_first_vessel_required_to_be_at_lock_approach > operation_planning.loc[operation_index, 'time_operation_start']:
+            time_lock_operation_start = time_first_vessel_required_to_be_at_lock_approach
+        elif time_first_vessel_required_to_be_at_lock_approach < operation_planning.loc[operation_index, 'time_operation_start']:
+            vessel_entry_delay += operation_planning.loc[operation_index, 'time_operation_start']-time_first_vessel_required_to_be_at_lock_approach
+
+        if vessel_entry_delay > pd.Timedelta(seconds=0):
+            time_arrival_time_at_lock_entry += vessel_entry_delay
+
+        operation_start_delay = time_lock_operation_start - operation_planning.loc[operation_index, 'time_operation_start']
+        time_vessel_entry_start = self.calculate_vessel_entry_start_time(vessel, operation_index, direction,pre_planning=pre_planning) + time_arrival_time_at_lock_entry
+        time_lock_entry_stop = self.calculate_lock_entry_stop_time(vessel, operation_index,direction,pre_planning=pre_planning) + time_arrival_time_at_lock_entry
+
+        # Determine new lock door closing and opening and levelling times
+        time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop = self.calculate_lock_operation_times(last_entering_time=time_vessel_entry_start,
+                                                                                                                                                                                          start_time=time_lock_entry_stop,
+                                                                                                                                                                                          vessel=vessel,
+                                                                                                                                                                                          direction=direction)
+
+        operation_planning.loc[operation_index, 'time_operation_start'] += operation_start_delay
+        if vessel_entry_delay > pd.Timedelta(seconds=0):
+            vessel_planning.loc[vessel.id,'delay'] += vessel_entry_delay
+        operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop'] += operation_start_delay
+        operation_planning.loc[operation_index, 'time_entry_start'] += operation_start_delay
+
+        if operation_start_delay > pd.Timedelta(seconds=0):
+            for vessel_index,other_vessel in enumerate(other_vessels_in_operation):
+                vessel_planning.loc[other_vessel.id, 'time_potential_lock_door_opening_stop'] += operation_start_delay
+                vessel_planning.loc[other_vessel.id, 'time_potential_lock_door_closure_start'] += operation_start_delay
+                vessel_planning.loc[other_vessel.id, 'time_arrival_at_waiting_area'] += operation_start_delay
+                vessel_planning.loc[other_vessel.id, 'time_arrival_at_lineup_area'] += operation_start_delay
+                vessel_planning.loc[other_vessel.id, 'time_lock_passing_start'] += operation_start_delay
+                vessel_planning.loc[other_vessel.id, 'time_lock_entry_start'] += operation_start_delay
+                vessel_planning.loc[other_vessel.id, 'time_lock_entry_stop'] += operation_start_delay
+                vessel_planning.loc[other_vessel.id, 'delay'] += operation_start_delay
+                if vessel_index < len(other_vessels_in_operation)-1:
+                    next_vessel = other_vessels_in_operation[vessel_index+1]
+                    operation_start_delay = (vessel_planning.loc[other_vessel.id, 'time_lock_entry_start'] - vessel_planning.loc[next_vessel.id, 'time_lock_entry_start'])+sailing_in_gap
+
+        additional_sailing_out_delay = time_door_opening_stop - operation_planning.loc[operation_index, 'time_door_opening_stop']
+        if additional_sailing_out_delay > pd.Timedelta(seconds=0):
+            for other_vessel in other_vessels_in_operation:
+                vessel_planning.loc[other_vessel.id, 'time_lock_departure_start'] += additional_sailing_out_delay
+                vessel_planning.loc[other_vessel.id, 'time_lock_departure_stop'] += additional_sailing_out_delay
+                vessel_planning.loc[other_vessel.id, 'time_lock_passing_stop'] += additional_sailing_out_delay
+                vessel_planning.loc[other_vessel.id, 'delay'] += additional_sailing_out_delay
+
+        # Determine water levels
+        wlev_A, wlev_B = self.determine_water_levels_before_and_after_levelling(time_levelling_start, time_levelling_stop, direction)
+
+        # Update plannings start
+        vessel_planning.loc[vessel.id, 'operation_index'] = operation_index
+        vessel_planning.loc[vessel.id, 'time_lock_passing_start'] = time_arrival_time_at_lock_entry
+        vessel_planning.loc[vessel.id, 'time_lock_entry_start'] = time_vessel_entry_start
+        vessel_planning.loc[vessel.id, 'time_lock_entry_stop'] = time_lock_entry_stop
+
+        if not len(other_vessels_in_operation):
+            operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop'] = potential_lock_door_opening_stop
+            operation_planning.loc[operation_index, 'time_operation_start'] = time_lock_operation_start
+            operation_planning.loc[operation_index, 'time_entry_start'] = time_vessel_entry_start
+
+        operation_planning.loc[operation_index, 'time_entry_stop'] = time_lock_entry_stop
+        operation_planning.loc[operation_index, 'time_door_closing_start'] = time_door_closing_start
+        operation_planning.loc[operation_index, 'time_door_closing_stop'] = time_door_closing_stop
+        operation_planning.loc[operation_index, 'time_levelling_start'] = time_levelling_start
+        operation_planning.loc[operation_index, 'time_levelling_stop'] = time_levelling_stop
+        operation_planning.loc[operation_index, 'time_door_opening_start'] = time_door_opening_start
+        operation_planning.loc[operation_index, 'time_door_opening_stop'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'maximum_individual_delay'] = np.max(vessel_planning[vessel_planning.operation_index == operation_index].delay)
+        operation_planning.loc[operation_index, 'total_delay'] = np.sum(vessel_planning[vessel_planning.operation_index == operation_index].delay)
+
+        # Determine new departure and operation stop times
+        time_lock_departure_start = self.calculate_lock_departure_start_time(vessel, operation_index,direction,pre_planning=pre_planning) + time_door_opening_stop
+        time_vessel_departure_start = self.calculate_vessel_departure_start_time(vessel, operation_index, direction,pre_planning=pre_planning) + time_door_opening_stop
+        time_lock_departure_stop = self.calculate_lock_departure_stop_time(vessel, operation_index,direction,pre_planning=pre_planning) + time_door_opening_stop
+        time_vessel_departure_stop = self.calculate_vessel_departure_stop_time(vessel, operation_index,direction,pre_planning=pre_planning) + time_door_opening_stop
+        time_lock_operation_stop = self.calculate_lock_operation_stop_time(vessel, operation_index,direction,pre_planning=pre_planning) + time_door_opening_stop
+        time_vessel_passing_stop = self.calculate_vessel_passing_stop_time(vessel, operation_index,direction,pre_planning=pre_planning) + time_door_opening_stop
+        time_lock_door_closing_start = self.calculate_lock_door_closing_time(vessel, operation_index, direction,pre_planning=pre_planning) + time_door_opening_stop
+
+        # Update plannings end
+        operation_planning.loc[operation_index, 'time_departure_start'] = time_lock_departure_start
+        operation_planning.loc[operation_index, 'time_departure_stop'] = time_lock_departure_stop
+        operation_planning.loc[operation_index, 'time_operation_stop'] = time_lock_operation_stop
+        operation_planning.loc[operation_index, 'time_potential_lock_door_closure_start'] = time_lock_door_closing_start
+        operation_planning.loc[operation_index, 'wlev_A'] = wlev_A
+        operation_planning.loc[operation_index, 'wlev_B'] = wlev_B
+        vessel_planning.loc[vessel.id, 'time_potential_lock_door_opening_stop'] = time_vessel_entry_start - self.minimum_advance_to_open_doors(vessel, direction)
+        vessel_planning.loc[vessel.id, 'time_potential_lock_door_closure_start'] = time_vessel_entry_start + self.minimum_delay_to_close_doors(vessel, direction)
+        vessel_planning.loc[vessel.id, 'time_lock_departure_start'] = time_vessel_departure_start
+        vessel_planning.loc[vessel.id, 'time_lock_departure_stop'] = time_vessel_departure_stop
+        vessel_planning.loc[vessel.id, 'time_lock_passing_stop'] = time_vessel_passing_stop
+
+        # Update previous lock operations:
+        previous_planned_operations = operation_planning[operation_planning.index < operation_index]
+        if not previous_planned_operations.empty and self.predictive:
+            if previous_planned_operations.iloc[-1].time_potential_lock_door_closure_start < operation_planning.loc[operation_index,'time_potential_lock_door_opening_stop']:
+                pass #TODO: move lockages ahead of earlier delayed ones, if they can start earlier than these lockages
+
+        # Update next lock operations
+        next_planned_operations = operation_planning[operation_planning.index > operation_index]
+        for next_operation_index, next_operation_info in next_planned_operations.iterrows():
+            if time_lock_door_closing_start > next_operation_info.time_potential_lock_door_opening_stop:
+                sailing_in_delay = time_lock_door_closing_start - next_operation_info.time_potential_lock_door_opening_stop
+                operation_planning.loc[next_operation_index, 'time_potential_lock_door_opening_stop'] += sailing_in_delay
+                operation_planning.loc[next_operation_index, 'time_operation_start'] += sailing_in_delay
+                operation_planning.loc[next_operation_index, 'time_entry_start'] += sailing_in_delay
+                operation_planning.loc[next_operation_index, 'time_entry_stop'] += sailing_in_delay
+                next_vessels = next_operation_info.vessels
+                last_vessel_entering_time = operation_planning.loc[next_operation_index, 'time_entry_start']
+                if len(next_vessels):
+                    for next_vessel in next_vessels:
+                        vessel_planning.loc[next_vessel.id, 'time_potential_lock_door_opening_stop'] += sailing_in_delay
+                        vessel_planning.loc[next_vessel.id, 'time_potential_lock_door_closure_start'] += sailing_in_delay
+                        vessel_planning.loc[next_vessel.id, 'time_arrival_at_waiting_area'] += sailing_in_delay
+                        vessel_planning.loc[next_vessel.id, 'time_arrival_at_lineup_area'] += sailing_in_delay
+                        vessel_planning.loc[next_vessel.id, 'time_lock_passing_start'] += sailing_in_delay
+                        vessel_planning.loc[next_vessel.id, 'time_lock_entry_start'] += sailing_in_delay
+                        vessel_planning.loc[next_vessel.id, 'time_lock_entry_stop'] += sailing_in_delay
+                        last_vessel_entering_time = vessel_planning.loc[next_vessel.id, 'time_lock_entry_start']
+                time_doors_closing = operation_planning.loc[next_operation_index, 'time_entry_stop']
+                time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop = self.calculate_lock_operation_times(last_entering_time=last_vessel_entering_time,
+                                                                                                                                                                                                  start_time=time_doors_closing,
+                                                                                                                                                                                                  vessel=vessel,
+                                                                                                                                                                                                  direction=direction)
+
+                operation_planning.loc[next_operation_index, 'time_door_closing_start'] = time_door_closing_start
+                operation_planning.loc[next_operation_index, 'time_door_closing_stop'] = time_door_closing_stop
+                operation_planning.loc[next_operation_index, 'time_levelling_start'] = time_levelling_start
+                delay_after_levelling = time_levelling_stop - operation_planning.loc[next_operation_index, 'time_levelling_stop']
+                operation_planning.loc[next_operation_index, 'time_levelling_stop'] = time_levelling_stop
+                operation_planning.loc[next_operation_index, 'time_door_opening_start'] = time_door_opening_start
+                operation_planning.loc[next_operation_index, 'time_door_opening_stop'] = time_door_opening_stop
+                if delay_after_levelling > pd.Timedelta(seconds=0):
+                    operation_planning.loc[next_operation_index, 'time_departure_start'] += delay_after_levelling
+                    operation_planning.loc[next_operation_index, 'time_departure_stop'] += delay_after_levelling
+                    operation_planning.loc[next_operation_index, 'time_operation_stop'] += delay_after_levelling
+                    operation_planning.loc[next_operation_index, 'time_potential_lock_door_closure_start'] += delay_after_levelling
+                    operation_planning.loc[next_operation_index, 'total_delay'] += delay_after_levelling*len(next_vessels)
+                    operation_planning.loc[next_operation_index, 'maximum_individual_delay'] += delay_after_levelling
+
+                if len(next_vessels):
+                    vessel_delay_before_levelling = operation_planning.loc[next_operation_index, 'time_entry_start']-vessel_planning.loc[next_vessels[0].id, 'time_lock_entry_start']
+                    for vessel_index,next_vessel in enumerate(next_vessels):
+                        next_vessel_delay_before_levelling = pd.Timedelta(seconds=0)
+                        if vessel_index+1 <= len(next_vessels)-1:
+                            next_next_vessel = next_vessels[vessel_index+1]
+                            if vessel_planning.loc[next_next_vessel.id, 'time_lock_entry_start'] < vessel_planning.loc[next_vessel.id, 'time_lock_entry_start']+vessel_delay_before_levelling+sailing_in_gap:
+                                next_vessel_delay_before_levelling = vessel_planning.loc[next_vessel.id, 'time_lock_entry_start']+vessel_delay_before_levelling+sailing_in_gap-vessel_planning.loc[next_next_vessel.id, 'time_lock_entry_start']
+                        vessel_planning.loc[next_vessel.id, 'time_lock_departure_start'] += delay_after_levelling
+                        vessel_planning.loc[next_vessel.id, 'time_lock_departure_stop'] += delay_after_levelling
+                        vessel_planning.loc[next_vessel.id, 'time_lock_passing_stop'] += delay_after_levelling
+                        vessel_planning.loc[next_vessel.id, 'delay'] += delay_after_levelling
+                        vessel_delay_before_levelling = next_vessel_delay_before_levelling
+                time_lock_door_closing_start = operation_planning.loc[next_operation_index, 'time_potential_lock_door_closure_start']
+
+        return operation_planning
+
+
+    def assign_vessel_to_lock_operation(self,vessel,direction,pre_planning=False):
+        # Definitions
+        operation_planning = self.lock_complex.operation_planning
+        vessel_planning = self.lock_complex.vessel_planning
+        if pre_planning:
+            operation_planning = self.lock_complex.operation_pre_planning
+            vessel_planning = self.lock_complex.vessel_pre_planning
+
+        # Parameters
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+        if pre_planning:
+            current_time = vessel_planning.loc[vessel.id,'time_of_acceptance']
+
+        time_lock_entry_start = vessel_planning.loc[vessel.id,'time_lock_entry_start']
+        time_lock_passing_start = vessel_planning.loc[vessel.id, 'time_lock_entry_start']
+        operational_hours = self.operational_hours
+        within_operation_hours = operational_hours[(time_lock_passing_start >= operational_hours.start_time)&(time_lock_passing_start <= operational_hours.stop_time)]
+        vessel_planning.loc[vessel.id, 'delay'] = pd.Timedelta(seconds = 0)
+        if within_operation_hours.empty:
+            first_available_hour = operational_hours[operational_hours.start_time >= time_lock_passing_start].iloc[0]
+            delay = first_available_hour.start_time - time_lock_passing_start
+            time_lock_entry_start += delay
+            vessel_planning.loc[vessel.id, 'time_arrival_at_waiting_area'] += delay
+            vessel_planning.loc[vessel.id, 'time_arrival_at_lineup_area'] += delay
+            vessel_planning.loc[vessel.id, 'time_lock_passing_start'] += delay
+            vessel_planning.loc[vessel.id, 'time_lock_entry_start'] += delay
+            vessel_planning.loc[vessel.id, 'time_of_acceptance'] += delay
+            vessel_planning.loc[vessel.id, 'delay'] += delay
+
+        maximum_individual_delay = operation_planning.maximum_individual_delay + (time_lock_entry_start - operation_planning.time_entry_stop)
+        maximum_additional_waiting_time = time_lock_entry_start - operation_planning.time_entry_stop
+
+        # Filter operations to select available operation
+        mask_bound = operation_planning.bound == direction # locks in the same direction mask_bound: operation_planning.bound == direction # locks in the same direction
+        mask_status = operation_planning.status == 'waiting for vessel'
+        mask_available = operation_planning.status != 'not available'
+        mask_capacity_L = operation_planning.capacity_L >= vessel.L # vessel length fits in the lock
+        mask_capacity_B = operation_planning.capacity_B >= vessel.B # vessel width fits in the lock
+        mask_max_waiting_time = maximum_individual_delay < pd.Timedelta(seconds=self.lock_complex.clustering_time)
+        mask_empty_lock = operation_planning.vessels.apply(len) == 0 # if lock is still empty (overrules max_waiting_time which becomes irrelevant)
+        mask_max_vessels = operation_planning.vessels.apply(len) < self.max_vessels_in_operation
+        mask_max_additional_waiting_time = maximum_additional_waiting_time < pd.Timedelta(seconds=self.max_additional_delay)
+        mask_future_operations = operation_planning.time_levelling_start >= current_time
+
+        mask_empty_future_lockages = mask_empty_lock&mask_future_operations
+        mask_max_waiting_time = mask_max_waiting_time&~mask_empty_lock
+
+        mask_future_operations = mask_future_operations&mask_max_waiting_time
+        available_operations = operation_planning[mask_available&mask_bound&mask_max_vessels&mask_capacity_L&(mask_status|mask_max_additional_waiting_time|mask_empty_future_lockages|mask_future_operations|mask_max_waiting_time)].copy() #TODO: include mask_capacity_B for 2D implementation
+        add_operation = False
+        if not available_operations.empty:
+            operation_index = available_operations.iloc[0].name #TODO: create a selection method that can pick the lock operation based on minimizing expected delay or freshwater loss/saltwater intrusion
+
+        else:
+            operation_index = len(operation_planning)
+            add_operation = True
+
+        return operation_index, add_operation
+
+
+    def check_empty_lockage_initiation(self,vessel):
+        operation_planning = self.operation_planning
+        vessel_planning = self.vessel_planning
+        if self.predictive:
+            operation_planning = self.operation_pre_planning
+            vessel_planning = self.vessel_pre_planning
+
+        operation_index = vessel_planning.loc[vessel.id,'operation_index']
+        next_operations = operation_planning[operation_planning.index > operation_index]
+        empty_lockage = False
+        if not next_operations.empty:
+            next_operation = next_operations.iloc[0]
+            empty_lockage = len(next_operation.vessels) == 0
+        return empty_lockage
+
+
+    def check_vessel_priority(self, vessel):
+        condition = False
+        if vessel.origin == self.lock_complex.detector_nodes[0]:
+            waiting_area = self.lock_complex.waiting_area_A
+        else:
+            waiting_area = self.lock_complex.waiting_area_B
+
+        if self.priority_rules is not None:
+            condition = self.priority_rules.evaluate(waiting_area.node).iloc[0]
+        if condition:
+            priority = -1
+        else:
+            priority = 0
+        return priority
+
+
+    def convert_chamber(self, new_level, vessel=None, close_doors=True, delay=0, direction = None):
+        """Function which converts the lock chamber and logs this event.
+
+        Input:
+            - environment: see init function
+            - new_level: a string which represents the node and indicates the side at which the lock is currently levelled
+            - number_of_vessels: the total number of vessels which are levelled simultaneously"""
+
+        # Close the doors
+        if close_doors:
+            yield from self.close_door(delay=delay)
+        else:
+            hold_door_A = self.door_A.request()
+            hold_levelling = self.levelling.request()
+            hold_door_B = self.door_B.request()
+            yield hold_door_A
+            yield hold_levelling
+            yield hold_door_B
+            self.door_A.release(hold_door_A)
+            self.levelling.release(hold_levelling)
+            self.door_B.release(hold_door_B)
+        yield from self.level_lock(new_level, vessel=vessel, direction = direction)
+        yield from self.open_door()
+
+
+    def close_door(self, delay=0):
+        # Close the doors
+        start_delay = self.env.now
+        while delay > 0:
+            try:
+                yield self.env.timeout(delay)
+                delay = 0
+            except simpy.Interrupt as e:
+                delay -= (self.env.now - start_delay)
+
+        hold_door_A = self.door_A.request()
+        hold_levelling = self.levelling.request()
+        hold_door_B = self.door_B.request()
+        yield hold_door_A
+        yield hold_levelling
+        yield hold_door_B
+
+        self.log_entry_v0("Lock doors closing start", self.env.now, self.output.copy(), self.node_open)
+        remaining_doors_closing_time = self.doors_closing_time
+        start_time_closing = self.env.now
+        while remaining_doors_closing_time:
+            try:
+                yield self.env.timeout(remaining_doors_closing_time)
+                remaining_doors_closing_time = 0
+            except simpy.Interrupt as e:
+                remaining_doors_closing_time -= (self.env.now - start_time_closing)
+
+        time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
+        if self.node_open == self.start_node:
+            self.water_level[time_index:] = hydrodynamic_data["Water level"][0][time_index].copy()
+        else:
+            self.water_level[time_index:] = hydrodynamic_data["Water level"][1][time_index].copy()
+
+        self.log_entry_v0("Lock doors closing stop", self.env.now, self.output.copy(), self.node_open)
+        if self.node_open == self.start_node:
+            self.door_A_open = False
+        else:
+            self.door_B_open = False
+
+        self.door_A.release(hold_door_A)
+        self.levelling.release(hold_levelling)
+        self.door_B.release(hold_door_B)
+
+
+    def level_lock(self, new_level, vessel=None, direction=None, same_direction=False):
+        # Water level will shift
+        hold_door_A = self.door_A.request()
+        hold_levelling = self.levelling.request()
+        hold_door_B = self.door_B.request()
+        yield hold_door_A
+        yield hold_levelling
+        yield hold_door_B
+
+        levelling_time,_ = self.determine_levelling_time(t_start=self.env.now,direction=direction,same_direction=same_direction)
+        if vessel is not None:
+            vessel.log_entry_v0("Levelling start", vessel.env.now, vessel.output.copy(), vessel.position_in_lock, )
+        self.log_entry_v0("Lock chamber converting start", self.env.now, self.output.copy(), self.node_open, )
+        self.change_water_level(new_level)
+        remaining_levelling_time = levelling_time
+        start_levelling = self.env.now
+        while remaining_levelling_time:
+            try:
+                yield self.env.timeout(remaining_levelling_time)
+                remaining_levelling_time = 0
+            except simpy.Interrupt as e:
+                remaining_levelling_time = self.env.now - start_levelling
+
+        self.log_entry_v0("Lock chamber converting stop", self.env.now, self.output.copy(), self.node_open, )
+        if vessel is not None:
+            vessel.log_entry_v0("Levelling stop", vessel.env.now, vessel.output.copy(), vessel.position_in_lock, )
+
+        self.door_A.release(hold_door_A)
+        self.levelling.release(hold_levelling)
+        self.door_B.release(hold_door_B)
+
+    def open_door(self, to_level=None, vessel=None, delay=0):
+        start_delay = self.env.now
+        while delay > 0:
+            try:
+                yield self.env.timeout(delay)
+                delay = 0
+            except simpy.Interrupt as e:
+                delay -= self.env.now - start_delay
+                if vessel is not None:
+                    vessel_info = self.vessel_planning.loc[vessel.id]
+                    door_opening_delay = self.calculate_delay_to_open_doors(vessel)
+                    new_door_open_time = vessel_info.time_lock_entry_start - pd.Timedelta(seconds=door_opening_delay)
+                    delay = (new_door_open_time - pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))).total_seconds()
+        time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
+        wlev_chamber = self.water_level[time_index]
+        if to_level is None:
+            to_level = self.node_open
+
+        if to_level == self.start_node:
+            door_open = self.door_A_open
+            wlev_harbour = hydrodynamic_data["Water level"][0][time_index]
+        else:
+            door_open = self.door_B_open
+            wlev_harbour = hydrodynamic_data["Water level"][1][time_index]
+
+        if door_open:
+            return
+
+        same_direction = False
+        if to_level == self.node_open:
+            same_direction = True
+
+        if not np.abs(wlev_chamber - wlev_harbour) <= 0.05:
+            yield from self.level_lock(to_level,same_direction=same_direction)
+        else:
+            self.node_open = to_level
+
+        time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()+1
+        if hydrodynamic_times[time_index] < pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)):
+            time_index += 1
+        if self.node_open == self.start_node:
+            self.water_level[time_index:] = hydrodynamic_data["Water level"][0][time_index:].copy()
+        else:
+            self.water_level[time_index:] = hydrodynamic_data["Water level"][1][time_index:].copy()
+
+        # Open the doors
+        hold_door_A = self.door_A.request()
+        hold_levelling = self.levelling.request()
+        hold_door_B = self.door_B.request()
+        yield hold_door_A
+        yield hold_levelling
+        yield hold_door_B
+
+        self.log_entry_v0("Lock doors opening start", self.env.now, self.output.copy(), self.node_open)
+        remaining_doors_opening_time = self.doors_opening_time
+        start_time_opening = self.env.now
+        while remaining_doors_opening_time:
+            try:
+                yield self.env.timeout(remaining_doors_opening_time)
+                remaining_doors_opening_time = 0
+            except simpy.Interrupt as e:
+                remaining_doors_opening_time -= (self.env.now - start_time_opening)
+        self.log_entry_v0("Lock doors opening stop", self.env.now, self.output.copy(), self.node_open, )
+        if self.node_open == self.start_node:
+            self.door_A_open = True
+        else:
+            self.door_B_open = True
+
+        self.door_A.release(hold_door_A)
+        self.levelling.release(hold_levelling)
+        self.door_B.release(hold_door_B)
+
+    def change_water_level(self, side):
+        """Function which changes the water level in the lock chamber and priorities in queue"""
+
+        self.node_open = side
+        for request in self.resource.queue:
+            request.priority = -1 if request.priority == 0 else 0
+
+            if request.priority == -1:
+                self.resource.queue.insert(0, self.resource.queue.pop(self.resource.queue.index(request)))
+            else:
+                self.resource.queue.insert(-1, self.resource.queue.pop(self.resource.queue.index(request)))
+
+
+    def leave_lock_chamber(self, origin, destination):
+        k = sorted(self.multidigraph[origin][destination],
+                   key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length)[0]
+        if "Lock" in self.multidigraph.edges[origin, destination, k].keys():
+            locks = self.multidigraph.edges[origin, destination, k]["Lock"]
+            if origin == locks[0].start_node:
+                direction = 1
+            else:
+                direction = 0
+
+            yield from PassLock.leave_lock(self, origin, destination, direction)
+            self.v = self.v_before_lock
+
+    def approach_lineup_area(self, origin, destination):
+        k1 = sorted(
+            self.multidigraph[origin][destination],
+            key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
+        )[0]
+        if "Line-up area" in self.multidigraph.edges[
+            origin, destination, k1].keys():  # if vessel is approaching the line-up area
+            yield from PassLock.approach_lineup_area(self, origin, destination)
+
+    def leave_lineup_area(self, origin, destination):
+        k1 = sorted(
+            self.multidigraph[origin][destination],
+            key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
+        )[0]
+        k2 = sorted(
+            self.multidigraph[destination][origin],
+            key=lambda x: self.multidigraph[destination][origin][x]["geometry"].length
+        )[0]
+        if "Line-up area" in self.multidigraph.edges[
+            origin, destination, k1].keys():  # if vessel is located in the line-up
+            yield from PassLock.leave_lineup_area(self, origin, destination)
+        elif "Line-up area" in self.multidigraph.edges[destination, origin, k2].keys():
+            yield from PassLock.leave_lineup_area(self, destination, origin)
+
+    def leave_waiting_area(self, origin):
+        if "Waiting area" in self.multidigraph.nodes[origin].keys():  # if vessel is in waiting area
+            yield from PassLock.leave_waiting_area(self, origin)
+
+
+class IsLockComplex(IsLockChamber,IsLockMaster):
+
+    def __init__(self,
+                 approach_node_A,
+                 approach_node_B,
+                 lineup_area_A_length,
+                 lineup_area_B_length,
+                 distance_lock_doors_A_to_lineup_area_A=0,
+                 distance_lock_doors_B_to_lineup_area_B=0,
+                 distance_lock_doors_A_to_waiting_area_A=0,
+                 distance_lock_doors_B_to_waiting_area_B=0,
+                 effective_lineup_area_A_length=None,
+                 effective_lineup_area_B_length=None,
+                 passing_allowed_in_lineup_area_A=False,
+                 passing_allowed_in_lineup_area_B=False,
+                 speed_reduction_factor_lineup_area_A=0.75,
+                 speed_reduction_factor_lineup_area_B=0.75,
+                 disch_coeff = 0.5,
+                 opening_area = 10,
+                 k = 0,
+                 *args,
+                 **kwargs):
+
+        super().__init__(*args, **kwargs)
+        if self.closing_doors_in_between_operations:
+            if self.node_open == self.start_node:
+                index_node_open = 0
+            else:
+                index_node_open = 1
+
+            time_start = np.datetime64(pd.Timestamp(self.env.simulation_start))
+            time_index_simulation_start = np.absolute(hydrodynamic_times - time_start).argmin()
+            if self.env.vessel_traffic_service.hydrodynamic_information_path:
+                self.water_level[:] = hydrodynamic_data['Water level'][index_node_open, time_index_simulation_start].copy()
+
+        self.name = self.name
+        self.disch_coeff = disch_coeff
+        self.opening_area = opening_area
+        self.start_node = self.start_node
+        self.end_node = self.end_node
+        self.lineup_area_A_length = lineup_area_A_length
+        self.lineup_area_B_length = lineup_area_B_length
+        self.effective_lineup_area_A_length = effective_lineup_area_A_length
+        self.effective_lineup_area_B_length = effective_lineup_area_B_length
+        self.passing_allowed_in_lineup_area_A = passing_allowed_in_lineup_area_A
+        self.passing_allowed_in_lineup_area_B = passing_allowed_in_lineup_area_B
+        self.speed_reduction_factor_lineup_area_A = speed_reduction_factor_lineup_area_A
+        self.speed_reduction_factor_lineup_area_B = speed_reduction_factor_lineup_area_B
+        if lineup_area_A_length < self.lock_length and not effective_lineup_area_A_length:
+            self.effective_lineup_area_A_length = self.lock_length
+        if lineup_area_B_length < self.lock_length and not effective_lineup_area_B_length:
+            self.effective_lineup_area_B_length = self.lock_length
+
+        self.distance_lock_doors_A_to_lineup_area_A = distance_lock_doors_A_to_lineup_area_A
+        self.distance_lock_doors_B_to_lineup_area_B = distance_lock_doors_B_to_lineup_area_B
+        self.distance_lock_doors_A_to_waiting_area_A = distance_lock_doors_A_to_waiting_area_A
+        self.distance_lock_doors_B_to_waiting_area_B = distance_lock_doors_B_to_waiting_area_B
+        self.k = k
+
+        # Waiting area geometry
+        edge_waiting_area_A = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env, self.start_node, approach_node_A, self.distance_lock_doors_A_to_waiting_area_A-self.distance_from_start_node_to_lock_doors_A)
+        edge_waiting_area_B = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env, self.end_node, approach_node_B, self.distance_lock_doors_B_to_waiting_area_B-self.distance_from_end_node_to_lock_doors_B)
+        distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG,self.start_node, edge_waiting_area_A[1]))['Distance'].sum()
+        distance_end_node_to_node_waiting_area_B = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG,self.end_node, edge_waiting_area_B[1]))['Distance'].sum()
+        self.distance_waiting_area_A_from_node_waiting_area_A = distance_start_node_to_node_waiting_area_A-(self.distance_lock_doors_A_to_waiting_area_A-self.distance_from_start_node_to_lock_doors_A)
+        self.distance_waiting_area_B_from_node_waiting_area_B = distance_end_node_to_node_waiting_area_B-(self.distance_lock_doors_B_to_waiting_area_B-self.distance_from_end_node_to_lock_doors_B)
+
+        # Waiting area objects
+        self.waiting_area_A = IsLockWaitingArea(env=self.env,
+                                                name=self.name,
+                                                edge=(edge_waiting_area_A[1],edge_waiting_area_A[0],edge_waiting_area_A[2]),
+                                                distance_from_node=self.distance_waiting_area_A_from_node_waiting_area_A)
+
+        self.waiting_area_B = IsLockWaitingArea(env=self.env,
+                                                name=self.name,
+                                                edge=(edge_waiting_area_B[1],edge_waiting_area_B[0],edge_waiting_area_B[2]),
+                                                distance_from_node=self.distance_waiting_area_B_from_node_waiting_area_B)
+
+        # Lineup area geometry
+        edge_lineup_area_A = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env, self.start_node, approach_node_A, self.distance_lock_doors_A_to_lineup_area_A-self.distance_from_start_node_to_lock_doors_A)
+        edge_lineup_area_B = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env, self.end_node, approach_node_B, self.distance_lock_doors_B_to_lineup_area_B-self.distance_from_end_node_to_lock_doors_B)
+        distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG, self.start_node, edge_lineup_area_A[1]))['Distance'].sum()
+        distance_end_node_to_node_waiting_area_B = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG, self.end_node, edge_lineup_area_B[1]))['Distance'].sum()
+        self.distance_lineup_area_A_from_edge_lineup_area_A_start = distance_start_node_to_node_waiting_area_A - (self.distance_lock_doors_A_to_lineup_area_A - self.distance_from_start_node_to_lock_doors_A)
+        self.distance_lineup_area_B_from_edge_lineup_area_B_start = distance_end_node_to_node_waiting_area_B - (self.distance_lock_doors_B_to_lineup_area_B - self.distance_from_end_node_to_lock_doors_B)
+
+        # Lineup area objects
+        self.lineup_area_A = IsLockLineUpArea(env=self.env,
+                                              name=self.name,
+                                              start_node=edge_lineup_area_A[1],
+                                              end_node=edge_lineup_area_A[0],
+                                              lineup_area_length=self.lineup_area_A_length,
+                                              distance_from_start_edge=self.distance_lineup_area_A_from_edge_lineup_area_A_start,
+                                              effective_lineup_area_length=self.effective_lineup_area_A_length,
+                                              passing_allowed=self.passing_allowed_in_lineup_area_A,
+                                              speed_reduction_factor=self.speed_reduction_factor_lineup_area_A)
+
+        self.lineup_area_B = IsLockLineUpArea(env=self.env,
+                                              name=self.name,
+                                              start_node=edge_lineup_area_B[1],
+                                              end_node=edge_lineup_area_B[0],
+                                              distance_from_start_edge=self.distance_lineup_area_B_from_edge_lineup_area_B_start,
+                                              lineup_area_length=self.lineup_area_B_length,
+                                              effective_lineup_area_length=self.effective_lineup_area_B_length,
+                                              passing_allowed=self.passing_allowed_in_lineup_area_B,
+                                              speed_reduction_factor=self.speed_reduction_factor_lineup_area_B)
+
+    def create_time_distance_diagram(self,
+                                     vessels,
+                                     accuracy=100,
+                                     ax=None,
+                                     x_offset=0,
+                                     ylim = None,
+                                     vessel_colors=None):
+        times = []
+        distances = []
+        substring_matches = ["Sailing from node","to node","start"]
+        if not vessel_colors:
+            vessel_colors = ['C0']*len(vessels)
+        for vessel in vessels:
+            vessel_df = pd.DataFrame(vessel.logbook)
+            sailed_edges = [index for index, action in enumerate(vessel_df['Message']) if all(x in action for x in substring_matches)]
+            sailed_edges.append(len(vessel_df) - 1)
+            lock_passage = 0
+            for index_sailing_start, index_sailing_stop in zip(sailed_edges[:-1], sailed_edges[1:]):
+                if not [index for index, action in
+                        enumerate(vessel_df.loc[index_sailing_start:index_sailing_stop]['Message']) if
+                        action == 'Passing lock start']:
+                    continue
+
+                if not vessel_df.iloc[-1]['Value']['visited_lock_chambers'][lock_passage] == self.name:
+                    lock_passage += 1
+                    continue
+
+                lock_passage += 1
+                destination = vessel_df.loc[index_sailing_stop]['Message'].split(' start')[0].split('node ')[-1]
+                direction = destination == self.start_node
+                sailed_distance = []
+                sailed_time = []
+
+                for loc, info in vessel_df[index_sailing_start:index_sailing_stop+1].iterrows():
+                    vessel_location = info['Geometry']
+                    distance_sailed, distance_to_go = self.env.vessel_traffic_service.provide_distance_over_network_to_location(self.start_node, self.end_node, vessel_location)
+                    if not direction:
+                        sailed_distance.append(distance_sailed)
+                    else:
+                        sailed_distance.append(distance_to_go)
+                    sailed_time.append(info['Timestamp'])
+                times.append(sailed_time)
+                distances.append(sailed_distance)
+
+        if not ax:
+            _, ax = plt.subplots(figsize=[6,6])
+        for distance, time, vessel_color in zip(distances, times, vessel_colors):
+            ax.plot([dist+x_offset for dist in distance], time, color=vessel_color, linewidth=3)
+
+        if not ylim:
+            ylim_min, ylim_max = ax.get_ylim()
+        else:
+            ylim_min, ylim_max = ylim
+
+        ax.fill([self.distance_doors_A_from_waiting_area_A + self.waiting_area_A.distance_from_node + x_offset,
+                 self.distance_doors_A_from_waiting_area_A + self.waiting_area_A.distance_from_node + x_offset,
+                 self.distance_doors_A_from_waiting_area_A + self.lock_length + self.waiting_area_A.distance_from_node + x_offset,
+                 self.distance_doors_A_from_waiting_area_A + self.lock_length + self.waiting_area_A.distance_from_node + x_offset, ],
+                 [ylim_min, ylim_max, ylim_max, ylim_min], color='lightgrey', edgecolor='k')
+        ax.set_ylim(ylim_min, ylim_max)
+        xlim_min = 0+x_offset
+        xlim_max = np.ceil(self.multidigraph.edges[self.start_node,self.end_node,self.k]['length']/accuracy)*accuracy+x_offset
+        ax.set_xlim(xlim_min,xlim_max)
+        xticks = np.arange(xlim_min,xlim_max+accuracy/2,accuracy/2)
+        ax.set_xticks(xticks)
+        center_index = int((len(xticks) - 1) / 2)
+        xticklabels = np.zeros(len(xticks))
+        xticklabels[0:center_index] = np.arange((len(xticklabels) - 1 - center_index) * -(accuracy / 2)+x_offset, 0+x_offset, (accuracy / 2))
+        xticklabels[center_index:] = np.arange(0+x_offset, (len(xticklabels) - center_index) * (accuracy / 2)+x_offset, (accuracy / 2))
+        ax.set_xticklabels(xticklabels)
+        ax.set_xlabel('Distance to center of lock chamber [m]')
+        ax.set_ylabel('Datetime')
+        ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
+        return ax
+
+
