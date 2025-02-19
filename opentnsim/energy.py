@@ -18,7 +18,7 @@ import tqdm
 # OpenTNSim
 import opentnsim
 import opentnsim.strategy
-import opentnsim.graph as graph_module
+import opentnsim.graph_module
 
 # Used for mathematical functions
 import math
@@ -151,7 +151,7 @@ def power2v(vessel, edge, upperbound):
     returns velocity [m/s]
     """
 
-    assert isinstance(vessel, opentnsim.vessel.VesselProperties), "vessel should be an instance of VesselProperties"
+    assert isinstance(vessel, opentnsim.core.VesselProperties), "vessel should be an instance of VesselProperties"
 
     assert vessel.C_B is not None, "C_B cannot be None"
 
@@ -743,33 +743,21 @@ class ConsumesEnergy:
     def calculate_total_power_required(self, v, h_0):
         """Total required power:
 
-        - The total required power is the sum of the power for systems on board (P_hotel) + power required for
-          propulsion
+        - The total required power is the sum of the power for systems on board (P_hotel) + power required for propulsion
         - The power required for propulsion depends on the calculated resistance
 
         Output:
         - P_propulsion: required power for propulsion, equals to P_d (Delivered Horse Power)
         - P_tot: required power for propulsion and hotelling
-        - P_given: the power given by the engine to the ship (for propulsion and hotelling), which is the actual power
-          the ship uses
+        - P_given: the power given by the engine to the ship (for propulsion and hotelling), which is the actual power the ship uses
 
         Note:
-        In this version, we define the propulsion power as P_d (Delivered Horse Power) rather than P_b (Brake Horse
-        Power). The reason we choose P_d as propulsion power is to prevent double use of the same power efficiencies.
-        The details are
-        1) The P_b calculation involves gearing efficiency and transmission efficiency already while P_d not.
-        2) P_d is the power delivered to propellers.
-        3) To estimate the renewable fuel use, we will involve "energy conversion efficiencies" later in the
-           calculation.
-        The 'energy conversion efficiencies' for renewable fuel powered vessels are commonly measured/given as a whole
-        covering the engine power systems, includes different engine (such as fuel cell engine, battery engine, internal
-        combustion engine, hybrid engine) efficiencies, and corresponding gearbox efficiencies, AC/DC converter
-        efficiencies, excludes the efficiency items of propellers.
-        Therefore, to align with the later use of "energy conversion efficiencies" for fuel use estimation and prevent
-        double use of some power efficiencies such as gearing efficiency, here we choose P_d as propulsion power.
+        In this version, we define the propulsion power as P_d (Delivered Horse Power) ratehr than P_b (Brake Horse Power). The reason we choose P_d as propulsion power is to prevent double use of the same power efficiencies.
+        The details are 1) The P_b calculation involves gearing efficiency and transmission efficiency already while P_d not. 2) P_d is the power delivered to propellers. 3) To estimate the reneable fuel use, we will involve "energy conversion efficicies" later in the calculation. The 'energy conversion efficicies' for renewable fuel powered vessels are commonly measured/given as a whole covering the engine power systems, includes different engine (such as fuel cell engine, battery engine, internal combustion engine, hybird engine) efficiencies, and corresponding gearbox efficiencies, AC/DC converter efficiencies, excludes the efficiency items of propellers.
+        Therefore, to algin with the later use of "energy conversion efficicies" for fuel use estimation and prevent double use of some power efficiencies such as gearing efficiency, here we choose P_d as propulsion power.
         """
 
-        # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
+        # Required power for systems on board, "5%" based on De Vos and van Gils (2011):Walstrom versus generators troom
         # self.P_hotel = 0.05 * self.P_installed
 
         # Required power for propulsion
@@ -802,8 +790,7 @@ class ConsumesEnergy:
 
         #         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
-        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland
-        # Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
+        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
         # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power
         # relation between eta_D and ship velocity v
 
@@ -861,7 +848,6 @@ class ConsumesEnergy:
                 self.eta_D = 0.26
             else:
                 self.eta_D = 0.25
-
         # Delivered Horse Power (DHP), P_d
         self.P_d = self.P_e / self.eta_D
 
@@ -889,7 +875,7 @@ class ConsumesEnergy:
 
         assert not isinstance(self.P_given, complex), f"P_given number should not be complex: {self.P_given}"
 
-        # return these three variables:
+        # return these three varible:
         # 1) self.P_propulsion, for the convience of validation.  (propulsion power and fuel used for propulsion),
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
@@ -1281,7 +1267,7 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_s(self):
         """Total diesel fuel use in g/s:
 
-        - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The total fuel use in g/s can be computed by total emission in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600  # without considering C_year
         self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600  # considering C_year
@@ -1293,7 +1279,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
 
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
         self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
@@ -1304,7 +1290,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
 
-        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
@@ -1342,8 +1328,8 @@ class ConsumesEnergy:
 class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
-    # ToDo: add other alternatives from Marin's table to have completed renewable energy sources
-    # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
+    # to do: add other alternatives from Marin's table to have completed renewable energy sources
+    # to do: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
 
     def __init__(self, FG, vessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1480,7 +1466,7 @@ class EnergyCalculation:
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
-                # print(h_0)
+                print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
@@ -1512,7 +1498,7 @@ class EnergyCalculation:
                     )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
-                    # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
+                    # To do: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
                     delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
