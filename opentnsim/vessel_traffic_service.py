@@ -216,7 +216,6 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def provide_location_over_edges(self,node_1,node_2,interpolation_length):
         geod = pyproj.Geod(ellps="WGS84")
         geometry = self.provide_trajectory(node_1, node_2)
-        total_geometry_length = 0
         for point_I, point_II in zip(geometry.coords[:-1], geometry.coords[1:]):
             sub_edge_geometry = LineString([Point(point_I), Point(point_II)])
             if geod.geometry_length(sub_edge_geometry) < interpolation_length:

@@ -214,3 +214,55 @@ class IsVessel(core.Identifiable,
         self.overruled_speed = pd.DataFrame(data=[], columns=['Speed'],index=pd.MultiIndex.from_arrays([[], [], []], names=('node_start', 'node_stop', 'k')))
         super().__init__(*args, **kwargs)
 
+
+    def distance_to_desired_speed(self,v_target,P_used,h0,v0=None):
+        dt = 1
+        times = np.arange(0,86400,dt)
+        x1 = 0.
+        if v0 is None:
+            v0 = self.current_speed
+        else:
+            v0 = v0
+        x = []
+        a = []
+        v = []
+        t = []
+        amax = 0.3
+        Power_vessel = P_used*self.P_installed
+        breaking = False
+        if v0 > v_target:
+            breaking = True
+            amax = -amax
+            Power_vessel = -Power_vessel
+        for t1 in times:
+            F = -self.calculate_total_resistance(v0,h0)*1000+Power_vessel/v0
+            mass_vessel = (0.85*1000*self.T*self.B*self.L)
+            a1 = np.min([F/mass_vessel,amax])
+            if breaking:
+                a1 = np.max([F/mass_vessel,amax])
+            v1 = a1*dt+v0
+            x1 += 0.5*(v1**2 - v0**2)/a1
+            v0 = v1
+            if (not breaking and v1 >= v_target) or (breaking and v1 <= v_target):
+                v1 = v_target
+            a.append(a1)
+            x.append(x1)
+            v.append(v1)
+            t.append(t1)
+            if (not breaking and v1 >= v_target) or (breaking and v1 <= v_target):
+                break
+
+        x_total = x[-1]
+        t_tot = t[-1]
+        v_end = v[-1]
+        v_avg = x[-1]/t[-1]
+        output = {'sailed_distance':x_total,
+                  'sailing_time':t_tot,
+                  'end_velocity':v_end,
+                  'average_velocity':v_avg,
+                  'distance':x,
+                  'velocity':v,
+                  'acceleration':a,
+                  'time':t}
+
+        return output
