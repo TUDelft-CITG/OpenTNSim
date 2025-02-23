@@ -215,7 +215,7 @@ class IsVessel(core.Identifiable,
         super().__init__(*args, **kwargs)
 
 
-    def distance_to_desired_speed(self,v_target,P_used,h0,v0=None):
+    def distance_to_desired_speed(self,v_target,h0,v0=None,P_used=1):
         dt = 1
         times = np.arange(0,86400,dt)
         x1 = 0.

@@ -18,7 +18,7 @@ import tqdm
 # OpenTNSim
 import opentnsim
 import opentnsim.strategy
-import opentnsim.graph_module
+import opentnsim.graph
 
 # Used for mathematical functions
 import math
@@ -1409,12 +1409,14 @@ class EnergyCalculation:
             node_stop = find_closest_node(self.FG, geom_stop)[0]
 
             # Read from the FG data from vaarweginformatie.nl the General depth of each edge
+            print(self.FG.get_edge_data(node_start, node_stop),node_start,node_stop)
             try:  # if node_start != node_stop:
                 depth = self.FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
             except:
                 depth = np.nan  # When there is no data of the depth available of this edge, it gives a message
 
             h_0 = depth
+            print(h_0,'hi')
 
             # depth of waterway between two points
             return h_0
@@ -1466,7 +1468,6 @@ class EnergyCalculation:
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
-                print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
