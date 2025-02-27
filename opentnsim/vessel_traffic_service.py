@@ -14,7 +14,7 @@ import datetime
 import pytz
 import xarray as xr
 import pickle
-from netCDF4 import Dataset
+import netCDF4
 from shapely.ops import transform
 from opentnsim import core,tidal_window_constructor, graph
 from opentnsim import model
@@ -28,6 +28,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
 
     def __init__(self,FG,hydrodynamic_start_time=None,hydrodynamic_information_path=None,vessel_speed_data_path=None,*args,**kwargs):
         self.hydrodynamic_start_time = hydrodynamic_start_time
+        self.hydrodynamic_information_path = hydrodynamic_information_path
         super().__init__(*args,**kwargs)
         self.FG = FG
 
@@ -72,14 +73,14 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         self.vertical_tidal_restrictions_condition_df = vertical_tidal_restrictions_condition_df
 
         if isinstance(hydrodynamic_information_path,str):
-            self.hydrodynamic_information_path = hydrodynamic_information_path
             global hydrodynamic_data
-            hydrodynamic_data = Dataset(self.hydrodynamic_information_path)
+            hydrodynamic_data = netCDF4.Dataset(self.hydrodynamic_information_path)
             global hydrodynamic_times
             self.hydrodynamic_times = hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + hydrodynamic_start_time
 
         if isinstance(vessel_speed_data_path, str):
-            restricted_vessel_speeds = pickle.load(open(vessel_speed_data_path,'rb'))
+            with open(vessel_speed_data_path, "rb") as file:
+                restricted_vessel_speeds = pickle.load(file)
     
     def read_tidal_periods(self,hydrodynamic_data,tidal_period_type,station_index):
         data = hydrodynamic_data[tidal_period_type][station_index, :, :]
@@ -151,11 +152,13 @@ class VesselTrafficService(graph.HasMultiDiGraph):
                 k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
                 edges.append((u,v,k))
 
+        vessel_speed_over_route = pd.DataFrame(columns=['Speed'],index=edges)
         if not restricted_vessel_speeds.empty:
             vessel_speed_over_route = restricted_vessel_speeds[restricted_vessel_speeds.index.isin(edges)]
 
         vessel_speed_over_route = vessel_speed_over_route.reindex(edges)
         vessel_speed_over_route[vessel_speed_over_route.Speed.isna() | (vessel_speed_over_route.Speed == 0)] = vessel.v
+
         if 'restricted_speed' in dir(vessel):
             for edge,overruled_speed_limit in vessel.overruled_speed.iterrows():
                 vessel_speed_over_route.loc[edge,'Speed'] = overruled_speed_limit
