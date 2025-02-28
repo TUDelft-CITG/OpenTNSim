@@ -227,6 +227,9 @@ vessels.append(vessel_3)
 
 env.run()
 
+if lock.predictive:
+    lock.operation_planning = lock.operation_pre_planning
+    lock.vessel_planning = lock.vessel_pre_planning
 
 # In[13]:
 
@@ -241,131 +244,161 @@ vessel_df3 = pd.DataFrame(vessel_3.logbook)
 
 
 def test_results():
-    #Testing time that vessel enters the lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_entry_start.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df1.loc[2].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    #Testing time that vessel stops in the lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_entry_stop.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df1.loc[4].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is closing start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_door_closing_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[2].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is closing stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_door_closing_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[3].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock is levelling start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_levelling_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[4].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock is levelling stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_levelling_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[5].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is opening start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_door_opening_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[6].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is closing stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_door_opening_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[7].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that vessel is starting to sail out of lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_departure_start.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df1.loc[7].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that vessel is has sailed out of lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[0].time_departure_stop.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df1.loc[8].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    #Testing time that vessel enters the lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_entry_start.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df2.loc[3].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    #Testing time that vessel stops in the lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_entry_stop.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df2.loc[4].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is closing start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_door_closing_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[12].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is closing stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_door_closing_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[13].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock is levelling start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_levelling_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[14].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock is levelling stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_levelling_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[15].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is opening start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_door_opening_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[16].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that lock door is closing stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_door_opening_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[17].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that vessel is starting to sail out of lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_departure_start.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df2.loc[7].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    # Testing time that vessel is has sailed out of lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[1].time_departure_stop.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df2.loc[8].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
+    # Testing time that vessel enters the lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_entry_start.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df1.loc[2].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
 
-    #Testing time that vessel enters the lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_entry_start.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df3.loc[3].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
-    #Testing time that vessel stops in the lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_entry_stop.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df3.loc[4].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    # Testing time that vessel stops in the lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_entry_stop.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df1.loc[4].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that lock door is closing start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_door_closing_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[24].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_door_closing_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[2].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that lock door is closing stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_door_closing_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[25].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_door_closing_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[3].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that lock is levelling start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_levelling_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[26].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_levelling_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[4].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that lock is levelling stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_levelling_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[27].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_levelling_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[5].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that lock door is opening start
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_door_opening_start.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[28].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_door_opening_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[6].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that lock door is closing stop
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_door_opening_stop.round('s').to_pydatetime().timestamp()/10,
-                                   lock_df.loc[29].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_door_opening_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[7].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that vessel is starting to sail out of lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_departure_start.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df3.loc[7].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
-    
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_departure_start.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df1.loc[7].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
     # Testing time that vessel is has sailed out of lock
-    np.testing.assert_almost_equal(lock.operation_planning.iloc[2].time_departure_stop.round('s').to_pydatetime().timestamp()/10,
-                                   vessel_df3.loc[8].Timestamp.to_pydatetime().timestamp()/10,decimal=0)
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[0].time_departure_stop.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df1.loc[8].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
 
-    np.testing.assert_almost_equal((vessel_df1.loc[3].Timestamp-lock_df.loc[1].Timestamp).total_seconds()/10,60)
-    np.testing.assert_almost_equal((vessel_df2.loc[3].Timestamp-lock_df.loc[11].Timestamp).total_seconds()/10,60)
-    np.testing.assert_almost_equal((vessel_df3.loc[3].Timestamp-lock_df.loc[21].Timestamp).total_seconds()/10,60)
+    # Testing time that vessel enters the lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_entry_start.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df2.loc[3].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
 
-    np.testing.assert_equal(len(lock_df),32)
+    # Testing time that vessel stops in the lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_entry_stop.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df2.loc[4].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is closing start
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_door_closing_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[12].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is closing stop
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_door_closing_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[13].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock is levelling start
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_levelling_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[14].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock is levelling stop
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_levelling_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[15].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is opening start
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_door_opening_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[16].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is closing stop
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_door_opening_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[17].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that vessel is starting to sail out of lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_departure_start.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df2.loc[7].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that vessel is has sailed out of lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[1].time_departure_stop.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df2.loc[8].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that vessel enters the lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_entry_start.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df3.loc[3].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that vessel stops in the lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_entry_stop.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df3.loc[4].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is closing start
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_door_closing_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[22].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is closing stop
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_door_closing_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[23].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock is levelling start
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_levelling_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[24].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock is levelling stop
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_levelling_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[25].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is opening start
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_door_opening_start.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[26].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that lock door is closing stop
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_door_opening_stop.round('s').to_pydatetime().timestamp() / 10,
+        lock_df.loc[27].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that vessel is starting to sail out of lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_departure_start.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df3.loc[7].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    # Testing time that vessel is has sailed out of lock
+    np.testing.assert_almost_equal(
+        lock.operation_planning.iloc[2].time_departure_stop.round('s').to_pydatetime().timestamp() / 10,
+        vessel_df3.loc[8].Timestamp.to_pydatetime().timestamp() / 10, decimal=0)
+
+    np.testing.assert_almost_equal((vessel_df1.loc[3].Timestamp - lock_df.loc[1].Timestamp).total_seconds() / 10, 60)
+    np.testing.assert_almost_equal((vessel_df2.loc[3].Timestamp - lock_df.loc[11].Timestamp).total_seconds() / 10, 60)
+    np.testing.assert_almost_equal((vessel_df3.loc[3].Timestamp - lock_df.loc[21].Timestamp).total_seconds() / 10, 60)
+
+    np.testing.assert_equal(len(lock_df), 30)
     assert 1 == 1
 
 
