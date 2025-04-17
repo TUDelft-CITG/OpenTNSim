@@ -1,24 +1,22 @@
 """This is the lock module as part of the OpenTNSim package. See the locking examples in the book for detailed descriptions."""
 
-# package(s) related to the simulation
-import bisect
+# # package(s) related to time, space and id
 import datetime
-import math
 import random
 import time
 import time as timepy
 
-import networkx as nx
+# packages for data handling
 import numpy as np
 import pandas as pd
 
 # spatial libraries
-import pyproj
-import pytz
-import shapely.geometry
-import simpy
-import xarray as xr
+import networkx as nx
 
+# package(s) related to the simulation
+import simpy
+
+# OpenTNSim
 from opentnsim import core, output
 
 

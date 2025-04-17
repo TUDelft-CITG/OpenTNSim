@@ -1,34 +1,27 @@
 """Main module."""
-
-# package(s) related to time, space and id
-import datetime
+# packkage(s) for documentation, debugging, saving and loading
 import logging
-import random
-import uuid
 import warnings
+import deprecated
 from typing import Union
 
-import deprecated
-import networkx as nx
+# math packages
+import random
 import numpy as np
 
 # spatial libraries
 import pyproj
 import shapely
 import shapely.geometry
-import shapely.ops
+import networkx as nx
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
 
 # Use OpenCLSim objects for core objects
-from openclsim.core import Identifiable, Locatable, SimpyObject, Log
-
-import opentnsim.energy
+from openclsim.core import Locatable, SimpyObject, Log
 import opentnsim.graph_module
-
-# additional packages
 
 
 logger = logging.getLogger(__name__)

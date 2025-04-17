@@ -14,11 +14,14 @@ interoperability among Esri and other software products."
 See https://en.wikipedia.org/wiki/Shapefile for additional information.
 """
 
+# packkage(s) for documentation, debugging, saving and loading
 import warnings
 
+# spatial libraries
 import networkx as nx
 import shapely
 
+# OpenTNSim
 import opentnsim
 
 

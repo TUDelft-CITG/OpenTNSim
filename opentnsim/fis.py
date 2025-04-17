@@ -1,8 +1,11 @@
+# packkage(s) for documentation, debugging, saving and loading
 import io
 import pickle
 
 import requests
 import requests_cache
+
+# spatial libraries
 import shapely.geometry
 
 # inject caching

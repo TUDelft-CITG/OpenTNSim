@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 
 """Graph module."""
-
-# package(s) related to time, space and id
-import json
+# packkage(s) for documentation, debugging, saving and loading
 import logging
-import math
 import os
-import uuid
 
+# package(s) for data handling
 import networkx as nx
 import numpy as np
 
@@ -22,6 +19,7 @@ import matplotlib.pyplot as plt
 # package(s) related to the simulation
 import simpy
 
+# OpenTNSim
 import opentnsim.utils
 
 logger = logging.getLogger(__name__)

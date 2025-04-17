@@ -1,22 +1,18 @@
 """Vessel generator."""
+# packkage(s) for documentation, debugging, saving and loading
+import logging
 
 # package(s) related to time, space and id
-import json
-import logging
 import uuid
 import numbers
+import datetime, time
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
 import networkx as nx
 
-# spatial libraries
-import pyproj
-import shapely.geometry
-
-# additional packages
-import datetime, time
+# package(s) for data handling
 import pandas as pd
 import random
 

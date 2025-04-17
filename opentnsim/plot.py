@@ -1,6 +1,9 @@
+# packages for time, space and id
+import datetime
+
+# packages for data handling
 import pandas as pd
 import numpy as np
-import datetime
 
 # plotting libraries
 from plotly.offline import init_notebook_mode, iplot
@@ -8,10 +11,7 @@ import plotly.graph_objs as go
 import matplotlib.pyplot as plt
 
 # spatial libraries
-import pyproj
-import shapely.geometry
 from simplekml import Kml, Style
-
 import networkx as nx
 
 

@@ -13,12 +13,14 @@ This package combine with "optimal sailing stratigies notebook" provides stratig
 # 5) add "get_optimal_refueling_amount" function. It's not always beneficial to be fully refueled with fuel for sailing, since more fuel on board leads to less cargo and there might still be residual fuel in the tank after a round trip if refuel too much. Therefore, it's needed to calculate the optimal refuling amount for each unique sailing case (route, vessel size & type, payload, time plan, refueling spots along the route).  The optimal refueling amount for a transport case determined by both the fuel consumption in time and space and the locations of refuling spots.
 # 6) consider writting the "fix power or fix speed" example which is in the paper as a function into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it benefit if adds this function?
 
+# packkage(s) for documentation, debugging, saving and loading
+import logging
 
+# mathematical packages
 import functools
 import itertools
 
-import logging
-
+# package(s) for data handling
 import pandas as pd
 import numpy as np
 import scipy.optimize

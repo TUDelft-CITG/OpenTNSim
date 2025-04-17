@@ -1,31 +1,22 @@
-import datetime
-import functools
-import io
-import itertools
-import json
+# packkage(s) for documentation, debugging, saving and loading
 import logging
+import io
 
-# Used for mathematical functions
-import math
-import pathlib
+# math packages
 import pkgutil
-import time
-import uuid
+import functools
+
+# packages for data handling
+import numpy as np
+import pandas as pd
 
 # Used for making the graph to visualize our problem
 import networkx as nx
-import numpy as np
-import pandas as pd
 import pyproj
 import scipy.optimize
-import shapely.geometry
-import simpy
-import tqdm
 
 # OpenTNSim
 import opentnsim
-import opentnsim.graph_module
-import opentnsim.strategy
 
 # package(s) for data handling
 

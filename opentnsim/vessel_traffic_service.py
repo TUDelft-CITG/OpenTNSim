@@ -1,22 +1,25 @@
-# package(s) related to the simulation
-import numpy as np
-import bisect
-import scipy as sc
-from shapely.geometry import Point, Polygon, MultiPolygon
-import shapely
-import pandas as pd
-from matplotlib import pyplot as plt, dates
-import math
-import networkx as nx
-import time as timepy
+# package(s) related to time, space and id
 import datetime
 import pytz
+
+# mathematical packages
+import math
+import bisect
+import scipy as sc
+
+# packages for data handling
+import numpy as np
+import pandas as pd
 import xarray as xr
 
-from shapely.ops import transform
-
 # spatial libraries
-import pyproj
+from shapely.geometry import Point, Polygon, MultiPolygon
+import shapely
+from shapely.ops import transform
+import networkx as nx
+
+# plots
+from matplotlib import pyplot as plt, dates
 
 
 class VesselTrafficService:
