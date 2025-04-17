@@ -1,4 +1,19 @@
-"""Main module."""
+"""Main module.
+
+This module contains the mixin classes that can be used to create new objects in the simulation.
+Choose from mixins:
+- HasResource: something that has a resource limitation, a resource request must be granted before the object can be used.
+- Neighbours: can be added to a locatable object (list)
+- HasLength: something with a storage capacity
+- HasContainer: something with a container, modelled as a storage capacity
+- HasLoad: something with a load dependent height (H) and draught (T)
+- VesselProperties: something with vessel properties
+- Routable: something with a route (networkx format)
+- Movable: something can move. mixin of Locatable and Routable and Log
+- ContainerDependentMovable: something can move with a speed dependent on the container level. mixin of Movable and HasContainer
+- ExtraMetadata: store all leftover keyword arguments as metadata property (use as last mixin)
+"""
+
 # packkage(s) for documentation, debugging, saving and loading
 import logging
 import warnings
@@ -13,6 +28,7 @@ import numpy as np
 import pyproj
 import shapely
 import shapely.geometry
+from shapely import Geometry
 import networkx as nx
 
 # you need these dependencies (you can get these from anaconda)
@@ -23,20 +39,30 @@ import simpy
 from openclsim.core import Locatable, SimpyObject, Log
 import opentnsim.graph_module
 
-
+# get logger
 logger = logging.getLogger(__name__)
 
-
-Geometry = shapely.Geometry
-
-
 class HasResource(SimpyObject):
-    """Something that has a resource limitation, a resource request must be granted before the object can be used.
+    """Mixin class: Something that has a resource limitation, a resource request must be granted before the object can be used.
 
-    - nr_resources: nr of requests that can be handled simultaneously
+    Parameters
+    -----------
+    nr_resources: int, default=1
+        nr of requests that can be handled simultaneously, optional, default=1
+    priority: bool, default=False
+        if True, prioritized resources can be handled. optional, default=False.
+    args, kwargs:
+        passed to SimpyObject. Must at least contain parameter env: simpy.Environment.
+
+    Attributes
+    -----------
+    resource: simpy.Resource or simpy.PriorityResource
+        the resource that is used to limit the nr of requests that can be handled simultaneously.
+    env: simpy.Environment
+        the simpy environment that is used to run the simulation.
     """
 
-    def __init__(self, nr_resources=1, priority=False, *args, **kwargs):
+    def __init__(self, nr_resources: int = 1, priority: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.resource = (
@@ -45,26 +71,48 @@ class HasResource(SimpyObject):
 
 
 class Neighbours:
-    """Can be added to a locatable object (list)
+    """Mixin class: Can be added to a locatable object (list)
 
-    - travel_to: list of locatables to which can be travelled
+    Parameters
+    ----------
+    travel_to: list
+            list of locatables to which can be travelled
+    args, kwargs:
+        passed to SimpyObject. Must at least contain parameter env: simpy.Environment.
+
+    Attributes
+    -----------
+    neighbours: list
+        list of locatables to which can be travelled.
     """
 
-    def ___init(self, travel_to, *args, **kwargs):
+    def ___init(self, travel_to: list, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.neighbours = travel_to
 
 
 class HasLength(SimpyObject):
-    """Mixin class: Something with a storage capacity
+    """Mixin class: Something with a length. The length is modelled as a storage capacity
 
-    capacity: amount the container can hold
-    level: amount the container holds initially
-    total_requested: a counter that helps to prevent over requesting
+    Parameters
+    -----------
+    length: float
+        length that can be requested
+    remaining_length: float, default=0
+        length that is still available at the beginning of the simulation.
+    args, kwargs:
+        passed to SimpyObject. Must at least contain parameter env: simpy.Environment.
+
+    Attributes
+    -----------
+    length: simpy.Container
+        the container that is used to limit the length that can be requested.
+    pos_length: simpy.Container
+        the container that is used to limit the length that can be requested.
     """
 
-    def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
+    def __init__(self, length: float, remaining_length: float = 0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
@@ -72,13 +120,28 @@ class HasLength(SimpyObject):
 
 
 class HasContainer(SimpyObject):
-    """Mixin class: Something with a storage capacity
-    capacity: amount the container can hold
-    level: amount the container holds initially
-    container: a simpy object that can hold stuff
-    total_requested: a counter that helps to prevent over requesting"""
+    """Mixin class: Something with a container, modelled as a storage capacity
 
-    def __init__(self, capacity, level=0, total_requested=0, *args, **kwargs):
+    Parameters
+    -----------
+    capacity: float
+        the capacity of the container, which may either be continuous (like water) or discrete (like apples)
+    level: int, default=0
+        level of the container at the beginning of the simulation
+    total_requested: int, default=0
+        total amount that has been requested at the beginning of the simulation
+    args, kwargs:
+        passed to SimpyObject. Must at least contain parameter env: simpy.Environment.
+
+    Attributes
+    -----------
+    container: simpy.Container
+        the container that is used to limit the amount that can be requested.
+    total_requested: int
+        total amount that has been requested.
+    """
+
+    def __init__(self, capacity: float, level: float = 0, total_requested: float = 0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.container = simpy.Container(self.env, capacity, init=level)
@@ -86,10 +149,12 @@ class HasContainer(SimpyObject):
 
     @property
     def is_loaded(self):
+        """Return if the container is loaded"""
         return True if self.container.level > 0 else False
 
     @property
     def filling_degree(self):
+        """return the filling degree of the container"""
         return self.container.level / self.container.capacity
 
     @property
@@ -102,7 +167,22 @@ class HasContainer(SimpyObject):
 class HasLoad:
     """Mixin class with load dependent height (H) and draught (T). The filling
     degree (filling_degree: fraction) will interpolate between empty and full
-    height and draught."""
+    height and draught.
+
+    Parameters
+    ----------
+    H_e: float
+        height of the vessel when empty
+    H_f: float
+        height of the vessel when full
+    T_e: float
+        draught of the vessel when empty
+    T_f: float
+        draught of the vessel when full
+    filling_degree: float, default=0
+        fraction of the vessel that is filled upon creation
+
+    """
 
     def __init__(self, H_e, H_f, T_e, T_f, filling_degree=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -114,14 +194,13 @@ class HasLoad:
 
     @property
     def T(self):
-        # base draught on filling degree
+        """Calculate current draught based on filling degree"""
         T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
         return T
 
     @property
     def H(self):
         """Calculate current height based on filling degree"""
-
         return self.filling_degree * (self.H_f - self.H_e) + self.H_e
 
 
@@ -129,31 +208,41 @@ class VesselProperties:
     """Mixin class: Something that has vessel properties
     This mixin is updated to better accommodate the ConsumesEnergy mixin
 
-    - type: can contain info on vessel type (avv class, cemt_class or other)
-    - B: vessel width
-    - L: vessel length
-    - h_min: vessel minimum water depth, can also be extracted from the network edges if they have the property
-      ['Info']['GeneralDepth']
-    - T: actual draught
-    - safety_margin : the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing,
+    Parameters
+    ----------
+    type: str
+        can contain info on vessel type (avv class, cemt_class or other)
+    B: float
+        vessel width
+    L: float
+        vessel length
+    h_min: float, optional
+        vessel minimum water depth.
+        The wather-depth can also be extracted from the network edges if they have the property ['Info']['GeneralDepth']
+    T: float, optional
+        actual draught.
+        If not given, it will be calculated based on the filling degree (use mixin HasLoad) or based on the payload and vessel type
+    safety_margin: float, optional
+      the water area above the waterway bed reserved to prevent ship grounding due to ship squatting during sailing
       the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety
       margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude
       of the ship captain and shipping companies.
-    - h_squat: the water depth considering ship squatting while the ship moving (if set to False, h_squat is disabled)
-    - payload: cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.
-      (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
-    - vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker".
-      ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull),
-      based on van Dorsser et al's paper.
-      (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
-    Alternatively you can specify draught based on filling degree
-    - H_e: vessel height unloaded
-    - H_f: vessel height loaded
-    - T_e: draught unloaded
-    - T_f: draught loaded
-    - renewable_fuel_mass: renewable fuel mass on board [kg]
-    - renewable_fuel_volume: renewable fuel volume on board [m3]
-    - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
+    h_squat: float, optional
+        the water depth considering ship squatting while the ship moving (if set to False, h_squat is disabled)
+    payload: float, optional
+        cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.
+        (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+    vessel_type: str, optional
+        vessel_type: vessel type can be selected from "Container","Dry_SH","Dry_DH","Barge","Tanker".
+        ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull),
+        based on van Dorsser et al's paper.
+        (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+    renewable_fuel_mass: float, optional
+        renewable fuel mass on board [kg]
+    renewable_fuel_volume: float, optional
+        renewable fuel volume on board [m3]
+    renewable_fuel_required_space: float, optional
+        renewable fuel required storage space (consider packaging factor) on board  [m3]
     """
 
     def __init__(
@@ -216,6 +305,7 @@ class VesselProperties:
 
     @property
     def h_min(self):
+        """get the minimum water depth. if not given, h_min is the minimal water depth of the graph.."""
         if self._h_min is not None:
             h_min = self._h_min
         else:
@@ -233,7 +323,27 @@ class VesselProperties:
         minDepth=None,
         randomSeed=4,
     ):
-        """Calculate a path based on vessel restrictions"""
+        """Calculate a path based on vessel restrictions
+        restrictions are only applied if the graph has the attributes ['Width', 'Height', 'Depth']
+
+        Parameters
+        ----------
+        origin: str
+            ID of the starting node
+        destination: str
+            ID of the destination node
+        graph: networkx.Graph, default = self.graph
+            The graph to use for the pathfinding
+        minWidth: float, default = 1.1 * self.B
+            Minimum width of the path
+        minHeight: float, default = 1.1 * self.H
+            Minimum height of the path
+        minDepth: float, default = 1.1 * self.T
+            Minimum depth of the path
+        randomSeed: int, default = 4
+            Seed for the random number generator
+
+        """
 
         graph = graph if graph else self.graph
         minWidth = minWidth if minWidth else 1.1 * self.B
@@ -285,8 +395,23 @@ class VesselProperties:
 class Routable(SimpyObject):
     """Mixin class: Something with a route (networkx format)
 
-    - route: list of node-IDs
-    - position_on_route: index of position
+    Parameters
+    ----------
+    route: list
+        list of node-IDs
+    complete_path: list, optional
+        ???
+    args, kwargs:
+        passed to SimpyObject. Must at least contain parameter env: simpy.Environment.
+
+    Attributes
+    -----------
+    route: list
+        list of node-IDs
+    complete_path: list, optional
+        ???
+    position_on_route: int
+        index of position on the route
     """
 
     def __init__(self, route, complete_path=None, *args, **kwargs):
@@ -342,10 +467,30 @@ class Movable(Locatable, Routable, Log):
 
     Used for object that can move with a fixed speed
 
-    - geometry: point used to track its current location
-    - v: speed
-    - on_pass_edge_functions can contain a list of generators in the form of on_pass_edge(source: Point, destination: Point) -> yield event
-    - on_pass_node_functions can contain a list of generators in the form of on_pass_node(source: Point) -> yield event
+    Parameters
+    ----------
+    v: float
+        speed of the object (in m/s)
+    geometry: shapely.geometry.Point
+        passed to Locatable. point used to track its current location
+    node: str, optional
+        passed to Locatable,
+    route: list, optional
+        passed to Routable,
+    complete_path: list, optional
+        passed to Routable,
+
+    Attributes
+    ----------
+    v: float
+        speed of the object (in m/s)
+    on_pass_edge_functions: list
+        list of functions to call when passing an edge
+    on_pass_node_functions: list
+        list of functions to call when passing a node
+    wsg84: pyproj.Geod
+        used for distance computation
+
     """
 
     def __init__(self, v: float, *args, **kwargs):
@@ -356,10 +501,19 @@ class Movable(Locatable, Routable, Log):
         self.on_pass_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    def move(self, destination: Union[Locatable, Geometry, str] = None, engine_order: float = 1.0, duration: float = None):
+    def move(self, destination: Union[Locatable, Geometry, str] = None):
         """determine distance between origin and destination, and
-        yield the time it takes to travel it
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
+
+        Parameters
+        ----------
+        destination: str, Locatable or Geometry, optional
+            the destination to move to. If None, move to the end of the route.
+
+        Yields
+        ------
+        time it takes to travel the distance to the destination.
+
         """
 
         # simplify destination to node or geometry
@@ -432,11 +586,36 @@ class Movable(Locatable, Routable, Log):
             logger.debug("  current_speed:  not set")
 
     def pass_node(self, node):
+        """pass a node and call all on_pass_node_functions
+
+        Parameters
+        ----------
+        node: str
+            the node to pass
+
+        Yields
+        ------
+        The time it takes to pass the node.
+        """
+
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
 
     def pass_edge(self, origin, destination):
+        """pass an edge and call all on_pass_edge_functions.
+
+        Parameters
+        ----------
+        origin: str
+            the origin node of the edge
+        destination: str
+            the destination node of the edge
+
+        Yields
+        ------
+        The time it takes to pass the edge.
+        """
         edge = self.graph.edges[origin, destination]
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
@@ -570,13 +749,42 @@ class Movable(Locatable, Routable, Log):
 
     @property
     def current_speed(self):
+        """return the current speed of the vessel"""
         return self.v
 
 
 class ContainerDependentMovable(Movable, HasContainer):
-    """ContainerDependentMovable class
+    """Mixin class: ContainerDependentMovable class
     Used for objects that move with a speed dependent on the container level
-    compute_v: a function, given the fraction the container is filled (in [0,1]), returns the current speed"""
+
+    Parameters
+    ----------
+    compute_v: function
+        a function, given the fraction the container is filled (in [0,1]), returns the current speed
+    v: float
+        passed to Movable, speed of the object (in m/s)
+    geometry: shapely.geometry.Point
+        passed to Movable. point used to track its current location
+    node: str, optional
+        passed to Movable,
+    route: list, optional
+        passed to Movable,
+    complete_path: list, optional
+        passed to Movable,
+    Capacity: float
+        passed to HasContainer, the capacity of the container, which may either be continuous (like water) or discrete (like apples)
+    level: int, default=0
+        passed to HasContainer, level of the container at the beginning of the simulation
+    total_requested: int, default=0
+        passed to HasContainer, total amount that has been requested at the beginning of the simulation
+
+    Attributes
+    ----------
+    compute_v: function
+        a function, given the fraction the container is filled (in [0,1]), returns the current speed
+    current_speed: float
+        the current speed of the vessel (in m/s), based on the filling degree of the container
+    """
 
     def __init__(self, compute_v, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -586,11 +794,12 @@ class ContainerDependentMovable(Movable, HasContainer):
 
     @property
     def current_speed(self):
-        return self.compute_v(self.container.level / self.container.capacity)
+        """return the current speed of the vessel, based on the filling degree of the container"""
+        return self.compute_v(self.filling_degree)
 
 
 class ExtraMetadata:
-    """store all leftover keyword arguments as metadata property (use as last mixin)"""
+    """Mixin class: store all leftover keyword arguments as metadata property (use as last mixin)"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
