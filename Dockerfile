@@ -6,9 +6,7 @@ RUN apt install -y build-essential python3-dev ffmpeg
 
 # Install conda stuff first
 # install gdal library
-RUN conda install -c conda-forge mamba nomkl
-RUN mamba install -c conda-forge pyproj
-RUN mamba install -c conda-forge gdal
+RUN conda install cctbx202211::libsqlite
 
 WORKDIR /OpenTNSim
 ENV PROJ_DATA=/opt/conda/share/proj

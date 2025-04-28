@@ -36,7 +36,7 @@ import networkx as nx
 import simpy
 
 # Use OpenCLSim objects for core objects
-from openclsim.core import Locatable, SimpyObject, Log
+from openclsim.core import Identifiable, Locatable, SimpyObject, Log
 import opentnsim.graph_module
 
 # get logger
