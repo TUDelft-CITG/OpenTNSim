@@ -16,7 +16,17 @@ import networkx as nx
 
 
 def vessel_planning(vessels, activities, colors, web=False):
-    """create a plot of the planning of vessels"""
+    """create a plot of the planning of vessels
+
+    Parameters
+    ----------
+    vessels : list of objects
+        A list containing vessel objects to plot. vessel need to have a logbook (mixin class Log)
+    activities : list of strings
+        The activities to plot. Must be denoted in logbook as '<activity> start' and '<activity> stop'
+    colors : list of colors
+        The colors to use for the activities. must be the same length as activities
+    """
 
     def get_segments(series, activity, y_val):
         """extract 'start' and 'stop' of activities from log"""
@@ -93,9 +103,26 @@ def vessel_kml(
     scale=1,
     stepsize=120,
 ):
-    """Create a kml visualisation of vessels. Env variable needs to contain
-    epoch to enable conversion of simulation time to real time. Vessels need
-    logs that contain geometries in lat, lon as a function of time."""
+    """Create a kml visualisation of vessels and save in defined file.
+
+    Parameters
+    ----------
+    env : simpy.Environment
+        The environment object containing the simulation time. Env variable needs to contain epoch to enable conversion
+        of simulation time to real time.
+    vessels: list of vessels
+        Vessels need logs that contain geometries in lat, lon as a function of time. (mixin class Log)
+    fname: str
+        The name of the kml file to be created. Default is 'vessel_movements.kml'
+    icon: str
+        The icon to be used for the vessels. Default is 'http://maps.google.com/mapfiles/kml/shapes/sailing.png'
+    size: float
+        The size of the label. Default is 1
+    scale: float
+        The scale of the icon. Default is 1
+    stepsize: int
+        The stepsize for the interpolation of the geometry. Default is 120 seconds (2 minutes)
+    """
 
     # create a kml file containing the visualisation
     kml = Kml()
@@ -144,6 +171,7 @@ def vessel_kml(
         tmp_vessel["timestamps_x"] = np.interp(timestamps_t, times, tmp_vessel["Geometry - x"])
         tmp_vessel["timestamps_y"] = np.interp(timestamps_t, times, tmp_vessel["Geometry - y"])
 
+        log_index = -1
         for log_index, value in enumerate(tmp_vessel["timestamps_t"][:-1]):
             begin = datetime.datetime.fromtimestamp(tmp_vessel["timestamps_t"][log_index])
             end = datetime.datetime.fromtimestamp(tmp_vessel["timestamps_t"][log_index + 1])
@@ -188,11 +216,25 @@ def site_kml(
     icon="http://maps.google.com/mapfiles/kml/shapes/square.png",
     size=1,
     scale=3,
-    stepsize=120,
 ):
-    """Create a kml visualisation of vessels. Env variable needs to contain
-    epoch to enable conversion of simulation time to real time. Vessels need
-    logs that contain geometries in lat, lon as a function of time."""
+    """Create a kml visualisation of vessels.
+
+    Parameters
+    ----------
+    env : simpy.Environment
+        The environment object containing the simulation time. Env variable needs to contain epoch to enable conversion of
+        the simulation time to real time.
+    sites: list of sites
+        Sites need logs that contain geometries in lat, lon as a function of time. (mixin class Log)
+    fname: str
+        The name of the kml file to be created. Default is 'site_development.kml'
+    icon: str
+        The icon to be used for the vessels. Default is 'http://maps.google.com/mapfiles/kml/shapes/square.png'
+    size: float
+        The size of the label. Default is 1
+    scale: float
+        The scale of the icon. Default is 1
+    """
 
     # create a kml file containing the visualisation
     kml = Kml()
@@ -203,7 +245,7 @@ def site_kml(
         for log_index, value in enumerate(site.log["Timestamp"][:-1]):
             style = Style()
             style.labelstyle.color = "ffffffff"  # White
-            style.labelstyle.scale = 1
+            style.labelstyle.scale = size
             style.iconstyle.color = "ff00ffff"  # Yellow
             style.iconstyle.scale = scale * (site.log["Value"][log_index] / site.container.capacity)
             style.iconstyle.icon.href = icon
@@ -259,8 +301,23 @@ def graph_kml(
     scale=0.5,
     width=5,
 ):
-    """Create a kml visualisation of graph. Env variable needs to contain
-    graph."""
+    """Create a kml visualisation of graph and save in defined file.
+
+    Parameters
+    ----------
+    env : simpy.Environment
+        The environment object containing the simulation time. Env variable needs to contain the graph.
+    fname: str
+        The name of the kml file to be created. Default is 'graph.kml'
+    icon: str
+        The icon to be used for the vessels. Default is 'http://maps.google.com/mapfiles/kml/shapes/donut.png'
+    size: float
+        The size of the label. Default is 0.5
+    scale: float
+        The scale of the icon. Default is 0.5
+    width: float
+        The width of the line. Default is 5
+    """
 
     # create a kml file containing the visualisation
     kml = Kml()
@@ -311,6 +368,15 @@ def graph_kml(
 
 
 def energy_use(vessel, testing=False):
+    """Create a plot of the energy use of a vessel
+
+    Parameters
+    ----------
+    vessel : object
+        A vessel object to plot. vessel need to have a logbook (mixin class Log)
+    testing : bool
+        If True, the plot will not be shown. This is useful for testing purposes.
+    """
     energy_use_loading = 0  # concumption between loading start and loading stop
     energy_use_sailing_full = 0  # concumption between sailing full start and sailing full stop
     energy_use_unloading = 0  # concumption between unloading  start and unloading  stop
