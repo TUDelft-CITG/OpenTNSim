@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 class VesselGenerator:
     """
     A class to generate vessels from a database
+
+    Parameters
+    ----------
+    vessel_type: class of mixins.
+        The type of vessel to be generated.
+    vessel_database: ??
+        The database from which the vessel is generated.
+        Make sure all needed attributes for vessel_type are available in the database.
+    loaded: optional
+        whether or not the vessel is loaded.
+        If True, the vessel is loaded.
+        If "Random", the vessel is randomly loaded or not (50% chance fully loaded, 50% chance empty).
+        If not specified, the vessel is empty.
+    random_seed: int, optional
+        The random seed for generating vessels. The default is 3.
     """
 
     def __init__(self, vessel_type, vessel_database, loaded=None, random_seed=3):
@@ -36,8 +51,18 @@ class VesselGenerator:
 
         random.seed(random_seed)
 
-    def generate(self, environment, vessel_name, scenario=None):
-        """Generate a vessel"""
+    def generate(self, environment, vessel_name: str, scenario=None):
+        """Get a random vessel from self.database
+
+        Parameters
+        ----------
+        environment: simpy environment
+            The environment in which the vessel is generated.
+        vessel_name: str
+            The name that is assigned to the generated vessel.
+        scenario: str, optional
+            The scenario of the generated vessel. If given, the vessel with this scenario is selected from the database.
+        """
 
         vessel_info = self.vessel_database.sample(n=1, random_state=int(1000 * random.random()))
         vessel_data = {}
@@ -80,11 +105,25 @@ class VesselGenerator:
         arrival_process,
     ):
         """
-        Make arrival process
+        Make arrival process in the simulation environment. Vessels with a route and between origin and destination are generated according to the arrival distribution.
+        The route is calculated using the dijkstra algorithm.
 
-        environment:            simpy environment
-        arrival_distribution:   specify the distribution from which vessels are generated, int or list
-        arrival_process:        process of arrivals
+        Parameters
+        ----------
+        environment:  simpy environment
+            The environment in which the vessel is generated.
+        origin:       str
+            The origin of the vessel.
+        destination:  str
+            The destination of the vessel.
+        arrival_distribution: int or list
+            The amount of vessels that enter the simulation per hour.
+            If int, it is the average number of vessels per hour over the entire day.
+            If list, it is the average number of vessels per hour for each hour of the day. List must have length of 24 (one entry for each hour).
+        scenario:     str
+            The scenario that is assigned to the generated vessel.
+        arrival_process:  str
+            process of arrivals. choose between "Markovian" or "Uniform".
         """
 
         # Create an array with inter-arrival times -- average number of seconds between arrivals
@@ -132,13 +171,22 @@ class VesselGenerator:
 class Simulation(core.Identifiable):
     """
     A class to generate vessels from a database
+
+    Parameters
+    ----------
+    simulation_start: datetime
+        The start time of the simulation.
+    graph: networkx graph
+        The graph that is used for the simulation.
+    scenario:
+        scenario with vessels - should be coupled to the database
     """
 
     def __init__(self, simulation_start, graph, scenario=None):
         """
         Initialization
 
-        scenario: scenario with vessels - should be coupled to the database
+
         """
         self.environment = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
         self.environment.FG = graph
@@ -158,19 +206,35 @@ class Simulation(core.Identifiable):
 
     def add_vessels(
         self,
-        origin,
-        destination,
+        origin=None,
+        destination=None,
         vessel=None,
-        vessel_generator=None,
+        vessel_generator: VesselGenerator = None,
         arrival_distribution=1,
         arrival_process="Markovian",
     ):
         """
-        Make arrival process
+        Make arrival process in the environment. Add one vessel  on one input vessel, or with the vessel generator
 
-        environment:            simpy environment
-        arrival_distribution:   specify the distribution from which vessels are generated, int or list
-        arrival_process:        process of arrivals
+        Parameters
+        ----------
+        vessel_generator:      VesselGenerator
+            The vessel generator that is used to generate vessels. Optional. If not specified, the vessel should be specified.
+            If specified, the vessel should be None, but origin, destination, arrival_distribution and arrival_process should be specified.
+        origin: str
+            The origin of the vessel. Must be specified if vessel_generator is specified.
+        destination: str
+            The destination of the vessel. Must be specified if vessel_generator is specified.
+        arrival_distribution: int or list
+            The amount of vessels that enter the simulation per hour. Must be specified if vessel_generator is specified.
+            If int, it is the average number of vessels per hour over the entire day.
+            If list, it is the average number of vessels per hour for each hour of the day. List must have length of 24 (one entry for each hour).
+        arrival_process: str
+            The process of arrivals. Must be specified if vessel_generator is specified.
+            Choose between "Markovian" or "Uniform".
+        vessel: Vessel
+            A vessel object with a route between origin and destination. Optional.
+            If specified, the vessel_generator should be None, and origin, destination, arrival_distribution and arrival_process are ignored.
         """
 
         if vessel_generator == None:
@@ -193,7 +257,8 @@ class Simulation(core.Identifiable):
         """
         Run the simulation
 
-        duration:               specify the duration of the simulation in seconds
+        duration:   float
+            specify the duration of the simulation in seconds
         """
 
         self.environment.run(until=self.environment.now + duration)
