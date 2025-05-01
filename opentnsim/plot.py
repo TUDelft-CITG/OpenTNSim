@@ -466,5 +466,5 @@ def energy_use(vessel, testing=False):
     ax1.set_xticklabels(labels, size=12)
     plt.title("Energy use - {}".format(vessel.name), size=15)
 
-    if testing == False:
+    if testing is False:
         plt.show()

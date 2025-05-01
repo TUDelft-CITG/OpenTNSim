@@ -6,7 +6,8 @@ import logging
 # package(s) related to time, space and id
 import uuid
 import numbers
-import datetime, time
+import datetime
+import time
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -80,7 +81,7 @@ class VesselGenerator:
             else:
                 vessel_data[key] = vessel_info[key].values[0]
 
-        if self.loaded == True:
+        if self.loaded is True:
             vessel_data["level"] = vessel_data["capacity"]
         elif self.loaded == "Random":
             if random.random() < 0.5:
@@ -106,7 +107,8 @@ class VesselGenerator:
         arrival_process,
     ):
         """
-        Make arrival process in the simulation environment. Vessels with a route and between origin and destination are generated according to the arrival distribution.
+        Make arrival process in the simulation environment. Vessels with a route
+        and between origin and destination are generated according to the arrival distribution.
         The route is calculated using the dijkstra algorithm.
 
         Parameters
@@ -120,7 +122,8 @@ class VesselGenerator:
         arrival_distribution: int or list
             The amount of vessels that enter the simulation per hour.
             If int, it is the average number of vessels per hour over the entire day.
-            If list, it is the average number of vessels per hour for each hour of the day. List must have length of 24 (one entry for each hour).
+            If list, it is the average number of vessels per hour for each hour of the day.
+            List must have length of 24 (one entry for each hour).
         scenario:     str
             The scenario that is assigned to the generated vessel.
         arrival_process:  str
@@ -155,7 +158,8 @@ class VesselGenerator:
 
             else:
                 raise ValueError(
-                    "No other arrival processes are yet defined. You can add them to transport_network_analysis/vessel_generator.py."
+                    "No other arrival processes are yet defined. You can add them to "
+                    "transport_network_analysis/vessel_generator.py."
                 )
 
             # Create a vessel
@@ -220,25 +224,30 @@ class Simulation(core.Identifiable):
         Parameters
         ----------
         vessel_generator:      VesselGenerator
-            The vessel generator that is used to generate vessels. Optional. If not specified, the vessel should be specified.
-            If specified, the vessel should be None, but origin, destination, arrival_distribution and arrival_process should be specified.
+            The vessel generator that is used to generate vessels. Optional. If not specified,
+            the vessel should be specified.
+            If specified, the vessel should be None, but origin, destination, arrival_distribution
+            and arrival_process should be specified.
         origin: str
             The origin of the vessel. Must be specified if vessel_generator is specified.
         destination: str
             The destination of the vessel. Must be specified if vessel_generator is specified.
         arrival_distribution: int or list
-            The amount of vessels that enter the simulation per hour. Must be specified if vessel_generator is specified.
+            The amount of vessels that enter the simulation per hour. Must be specified if
+            vessel_generator is specified.
             If int, it is the average number of vessels per hour over the entire day.
-            If list, it is the average number of vessels per hour for each hour of the day. List must have length of 24 (one entry for each hour).
+            If list, it is the average number of vessels per hour for each hour of the day.
+            List must have length of 24 (one entry for each hour).
         arrival_process: str
             The process of arrivals. Must be specified if vessel_generator is specified.
             Choose between "Markovian" or "Uniform".
         vessel: Vessel
             A vessel object with a route between origin and destination. Optional.
-            If specified, the vessel_generator should be None, and origin, destination, arrival_distribution and arrival_process are ignored.
+            If specified, the vessel_generator should be None, and origin, destination,
+            arrival_distribution and arrival_process are ignored.
         """
 
-        if vessel_generator == None:
+        if vessel_generator is None:
             self.environment.vessels.append(vessel)
             self.environment.process(vessel.move())
 

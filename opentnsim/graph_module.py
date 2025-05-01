@@ -30,7 +30,7 @@ wgs84 = pyproj.Geod(ellps="WGS84")
 
 def geom_to_edges(geom, properties):
     """Generate edges from a geometry, yielding an edge id and edge properties. The edge_id consists of a tuple of coordinates"""
-    if not geom.geom_type in ["LineString", "MultiLineString"]:
+    if geom.geom_type not in ["LineString", "MultiLineString"]:
         msg = "Only ['LineString', 'MultiLineString'] are supported, got {}".format(geom.geom_type)
         raise ValueError(msg)
     if geom.geom_type == "MultiLineString":
@@ -78,10 +78,9 @@ def gdf_to_nx(gdf):
             for edge_id, edge_properties in geom_to_edges(geom, properties):
                 node_source, node_target = edge_properties["e"]
                 source_geom = shapely.geometry.Point(*node_source)
-                node_id, node_properties = geom_to_node(source_geom, {})
+                _, node_properties = geom_to_node(source_geom, {})
                 FG.add_node(edge_id[0], **node_properties)
-                target_geom = shapely.geometry.Point(*node_target)
-                node_id, node_properties = geom_to_node(source_geom, {})
+                _, node_properties = geom_to_node(source_geom, {})
                 FG.add_node(edge_id[1], **node_properties)
                 FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
     return FG

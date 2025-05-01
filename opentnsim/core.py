@@ -35,7 +35,7 @@ import networkx as nx
 # package(s) related to the simulation
 import simpy
 
-# Use OpenCLSim objects for core objects
+# Use OpenCLSim objects for core objects (identifiable is imported for later use.)
 from openclsim.core import Identifiable, Locatable, SimpyObject, Log
 import opentnsim.graph_module
 
@@ -522,7 +522,6 @@ class Movable(Locatable, Routable, Log):
             destination = destination.geometry
 
         self.distance = 0
-        speed = self.v
 
         # Check if vessel is at correct location - if not, move to location
         first_n = self.route[0]
