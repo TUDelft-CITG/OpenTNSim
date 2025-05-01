@@ -266,7 +266,6 @@ def get_v(vessel, width, depth, margin, bounds):
     # the value of fit.x within the bound (0,20) is the velocity we find where the diff**2 reach a minimum (zero).
     v = fit.x
 
-
     return v, depth, margin
 
 
@@ -279,7 +278,6 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     # estimate the grounding velocity
     # here we optionally try to take sinkage into account and try to compute the maximum velocity where we still have underkeel clearance
     grounding_v, depth, margin = get_v(vessel, width, depth, margin=0, bounds=bounds)
-
 
     # The next step is to compute the maximum power for the veloctiy.
     # Here (for some reason we don't use a solver )

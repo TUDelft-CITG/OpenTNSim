@@ -279,5 +279,9 @@ def test_basic_simulation():
     )
 
     np.testing.assert_almost_equal(
-        500 / 2 + (300 - 0.5 * 135) / 2, waiting_in_waiting_duration[1], decimal=0, err_msg="", verbose=True
+        500 / 2 + (300 - 0.5 * 135) / 2,
+        waiting_in_waiting_duration[1],
+        decimal=0,
+        err_msg="",
+        verbose=True,
     )

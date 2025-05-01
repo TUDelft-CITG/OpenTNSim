@@ -1,6 +1,5 @@
 """Here we test the code for estimating fuel consumption and emission rates of CO2, PM10 and NOx for the round trip given engine age."""
 
-
 # Importing libraries
 
 # package(s) related to time, space and id

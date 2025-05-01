@@ -1239,9 +1239,9 @@ class PassLock:
                     and "lock_information" in dir(vessel)
                     and lineup_areas[lock_queue_length.index(min(lock_queue_length))].name not in vessel.lock_information.keys()
                 ):
-                    vessel.lock_information[
-                        lineup_areas[lock_queue_length.index(min(lock_queue_length))].name
-                    ] = HasLockInformation()
+                    vessel.lock_information[lineup_areas[lock_queue_length.index(min(lock_queue_length))].name] = (
+                        HasLockInformation()
+                    )
 
                 yield from access_lineup_area(vessel, lineup_area)
 

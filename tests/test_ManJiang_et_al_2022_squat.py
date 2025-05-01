@@ -6,6 +6,7 @@
 # package(s) related to time, space and id
 import itertools
 import pathlib
+
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import pandas as pd
@@ -25,7 +26,10 @@ import utils
 def expected_df():
     path = pathlib.Path(__file__)
     return utils.get_expected_df(path)
+
+
 # Creating the test objects
+
 
 # Actual testing starts here
 # - tests 3 fixed velocities to return the right P_tot
@@ -107,13 +111,7 @@ def test_simulation(expected_df):
 
     # collect info dataframe
     plot_df = pd.DataFrame(results)
-    
-    
+
     # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
-    columns_to_test = [
-        column
-        for column in plot_df.columns
-    ]
-    pd.testing.assert_frame_equal(
-        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
-    )
+    columns_to_test = [column for column in plot_df.columns]
+    pd.testing.assert_frame_equal(expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False)

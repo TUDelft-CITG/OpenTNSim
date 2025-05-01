@@ -1,6 +1,5 @@
 """Here we test the estimation of fuel use with and without current influence for single and round trips in section 1 and 3."""
 
-
 # Importing libraries
 
 # package(s) related to time, space and id

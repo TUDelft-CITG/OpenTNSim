@@ -779,12 +779,12 @@ class VesselTrafficService:
             # Add accessibility information to intersection points
             if not horizontal_tidal_accessibility.empty:
                 if not decreasing:
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"
-                    ] = "Accessible"
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[::2], "Accessibility"
-                    ] = "Inaccessible"
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
+                        "Accessible"
+                    )
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
+                        "Inaccessible"
+                    )
                     limiting_currents = np.interp(
                         horizontal_tidal_accessibility.index.to_numpy().astype(float),
                         cross_current_limit_dataframe.index.to_numpy().astype(float),
@@ -804,12 +804,12 @@ class VesselTrafficService:
                     ]
                     horizontal_tidal_accessibility = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Limit != -1.0]
                 else:
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"
-                    ] = "Inaccessible"
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[::2], "Accessibility"
-                    ] = "Accessible"
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
+                        "Inaccessible"
+                    )
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
+                        "Accessible"
+                    )
                 horizontal_tidal_accessibility["Condition"] = "Current velocity"
                 horizontal_tidal_accessibility = horizontal_tidal_accessibility[["Limit", "Condition", "Accessibility"]]
             return horizontal_tidal_accessibility, station

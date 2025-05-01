@@ -1,4 +1,4 @@
-"""Here we test the emission rates with input Vs=3 m/s, h_0 = 5 m, C_year = 2000, do not consider squat """
+"""Here we test the emission rates with input Vs=3 m/s, h_0 = 5 m, C_year = 2000, do not consider squat"""
 
 # Importing libraries
 

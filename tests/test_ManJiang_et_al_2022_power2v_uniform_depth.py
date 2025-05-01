@@ -1,4 +1,5 @@
-"""Here we test power2v for section 1 and 2 in uniform water depth """
+"""Here we test power2v for section 1 and 2 in uniform water depth"""
+
 # Importing libraries
 
 # package(s) related to time, space and id

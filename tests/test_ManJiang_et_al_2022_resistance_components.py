@@ -1,6 +1,7 @@
 """Here we test the total resistance with all its resistance components for inland ships, which includes R_f, R_f_one_k1, R_APP, R_W, R_res. With input Vs=[0.1, 1, 2, 3, 4] m/s, h_0 = 5 m, C_year = 2000, do not consider squat.
 
-In the future it is nice to include another test-- resistance component R_B for seagoing ships which has a bulbous bow, and test the switching between inland ship and seagoing ship resistance calculation"""
+In the future it is nice to include another test-- resistance component R_B for seagoing ships which has a bulbous bow, and test the switching between inland ship and seagoing ship resistance calculation
+"""
 
 # Importing libraries
 

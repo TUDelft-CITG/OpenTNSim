@@ -42,6 +42,7 @@ import opentnsim.graph_module
 # get logger
 logger = logging.getLogger(__name__)
 
+
 class HasResource(SimpyObject):
     """Mixin class: Something that has a resource limitation, a resource request must be granted before the object can be used.
 
