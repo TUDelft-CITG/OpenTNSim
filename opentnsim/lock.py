@@ -175,7 +175,8 @@ class HasLineUpArea(core.Movable, HasMultiDiGraph):
 
 class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.HasOutput, HasMultiDiGraph):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
-    creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity
+    creates a waiting area with a waiting_area resource which is requested when a vessels wants to
+    enter the area with limited capacity
     """
 
     def __init__(
@@ -277,7 +278,8 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
         }  # used to minimize the number of empty convertion requests by one by multiple waiting vessels, so capacity must be 1
         self.pass_line_up_area = {
             start_node: simpy.PriorityResource(self.env, capacity=1),
-        }  # used to prevent vessel from entering the lock before all previously locked vessels have passed the line-up area one by one, so capacity must be 1
+        }  # used to prevent vessel from entering the lock before all previously locked vessels have passed the
+        # line-up area one by one, so capacity must be 1
 
         # Add to the graph:
         if "FG" in dir(self.env):
@@ -759,7 +761,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
         V_lock_harbour = self.lock_length * self.lock_width * (WLev_lock_harbour + self.lock_depth)
         self.exchange_flux_time_series_calculator(T_door_open, time_index_start)
 
-        # A loop that breaks at a certain moment assigning discharges to the sluice? (discharge should be separated for positive negative (and maybe sluice gates))
+        # A loop that breaks at a certain moment assigning discharges to the sluice? (discharge should be
+        #  separated for positive negative (and maybe sluice gates))
         if S_lock_harbour != S_lock:
             T_exch = self.lock_length / (
                 0.5
@@ -800,7 +803,8 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
         return volume
 
     def determine_levelling_time(self, new_level, delay=0):
-        """Function which calculates the operation time: based on the constant or nearest in the signal of the water level difference
+        """Function which calculates the operation time: based on the
+        constant or nearest in the signal of the water level difference
 
         Input:
             - environment: see init function"""
@@ -1056,11 +1060,13 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
 
 
 class PassLock:
-    """Mixin class: a collection of functions which are used to pass a lock complex consisting of a waiting area, line-up areas, and lock chambers"""
+    """Mixin class: a collection of functions which are used to pass a lock complex consisting of a waiting area,
+    line-up areas, and lock chambers"""
 
     @staticmethod
     def leave_waiting_area(vessel, node_waiting_area):
-        """Processes vessels which are waiting in the waiting area of the lock complex and requesting access to preceding the line-up area:
+        """Processes vessels which are waiting in the waiting area of the lock complex and requesting access to
+        preceding the line-up area:
             if there area multiple parallel lock chambers, the chamber with the least expected total waiting time is chosen,
             after which access is requested to enter the line-up area corresponding with the assigned lock chain series.
 
@@ -1069,11 +1075,11 @@ class PassLock:
             - node_waiting_area: a string which includes the name of the node the waiting area is located in the network"""
 
         def choose_lock_chamber(vessel, lock, lock_position, series_number, lineup_areas, lock_queue_length):
-            """Assigns the lock chamber with the least expected total waiting time to the vessel in case of parallell lock chambers. The
-                expected total waiting time is calculated through quantifying the total length of the queued vessels. If a vessel does
-                not fit in a lockage, it will create a new lockage cycle by requesting the full length capacity of the line-up area. When
-                this request is granted, the vessel will immediately release the obsolete length, such that more vessels can go with the
-                next lockage.
+            """Assigns the lock chamber with the least expected total waiting time to the vessel in case of parallell lock
+              chambers. The expected total waiting time is calculated through quantifying the total length of the
+            queued vessels. If a vessel does not fit in a lockage, it will create a new lockage cycle by
+            requesting the full length capacity of the line-up area. When this request is granted, the vessel
+            will immediately release the obsolete length, such that more vessels can go with the next lockage.
             This function is evaluated in the leave_waiting_area function.
 
             Input:
@@ -1091,7 +1097,8 @@ class PassLock:
             lineup_area = lineup_areas[series_number]
 
             # Assesses the total queue length within this lock series
-            # - if the queue for the line-up area is empty, a name is set if the vessel fits in the lock chamber and line-up right away, otherwise the queue is calculated
+            # - if the queue for the line-up area is empty, a name is set if the vessel fits in
+            #  the lock chamber and line-up right away, otherwise the queue is calculated
             if lineup_area.length.get_queue == []:
                 if (
                     vessel.L <= lock.length.level
@@ -1105,7 +1112,8 @@ class PassLock:
                 else:
                     lock_queue_length.append(lineup_area.length.capacity)
 
-            # - else, if the vessel does not fit in the line-up area, the total length of the queued is calculated added with the full length capacity of the line-up area
+            # - else, if the vessel does not fit in the line-up area, the total length of the queued
+            # is calculated added with the full length capacity of the line-up area
             else:
                 line_up_queue_length = lineup_area.length.capacity
                 for queued_vessel in lineup_area.length.get_queue:
@@ -1113,8 +1121,8 @@ class PassLock:
                 lock_queue_length.append(line_up_queue_length)
 
         def access_lineup_area(vessel, lineup_area):
-            """Processes the request of vessels to access the line-up area by claiming a position (which equals the length of
-                the vessel) along its jetty.
+            """Processes the request of vessels to access the line-up area by claiming a position
+            (which equals the length of the vessel) along its jetty.
             This function is evaluated in the leave_waiting_area function
 
             Input:
@@ -1136,7 +1144,8 @@ class PassLock:
                 lineup_area.length.put(lineup_area.length.capacity - vessel.L)
 
             def request_access_lock_cycle(vessel, lineup_area, total_length_waiting_vessels=0):
-                """Processes the request of a vessel to enter a lock cycle (wave of vessels assigned to same lockage), depending
+                """Processes the request of a vessel to enter a lock cycle (wave of vessels
+                  assigned to same lockage), depending
                     on the governing conditions regarding the current situation in the line-up area.
                 This function is used in the access_lineup_area function within the leave_waiting_area function
 
@@ -1337,12 +1346,14 @@ class PassLock:
     @staticmethod
     def approach_lineup_area(vessel, start_node, end_node):
         """Processes vessels which are approaching the line-up area of the lock complex:
-            determines whether the assigned position in the line-up area (distance in [m]) should be changed as the preceding vessel(s),
+            determines whether the assigned position in the line-up area (distance in [m])
+            should be changed as the preceding vessel(s),
             which was/were waiting in the line-up area, has/have of is/are already accessed/accessing the lock.
 
         Input:
             - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-            - node_lineup_area: a string which includes the name of the node at which the line-up area is located in the network"""
+            - node_lineup_area: a string which includes the name of the node at which the
+              line-up area is located in the network"""
 
         # Imports the properties of the line-up area the vessel is assigned to
         k = sorted(
@@ -1383,7 +1394,8 @@ class PassLock:
             )
 
         def change_lineup_dist(vessel, lock, lineup_area, lineup_dist, lineup_area_user):
-            """Determines whether the assigned position in the line-up area (distance in [m]) should be changed as the preceding vessel(s),
+            """Determines whether the assigned position in the line-up area (distance in [m])
+            should be changed as the preceding vessel(s),
                 which was/were waiting in the line-up area, has/have of is/are already accessed/accessing the lock.
             This function is used in the approach_lineup_area function.
 
@@ -1393,9 +1405,10 @@ class PassLock:
                                assigned to the vessel as the lock series with the least expected total waiting time
                 - lock: an object within the network which is generated with the IsLock mixin class and
                         assigned to the vessel as the lock series with the least expected total waiting time
-                - lineup_dist: the initial position of the vessel in the line-up area as the distance from the origin of the jetty in [m]
-                - q: an integer number which represents the assigned position of the vessel in the line-up area, only the vessel which is
-                     the new first in line (q=0) will be processed"""
+                - lineup_dist: the initial position of the vessel in the line-up area as the distance from the
+                origin of the jetty in [m]
+                - q: an integer number which represents the assigned position of the vessel in the line-up area,
+                  only the vessel which is the new first in line (q=0) will be processed"""
 
             if lineup_area_user[0] == 0 and lineup_area_user[1].obj.lock_information[lock.name].n != (
                 lineup_area_user[1].obj.lock_information[lock.name].n - len(lock.resource.users)
@@ -1610,13 +1623,15 @@ class PassLock:
                     - start_node: a string which includes the name of the node at which the line-up area is located in the network
                     - lock: an object within the network which is generated with the IsLock mixin class and
                             assigned to the vessel as the lock series with the least expected total waiting time
-                    - approach_node: a string which includes the name of the node at which the lock chamber is located in the network
-                    - door1: an object created in the IsLock class which resembles the set of lock doors which is first encountered by
-                             the vessel, which should be supscripted to, using a string which includes the name of the node at which this
-                             lock door is located in the network and was specified as input in the IsLock class
-                    - door2: an object created in the IsLock class which resembles the set of lock doors which is last encountered by
-                             the vessel, which should be supscripted to, using a string which includes the name of the node at which this
-                             lock door is located in the network and was specified as input in the IsLock class"""
+                    - approach_node: a string which includes the name of the node at which the lock chamber is located
+                    in the network
+                    - door1: an object created in the IsLock class which resembles the set of lock doors which is first
+                    encountered by the vessel, which should be supscripted to, using a string which includes the name of the
+                    node at which this lock door is located in the network and was specified as input in the IsLock class
+                    - door2: an object created in the IsLock class which resembles the set of lock doors which is last
+                      encountered by the vessel, which should be supscripted to, using a string which includes the name
+                      of the node at which this lock door is located in the network and was specified as input in
+                      the IsLock class"""
 
                 def request_approach_lock_chamber(vessel, direction, lock, door1, timeout_required=True, priority=0):
                     """Vessel will request if it can enter the lock by requesting access to the first set of lock doors. This
@@ -1653,7 +1668,8 @@ class PassLock:
                         as requests to access the same doors by vessels on the opposite side of the lock will be queued. A timeout
                         is yielded. This can be switched off if it is assured the vessel can approach immediately. Furthermore, if
                         there was already a request by another vessel waiting in the same line-up area, this original request can be
-                        holded. Lastly, the function is also used with priority = 0 in order to let vessels wait for the next lockage.
+                        holded. Lastly, the function is also used with priority = 0 in order to let vessels wait for the next
+                        lockage.
 
                     Input:
                         - hold_request: a boolean which defines where an earlier request for the same empty lock conversion which
@@ -1686,8 +1702,8 @@ class PassLock:
                         lock.schedule = lock.schedule.sort_values("ETA")
 
                 def wait_for_next_lockage(vessel, direction, lock, door2, timeout_required=True, priority=0):
-                    """Vessels will wait for the next lockage by requesting access to the second pair of lock doors without priority. If
-                        granted, the request will immediately be released.
+                    """Vessels will wait for the next lockage by requesting access to the second pair of lock doors
+                    without priority. If granted, the request will immediately be released.
 
                     No input required."""
 
@@ -2014,7 +2030,8 @@ class PassLock:
                 vessel.env.now, vessel.lock_information[lock.name].lock_position, "Passing lock start", vessel.output.copy()
             )
 
-            # Request access to pass the next line-up area after the lock chamber has levelled, so that vessels will leave the lock chamber one-by-one
+            # Request access to pass the next line-up area after the lock chamber has levelled,
+            # so that vessels will leave the lock chamber one-by-one
             if not opposing_lineup_area.passing_allowed:
                 vessel.lock_information[lock.name].departure_lock = opposing_lineup_area.pass_line_up_area[
                     opposing_lineup_area.start_node
@@ -2062,7 +2079,8 @@ class PassLock:
                 if lock.resource.users[-1].obj.id == vessel.id:
                     lock.length.put(lock.length.capacity - lock.length.level)
 
-            # Determines if the vessel explicitly has to request the conversion of the lock chamber (only the last entered vessel) or can go with a previously made request
+            # Determines if the vessel explicitly has to request the conversion of the lock chamber (only the last entered vessel)
+            # or can go with a previously made request
             else:
                 vessel.lock_information[lock.name].in_lock = True
                 vessel.lock_information[lock.name].converting = True
@@ -2160,7 +2178,8 @@ class PassLock:
 
     @staticmethod
     def leave_opposite_lineup_area(vessel, start_node, end_node, direction):
-        """Processes vessels which have left the lock chamber after levelling and are now in the next line-up area in order to leave the lock complex through the next waiting area:
+        """Processes vessels which have left the lock chamber after levelling
+        and are now in the next line-up area in order to leave the lock complex through the next waiting area:
             release of their requests for accessing their second encountered line-up area and lock chamber.
 
         Input:
