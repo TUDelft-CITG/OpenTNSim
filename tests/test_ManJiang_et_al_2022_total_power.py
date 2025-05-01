@@ -12,7 +12,6 @@ import pathlib
 import pandas as pd
 
 # package(s) for data handling
-import numpy as np
 import tqdm
 
 # OpenTNSim
@@ -109,8 +108,8 @@ def test_simulation(expected_df):
         h_0 = row["h_0"]
         vessel.calculate_properties()  # L is used here in the computation of L_R
         h_0 = vessel.calculate_h_squat(v=V_s, h_0=h_0)
-        R_T = vessel.calculate_total_resistance(V_s, h_0)
-        P_propulsion, P_tot, P_given = vessel.calculate_total_power_required(V_s, h_0)
+        _ = vessel.calculate_total_resistance(V_s, h_0)
+        _, P_tot, _ = vessel.calculate_total_power_required(V_s, h_0)
 
         result = {}
         result.update(row)

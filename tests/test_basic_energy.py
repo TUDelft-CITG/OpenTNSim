@@ -6,14 +6,11 @@ import time
 import networkx as nx
 
 # package(s) for data handling
-import numpy as np
 
 # OpenTNSim
 import opentnsim
-import pandas as pd
 
 # spatial libraries
-import pyproj
 import shapely.geometry
 
 import simpy

@@ -1,6 +1,7 @@
-## IMPORTS
+# IMPORTS
 # package(s) related to time, space and id
-import datetime, time
+import datetime
+import time
 
 # package(s) related to the simulation
 import simpy
@@ -24,9 +25,10 @@ import pytest
 geod = pyproj.Geod(ellps="WGS84")
 
 
+# flake8: noqa: F821
 @pytest.mark.skip(reason="broken lock module")
 def test_basic_simulation():
-    ## CREATION OF GRAPH
+    # CREATION OF GRAPH
     Node = type("Site", (core.Identifiable, core.Log, core.Locatable, core.HasResource), {})
     nodes = []
     path = []
@@ -61,11 +63,11 @@ def test_basic_simulation():
     for edge in path:
         FG.add_edge(edge[0].name, edge[1].name, weight=1)
 
-    ## SIMULATION SET-UP
+    # SIMULATION SET-UP
     simulation_start = datetime.datetime.now()
     env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
 
-    ## CREATION OF VESSELS
+    # CREATION OF VESSELS
     Vessel = type(
         "Vessel",
         (
@@ -98,7 +100,7 @@ def test_basic_simulation():
     vessel = Vessel(**data_vessel_one)
     vessels.append(vessel)
 
-    ## SYSTEM PARAMETERS
+    # SYSTEM PARAMETERS
     # water level difference
     wlev_dif = [np.linspace(0, 45000, 1000), np.zeros(1000)]
     for i in range(len(wlev_dif[0])):
@@ -154,16 +156,16 @@ def test_basic_simulation():
     FG.nodes["Node 10"]["Waiting area"] = [waiting_area_2]
     FG.nodes["Node 9"]["Line-up area"] = [lineup_area_2]
 
-    ## INITIATE VESSELS
+    # INITIATE VESSELS
     for vessel in vessels:
         vessel.env = env
         env.process(vessel.move())
 
-    ## RUN MODEL
+    # RUN MODEL
     env.FG = FG
     env.run()
 
-    ## OUTPUT ANALYSIS
+    # OUTPUT ANALYSIS
     def calculate_distance(orig, dest):
         wgs84 = pyproj.Geod(ellps="WGS84")
 
@@ -209,7 +211,7 @@ def test_basic_simulation():
                 waiting_in_waiting_duration[v] = next_row["Value"]
         vessel_speeds.append(vessel_speed)
 
-    ## TESTS
+    # TESTS
     # start times
     np.testing.assert_almost_equal(
         lock_1.doors_open

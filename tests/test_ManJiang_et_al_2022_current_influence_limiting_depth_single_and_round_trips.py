@@ -3,7 +3,8 @@
 # Importing libraries
 
 # package(s) related to time, space and id
-import datetime, time
+import datetime
+import time
 
 import pathlib
 
@@ -16,7 +17,6 @@ import pandas as pd
 import shapely.geometry
 
 # package(s) for data handling
-import numpy as np
 
 # OpenTNSim
 import opentnsim
@@ -182,7 +182,8 @@ def test_simulation(expected_df):
     # delta_t will be longer when upstream, shorter when downstream
     delta_t_up = df["distance"] / (df["distance"] / df["delta_t"] - U_c)
     delta_t_down = df["distance"] / (df["distance"] / df["delta_t"] + U_c)
-    # total emission&fuel consumption will be larger when upstream(because of longer delta_t), smaller when downstream(because of shorter delta_t)
+    # total emission&fuel consumption will be larger when upstream(because of longer delta_t), smaller when downstream
+    # (because of shorter delta_t)
     df["total_fuel_consumption_kg"] = df["total_diesel_consumption_C_year_ICE_mass"] / 1000  # kg without current
     df["total_fuel_consumption_up_kg"] = df["total_diesel_consumption_C_year_ICE_mass"] / 1000 * (delta_t_up / df["delta_t"])  # kg
     df["total_fuel_consumption_down_kg"] = (

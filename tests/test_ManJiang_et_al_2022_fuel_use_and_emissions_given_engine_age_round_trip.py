@@ -1,9 +1,11 @@
-"""Here we test the code for estimating fuel consumption and emission rates of CO2, PM10 and NOx for the round trip given engine age."""
+"""Here we test the code for estimating fuel consumption and emission rates of CO2,
+PM10 and NOx for the round trip given engine age."""
 
 # Importing libraries
 
 # package(s) related to time, space and id
-import datetime, time
+import datetime
+import time
 import pathlib
 
 # you need these dependencies (you can get these from anaconda)
@@ -15,7 +17,6 @@ import pandas as pd
 import shapely.geometry
 
 # package(s) for data handling
-import numpy as np
 
 # OpenTNSim
 import opentnsim

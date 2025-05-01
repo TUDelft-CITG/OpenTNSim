@@ -12,7 +12,6 @@ import pathlib
 import pandas as pd
 
 # package(s) for data handling
-import numpy as np
 import tqdm
 
 # OpenTNSim

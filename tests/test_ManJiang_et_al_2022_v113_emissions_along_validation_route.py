@@ -2,11 +2,9 @@
 
 # Importing libraries
 # package(s) related to time, space and id
-import logging
-import datetime, time
+import datetime
+import time
 import pathlib
-import platform
-import itertools
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
@@ -14,26 +12,16 @@ import simpy
 import pandas as pd
 
 # spatial libraries
-import pyproj
 import shapely.geometry
-from simplekml import Kml, Style
 
 # package(s) for data handling
-import numpy as np
-import matplotlib.pyplot as plt
-
 # OpenTNSim
 import opentnsim
 
 # Used for mathematical functions
-import math
-import tqdm
 
 # Used for making the graph to visualize our problem
 import networkx as nx
-
-import plotly.express as px
-from plotly.subplots import make_subplots
 
 import pytest
 import utils
@@ -115,9 +103,12 @@ def test_simulation(expected_df):
         "H_f": None,
         "T": 2.6,
         "safety_margin": 0.3,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
-        "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False. Note that here we have disabled h_squat calculation since we regard the water depth h_0 is already reduced by squat effect. This applies to figures 3, 5, 7, 8 and 9.
+        "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False.
+        # Note that here we have disabled h_squat calculation since we regard the water depth h_0 is already
+        # reduced by squat effect. This applies to figures 3, 5, 7, 8 and 9.
         "payload": None,
-        "vessel_type": "Tanker",  # vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+        "vessel_type": "Tanker",  # vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker".
+        # ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
         "P_installed": 2000,  # kW
         "P_tot_given": None,  # kW
         "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
