@@ -1,6 +1,6 @@
 version: 2
 jobs:
-  test:
+  build:
     machine:
       image: ubuntu-2204:edge
     steps:
@@ -20,8 +20,22 @@ jobs:
             docker exec -it opentnsim bash -c "pytest"
             docker cp opentnsim:/OpenTNSim/htmlcov /tmp/artifacts
 
+      - run:
+          name: Build docs
+          command: |
+            docker exec -it opentnsim bash -c "pip install sphinx"
+            docker exec -it opentnsim bash -c "sphinx-build -b html docs docs/_build/html"
+            docker cp opentnsim:/OpenTNSim/docs/_build/html /tmp/artifacts/docs
+
+      - run:
+          name: Generate coverage badge
+          command: |
+            docker exec -it opentnsim bash -c "coverage-badge -o coverage.svg"
+            docker cp opentnsim:/OpenTNSim/coverage.svg /tmp/artifacts/
+
       - store_artifacts:
           path: /tmp/artifacts
+
 
   test-notebooks:
     machine:
@@ -39,7 +53,7 @@ jobs:
       
       - store_artifacts:
           path: /tmp/artifacts
-          
+
   build:
     machine:
       image: ubuntu-2204:edge
@@ -49,27 +63,13 @@ jobs:
           name: Build and start container
           command: docker-compose up -d
 
-      - run:
-          name: Build docs
-          command: |
-            docker exec -it opentnsim bash -c "pip install sphinx"
-            docker exec -it opentnsim bash -c "sphinx-build -b html docs docs/_build/html"
-            docker cp opentnsim:/OpenTNSim/docs/_build/html /tmp/artifacts/docs
-
-      - run:
-          name: Generate coverage badge
-          command: |
-            docker exec -it opentnsim bash -c "coverage-badge -o coverage.svg"
-            docker cp opentnsim:/OpenTNSim/coverage.svg /tmp/artifacts/
-
-      - store_artifacts:
-          path: /tmp/artifacts
+      
 
 workflows:
   version: 2
   build:
     jobs:
-      - test:
+      - build:
           filters:
             tags:
               only: /.*/
@@ -77,8 +77,3 @@ workflows:
           filters:
             tags:
               only: /.*/
-      - build:
-          filters:
-            tags:
-              only: /.*/
-           
