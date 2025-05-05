@@ -23,7 +23,7 @@ jobs:
       - store_artifacts:
           path: /tmp/artifacts
 
-  build:
+  test-notebooks:
     machine:
       image: ubuntu-2204:edge
     steps:
@@ -36,6 +36,18 @@ jobs:
           name: Test notebooks
           command: |
             docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks/Example*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students"
+      
+      - store_artifacts:
+          path: /tmp/artifacts
+          
+  build:
+    machine:
+      image: ubuntu-2204:edge
+    steps:
+      - checkout
+      - run:
+          name: Build and start container
+          command: docker-compose up -d
 
       - run:
           name: Build docs
@@ -58,6 +70,10 @@ workflows:
   build:
     jobs:
       - test:
+          filters:
+            tags:
+              only: /.*/
+      - test-notebooks:
           filters:
             tags:
               only: /.*/
