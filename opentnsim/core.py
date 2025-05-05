@@ -2,16 +2,17 @@
 
 This module contains the mixin classes that can be used to create new objects in the simulation.
 Choose from mixins:
-- HasResource: something that has a resource limitation, a resource request must be granted before the object can be used.
-- Neighbours: can be added to a locatable object (list)
-- HasLength: something with a storage capacity
-- HasContainer: something with a container, modelled as a storage capacity
-- HasLoad: something with a load dependent height (H) and draught (T)
-- VesselProperties: something with vessel properties
-- Routable: something with a route (networkx format)
-- Movable: something can move. mixin of Locatable and Routable and Log
-- ContainerDependentMovable: something can move with a speed dependent on the container level. mixin of Movable and HasContainer
-- ExtraMetadata: store all leftover keyword arguments as metadata property (use as last mixin)
+
+ - HasResource: something that has a resource limitation, a resource request must be granted before the object can be used.
+ - Neighbours: can be added to a locatable object (list)
+ - HasLength: something with a storage capacity
+ - HasContainer: something with a container, modelled as a storage capacity
+ - HasLoad: something with a load dependent height (H) and draught (T)
+ - VesselProperties: something with vessel properties
+ - Routable: something with a route (networkx format)
+ - Movable: something can move. mixin of Locatable and Routable and Log
+ - ContainerDependentMovable: something can move with a speed dependent on the container level. mixin of Movable and HasContainer
+ - ExtraMetadata: store all leftover keyword arguments as metadata property (use as last mixin)
 """
 
 # packkage(s) for documentation, debugging, saving and loading
