@@ -90,12 +90,13 @@ This is important for pytest to find your tests.
     $ pytest
 
 
-   or run a specific file with tests using::
+ or run a specific file with tests using::
    
     $ pytest tests/<python_file>.py
 
 6. If you add new functionality, add a jupyter notebook on how to us this feature. save the notebook in the 'notebooks' folder. 
    Use example 00 - Basic simulation as an example for the layout of your notebook.
+
 
 7. The style of OpenTNSim is according to Black. When you're done making changes, format your code using 
    Black with the following lines of code::
