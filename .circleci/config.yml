@@ -54,16 +54,6 @@ jobs:
       - store_artifacts:
           path: /tmp/artifacts
 
-  build:
-    machine:
-      image: ubuntu-2204:edge
-    steps:
-      - checkout
-      - run:
-          name: Build and start container
-          command: docker-compose up -d
-
-      
 
 workflows:
   version: 2
