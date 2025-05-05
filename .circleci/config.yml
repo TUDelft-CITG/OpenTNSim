@@ -1,6 +1,6 @@
 version: 2
 jobs:
-  build:
+  test:
     machine:
       image: ubuntu-2204:edge
     steps:
@@ -19,6 +19,18 @@ jobs:
           command: |
             docker exec -it opentnsim bash -c "pytest"
             docker cp opentnsim:/OpenTNSim/htmlcov /tmp/artifacts
+
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  build:
+    machine:
+      image: ubuntu-2204:edge
+    steps:
+      - checkout
+      - run:
+          name: Build and start container
+          command: docker-compose up -d
 
       - run:
           name: Test notebooks
