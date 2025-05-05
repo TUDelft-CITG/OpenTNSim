@@ -2,6 +2,22 @@
 History
 =======
 
+1.3.7 (2024-05-30)
+------------------
+
+* Energy improvements from SALTISolutions
+
+
+1.3.6 (2024-05-15)
+------------------
+
+* Lock module included in the package
+
+1.3.4 (2023-06-01)
+------------------
+
+* Include FIS graph 
+
 1.1.2 (2022-04-05)
 ------------------
 
