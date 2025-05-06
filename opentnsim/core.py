@@ -309,7 +309,7 @@ class Movable(Locatable, Routable, Log):
             next_node = self.route[self.route.index(destination)+1]
 
         for on_pass_edge_function in self.on_pass_edge_functions:
-            yield from on_pass_edge_function(self, origin, destination)
+            yield from on_pass_edge_function(origin, destination, vessel=self)
 
         # default velocity based on current speed.
         timeout = self.distance / self.current_speed
