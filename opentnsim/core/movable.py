@@ -21,8 +21,8 @@ import networkx as nx
 
 # Use OpenCLSim objects for core objects (identifiable is imported for later use.)
 from openclsim.core import Locatable, Log
-from opentnsim.newcore.routable import Routable
-from opentnsim.newcore.container import HasContainer
+from opentnsim.core.routable import Routable
+from opentnsim.core.container import HasContainer
 
 # get logger
 logger = logging.getLogger(__name__)
