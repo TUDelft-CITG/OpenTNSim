@@ -36,8 +36,21 @@ This is the preferred method to install OpenTNSim, as it will always install the
 If you don not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process. You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods and a more detailed description.
 
 ### local development
-To install in development mode, you need to clone the repository. Now install relevant packages by running from the source directory:
+
+The sources for OpenTNSim can be downloaded from the Github repo. You can clone the public repository:
+
 ``` bash
+# Use git to clone OpenTNSim
+git clone git://github.com/TUDelft-CITG/OpenTNSim
+```
+
+Once you have a copy of the source, you need to create a virtual environment to install the packages in. Run the following code in the base directory of the OpenTNSim folder:
+
+``` bash
+# create virtual environment
+python3 -m venv .venv
+
+# install packages (the dot is important!)
 pip install -e .
 pip install -e .[testing]
 ```
@@ -53,7 +66,7 @@ pytest
 
 Or you can run the notebook tests:
 ```bash
-pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup ./notebooks/students
+pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup --ignore ./notebooks/student_notebooks --ignore ./notebooks/broken
 ```
 
 Or you can run a specific test like this:
