@@ -61,6 +61,8 @@ testing = [
     "openpyxl >=3.1.5",
     "pytest-datadir >=1.6.1",
     "pyyaml >=6.0.2",
+    "sphinx-rtd-theme >= 3.0.2"
+
 ]
 
 [project.scripts]
