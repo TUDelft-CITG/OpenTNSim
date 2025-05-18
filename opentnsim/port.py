@@ -42,7 +42,7 @@ class HasTerminal(core.Movable):
 
         return no_terminal, terminal_index
 
-    def pass_terminal(self,origin,destination):
+    def pass_terminal(self,origin,destination,vessel=None):
         # Terminal
         k = sorted(self.env.FG[origin][destination], key=lambda x: self.env.FG[origin][destination][x]['geometry'].length)[0]
         if 'Terminal' not in self.env.FG.edges[origin, destination, k].keys():
@@ -447,7 +447,7 @@ class PassTerminal:
         """
 
         # Set some default parameters:
-        node_anchorage = vessel.env.vessel_traffic_service.provide_nearest_anchorage_area(vessel,vessel.route[node])
+        node_anchorage = 'B' #vessel.env.vessel_traffic_service.provide_nearest_anchorage_area(vessel,vessel.route[node])
         # If there is not an available anchorage area: leave the port after entering the anchorage area
         if not node_anchorage:
             vessel.port_accessible = False
@@ -477,7 +477,7 @@ class PassTerminal:
         else:
             anchorage = None
 
-        if not vessel.port_accessible:
+        if not vessel.port_accessible or not len(vessel.metadata['terminal_of_call']):
             return
 
         if 'route_after_anchorage' not in dir(vessel):
@@ -487,13 +487,13 @@ class PassTerminal:
                 vessel.anchorage_access = anchorage.resource.request()
                 yield vessel.anchorage_access
                 vessel.update_anchorage_status_report(anchorage)
-                anchorage.log_entry_v0("Vessel arrival", vessel.env.now, deepcopy(anchorage.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]])
-                vessel.log_entry_v0("Waiting in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[vessel.route.index(node)]])
+                anchorage.log_entry_v0("Vessel arrival", vessel.env.now, deepcopy(anchorage.output), nx.get_node_attributes(vessel.env.FG, "geometry")[node])
+                vessel.log_entry_v0("Waiting in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[node])
         _, terminal_index = vessel.find_berths_in_terminal((vessel.route_after_anchorage[-2], vessel.route_after_anchorage[-1], 0))
         terminal = vessel.env.FG.edges[vessel.route_after_anchorage[-2], vessel.route_after_anchorage[-1], 0]['Terminal'][vessel.metadata['terminal_of_call'][0]][terminal_index]
 
         if 'waiting_for_available_berth' in dir(vessel):
-            vessel.log_entry_v0("Waiting for available berth start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+            vessel.log_entry_v0("Waiting for available berth start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[node])
             # if isinstance(terminal,IsJettyTerminal):
             #     for user in terminal.occupying_vessels.users:
             #         if user.vessel.berth.name == vessel.metadata['berth_of_call'][0]:
@@ -515,7 +515,7 @@ class PassTerminal:
 
             vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + vessel.metadata['t_berthing'][0] + vessel.metadata['t_unberthing'][0] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route_after_anchorage[:-1])['Time'].sum()
             vessel.update_waiting_status(availability=True,waiting_stop=True)
-            vessel.log_entry_v0("Waiting for available berth stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+            vessel.log_entry_v0("Waiting for available berth stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[node])
 
         if vessel.port_accessible:
             calculate_tidal_window = True
@@ -525,16 +525,17 @@ class PassTerminal:
                 if not vessel.waiting_for_inbound_tidal_window:
                     calculate_tidal_window = True
 
-            if calculate_tidal_window:
-                vessel.waiting_for_inbound_tidal_window = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route_after_anchorage, delay=0, plot=False)
+            if calculate_tidal_window and vessel.env.vessel_traffic_service.hydrodynamic_information_path:
+                vessel.waiting_for_inbound_tidal_window = 0.0
+                vessel.waiting_for_inbound_tidal_window = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route_after_anchorage, delay=0, plot=True)
 
             if vessel.waiting_for_inbound_tidal_window:
-                vessel.log_entry_v0("Waiting for tidal window in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+                vessel.log_entry_v0("Waiting for tidal window in anchorage start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[node])
                 timeout = np.min([vessel.waiting_for_inbound_tidal_window,vessel.metadata['max_waiting_time']-(vessel.arrival_time_in_anchorage-vessel.env.now)])
                 yield vessel.env.timeout(timeout)
                 vessel.etd += vessel.waiting_for_inbound_tidal_window
                 vessel.update_waiting_status(tidal_window=True, waiting_stop=True)
-                vessel.log_entry_v0("Waiting for tidal window in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
+                vessel.log_entry_v0("Waiting for tidal window in anchorage stop", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[node])
 
         if vessel.env.now - vessel.arrival_time_in_anchorage > vessel.metadata['max_waiting_time']:
             vessel.port_accessible = False
@@ -614,7 +615,6 @@ class PassTerminal:
                 vessel.access_terminal, vessel.move_to_anchorage = terminal.request_terminal(vessel)
                 if 'terminal_released' in dir(vessel):
                     if 'accessed_terminal' in dir(vessel) and visited_terminal is not None:
-                        print(vessel.name,vessel.accessed_terminal.value)
                         yield from visited_terminal.release_terminal(vessel.accessed_terminal.value)
                         del (vessel.accessed_terminal)
                     del (vessel.terminal_released)
@@ -674,7 +674,10 @@ class PassTerminal:
 
                 if isinstance(vessel.terminal, IsJettyTerminal):
                     vessel.berth = vessel.access_terminal.value
-                vessel.waiting_time_in_anchorage = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route, delay=0, plot=False)
+
+                vessel.waiting_time_in_anchorage = 0.0
+                if vessel.env.vessel_traffic_service.hydrodynamic_information_path:
+                    vessel.waiting_time_in_anchorage = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route, delay=0, plot=False)
                 vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + vessel.metadata['t_berthing'][0] + vessel.metadata['t_unberthing'][0] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route[:-1])['Time'].sum()+vessel.waiting_time_in_anchorage
                 if vessel.waiting_time_in_anchorage:
                     vessel.log_entry_v0("Waiting in terminal for tidal window start", vessel.env.now, deepcopy(vessel.output), nx.get_node_attributes(vessel.env.FG, "geometry")[vessel.route[0]])
@@ -684,21 +687,21 @@ class PassTerminal:
                 vessel.move_to_anchorage = False
 
             #Vessel should use the anchorage area offshore
-            if vessel.route[0] == '8866969':
-                vessel.update_waiting_status(waiting_stop=False)
-                if not vessel.move_to_anchorage:
+            vessel.update_waiting_status(waiting_stop=False)
+            if not vessel.move_to_anchorage:
+                vessel.waiting_time_in_anchorage = 0.0
+                if vessel.env.vessel_traffic_service.hydrodynamic_information_path:
                     vessel.waiting_time_in_anchorage = vessel.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel, route=vessel.route, delay=0, plot=False)
-                    vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + vessel.metadata['t_berthing'][0] + vessel.metadata['t_unberthing'][0] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route[:-1])['Time'].sum() + vessel.waiting_time_in_anchorage
-                    if vessel.waiting_time_in_anchorage >= vessel.metadata['max_waiting_time']:
-                        vessel.port_accessible = False
-                        vessel.move_to_anchorage = True
-                    elif vessel.waiting_time_in_anchorage:
-                        vessel.move_to_anchorage = True
-                        vessel.expected_departure_time_from_anchorage = vessel.env.now+vessel.waiting_time_in_anchorage
-                    else:
-                        if isinstance(vessel.terminal, IsJettyTerminal):
-                            vessel.berth = vessel.access_terminal.value
-
+                vessel.etd = vessel.env.now + vessel.metadata['t_turning'][0] + vessel.metadata['t_(un)loading'][0] + vessel.metadata['t_berthing'][0] + vessel.metadata['t_unberthing'][0] + vessel.env.vessel_traffic_service.provide_sailing_time(vessel, vessel.route[:-1])['Time'].sum() + vessel.waiting_time_in_anchorage
+                if vessel.waiting_time_in_anchorage >= vessel.metadata['max_waiting_time']:
+                    vessel.port_accessible = False
+                    vessel.move_to_anchorage = True
+                elif vessel.waiting_time_in_anchorage:
+                    vessel.move_to_anchorage = True
+                    vessel.expected_departure_time_from_anchorage = vessel.env.now+vessel.waiting_time_in_anchorage
+                else:
+                    if isinstance(vessel.terminal, IsJettyTerminal):
+                        vessel.berth = vessel.access_terminal.value
             if not vessel.move_to_anchorage:
                 vessel.reservation = terminal.occupying_vessels.request()
                 vessel.reservation.vessel = vessel
@@ -815,7 +818,9 @@ class PassTerminal:
         #Deberthing: if the terminal is part of an section, request access to this section first
         #if 'Junction' in vessel.env.FG.nodes[edge[1]].keys():
         #    yield from waterway.PassWaterway.request_access_next_section(vessel, edge[0])
-        vessel.waiting_time = vessel.env.vessel_traffic_service.provide_waiting_time_for_outbound_tidal_window(vessel, route=vessel.route, delay=vessel.metadata['t_unberthing'][-1], plot=False)
+        vessel.waiting_time = 0.0
+        if vessel.env.vessel_traffic_service.hydrodynamic_information_path:
+            vessel.waiting_time = vessel.env.vessel_traffic_service.provide_waiting_time_for_outbound_tidal_window(vessel, route=vessel.route, delay=vessel.metadata['t_unberthing'][-1], plot=False)
         yield vessel.env.timeout(vessel.waiting_time)
         vessel.update_waiting_status(tidal_window=True, waiting_stop=True, terminal=True)
 
@@ -833,7 +838,6 @@ class PassTerminal:
 
         if 'accessed_terminal' in dir(vessel):
             if isinstance(terminal,IsJettyTerminal):
-                print(vessel.name,vessel.accessed_terminal.value)
                 yield from terminal.release_terminal(vessel.accessed_terminal.value)
                 del(vessel.accessed_terminal)
             elif isinstance(terminal,IsQuayTerminal):

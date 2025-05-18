@@ -252,7 +252,10 @@ class Movable(Locatable, Routable, Log):
             self.log_entry_v0("Sailing from node {} to node {} start".format(self.origin, self.destination),
                               self.env.now, status_report, start_location)
 
-            yield from self.pass_node(self.origin)
+            try:
+                yield from self.pass_node(self.origin)
+            except simpy.Interrupt:
+                break
 
             # update to current position
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.origin]
@@ -262,16 +265,24 @@ class Movable(Locatable, Routable, Log):
             if self.destination == self.origin:
                 break
 
-            yield from self.pass_edge(self.origin, self.destination, end_location)
-            yield from self.complete_pass_edge(self.destination)
+            try:
+                yield from self.pass_edge(self.origin, self.destination, end_location)
+            except simpy.Interrupt:
+                break
 
-            # we arrived at destination
+            try:
+                yield from self.complete_pass_edge(self.destination)
+            except simpy.Interrupt:
+                break
+
             # update to new position
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.destination]
             self.position_on_route = index + 1
 
-            yield from self.look_ahead_to_node(self.destination)
-
+            try:
+                yield from self.look_ahead_to_node(self.destination)
+            except simpy.Interrupt:
+                break
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:

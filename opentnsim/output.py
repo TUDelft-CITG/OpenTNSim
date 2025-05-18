@@ -9,7 +9,7 @@ class HasOutput:
         self.output = {}
         super().__init__(*args, **kwargs)
 
-        if self.__class__.__name__ == 'Vessel':
+        if self.__class__.__name__ == 'Vessel' or self.__class__.__name__ == 'IsVessel':
             #Route-dependent output
             self.output['origin'] = ''
             self.output['destination'] = ''
@@ -231,7 +231,10 @@ class HasOutput:
         self.output['current_node'] = current_node
         self.output['next_node'] = next_node
         self.output['limiting current velocity'] = np.nan
-        self.output['heading'] = self.env.vessel_traffic_service.provide_heading(self, edge)
+        if "vessel_traffic_service" in dir(self.env):
+            self.output['heading'] = self.env.vessel_traffic_service.provide_heading(self, edge)
+        else:
+            self.output['heading'] = np.nan
         if "Terminal" in self.multidigraph.edges[edge].keys() and len(self.metadata['terminal_of_call']) and self.metadata['terminal_of_call'][0] in self.multidigraph.edges[edge]['Terminal'].keys():
             self.output['speed'] = 0.
         else:
