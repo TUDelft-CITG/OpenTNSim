@@ -30,18 +30,17 @@ This package combine with "optimal sailing stratigies notebook" provides stratig
 # into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it
 # benefit if adds this function?
 
-# packkage(s) for documentation, debugging, saving and loading
-import logging
-
 # mathematical packages
 import functools
 import itertools
 
-# package(s) for data handling
-import pandas as pd
-import numpy as np
-import scipy.optimize
+# packkage(s) for documentation, debugging, saving and loading
+import logging
 
+# package(s) for data handling
+import numpy as np
+import pandas as pd
+import scipy.optimize
 import tqdm
 
 logger = logging.getLogger(__name__)

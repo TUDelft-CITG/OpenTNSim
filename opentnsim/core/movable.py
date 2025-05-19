@@ -5,6 +5,7 @@ The following classes are provided:
 - Movable
 - ContainerDependentMovable
 """
+
 # packkage(s) for documentation, debugging, saving and loading
 import logging
 import warnings
@@ -28,7 +29,6 @@ from opentnsim.core.container import HasContainer
 
 # get logger
 logger = logging.getLogger(__name__)
-
 
 
 class Routable(SimpyObject):
@@ -99,7 +99,6 @@ class Routable(SimpyObject):
 @deprecated.deprecated(reason="Use Routable instead of Routeable")
 class Routeable(Routable):
     """Old name for Mixin class: renamed to Routable."""
-
 
 
 class Movable(Locatable, Routable, Log):
@@ -392,8 +391,6 @@ class Movable(Locatable, Routable, Log):
         return self.v
 
 
-
-
 class ContainerDependentMovable(Movable, HasContainer):
     """Mixin class: ContainerDependentMovable class
     Used for objects that move with a speed dependent on the container level
@@ -437,7 +434,3 @@ class ContainerDependentMovable(Movable, HasContainer):
     def current_speed(self):
         """return the current speed of the vessel, based on the filling degree of the container"""
         return self.compute_v(self.filling_degree)
-    
-
-
-

@@ -1,22 +1,25 @@
 """Vessel generator."""
 
 # packkage(s) for documentation, debugging, saving and loading
+import datetime
 import logging
 
+# package(s) for data handling
+import random
+import pandas as pd
+
+
 # package(s) related to time, space and id
+import time
 import uuid
 import numbers
 import datetime
-import time
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
 import networkx as nx
 
-# package(s) for data handling
-import pandas as pd
-import random
 
 # import core from self
 import opentnsim.core as core

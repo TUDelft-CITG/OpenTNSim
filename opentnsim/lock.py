@@ -6,12 +6,12 @@ import random
 import time
 import time as timepy
 
+# spatial libraries
+import networkx as nx
+
 # packages for data handling
 import numpy as np
 import pandas as pd
-
-# spatial libraries
-import networkx as nx
 
 # package(s) related to the simulation
 import simpy

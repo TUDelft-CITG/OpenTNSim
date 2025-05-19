@@ -1,6 +1,6 @@
 # packkage(s) for documentation, debugging, saving and loading
-import logging
 import io
+import logging
 
 # math packages
 import pkgutil

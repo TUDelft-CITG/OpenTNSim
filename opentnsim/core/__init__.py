@@ -1,7 +1,7 @@
-from .resource import HasResource
-from .misc import Neighbours, ExtraMetadata
-from .vessel_properties import HasLength, HasLoad, VesselProperties
-from .container import HasContainer
-from .movable import Movable, ContainerDependentMovable, Routable, Routeable
+from openclsim.core import Identifiable, Locatable, Log, SimpyObject
 
-from openclsim.core import Identifiable, Log, SimpyObject, Locatable
+from .container import HasContainer
+from .misc import ExtraMetadata, Neighbours
+from .movable import ContainerDependentMovable, Movable, Routable, Routeable
+from .resource import HasResource
+from .vessel_properties import HasLength, HasLoad, VesselProperties

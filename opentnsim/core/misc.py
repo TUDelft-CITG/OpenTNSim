@@ -6,30 +6,20 @@ The following classes are provided:
 - ExtraMetadata
 
 """
+
 # packkage(s) for documentation, debugging, saving and loading
 import logging
-import warnings
-import deprecated
 from typing import Union
 
 # math packages
-import random
 import numpy as np
 
 # spatial libraries
-import pyproj
-import shapely
-import shapely.geometry
-from shapely import Geometry
-import networkx as nx
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
-import simpy
 
 # Use OpenCLSim objects for core objects (identifiable is imported for later use.)
-from openclsim.core import Identifiable, Locatable, SimpyObject, Log
-import opentnsim.graph_module
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -55,7 +45,6 @@ class Neighbours:
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.neighbours = travel_to
-
 
 
 class ExtraMetadata:

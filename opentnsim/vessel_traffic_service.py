@@ -1,10 +1,11 @@
 # package(s) related to time, space and id
+import bisect
 import datetime
 import pytz
 
 # mathematical packages
-import math
 import bisect
+import math
 import scipy as sc
 
 # packages for data handling
@@ -13,14 +14,14 @@ import pandas as pd
 import xarray as xr
 
 # spatial libraries
-from shapely.geometry import Point, Polygon, MultiPolygon
+import networkx as nx
 import shapely
 import shapely.ops
-
-import networkx as nx
+from shapely.geometry import MultiPolygon, Point, Polygon
 
 # plots
-from matplotlib import pyplot as plt, dates
+from matplotlib import dates
+from matplotlib import pyplot as plt
 
 
 class VesselTrafficService:

@@ -77,3 +77,6 @@ MANIFEST
 .vscode/settings.json
 notebooks/Port_of_Rotterdam/geospatial_data
 notebooks/Port_of_Rotterdam
+poetry.lock
+poetry.toml
+pyproject3.toml

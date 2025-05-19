@@ -12,9 +12,6 @@ import networkx as nx
 # package(s) for data handling
 import numpy as np
 
-# OpenTNSim
-import opentnsim
-
 # spatial libraries
 import pyproj
 import shapely.geometry
@@ -22,6 +19,9 @@ import shapely.geometry
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
+
+# OpenTNSim
+import opentnsim
 
 # Creating the test objects
 

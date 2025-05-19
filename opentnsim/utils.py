@@ -15,8 +15,8 @@ See https://en.wikipedia.org/wiki/Shapefile for additional information.
 """
 
 # packkage(s) for documentation, debugging, saving and loading
-import warnings
 import pathlib
+import warnings
 
 # spatial libraries
 import networkx as nx

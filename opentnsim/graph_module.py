@@ -5,6 +5,9 @@
 import logging
 import os
 
+# matplotlib
+import matplotlib.pyplot as plt
+
 # package(s) for data handling
 import networkx as nx
 import numpy as np
@@ -12,9 +15,6 @@ import numpy as np
 # spatial libraries
 import pyproj
 import shapely.geometry
-
-# matplotlib
-import matplotlib.pyplot as plt
 
 # package(s) related to the simulation
 import simpy

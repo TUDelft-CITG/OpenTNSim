@@ -2,17 +2,17 @@
 import datetime
 
 # packages for data handling
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 # plotting libraries
+import matplotlib.pyplot as plt
 from plotly.offline import init_notebook_mode, iplot
 import plotly.graph_objs as go
-import matplotlib.pyplot as plt
 
 # spatial libraries
-from simplekml import Kml, Style
 import networkx as nx
+from simplekml import Kml, Style
 
 
 def vessel_planning(vessels, activities, colors, web=False):
