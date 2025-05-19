@@ -2,6 +2,19 @@
 History
 =======
 
+
+2.0.0 (2025-??-??)
+------------------
+
+* Restructuring core modules: The file opentnsim/core.py has been split into multiple files:
+    - opentnsim/core/movable.py
+    - opentnsim/core/container.py
+    - opentnsim/core/misc.py
+    - opentnsim/core/roadnetwork/resource.py
+    - opentnsim/core/roadnetwork/vessel_properties.py
+ The history of the old file opentnsim/core.py can be found in github under tag 1.3.7
+
+
 1.3.7 (2024-05-30)
 ------------------
 
