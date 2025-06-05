@@ -1,6 +1,7 @@
-## IMPORTS
+# IMPORTS
 # package(s) related to time, space and id
-import datetime, time
+import datetime
+import time
 
 # package(s) related to the simulation
 import simpy
@@ -26,7 +27,7 @@ geod = pyproj.Geod(ellps="WGS84")
 
 @pytest.mark.skip(reason="broken lock module")
 def test_basic_simulation():
-    ## CREATION OF GRAPH
+    # CREATION OF GRAPH
     Node = type("Site", (core.Identifiable, core.Log, core.Locatable, core.HasResource), {})
     nodes = []
     path = []
@@ -61,11 +62,11 @@ def test_basic_simulation():
     for edge in path:
         FG.add_edge(edge[0].name, edge[1].name, weight=1)
 
-    ## SIMULATION SET-UP
+    # SIMULATION SET-UP
     simulation_start = datetime.datetime.now()
     env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
 
-    ## CREATION OF VESSELS
+    # CREATION OF VESSELS
     Vessel = type(
         "Vessel", (core.Identifiable, core.Movable, core.HasContainer, core.HasResource, core.Routeable, core.VesselProperties), {}
     )
@@ -92,7 +93,7 @@ def test_basic_simulation():
         vessel = Vessel(**data_vessel_one)
         vessels.append(vessel)
 
-    ## SYSTEM PARAMETERS
+    # SYSTEM PARAMETERS
     # water level difference
     wlev_dif = [np.linspace(0, 45000, 1000), np.zeros(1000)]
     for i in range(len(wlev_dif[0])):
@@ -148,16 +149,16 @@ def test_basic_simulation():
     FG.nodes["Node 10"]["Waiting area"] = [waiting_area_2]
     FG.nodes["Node 9"]["Line-up area"] = [lineup_area_2]
 
-    ## INITIATE VESSELS
+    # INITIATE VESSELS
     for vessel in vessels:
         vessel.env = env
         env.process(vessel.move())
 
-    ## RUN MODEL
+    # RUN MODEL
     env.FG = FG
     env.run()
 
-    ## OUTPUT ANALYSIS
+    # OUTPUT ANALYSIS
     lock_cycle_start = np.zeros(len(vessels))
     lock_cycle_duration = np.zeros(len(vessels))
     waiting_in_lineup_start = np.zeros(len(vessels))
@@ -184,7 +185,7 @@ def test_basic_simulation():
                 waiting_in_waiting_duration[v] = vessels[v].log["Value"][t + 1]
                 break
 
-    ## TESTS
+    # TESTS
     # start times vessel 1
     np.testing.assert_almost_equal(
         550 / 4 + 500 / 2 + (300 - 0.5 * 135) / 2 + (0.5 * 135 + 500) / 1 + (300 - 0.5 * 135) / 1,
@@ -279,5 +280,9 @@ def test_basic_simulation():
     )
 
     np.testing.assert_almost_equal(
-        500 / 2 + (300 - 0.5 * 135) / 2, waiting_in_waiting_duration[1], decimal=0, err_msg="", verbose=True
+        500 / 2 + (300 - 0.5 * 135) / 2,
+        waiting_in_waiting_duration[1],
+        decimal=0,
+        err_msg="",
+        verbose=True,
     )

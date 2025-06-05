@@ -14,11 +14,15 @@ interoperability among Esri and other software products."
 See https://en.wikipedia.org/wiki/Shapefile for additional information.
 """
 
+# packkage(s) for documentation, debugging, saving and loading
+import pathlib
 import warnings
 
+# spatial libraries
 import networkx as nx
 import shapely
 
+# OpenTNSim
 import opentnsim
 
 
@@ -32,7 +36,6 @@ def find_notebook_path():
     # check if the path looks normal
     assert "opentnsim" in str(opentnsim_path), "we can't find the opentnsim path: {opentnsim_path} (opentnsim not in path name)"
     # src_dir/opentnsim/__init__.py -> ../.. -> src_dir
-    src_path = opentnsim_path.parent.parent
     notebook_path = opentnsim_path.parent.parent / "notebooks"
     return notebook_path
 

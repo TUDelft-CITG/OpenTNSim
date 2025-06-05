@@ -1,6 +1,9 @@
-"""Here we test the total resistance with all its resistance components for inland ships, which includes R_f, R_f_one_k1, R_APP, R_W, R_res. With input Vs=[0.1, 1, 2, 3, 4] m/s, h_0 = 5 m, C_year = 2000, do not consider squat.
+"""Here we test the total resistance with all its resistance components for inland ships, which includes
+ R_f, R_f_one_k1, R_APP, R_W, R_res. With input Vs=[0.1, 1, 2, 3, 4] m/s, h_0 = 5 m, C_year = 2000, do not consider squat.
 
-In the future it is nice to include another test-- resistance component R_B for seagoing ships which has a bulbous bow, and test the switching between inland ship and seagoing ship resistance calculation"""
+In the future it is nice to include another test-- resistance component R_B for seagoing ships which has a bulbous bow,
+and test the switching between inland ship and seagoing ship resistance calculation
+"""
 
 # Importing libraries
 
@@ -14,7 +17,6 @@ import pathlib
 import pandas as pd
 
 # package(s) for data handling
-import numpy as np
 import tqdm
 
 # OpenTNSim
@@ -111,7 +113,7 @@ def test_simulation(expected_df):
         vessel.calculate_properties()  # L is used here in the computation of L_R
         h_0 = vessel.calculate_h_squat(v=V_s, h_0=h_0)
 
-        R_f = vessel.calculate_frictional_resistance(V_s, h_0)
+        _ = vessel.calculate_frictional_resistance(V_s, h_0)
         R_f_one_k1 = vessel.calculate_viscous_resistance()
         R_APP = vessel.calculate_appendage_resistance(V_s)
         R_W = vessel.calculate_wave_resistance(V_s, h_0)

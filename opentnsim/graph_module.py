@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 
 """Graph module."""
-
-# package(s) related to time, space and id
-import json
+# packkage(s) for documentation, debugging, saving and loading
 import logging
-import math
 import os
-import uuid
 
+# matplotlib
+import matplotlib.pyplot as plt
+
+# package(s) for data handling
 import networkx as nx
 import numpy as np
 
@@ -16,12 +16,10 @@ import numpy as np
 import pyproj
 import shapely.geometry
 
-# matplotlib
-import matplotlib.pyplot as plt
-
 # package(s) related to the simulation
 import simpy
 
+# OpenTNSim
 import opentnsim.utils
 
 logger = logging.getLogger(__name__)
@@ -32,7 +30,7 @@ wgs84 = pyproj.Geod(ellps="WGS84")
 
 def geom_to_edges(geom, properties):
     """Generate edges from a geometry, yielding an edge id and edge properties. The edge_id consists of a tuple of coordinates"""
-    if not geom.geom_type in ["LineString", "MultiLineString"]:
+    if geom.geom_type not in ["LineString", "MultiLineString"]:
         msg = "Only ['LineString', 'MultiLineString'] are supported, got {}".format(geom.geom_type)
         raise ValueError(msg)
     if geom.geom_type == "MultiLineString":
@@ -80,10 +78,9 @@ def gdf_to_nx(gdf):
             for edge_id, edge_properties in geom_to_edges(geom, properties):
                 node_source, node_target = edge_properties["e"]
                 source_geom = shapely.geometry.Point(*node_source)
-                node_id, node_properties = geom_to_node(source_geom, {})
+                _, node_properties = geom_to_node(source_geom, {})
                 FG.add_node(edge_id[0], **node_properties)
-                target_geom = shapely.geometry.Point(*node_target)
-                node_id, node_properties = geom_to_node(source_geom, {})
+                _, node_properties = geom_to_node(source_geom, {})
                 FG.add_node(edge_id[1], **node_properties)
                 FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
     return FG
@@ -93,6 +90,13 @@ class Graph:
     """General networkx object
 
     Initialize a nx.Graph() element
+
+    Attributes
+    ----------
+    graph : networkx.Graph
+        The graph object
+    graph_info : dict
+        The graph information
     """
 
     def __init__(self, *args, **kwargs):
@@ -102,9 +106,20 @@ class Graph:
 
     def from_shape(self, file_location, shapefile, simplify=True, strict=True):
         """Generate nx.Graph() from shapefile
+        Make sure to install the required package gdal.
 
-        file_location: location on server of the shapefile
-        shapefile: name of the shapefile (including .shp)
+        run pip show gdal to check if gdal is installed.
+
+        Parameters
+        ----------
+        file_location: Path
+            location on server of the shapefile
+        shapefile: str
+            name of the shapefile (including .shp)
+        simplify: bool
+            if True, the graph is simplified
+        strict: bool
+            if True, the graph is strict
         """
         from osgeo import ogr, osr
 
@@ -118,6 +133,16 @@ class Graph:
         self.SpatialRef = dataset.GetLayer().GetSpatialRef()
 
     def transform_projection(self, to_EPSG):
+        """create a transformation object to transform the graph to a new projection
+        Make sure to install the required package gdal.
+
+        run pip show gdal to check if gdal is installed.
+        Parameters
+        ----------
+        to_EPSG: int
+            The EPSG code to transform the graph to
+        """
+
         from osgeo import ogr, osr
 
         outSpatialRef = osr.SpatialReference()
@@ -129,6 +154,15 @@ class Graph:
         return transform
 
     def change_projection(self, transform, point):
+        """Transform one point on the graph
+
+        Make sure to install the required package gdal (for osgeo).
+        run pip show gdal to check if gdal is installed.
+
+        Parameters
+        ----------
+        transform:
+        """
         from osgeo import ogr, osr
 
         point = ogr.CreateGeometryFromWkt(str(point))
@@ -139,6 +173,16 @@ class Graph:
         return point.GetX(), point.GetY()
 
     def create_graph_new_projection(self, to_EPSG=4326):
+        """redefine self.graph with the new projection
+
+        Make sure to install the required package gdal (for osgeo).
+        run pip show gdal to check if gdal is installed.
+
+        Parameters
+        ----------
+        to_EPSG: int
+            The EPSG code to transform the graph to
+        """
         new_graph = nx.Graph()
         transform = self.transform_projection(to_EPSG)
 
@@ -185,6 +229,17 @@ class Graph:
             self.graph_info = opentnsim.utils.info(new_graph)
 
     def add_resources(self, edges, resources, environment):
+        """Add resources to the edges of the graph
+
+        Parameters
+        ----------
+        edges: list
+            List of edges to which the resources should be added
+        resources: list
+            List of resources to be added to the edges. Should be same length as edges
+        environment: simpy.Environment
+            The simpy environment to which the resources should be added
+        """
         for i, edge in enumerate(edges):
             self.graph.edges[edge]["Resources"] = simpy.Resource(environment, capacity=resources[i])
 
@@ -197,6 +252,22 @@ class Graph:
         width=0.2,
         arrowsize=3,
     ):
+        """Plot the graph
+        Parameters
+        ----------
+        size: list
+            The size of the figure
+        with_labels: bool
+            If True, the labels of the nodes are shown
+        node_size: int
+            The size of the nodes, default is 0.5
+        font_size: int
+            The size of the font, default is 2
+        width: int
+            The width of the edges, default is 0.2
+        arrowsize: int
+            The size of the arrows, default is 3
+        """
         plt.figure(figsize=size)
 
         # If graph has positional attributes
@@ -218,7 +289,20 @@ class Graph:
 
 
 def get_minimum_depth(graph, route):
-    """return the minimum depth on the route based on the GeneralDepth in the Info dictionary"""
+    """return the minimum depth on the route based on the GeneralDepth in the Info dictionary
+
+    Parameters
+    ----------
+    graph: networkx.Graph
+        The graph object. Edges in the graph should have a property called Info (dict), with key GeneralDepth
+    route: list
+        The route to check the depth for. The route is a list of node ids.
+
+    Returns
+    -------
+    float
+        The minimum depth on the route
+    """
     # loop over the route
     depths = []
     # loop over all node pairs (e: edge numbers)
@@ -235,7 +319,20 @@ def get_minimum_depth(graph, route):
 
 
 def compute_distance(edge, orig, dest):
-    """compute distance over edge, or if edge does not have a geometry over orig-dest"""
+    """compute distance from origin to destination.
+    The distance is computed based on the edge geometry.
+    If the edge has no geometry, returns the distance 'as the crow flies'.
+
+    Parameters
+    ----------
+    edge: dict
+        The edge to compute the distance for.
+    orig: shapely.geometry.Point
+        The origin point
+    dest: shapely.geometry.Point
+        The destination point
+
+    """
     if "geometry" not in edge:
         distance = wgs84.inv(
             shapely.geometry.shape(orig).x,

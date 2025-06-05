@@ -2,7 +2,7 @@
 OpenTNSim
 =========
 
-This page lists all functions and classes available in the OpenTNSim.model and OpenTNSim.core modules. For examples on how to use these submodules please check out the Examples page, information on installing OpenCLSim can be found on the Installation page.
+This page lists all functions and classes available in the OpenTNSim.model and OpenTNSim.core modules. For examples on how to use these submodules please check out the Examples page, information on installing OpenTNim can be found on the Installation page.
 
 Submodules
 ----------

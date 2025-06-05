@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
 """Console script for opentnsim."""
+# package(s) related to the command line interface
 import sys
+
 import click
 
 import opentnsim.server

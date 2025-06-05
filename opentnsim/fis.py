@@ -1,8 +1,13 @@
+"""Module to load the fairway information system (FIS) network."""
+
+# packkage(s) for documentation, debugging, saving and loading
 import io
 import pickle
 
 import requests
 import requests_cache
+
+# spatial libraries
 import shapely.geometry
 
 # inject caching
@@ -15,7 +20,13 @@ urls = {
 
 
 def load_network(version="0.3"):
-    """load the pickle version of the fairway information system network"""
+    """load the pickle version of the fairway information system network
+
+    Parameters
+    ----------
+    version : str
+        The version of the network to load. Choose 0.2 or 0.3. Default is "0.3".
+    """
     url = urls[version]
     resp = requests.get(url)
     # convert the response to a file

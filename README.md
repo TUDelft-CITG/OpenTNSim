@@ -3,7 +3,6 @@
 [![DOI](https://zenodo.org/badge/145843547.svg)](https://zenodo.org/badge/latestdoi/145843547)
 
 [![TUDelft-CITG](https://circleci.com/gh/TUDelft-CITG/OpenTNSim.svg?style=shield&circle-token=59b1f167ed771129459d86e822fd2faaae8f4a34)](https://circleci.com/gh/TUDelft-CITG/OpenTNSim)
-[![Coverage](https://artifact-getter.herokuapp.com/get_coverage_badge?circle_url=https://circleci.com/gh/TUDelft-CITG/OpenTNSim&circle_token=727b95b70301407d3c0af44e1af2039fd9486f6f=str)](https://artifact-getter.herokuapp.com/get_coverage_report?circle_url=https://circleci.com/gh/TUDelft-CITG/OpenTNSim&circle_token=727b95b70301407d3c0af44e1af2039fd9486f6f)
 
 # OpenTNSim
 
@@ -19,7 +18,7 @@ You can find the opentnsim book, based on the examples in the `notebooks` folder
 
 
 ## Installation
-
+### using the package
 To install OpenTNSim, run this command in your terminal:
 
 ``` bash
@@ -31,22 +30,34 @@ To also install the extra dependencies used for testing you can use:
 pip install opentnsim[testing]
 ```
 
-To install in development mode, you can use (from the source directory)
+This is the preferred method to install OpenTNSim, as it will always install the most recent stable release.
+
+If you don not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process. You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods and a more detailed description.
+
+### local development
+
+The sources for OpenTNSim can be downloaded from the Github repo. You can clone the public repository:
+
 ``` bash
+# Use git to clone OpenTNSim
+git clone git://github.com/TUDelft-CITG/OpenTNSim
+```
+
+Once you have a copy of the source, you need to create a virtual environment to install the packages in. Run the following code in the base directory of the OpenTNSim folder:
+
+``` bash
+# create virtual environment
+python3 -m venv .venv
+
+# install packages (the dot is important!)
 pip install -e .
+pip install -e .[testing]
 ```
 
 
 
-This is the preferred method to install OpenTNSim, as it will always install the most recent stable release.
-
-If you don not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process.
-
-You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods.
-
-
 ## Testing
-You can run the unit tests
+When you have installed the package loacally, you can run the unit tests
 
 ```bash
 pytest
@@ -54,7 +65,7 @@ pytest
 
 Or you can run the notebook tests:
 ```bash
-pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup ./notebooks/students
+pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup --ignore ./notebooks/student_notebooks --ignore ./notebooks/broken
 ```
 
 Or you can run a specific test like this:
@@ -63,12 +74,10 @@ Or you can run a specific test like this:
 pytest -k test_single_engine
 ```
 
-`
-
 
 ## Examples
 
-The benefit of OpenTNSim is the generic set-up. A number of examples are presented in a seperate [Jupyter Notebook repository](https://github.com/TUDelft-CITG/OpenTNSim-Notebooks). Information on how to use the notebooks is presented in that repository as well.
+The benefit of OpenTNSim is the generic set-up. A number of examples are presented in in the `notebooks` folder on the [opentnsim-book](https://happy-bush-0c5d10603.1.azurestaticapps.net/) website. Additional examples can be found in the notebooks-folder in this repository. 
 
 ## Book
 
@@ -79,4 +88,4 @@ Code quality is checked using sonarcloud. You can see results on the [sonarcloud
 
 
 ## OpenCLSim 
-OpenTNSim makes use of the [OpenCLSim](https://github.com/TUDelft-CITG/OpenCLSim) code. Both packages are maintained by the same team of developers. There are some differences between packages (e.g. in logging approaches), but you can use them together. We are working towards further integrating these two software packages.
+OpenTNSim makes use of the [OpenCLSim](https://github.com/TUDelft-CITG/OpenCLSim) code. Both packages are maintained by the same team of developers. You can use these packages together, and combine mixins from both packages. When you experience a problem with integrating the two packages, please let us know. We are working towards further integrating these two software packages.

@@ -67,11 +67,11 @@ Ready to contribute? Here's how to set up `OpenTNSim` for local development.
     $ git clone git@github.com:your_name_here/OpenTNSim.git
 
 
-3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development::
+3. Install your local copy into a virtualenv. Assuming you have pip installed, this is how you set up your fork for local development::
 
-    $ mkvirtualenv opentnsim
     $ cd opentnsim/
-    $ python setup.py develop
+    $ pip install -e
+    $ pip install -e[testing]
 
 
 4. Create a branch for local development::
@@ -81,36 +81,49 @@ Ready to contribute? Here's how to set up `OpenTNSim` for local development.
 
    Now you can make your changes locally.
 
+5. Make sure your changes are tested. Make a test for your changes in the 'tests'-folder. 
+Make sure the name of the file starts with 'test_' and the name of the test function starts with 'test_' as well. 
+This is important for pytest to find your tests.
 
-5. When you're done making changes, check that your changes pass flake8 and the
+ OpenTNSim uses pytest for testing. You can run all tests using::
+
+    $ pytest
+
+
+ or run a specific file with tests using::
+   
+    $ pytest tests/<python_file>.py
+
+6. If you add new functionality, add a jupyter notebook on how to us this feature. save the notebook in the 'notebooks' folder. 
+   Use example 00 - Basic simulation as an example for the layout of your notebook.
+
+
+7. The style of OpenTNSim is according to Black. When you're done making changes, format your code using 
+   Black with the following lines of code::
+
+    $ black opentnsim tests
+
+
+   You can install black using pip.
+
+8. When you're done making changes, check that your changes pass flake8 and the
    tests, including testing other Python versions with tox::
 
     $ flake8 opentnsim tests
-    $ python setup.py test or py.test
+    $ pytest
     $ tox
 
 
    To get flake8 and tox, just pip install them into your virtualenv.
 
-
-6. The style of OpenTNSim is according to Black. Format your code using 
-   Black witht the following lines of code::
-
-    $ black opentnsim
-    $ black tests
-
-
-   You can install black using pip.
-
-
-7. Commit your changes and push your branch to GitHub::
+9. Commit your changes and push your branch to GitHub::
 
     $ git add .
     $ git commit -m "Your detailed description of your changes."
     $ git push origin name-of-your-bugfix-or-feature
 
 
-8. Submit a pull request through the GitHub website.
+10. Submit a pull request through the GitHub website.
 
 Pull Request Guidelines
 -----------------------
@@ -119,29 +132,19 @@ Before you submit a pull request, check that it meets these guidelines:
 
 1. The pull request should include tests.
 2. If the pull request adds functionality, the docs should be updated. Put
-   your new functionality into a function with a docstring, and add the
-   feature to the list in README.rst.
-3. The pull request should work for Python 3.4, 3.5 and 3.6, and for PyPy. Check
-   CircleCI and make sure that the tests pass for all supported Python versions.
+   your new functionality into a function with a docstring, and add a notebook with an example on how to use the feature.
+3. The pull request should work for all python versions in the bugfix-phase, see https://devguide.python.org/versions/. Check
+   CircleCI and make sure that the tests pass.
 
 Tips
 ----
 
 To run a subset of tests::
 
-$ py.test tests.test_opentnsim
+$ pytest tests.test_opentnsim
 
 To make the documentation pages
-$ make docs # for linux/osx
-
-For windows
-$ del docs\opentnsim.rst
-$ del docs\modules.rst
-$ sphinx-apidoc -o docs/ opentnsim
-$ cd docs
-$ make html
-$ start explorer _build\html\index.html
-
+$ make docs # for linux/osx. Not supported for windows
 
 Deploying
 ---------

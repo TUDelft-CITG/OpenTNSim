@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import pytest
-import simpy
 import opentnsim.output
 
 

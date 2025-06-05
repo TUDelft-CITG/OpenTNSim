@@ -1,7 +1,8 @@
-"""Here we test the payload calculation from Van Dorsser et al's method for a range of settings (for a few vessel types, and a few payload – draft combinations)"""
+"""Here we test the payload calculation from Van Dorsser et al's method for a range of settings
+(for a few vessel types, and a few payload – draft combinations)"""
+
 # To do: add more asserts for a range of settings
 import pathlib
-import numpy as np
 import pandas as pd
 import opentnsim.core
 import opentnsim.strategy
@@ -16,6 +17,7 @@ import utils
 def expected_df():
     path = pathlib.Path(__file__)
     return utils.get_expected_df(path)
+
 
 # Make your preferred class out of available mix-ins.
 def test_simulation(expected_df):
@@ -83,17 +85,9 @@ def test_simulation(expected_df):
         Strategies.append(Strategy)
 
     Strategies_df = pd.DataFrame(Strategies)
-    plot_df =  Strategies_df
+    plot_df = Strategies_df
     # Test if the output of "Tanker" vessel are the same as calculated by strategy.py
 
-
-    
-    
     # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)
-    columns_to_test = [
-        column
-        for column in plot_df.columns
-    ]
-    pd.testing.assert_frame_equal(
-        expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False
-    )
+    columns_to_test = [column for column in plot_df.columns]
+    pd.testing.assert_frame_equal(expected_df[columns_to_test], plot_df[columns_to_test], check_exact=False)

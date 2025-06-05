@@ -1,26 +1,32 @@
-# package(s) related to the simulation
-import numpy as np
+# package(s) related to time, space and id
 import bisect
-import scipy as sc
-from shapely.geometry import Point, Polygon, MultiPolygon
-import shapely
-import pandas as pd
-from matplotlib import pyplot as plt, dates
-import math
-import networkx as nx
-import time as timepy
 import datetime
 import pytz
+
+# mathematical packages
+import bisect
+import math
+import scipy as sc
+
+# packages for data handling
+import numpy as np
+import pandas as pd
 import xarray as xr
 
-from shapely.ops import transform
-
 # spatial libraries
-import pyproj
+import networkx as nx
+import shapely
+import shapely.ops
+from shapely.geometry import MultiPolygon, Point, Polygon
+
+# plots
+from matplotlib import dates
+from matplotlib import pyplot as plt
 
 
 class VesselTrafficService:
-    """Class: a collection of functions that processes requests of vessels regarding the nautical processes on ow to enter the port safely"""
+    """Class: a collection of functions that processes requests of vessels regarding
+    the nautical processes on ow to enter the port safely"""
 
     def __init__(self, hydrodynamic_data=None, vessel_speed_data=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -175,7 +181,9 @@ class VesselTrafficService:
                 if not anchorage_reachable:
                     continue
 
-                # Extract information over the individual anchorage areas: capacity, users, and the sailing distance to the anchorage area from the designated terminal the vessel is planning to call
+                # Extract information over the individual anchorage areas:
+                # capacity, users, and the sailing distance to the anchorage area
+                # from the designated terminal the vessel is planning to call
                 nodes_of_anchorages.append(node_anchorage)
                 capacity_of_anchorages.append(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.capacity)
                 users_of_anchorages.append(len(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.users))
@@ -185,14 +193,16 @@ class VesselTrafficService:
                 ].sum()
                 sailing_times_to_anchorages.append(sailing_time_to_anchorage)
 
-        # Sort the lists based on the sailing distance to the anchorage area from the designated terminal the vessel is planning to call
+        # Sort the lists based on the sailing distance to the anchorage area from the designated terminal
+        #  the vessel is planning to call
         sorted_nodes_anchorages = [nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, nodes_of_anchorages))]
         sorted_users_of_anchorages = [nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, users_of_anchorages))]
         sorted_capacity_of_anchorages = [
             nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, capacity_of_anchorages))
         ]
 
-        # Take the anchorage area that is closest to the designated terminal the vessel is planning to call if there is sufficient capacity:
+        # Take the anchorage area that is closest to the designated terminal the vessel is planning to call if there
+        # is sufficient capacity:
         node_anchorage = 0
         for anchorage_index, node_anchorage in enumerate(sorted_nodes_anchorages):
             if sorted_users_of_anchorages[anchorage_index] < sorted_capacity_of_anchorages[anchorage_index]:
@@ -260,12 +270,13 @@ class VesselTrafficService:
         return current_velocity, current_governing_current_velocity
 
     # Functions used to calculate the sail-in-times for a specific vessel
-    def provide_tidal_window_restriction(self, vessel, route, specifications, node):
+    def provide_tidal_window_restriction(self, vessel, route, specifications, node, delay=0):
         """Function: determines which tidal window restriction applies to the vessel at the specific node
 
         Input:
             - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-            - route: a list of strings of node names that resemble the route that the vessel is planning to sail (can be different than vessel.route)
+            - route: a list of strings of node names that resemble the route that the vessel is planning
+            to sail (can be different than vessel.route)
             - specifications: the specific data regarding the properties for which the restriction holds
             - node: a string that defines the node of the tidal window restriction
 
@@ -276,16 +287,19 @@ class VesselTrafficService:
         no_tidal_window = True
         # Determining if and which restriction applies for the vessel by looping over the restriction class
         for restriction_class in enumerate(specifications[0]):
-            # - if restriction does not apply to vessel because it is for vessels sailing in the opposite direction: continue loop
+            # - if restriction does not apply to vessel because it is for vessels sailing in the opposite
+            # direction: continue loop
             if vessel.bound != specifications[2][restriction_class[0]]:
                 continue
             if specifications[5][restriction_class[0]] != [] and (
-                specifications[5][restriction_class[0]][0] not in route or specifications[5][restriction_class[0]][1] not in route
+                (specifications[5][restriction_class[0]][0] not in route)
+                or (specifications[5][restriction_class[0]][1] not in route)
             ):
                 continue
             # - else: looping over the restriction criteria
             for restriction_type in enumerate(restriction_class[1]):
-                # - if previous condition is not met and there are no more restriction criteria and the previous condition has an 'AND' boolean statement: continue loop
+                # - if previous condition is not met and there are no more restriction criteria and the previous
+                #  condition has an 'AND' boolean statement: continue loop
 
                 if (
                     not boolean
@@ -293,14 +307,16 @@ class VesselTrafficService:
                     and specifications[4][restriction_class[0]][restriction_type[0] - 1] == "and"
                 ):
                     continue
-                # - if previous condition is not met and there are more restriction criteria and the next condition has an 'AND' boolean statement: continue loop
+                # - if previous condition is not met and there are more restriction criteria and the next condition
+                # has an 'AND' boolean statement: continue loop
                 if (
                     not boolean
                     and restriction_type[0] != len(restriction_class[1]) - 1
                     and specifications[4][restriction_class[0]][restriction_type[0]] == "and"
                 ):
                     continue
-                # - if previous condition is not met and the next condition has an 'OR' boolean statement: continue loop with predefined boolean
+                # - if previous condition is not met and the next condition has an 'OR' boolean statement:
+                # continue loop with predefined boolean
                 if (
                     not boolean
                     and restriction_type[0] != len(restriction_class[1]) - 1
@@ -342,7 +358,7 @@ class VesselTrafficService:
                     break
 
             # - if condition is met: break the loop
-            if boolean == True:
+            if boolean is True:
                 break
 
             # - else: restart the loop with predefined bool
@@ -363,7 +379,8 @@ class VesselTrafficService:
         return MBL, water_level, available_water_depth
 
     def provide_ukc_clearance(self, vessel, node, delay=0):
-        """Function: calculates the sail-in-times for a specific vssel with certain properties and a pre-determined route and provides this information to the vessel
+        """Function: calculates the sail-in-times for a specific vssel with certain properties
+        and a pre-determined route and provides this information to the vessel
 
         Input:
             - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
@@ -380,7 +397,7 @@ class VesselTrafficService:
             specifications = vessel.multidigraph.nodes[node]["Info"]["Vertical tidal restriction"]["Specification"]
 
             # Determine which restriction applies to vessel
-            restriction_index, _ = self.provide_tidal_window_restriction(vessel, [node], specifications, node)
+            restriction_index, _ = self.provide_tidal_window_restriction(vessel, [node], specifications, node, delay=delay)
 
             # Calculate ukc policy based on the applied restriction
             ukc_s = ukcs_s[restriction_index]
@@ -394,13 +411,17 @@ class VesselTrafficService:
         return net_ukc, gross_ukc, available_water_depth, required_water_depth, ship_related_factors, MBL
 
     def provide_minimum_available_water_depth_along_route(self, vessel, route, time_start, time_end, delay=0):
-        """Function: calculates the minimum available water depth (predicted/modelled/measured water level minus the local maintained bed level) along the route over time,
-                  subtracted with the difference between the gross ukc and net ukc (hence: subtracted with additional safety margins consisting of vessel-related factors
-                  and water level factors). The bottom-related factors are already accounted for in the use of the MBL instead of the actual depth.
+        """Function: calculates the minimum available water depth (predicted/modelled/measured water level
+                  minus the local maintained bed level) along the route over time,
+                  subtracted with the difference between the gross ukc and net ukc
+                  (hence: subtracted with additional safety margins consisting of vessel-related factors
+                  and water level factors). The bottom-related factors are already accounted for in the
+                  use of the MBL instead of the actual depth.
 
         Input:
             - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-            - route: a list of strings of node names that resemble the route that the vessel is planning to sail (can be different than vessel.route)
+            - route: a list of strings of node names that resemble the route that the vessel is planning
+            to sail (can be different than vessel.route)
             - delay:
         """
         time_start_index = np.max(
@@ -444,12 +465,15 @@ class VesselTrafficService:
         return net_ukc
 
     def provide_vertical_tidal_windows(self, vessel, route, time_start, time_end, delay=0, plot=False):
-        """Function: calculates the windows available to sail-in and -out of the port given the vertical tidal restrictions according to the tidal window policy.
+        """Function: calculates the windows available to sail-in and -out of the port given the
+          vertical tidal restrictions according to the tidal window policy.
 
         Input:
             - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-            - route: a list of strings of node names that resemble the route that the vessel is planning to sail (can be different than vessel.route)
-            - sailing_time_correction: a bool that indicates whether the calculation should correct for sailing_speed (dynamic calculation) or not (static calculation)
+            - route: a list of strings of node names that resemble the route that the vessel is planning
+              to sail (can be different than vessel.route)
+            - sailing_time_correction: a bool that indicates whether the calculation should correct for
+              sailing_speed (dynamic calculation) or not (static calculation)
 
         """
         vertical_tidal_accessibility = pd.DataFrame(columns=["Limit", "Accessibility"])
@@ -673,7 +697,8 @@ class VesselTrafficService:
                 ] = period_nr
             horizontal_tidal_accessibility["Period_nr"] = horizontal_tidal_accessibility["Period_nr"].astype(int)
 
-            # Filter the found interpolation points: remove from errors (multiple interpolated numbers and flood/ebb values if not required)
+            # Filter the found interpolation points: remove from errors
+            # (multiple interpolated numbers and flood/ebb values if not required)
             if decreasing:
                 selected_horizontal_tidal_accessibility = pd.DataFrame(columns=horizontal_tidal_accessibility.columns)
                 if flood:
@@ -776,12 +801,12 @@ class VesselTrafficService:
             # Add accessibility information to intersection points
             if not horizontal_tidal_accessibility.empty:
                 if not decreasing:
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"
-                    ] = "Accessible"
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[::2], "Accessibility"
-                    ] = "Inaccessible"
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
+                        "Accessible"
+                    )
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
+                        "Inaccessible"
+                    )
                     limiting_currents = np.interp(
                         horizontal_tidal_accessibility.index.to_numpy().astype(float),
                         cross_current_limit_dataframe.index.to_numpy().astype(float),
@@ -801,12 +826,12 @@ class VesselTrafficService:
                     ]
                     horizontal_tidal_accessibility = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Limit != -1.0]
                 else:
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"
-                    ] = "Inaccessible"
-                    horizontal_tidal_accessibility.loc[
-                        list(horizontal_tidal_accessibility.index)[::2], "Accessibility"
-                    ] = "Accessible"
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
+                        "Inaccessible"
+                    )
+                    horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
+                        "Accessible"
+                    )
                 horizontal_tidal_accessibility["Condition"] = "Current velocity"
                 horizontal_tidal_accessibility = horizontal_tidal_accessibility[["Limit", "Condition", "Accessibility"]]
             return horizontal_tidal_accessibility, station
@@ -822,7 +847,9 @@ class VesselTrafficService:
                 horizontal_tidal_window = True
                 sailing_time_to_next_node = self.provide_sailing_time(vessel, route[: (route_index + 1)])
                 specifications = vessel.multidigraph.nodes[node_name]["Info"]["Horizontal tidal restriction"]["Specification"]
-                restriction_index, no_tidal_window = self.provide_tidal_window_restriction(vessel, route, specifications, node_name)
+                restriction_index, no_tidal_window = self.provide_tidal_window_restriction(
+                    vessel, route, specifications, node_name, delay=delay
+                )
                 if no_tidal_window:
                     continue
                 hydrodynamic_data = vessel.multidigraph.nodes[node_name]["Info"]["Horizontal tidal restriction"]["Data"][
@@ -1246,7 +1273,7 @@ class VesselTrafficService:
             if not tidal_windows:
                 tidal_window = ax_left.fill(
                     [0, 0, 0, 0],
-                    [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax.get_ylim()[1], ax_left.get_ylim()[0]],
+                    [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]],
                     facecolor="limegreen",
                     alpha=0.25,
                     edgecolor="none",
@@ -1318,7 +1345,8 @@ class VesselTrafficService:
                     bbox_to_anchor=(1.05, 1.0),
                 )
             ax_left.set_title(
-                f"Accessibility of {vessel.type}-class vessel with name {vessel.name} and {np.round(vessel.T,2)}m draught and a length of {np.round(vessel.L)}m, sailing {vessel.bound}"
+                f"Accessibility of {vessel.type}-class vessel with name {vessel.name} "
+                f"and {np.round(vessel.T, 2)}m draught and a length of {np.round(vessel.L)}m, sailing {vessel.bound}"
             )
             plt.show()
             return tidal_accessibility, tidal_windows, ax_left, ax_right

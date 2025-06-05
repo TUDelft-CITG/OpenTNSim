@@ -1,31 +1,21 @@
-import datetime
-import functools
+# packkage(s) for documentation, debugging, saving and loading
 import io
-import itertools
-import json
 import logging
 
-# Used for mathematical functions
-import math
-import pathlib
+# math packages
 import pkgutil
-import time
-import uuid
+import functools
 
-# Used for making the graph to visualize our problem
-import networkx as nx
+# packages for data handling
 import numpy as np
 import pandas as pd
+
+# Used for making the graph to visualize our problem
 import pyproj
 import scipy.optimize
-import shapely.geometry
-import simpy
-import tqdm
 
 # OpenTNSim
 import opentnsim
-import opentnsim.graph_module
-import opentnsim.strategy
 
 # package(s) for data handling
 
@@ -120,7 +110,8 @@ class ConsumesEnergy:
 
     - P_installed: installed engine power [kW]
     - P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
-    - bulbous_bow: inland ships generally do not have a bulbous_bow, set to False (default). If a ship has a bulbous_bow, set to True.
+    - bulbous_bow: inland ships generally do not have a bulbous_bow, set to False (default).
+    If a ship has a bulbous_bow, set to True.
     - L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
     - current_year: current year
     - nu: kinematic viscosity [m^2/s]
@@ -132,7 +123,8 @@ class ConsumesEnergy:
     - eta_t: transmission efficiency [-]
     - eta_g: gearing efficiency [-]
     - c_stern: determines shape of the afterbody [-]
-    - C_BB: breadth coefficient of bulbous_bow, set to 0.2 according to the paper of Kracht (1970), https://doi.org/10.5957/jsr.1970.14.1.1
+    - C_BB: breadth coefficient of bulbous_bow, set to 0.2 according to the paper of Kracht (1970),
+    https://doi.org/10.5957/jsr.1970.14.1.1
     - C_B: block coefficient ('fullness') [-] (default to 0.85)
     - one_k2: appendage resistance factor (1+k2) [-]
     - C_year: construction year of the engine [y]
@@ -293,7 +285,8 @@ class ConsumesEnergy:
         """Frictional resistance
 
         - 1st resistance component defined by Holtrop and Mennen (1982)
-        - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects
+        - A modification to the original friction line is applied, based on literature of Zeng (2018),
+        to account for shallow water effects
         """
 
         self.R_e = v * self.L / self.nu  # Reynolds number
@@ -330,8 +323,10 @@ class ConsumesEnergy:
         else:
             self.V_B = v
 
-        # cf_shallow and cf_deep cannot be applied directly, since a vessel also has non-horizontal wet surfaces that have to be taken
-        # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is
+        # cf_shallow and cf_deep cannot be applied directly, since a vessel also has non-horizontal
+        # wet surfaces that have to be taken
+        # into account. Therefore, the following formula for the final friction
+        # coefficient 'C_f' for deep water or shallow water is
         # defined according to Zeng et al. (2018)
 
         if (h_0 - self.T) / self.L > 1:
@@ -355,10 +350,12 @@ class ConsumesEnergy:
         """Viscous resistance
 
         - 2nd resistance component defined by Holtrop and Mennen (1982)
-        - Form factor (1 + k1) has to be multiplied by the frictional resistance R_f, to account for the effect of viscosity"""
+        - Form factor (1 + k1) has to be multiplied by the frictional
+        resistance R_f, to account for the effect of viscosity"""
 
         # c_14 accounts for the specific shape of the afterbody
-        # TODO: check where this value comes from (Holtrop and Mennen?) (following Segers (2021) we assume c_stern = 0 which leads to c_14 to be 1
+        # TODO: check where this value comes from (Holtrop and Mennen?)
+        # (following Segers (2021) we assume c_stern = 0 which leads to c_14 to be 1
         self.c_14 = 1 + 0.0011 * self.c_stern
 
         # the form factor (1+k1) describes the viscous resistance
@@ -383,15 +380,20 @@ class ConsumesEnergy:
     def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
 
-        - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2,
-          expressed as "Vs + delta_V" in the paper), but it also can be used for deeper water depth (h_0 / T >= 9.5).
-        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance terms (R_res: R_TR, R_A, R_B)
+        - The Karpov method computes a velocity correction that accounts for limited water depth
+        (corrected velocity V2,
+          expressed as "Vs + delta_V" in the paper), but it also can be used for deeper water
+          depth (h_0 / T >= 9.5).
+        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance
+        terms (R_res: R_TR, R_A, R_B)
         """
 
         # The Froude number used in the Karpov method is the depth related froude number F_rh
 
-        # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
-        # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
+        # The different alpha** curves are determined with a sixth power
+        # polynomial approximation in Excel
+        # A distinction is made between different ranges of Froude numbers,
+        # because this resulted in a better approximation of the curve
         assert self.g >= 0, f"g should be positive: {self.g}"
         assert h_0 >= 0, f"h_0 should be positive: {h_0}"
         self.F_rh = v / np.sqrt(self.g * h_0)
@@ -741,7 +743,8 @@ class ConsumesEnergy:
 
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
-        # TODO: check below suggestions. They were made to allow for better translation to alternative energy sources. But the changes induced unexpected behaviour.
+        # TODO: check below suggestions. They were made to allow for better translation to alternative energy sources.
+        # But the changes induced unexpected behaviour.
         # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland
         # Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
         # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power
@@ -810,14 +813,17 @@ class ConsumesEnergy:
         # (Van Koningsveld et al (2023) - Part IV Eq 5.19)
         self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
 
-        # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above)
+        # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2.
+        # we do not use it in this version. The reseaon is listed in the doc string above)
         # (Van Koningsveld et al (2023) - Part IV Eq 5.24)
         self.P_b = self.P_d / (self.eta_t * self.eta_g)
 
-        # self.P_propulsion = self.P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
-        self.P_propulsion = self.P_b  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
+        # self.P_propulsion = self.P_d  # propulsion power is defined here as
+        # Delivered horse power, the power delivered to propellers
+        self.P_propulsion = self.P_b  # propulsion power is defined here as Delivered horse power
 
-        # TODO: consider to facilitate that all engine power can go into propulsion (Auxiliary generator for hotel)
+        # TODO: consider to facilitate that all engine power can go into propulsion
+        # (Auxiliary generator for hotel)
         self.P_tot = self.P_hotel + self.P_propulsion
 
         # Partial engine load (P_partial): needed in the 'Emission calculations'
@@ -836,8 +842,10 @@ class ConsumesEnergy:
 
         # return these three variables:
         # 1) self.P_propulsion, for the convience of validation.  (propulsion power and fuel used for propulsion),
-        # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
-        # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
+        # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing
+        # shallower and faster
+        # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity
+        # (means installed power). This varible is used for calculating delta_energy of each sailing time step.
 
         return self.P_given
 
@@ -901,15 +909,21 @@ class ConsumesEnergy:
     def energy_density(self):
         """net energy density of diesel and renewable energy sources. This will be used for calculating SFC later.
 
-        - Edens_xx_mass: net gravimetric energy density, which is the amount of energy stored in a given energy source in mass [kWh/kg].
-        - Edens_xx_vol: net volumetric energy density, which is the amount of energy stored in a given energy source in volume [kWh/m3].
+        - Edens_xx_mass: net gravimetric energy density, which is the amount of energy stored in a given
+        energy source in mass [kWh/kg].
+        - Edens_xx_vol: net volumetric energy density, which is the amount of energy stored in a given
+        energy source in volume [kWh/m3].
 
 
         Data source:
-        Table 3-2 from Marin report 2019,  Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations
+        Table 3-2 from Marin report 2019,  Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten,
+          systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design
+          aspects, system configurations
 
         Note:
-        net energy density can be used for calculate fuel consumption in mass and volume, but for required energy source storage space determination, the packaging factors of different energy sources also need to be considered.
+        net energy density can be used for calculate fuel consumption in mass and volume, but for required
+          energy source storage space determination, the packaging factors of different energy sources also
+          need to be considered.
         """
 
         # gravimetric net energy density
@@ -929,14 +943,21 @@ class ConsumesEnergy:
         self.Edens_Li_NMC_Battery_vol = 139  # kWh/m3
 
     def energy_conversion_efficiency(self):
-        """energy efficiencies for combinations of different energy source and energy-power conversion systems, including engine and power plant, excluding propellers. This will be used for calculating SFC later.
+        """energy efficiencies for combinations of different energy source and energy-power conversion systems,
+          including engine and power plant, excluding propellers. This will be used for calculating SFC later.
 
-        - Eeff_FuelCell: the efficiency of the fuel cell energy conversion system on board, includes fuel cells, AC/DC converter, electric motor and gearbox. Generally this value is between 40% - 60%, here we use 45%.
-        - Eeff_ICE: the efficiency of the Internal Combustion Engine (ICE) energy conversion system on board, includes ICE and gearbox. This value is approximately 35%.
-        - Eeff_Battery: the efficiency of the battery energy conversion system on board. Batteries use 80% capacity to prolong life cycle, and lose efficiency in AC/DC converter, electric motor. Generally this value is between 70% - 95%, here we use 80 %.
+        - Eeff_FuelCell: the efficiency of the fuel cell energy conversion system on board, includes fuel cells,
+          AC/DC converter, electric motor and gearbox. Generally this value is between 40% - 60%, here we use 45%.
+        - Eeff_ICE: the efficiency of the Internal Combustion Engine (ICE) energy conversion system on board,
+          includes ICE and gearbox. This value is approximately 35%.
+        - Eeff_Battery: the efficiency of the battery energy conversion system on board. Batteries use 80% capacity
+        to prolong life cycle, and lose efficiency in AC/DC converter, electric motor. Generally this value is
+          between 70% - 95%, here we use 80 %.
 
         data source:
-        Marin report 2019, Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations)
+        Marin report 2019, Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem
+        configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects,
+        system configurations)
         add other ref
 
         """
@@ -946,17 +967,25 @@ class ConsumesEnergy:
 
     def SFC_general(self):
         """Specific Fuel Consumption (SFC) is calculated by energy density and energy conversion efficiency.
-        The SFC calculation equation, SFC = 1 / (energy density * energy conversion efficiency), can be found in the paper of Kim et al (2020)(A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183).
+        The SFC calculation equation, SFC = 1 / (energy density * energy conversion efficiency),
+          can be found in the paper of Kim et al (2020)(A Preliminary Study on an Alternative Ship
+          Propulsion System Fueled by Ammonia: Environmental and Economic Assessments,
+          https://doi.org/10.3390/jmse8030183).
 
         for diesel SFC, there are 3 kinds of general diesel SFC
-        - SFC_diesel_ICE_mass, calculated by net diesel gravimetric density and ICE energy-power system efficiency, without considering engine performence variation due to engine ages
-        - SFC_diesel_ICE_vol, calculated by net diesel volumetric density and ICE energy-power system efficiency, without considering engine performence variation due to engine ages
-        - SFC_diesel_C_year, a group of SFC considering ICE engine performence variation due to engine ages (C_year), based on TNO (2019)
+        - SFC_diesel_ICE_mass, calculated by net diesel gravimetric density and ICE energy-power system efficiency,
+        without considering engine performence variation due to engine ages
+        - SFC_diesel_ICE_vol, calculated by net diesel volumetric density and ICE energy-power system efficiency,
+          without considering engine performence variation due to engine ages
+        - SFC_diesel_C_year, a group of SFC considering ICE engine performence variation due to engine ages
+        (C_year), based on TNO (2019)
 
         Please note: later on a correction factor has to be applied to get the total SFC
         """
-        # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include ZES battery capacity per container here.
-        # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton, vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)
+        # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include
+        # ZES battery capacity per container here.
+        # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton,
+        # vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)
         self.energy_density()
         self.energy_conversion_efficiency()
 
@@ -1020,12 +1049,17 @@ class ConsumesEnergy:
     def correction_factors(self, v, h_0):
         """Partial engine load correction factors (C_partial_load):
 
-        - The correction factors have to be multiplied by the general emission factors (or general SFC), to get the total emission factors (or final SFC)
+        - The correction factors have to be multiplied by the general emission factors (or general SFC),
+        to get the total emission factors (or final SFC)
         - The correction factor takes into account the effect of the partial engine load
-        - When the partial engine load is low, the correction factors for ICE engine are higher (ICE engine is less efficient at lower enegine load)
+        - When the partial engine load is low, the correction factors for ICE engine are higher
+        (ICE engine is less efficient at lower enegine load)
         - the correction factors for emissions and diesel fuel in ICE engine are based on literature TNO (2019)
-        - For fuel cell enegines(PEMFC & SOFC), the correction factors are lower when the partial engine load is low (fuel cell enegine is more efficient at lower enegine load)
-        - the correction factors for renewable fuels used in fuel cell engine are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
+        - For fuel cell enegines(PEMFC & SOFC), the correction factors are lower when the partial engine
+        load is low (fuel cell enegine is more efficient at lower enegine load)
+        - the correction factors for renewable fuels used in fuel cell engine are based on literature
+          Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia:
+          Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
         # TODO: create correction factors for renewable powered ship, the factor may be 100%
         self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
@@ -1036,7 +1070,8 @@ class ConsumesEnergy:
         self.C_partial_load_battery = 1  # assume the battery energy consumption is not influenced by different engine load
 
         for i in range(20):
-            # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
+            # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to
+            # P_partial = 5% are assigned.
             if self.P_partial <= self.C_partial_load.iloc[0, 0]:
                 self.C_partial_load_CO2 = self.C_partial_load.iloc[0, 5]
                 self.C_partial_load_PM10 = self.C_partial_load.iloc[0, 6]
@@ -1216,7 +1251,8 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_m(self, v):
         """Total diesel fuel use in g/m:
 
-        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_)
+        diveded by the sailing distance (v * delt_t)
         """
         self.diesel_use_g_m = (self.P_given * self.final_SFC_diesel_ICE_mass / v) / 3600  # without considering C_year
         self.diesel_use_g_m_C_year = (self.P_given * self.final_SFC_diesel_C_year_ICE_mass / v) / 3600  # considering C_year
@@ -1224,7 +1260,8 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_s(self):
         """Total diesel fuel use in g/s:
 
-        - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_)
+        diveded by the sailing duration (delt_t)
         """
         self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600  # without considering C_year
         self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600  # considering C_year
@@ -1232,7 +1269,8 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
 
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g
+        (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
         self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
@@ -1241,7 +1279,8 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
 
-        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in
+        g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
@@ -1281,7 +1320,8 @@ class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
     # ToDo: add other alternatives from Marin's table to have completed renewable energy sources
-    # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
+    # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power
+    # plan cost to calculate the cost of ship refit or new ships.
 
     def __init__(self, FG, vessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1417,7 +1457,8 @@ class EnergyCalculation:
                 logger.debug("velocity: {:.4f} m/s".format(v))
 
                 # we use the calculated velocity to determine the resistance and power required
-                # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
+                # we can switch between the 'original water depth' and 'water depth considering ship squatting' for
+                # energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
@@ -1432,12 +1473,13 @@ class EnergyCalculation:
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
                     # consuming 'energy_delta' kWh
                     # TODO: check, as it seems that stationary energy use is now not stored.
-                    P_hotel_delta = self.vessel.P_hotel  # in kW
                     P_installed_delta = self.vessel.P_installed  # in kW
 
                 else:  # otherwise log P_tot
                     # Energy consumed per time step delta_t in the propulsion stage
-                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the available power ... that now works)
+                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven
+                    # with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the
+                    # available power ... that now works)
                     energy_delta = (
                         self.vessel.P_tot * delta_t / 3600
                     )  # kJ/3600 = kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
@@ -1449,10 +1491,11 @@ class EnergyCalculation:
                     P_installed_delta = self.vessel.P_installed  # in kW
                     emission_delta_CO2 = (
                         self.vessel.total_factor_CO2 * energy_delta
-                    )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
+                    )  # Energy consumed per time step delta_t in the stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
-                    # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
+                    # Todo: we need to rename the factor name for fuels, not starting with "emission" ,
+                    # consider seperating it from emission factors
                     delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3

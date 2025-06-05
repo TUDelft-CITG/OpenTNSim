@@ -1,9 +1,7 @@
-import datetime
+# packkage(s) for data handling
 from copy import deepcopy
-
 import numpy as np
 import pandas as pd
-import pytz
 
 
 class HasOutput:
@@ -23,11 +21,11 @@ class HasOutput:
             self.output["turning_basin"] = ""
             self.output["terminal"] = ""
             self.output["berth"] = ""
-            self.output["length"] = np.NaN
-            self.output["beam"] = np.NaN
-            self.output["draught"] = np.NaN
-            self.output["sailing_distance"] = np.NaN
-            self.output["sailing_time"] = np.NaN
+            self.output["length"] = np.nan
+            self.output["beam"] = np.nan
+            self.output["draught"] = np.nan
+            self.output["sailing_distance"] = np.nan
+            self.output["sailing_time"] = np.nan
             self.output["waiting_times_in_anchorages"] = []
             self.output["waiting_times_at_terminals"] = []
             self.output["turning_times"] = []
@@ -36,14 +34,14 @@ class HasOutput:
             # Edge-dependent output
             self.output["current_node"] = ""
             self.output["next_node"] = ""
-            self.output["speed"] = np.NaN
-            self.output["heading"] = np.NaN
-            self.output["water_level"] = np.NaN
-            self.output["MBL"] = np.NaN
-            self.output["net_ukc"] = np.NaN
-            self.output["gross_ukc"] = np.NaN
+            self.output["speed"] = np.nan
+            self.output["heading"] = np.nan
+            self.output["water_level"] = np.nan
+            self.output["MBL"] = np.nan
+            self.output["net_ukc"] = np.nan
+            self.output["gross_ukc"] = np.nan
             self.output["ship_related_ukc_factors"] = {}
-            self.output["limiting current velocity"] = np.NaN
+            self.output["limiting current velocity"] = np.nan
 
             # Historic output
             self.output["sailed_routes"] = []
@@ -62,23 +60,23 @@ class HasOutput:
                 self.output[berth]["vessel_information"] = {}
                 self.output[berth]["vessel_arrival"] = pd.NaT
                 self.output[berth]["vessel_departure"] = pd.NaT
-                self.output[berth]["vessel_berthing_times"] = np.NaN
-                self.output[berth]["vessel_(un)loading_time"] = np.NaN
-                self.output[berth]["vessel_waiting_time"] = np.NaN
+                self.output[berth]["vessel_berthing_times"] = np.nan
+                self.output[berth]["vessel_(un)loading_time"] = np.nan
+                self.output[berth]["vessel_waiting_time"] = np.nan
                 self.output[berth]["visited_vessels"] = []
 
         elif self.__class__.__name__ == "IsAnchorage":
             self.output["vessel_information"] = {}
             self.output["vessel_arrival"] = pd.NaT
             self.output["vessel_departure"] = pd.NaT
-            self.output["vessel_waiting_time"] = np.NaN
+            self.output["vessel_waiting_time"] = np.nan
             self.output["visited_vessels"] = []
 
         elif self.__class__.__name__ == "IsTurningBasin":
             self.output["vessel_information"] = {}
             self.output["vessel_arrival"] = pd.NaT
             self.output["vessel_departure"] = pd.NaT
-            self.output["vessel_turning_time"] = np.NaN
+            self.output["vessel_turning_time"] = np.nan
             self.output["visited_vessels"] = []
 
         elif self.__class__.__name__ == "IsLock":

@@ -1,16 +1,16 @@
 import datetime
+
+import networkx as nx
+import numpy as np
 import pytest
 import shapely
 import simpy
-import numpy as np
 import xarray as xr
 
 import opentnsim.core as core
+import opentnsim.lock
 import opentnsim.output as output
 import opentnsim.vessel_traffic_service
-
-import opentnsim.lock
-import networkx as nx
 
 
 @pytest.fixture

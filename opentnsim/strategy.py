@@ -1,28 +1,46 @@
 """Sailing strategies in OpenTNSim.
 
-The vessel-waterway interaction is complex, since the vessel's sailing behaviors are influenced by not only the changing waterway situations along the route, but also the varation of its own payload, fuel weight, velocity, engine power, etc. Therefore, to sail wisely and safely, it is necessary to formulate optimal sailing stratigies to achieve various sailing goals according to different needs.
+The vessel-waterway interaction is complex, since the vessel's sailing behaviors are influenced
+by not only the changing waterway situations along the route, but also the varation of its own payload,
+fuel weight, velocity, engine power, etc. Therefore, to sail wisely and safely, it is necessary to
+formulate optimal sailing stratigies to achieve various sailing goals according to different needs.
 
-This package combine with "optimal sailing stratigies notebook" provides stratigies for preventing ship grounding, optimizing cargo capacity, optimizing fuel usage, reducing emissions, considering sailing duration, etc.
+This package combine with "optimal sailing stratigies notebook" provides stratigies for
+ preventing ship grounding, optimizing cargo capacity, optimizing fuel usage, reducing emissions,
+ considering sailing duration, etc.
 """
 
 # To Do in this pacakge:
-# 1) add "burning lighter" function to monitor the fuel weight decreasing along the route. For the battery-container or electricity powered vessel, the "fuel weight" is constant.
-# 2）add "refueling heavier" function to show the fuel weight increased again at the refueling stations. For the battery-container or electricy powered vessel, the "fuel weight" is constant.
-# 3) add "get_fuel_weight" function which call both the "burning lighter" and "refueling heavier" functions to take into account the influence of the variation of fuel weight to the actual draught and payload.
-# 4) add "get_refueling_duration" function. For the battery-container, the duration is the unloading and loading time for the battery-containers.
-# 5) add "get_optimal_refueling_amount" function. It's not always beneficial to be fully refueled with fuel for sailing, since more fuel on board leads to less cargo and there might still be residual fuel in the tank after a round trip if refuel too much. Therefore, it's needed to calculate the optimal refuling amount for each unique sailing case (route, vessel size & type, payload, time plan, refueling spots along the route).  The optimal refueling amount for a transport case determined by both the fuel consumption in time and space and the locations of refuling spots.
-# 6) consider writting the "fix power or fix speed" example which is in the paper as a function into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it benefit if adds this function?
+# 1) add "burning lighter" function to monitor the fuel weight decreasing along the route.
+# For the battery-container or electricity powered vessel, the "fuel weight" is constant.
+# 2）add "refueling heavier" function to show the fuel weight increased again at the refueling
+# stations. For the battery-container or electricy powered vessel, the "fuel weight" is constant.
+# 3) add "get_fuel_weight" function which call both the "burning lighter" and "refueling heavier"
+# functions to take into account the influence of the variation of fuel weight to the actual draught and payload.
+# 4) add "get_refueling_duration" function. For the battery-container, the duration is the
+# unloading and loading time for the battery-containers.
+# 5) add "get_optimal_refueling_amount" function. It's not always beneficial to be fully refueled
+# with fuel for sailing, since more fuel on board leads to less cargo and there might still be
+# residual fuel in the tank after a round trip if refuel too much. Therefore, it's needed to
+# calculate the optimal refuling amount for each unique sailing case
+# (route, vessel size & type, payload, time plan, refueling spots along the route).
+# The optimal refueling amount for a transport case determined by both the fuel consumption in
+# time and space and the locations of refuling spots.
+# 6) consider writting the "fix power or fix speed" example which is in the paper as a function
+# into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it
+# benefit if adds this function?
 
-
+# mathematical packages
 import functools
 import itertools
 
+# packkage(s) for documentation, debugging, saving and loading
 import logging
 
-import pandas as pd
+# package(s) for data handling
 import numpy as np
+import pandas as pd
 import scipy.optimize
-
 import tqdm
 
 logger = logging.getLogger(__name__)
@@ -31,12 +49,14 @@ logger = logging.getLogger(__name__)
 # To know the corresponding Payload for each T_strategy
 def T2Payload(vessel, T_strategy, vessel_type):
     """Calculate the corresponding payload for each T_strategy
-    the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
+    the calculation is based on Van Dorsser et al's method (2020)
+    (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
 
 
     input:
     - T_strategy: user given possible draught
-    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker".
+    ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
 
     output:
     - Payload_comupted: corresponding payload for the T_strategy for different vessel types
@@ -200,13 +220,18 @@ def T2Payload(vessel, T_strategy, vessel_type):
 
 def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
     """Calculate the corresponding draught (T_Payload2T) for each Payload_strategy
-    the calculation is based on Van Dorsser et al's method (2020) (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships), which applyies for inland shipping.
+    the calculation is based on Van Dorsser et al's method (2020)
+    (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships),
+      which applyies for inland shipping.
 
 
     input:
     - Payload_strategy: user given payload
-    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
-    - bounds: the searching range for draught. As this method which based on Van Dorsser et al (2020) is for inland vessels, of which the draughts are no larger than 5 meter, we set the upper bound as 5 m as default value.
+    - vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker".
+    ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+    - bounds: the searching range for draught. As this method which based on
+    Van Dorsser et al (2020) is for inland vessels, of which the draughts are no
+    larger than 5 meter, we set the upper bound as 5 m as default value.
 
     output:
     - T_Payload2T: corresponding draught for each payload for different vessel types
@@ -264,7 +289,6 @@ def get_v(vessel, width, depth, margin, bounds):
     # the value of fit.x within the bound (0,20) is the velocity we find where the diff**2 reach a minimum (zero).
     v = fit.x
 
-
     return v, depth, margin
 
 
@@ -275,9 +299,9 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     range."""
 
     # estimate the grounding velocity
-    # here we optionally try to take sinkage into account and try to compute the maximum velocity where we still have underkeel clearance
+    # here we optionally try to take sinkage into account and try to compute the maximum velocity
+    # where we still have underkeel clearance
     grounding_v, depth, margin = get_v(vessel, width, depth, margin=0, bounds=bounds)
-
 
     # The next step is to compute the maximum power for the veloctiy.
     # Here (for some reason we don't use a solver )

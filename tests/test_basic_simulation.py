@@ -4,21 +4,13 @@
 import datetime
 
 # Used for mathematical functions
-import math
-import platform
 import time
-
-import matplotlib.pyplot as plt
 
 # Used for making the graph to visualize our problem
 import networkx as nx
 
 # package(s) for data handling
 import numpy as np
-
-# OpenTNSim
-import opentnsim
-import pandas as pd
 
 # spatial libraries
 import pyproj
@@ -27,7 +19,9 @@ import shapely.geometry
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
-from simplekml import Kml, Style
+
+# OpenTNSim
+import opentnsim
 
 # Creating the test objects
 
