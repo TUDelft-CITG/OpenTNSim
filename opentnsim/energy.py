@@ -106,6 +106,50 @@ def power2v(vessel, edge, upperbound):
     return fit.x
 
 
+# %% ENERGY FUNCTIONS
+
+
+def calculate_engine_age(L_w):
+    """
+    Computes/samples the age of the engine based on the weight class of the vessel. The
+    age is drawn randomly from a Weibull distribution with parameters k and lmb, which
+    depend on the weight class of the ship. The age is then returned in years.
+
+    TODO: add reference to literature on which this is based
+
+    Parameters
+    ----------
+    L_w : int
+        weight class of the ship (depending on carrying capacity), values supported are
+        1 (class L1), 2 (class L2) or 3 (class L3).
+
+    Returns
+    -------
+    age : int
+        The calculated age of the engine in years.
+    """
+    # check params
+    if not L_w in [1, 2, 3]:
+        raise ValueError("L_w should be 1, 2 or 3")
+
+    # determine the shape (k) and scale factor (lmb) to use based on the weight class
+    if L_w == 1:  # Weight class L1
+        k = 1.3
+        lmb = 20.5
+    elif L_w == 2:  # Weight class L2
+        k = 1.12
+        lmb = 18.5
+    elif L_w == 3:  # Weight class L3
+        k = 1.26
+        lmb = 18.6
+
+    # the engine age
+    # TODO: I would not expect a random distribution if the function is called
+    age = int(np.random.weibull(k) * lmb)
+
+    return age
+
+
 # %% CLASSES
 
 
@@ -138,7 +182,7 @@ class ConsumesEnergy:
         self,
         P_installed,
         L_w,
-        C_year,
+        C_year=None,
         current_year=None,  # current_year
         bulbous_bow=False,
         P_hotel_perc=0.05,
@@ -208,30 +252,31 @@ class ConsumesEnergy:
                 self.P_tot_given = self.P_installed
 
     def calculate_engine_age(self):
-        """Calculating the construction year of the engine, dependent on a Weibull function with
-        shape factor 'k', and scale factor 'lmb', which are determined by the weight class L_w
         """
+        Calculate the age of the engine based on the weight class of the ship (L_w).
 
-        # Determining which shape and scale factor to use, based on the weight class L_w = L1, L2 or L3
-        assert self.L_w in [1, 2, 3], "Invalid value L_w, should be 1,2 or 3"
-        if self.L_w == 1:  # Weight class L1
-            self.k = 1.3
-            self.lmb = 20.5
-        elif self.L_w == 2:  # Weight class L2
-            self.k = 1.12
-            self.lmb = 18.5
-        elif self.L_w == 3:  # Weight class L3
-            self.k = 1.26
-            self.lmb = 18.6
+        The age is drawn randomly from a Weibull distribution with parameters k and lmb,
+        which depend on the weight class of the ship. The year of construction is
+        computed from the current year of the simulation and the age of the engine.
 
-        # The age of the engine
-        # TODO: I would not expect a random distribution if the function is cal
-        self.age = int(np.random.weibull(self.k) * self.lmb)
+        Notes
+        -----
+        Uses `self.L_w` and `self.year` to compute the age and construction year of the
+        engine. This method sets attributes `self.age` and `self.C_year`.
 
-        # Construction year of the engine
+        """
+        # compute the age of the engine
+        self.age = calculate_engine_age(self.L_w)
+
+        # compute the construction year of the engine
+        if self.year is None:
+            raise ValueError(
+                "year must be set to calculate the construction year of the engine"
+            )
         self.C_year = self.year - self.age
-
-        logger.debug(f"The construction year of the engine is {self.C_year}")
+        logger.debug(
+            f"Engine age calculated as {self.age}, hence construction year is {self.C_year}"
+        )
 
         return self.C_year
 
