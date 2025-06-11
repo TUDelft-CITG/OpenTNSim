@@ -29,6 +29,17 @@ from opentnsim import core, output, graph
 knots_to_ms = knots = 0.514444444
 
 class PassesLockComplex(core.Movable, graph.HasMultiDiGraph):
+    """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
+
+    Attributes
+    -----------
+    pre_register_to_lock_master: simpy.Container
+        the container that is used to limit the amount that can be requested.
+    register_to_lock_master: int
+        total amount that has been requested.
+    sail_to_waiting_area: int
+        total amount that has been requested.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -172,12 +183,15 @@ class PassesLockComplex(core.Movable, graph.HasMultiDiGraph):
         # Check if doors should be opened
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
         first_in_lock = operation_planning.loc[operation_index].vessels[0] == self
+        between_arrivals = False
+        if not first_in_lock:
+            between_arrivals = True
         door_is_closed, doors_required_to_be_open, operation_time = lock.determine_if_door_is_closed(self,
                                                                                                      operation_index,
                                                                                                      direction,
-                                                                                                     first_in_lock=first_in_lock)
-
-        if door_is_closed and lock.closing_doors_in_between_operations:
+                                                                                                     first_in_lock=first_in_lock,
+                                                                                                     between_arrivals=between_arrivals)
+        if door_is_closed:
             levelling_required = False
             if operation_time > pd.Timedelta(seconds=lock.doors_closing_time):
                 levelling_required = True
@@ -360,6 +374,7 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         start_sailing_out_time_after_doors_have_been_opened = 0.,
         sailing_time_before_opening_lock_doors = 180,
         sailing_time_before_closing_lock_doors = 60,
+        minimum_time_between_operations_for_intermediate_door_closure = None,
         sailing_distance_to_crossing_point = 500,
         passage_time_door = 300.,
         sailing_in_time_gap_through_doors = 180.,
@@ -372,7 +387,7 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         sailing_out_speed_canal= 2 * knots,
         minimum_manoeuvrability_speed = 2*knots,
         levelling_time = 600.,
-        grav_acc = 9.81, #a float which contains the gravitational acceleration
+        grav_acc = 9.81,
         time_step = 10.,
         gate_opening_time = 60.,
         node_open = None,
@@ -385,8 +400,6 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
 
         """Initialization"""
         # Properties
-        if disch_coeff != 0 and opening_area != 0:
-            levelling_time = 0.
         self.lock_length = lock_length
         self.lock_width = lock_width
         self.lock_depth = lock_depth
@@ -398,6 +411,10 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         self.start_sailing_out_time_after_doors_have_been_opened = start_sailing_out_time_after_doors_have_been_opened
         self.sailing_time_before_opening_lock_doors = sailing_time_before_opening_lock_doors
         self.sailing_time_before_closing_lock_doors = sailing_time_before_closing_lock_doors
+        if minimum_time_between_operations_for_intermediate_door_closure == None:
+            self.minimum_time_between_operations_for_intermediate_door_closure = sailing_time_before_opening_lock_doors
+        else:
+            self.minimum_time_between_operations_for_intermediate_door_closure = minimum_time_between_operations_for_intermediate_door_closure
         self.sailing_in_time_gap_after_berthing_previous_vessel = sailing_in_time_gap_after_berthing_previous_vessel
         self.sailing_out_time_gap_after_berthing_previous_vessel = sailing_out_time_gap_after_berthing_previous_vessel
         self.sailing_in_speed_sea = sailing_in_speed_sea
@@ -680,7 +697,7 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         if same_direction:
             direction = 1 - direction
 
-        if self.levelling_time or (not self.env.vessel_traffic_service.hydrodynamic_information_path and hydrodynamic_data is None):
+        if not callable(self.levelling_time) and not self.env.vessel_traffic_service.hydrodynamic_information_path:
             if not prediction:
                 if self.env.vessel_traffic_service.hydrodynamic_information_path:
                     t_index_final = np.absolute(hydrodynamic_times - (t_start + np.timedelta64(int(self.levelling_time), 's'))).argmin()
@@ -714,35 +731,43 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
 
         else:
             z[0] = H_A_init - wlev_init
-        # Euler's method
-        for i in range(len(t) - 1):
-            H_Ai = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A)
-            H_Aii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A)
-            H_Bi = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B)
-            H_Bii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B)
-            deltaH_A = H_Aii - H_Ai
-            deltaH_B = H_Bii - H_Bi
-            z_i = abs(z[i])
-            if not direction:
-                to_wlev_change = - deltaH_B
-            else:
-                to_wlev_change = - deltaH_A
 
-            dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch
-            if z[i] < 0:
-                dz_dt = -dz_dt
+        levelling_time = 0.
+        if callable(self.levelling_time):
+            levelling_time = self.levelling_time(z[0])
+            t = np.arange(0, levelling_time + float(dt), float(dt))
+            z = np.linspace(z[0],0,len(t))
 
-            dz = dz_dt * float(dt) + to_wlev_change
-            z[i + 1] = z[i] + dz
-            if np.sign(z[i + 1]) != np.sign(z[i]):
-                z[i + 1] = 0
+        else:
+            # Euler's method
+            for i in range(len(t) - 1):
+                H_Ai = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A)
+                H_Aii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A)
+                H_Bi = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B)
+                H_Bii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B)
+                deltaH_A = H_Aii - H_Ai
+                deltaH_B = H_Bii - H_Bi
+                z_i = abs(z[i])
+                if not direction:
+                    to_wlev_change = - deltaH_B
+                else:
+                    to_wlev_change = - deltaH_A
 
-            if np.abs(z[i + 1]) <= 0.05:
-                z[(i + 1):] = np.nan
-                break
+                dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch
+                if z[i] < 0:
+                    dz_dt = -dz_dt
 
-        if len(np.argwhere(np.isnan(z))):
-            levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
+                dz = dz_dt * float(dt) + to_wlev_change
+                z[i + 1] = z[i] + dz
+                if np.sign(z[i + 1]) != np.sign(z[i]):
+                    z[i + 1] = 0
+
+                if np.abs(z[i + 1]) <= 0.05:
+                    z[(i + 1):] = np.nan
+                    break
+
+            if not levelling_time and len(np.argwhere(np.isnan(z))):
+                levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
 
         if not prediction:
             t_index_final = np.absolute(hydrodynamic_times - (t_start+np.timedelta64(int(levelling_time),'s'))).argmin()
@@ -761,6 +786,7 @@ class IsLockMaster(core.SimpyObject):
                  clustering_time = 0.5*60*60,
                  minimize_door_open_times=False,
                  closing_doors_in_between_operations = False,
+                 closing_doors_in_between_arrivals = False,
                  close_doors_before_vessel_is_laying_still = False,
                  predictive=False,
                  operational_hour_start_times=None,
@@ -773,6 +799,7 @@ class IsLockMaster(core.SimpyObject):
         self.clustering_time = clustering_time
         self.minimize_door_open_times = minimize_door_open_times
         self.closing_doors_in_between_operations = closing_doors_in_between_operations
+        self.closing_doors_in_between_arrivals = closing_doors_in_between_arrivals
         self.close_doors_before_vessel_is_laying_still = close_doors_before_vessel_is_laying_still
         self.predictive = predictive
 
@@ -1143,18 +1170,21 @@ class IsLockMaster(core.SimpyObject):
                 next_operation = next_operations.iloc[0]
                 if not len(next_operation.vessels):
                     next_lockage_is_empty = True
-                    doors_can_be_closed = True
-            if lock.closing_doors_in_between_operations:
-                next_lockage_is_empty = False
 
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
-            if is_last_vessel_sailing_out and doors_can_be_closed:
+            if is_last_vessel_sailing_out:
                 if next_lockage_is_empty:
                     next_operation = next_operations.iloc[0]
                     door_closing_start = next_operation.time_door_closing_start
+                    door_opening_start = next_operation.time_levelling_start
                     closing_delay = np.max([0,(door_closing_start - current_time).total_seconds()])
-                    vessel.env.process(lock.convert_chamber(new_level=next_level_in_case_of_following_empty_lockage,vessel=None,close_doors=True,delay=closing_delay,direction=1-direction))
-                elif lock.closing_doors_in_between_operations:
+                    opening_delay = np.max([0, (door_opening_start - current_time).total_seconds()])
+                    if lock.closing_doors_in_between_operations and opening_delay - closing_delay > self.lock_complex.doors_closing_time:
+                        vessel.env.process(lock.close_door(delay=closing_delay))
+                        vessel.env.process(lock.convert_chamber(new_level=next_level_in_case_of_following_empty_lockage, vessel=None,close_doors=False, delay=opening_delay, direction=1 - direction))
+                    else:
+                        vessel.env.process(lock.convert_chamber(new_level=next_level_in_case_of_following_empty_lockage, vessel=None,close_doors=True, delay=closing_delay, direction=1 - direction))
+                elif doors_can_be_closed and lock.closing_doors_in_between_operations:
                     door_closing_time = made_operation.time_potential_lock_door_closure_start
                     delay = (door_closing_time-current_time).total_seconds()
                     vessel.env.process(lock.close_door(delay=delay))
@@ -1245,7 +1275,7 @@ class IsLockMaster(core.SimpyObject):
 
             last_vessel_to_enter_lock = vessels[-1] == vessel
             doors_can_be_closed_between_vessel_arrivals = lock.determine_if_door_can_be_closed(vessel, direction, operation_index, between_arrivals=True)
-            if lock.close_doors_before_vessel_is_laying_still and ((lock.closing_doors_in_between_operations and doors_can_be_closed_between_vessel_arrivals) or (last_vessel_to_enter_lock and this_operation.time_door_closing_start < vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'])):
+            if lock.close_doors_before_vessel_is_laying_still and ((lock.closing_doors_in_between_arrivals and doors_can_be_closed_between_vessel_arrivals) or (last_vessel_to_enter_lock and this_operation.time_door_closing_start < vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'])):
                 vessel.env.process(lock.close_door(delay=delay_to_close_doors.total_seconds()))
 
             vessel.log_entry_v0("Sailing to position in lock start", vessel.env.now, vessel.output.copy(),first_lock_door_position, )
@@ -1266,7 +1296,7 @@ class IsLockMaster(core.SimpyObject):
             vessel.log_entry_v0("Sailing to position in lock stop", vessel.env.now, vessel.output.copy(),vessel.position_in_lock,)
 
             doors_can_be_closed_between_vessel_arrivals = lock.determine_if_door_can_be_closed(vessel, direction, operation_index, between_arrivals=True)
-            if not lock.close_doors_before_vessel_is_laying_still and not last_vessel_to_enter_lock and lock.closing_doors_in_between_operations and doors_can_be_closed_between_vessel_arrivals:
+            if not lock.close_doors_before_vessel_is_laying_still and not last_vessel_to_enter_lock and lock.closing_doors_in_between_arrivals and doors_can_be_closed_between_vessel_arrivals:
                 vessel.env.process(lock.close_door())
 
 
@@ -1759,7 +1789,9 @@ class IsLockMaster(core.SimpyObject):
 
     def determine_if_door_can_be_closed(self, vessel, direction, operation_index, between_arrivals=False):
         doors_can_be_closed = False
-        if not self.closing_doors_in_between_operations:
+        if not between_arrivals and not self.closing_doors_in_between_operations:
+            return doors_can_be_closed
+        if between_arrivals and not self.closing_doors_in_between_arrivals:
             return doors_can_be_closed
         doors_can_be_closed = True
 
@@ -1771,6 +1803,11 @@ class IsLockMaster(core.SimpyObject):
 
         if not between_arrivals:
             last_time_doors_closed = operation_planning.loc[operation_index,'time_potential_lock_door_closure_start']+pd.Timedelta(seconds=self.doors_closing_time)
+            if self.predictive and not operation_planning[operation_planning.index > operation_index].empty:
+                next_time_doors_open = operation_planning.loc[operation_index+1,'time_potential_lock_door_opening_stop']
+                if next_time_doors_open - last_time_doors_closed < self.minimum_time_between_operations_for_intermediate_door_closure:
+                    doors_can_be_closed = False
+                    return doors_can_be_closed
         else:
             last_time_doors_closed = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)) + pd.Timedelta(seconds=self.doors_closing_time)
 
@@ -1804,7 +1841,7 @@ class IsLockMaster(core.SimpyObject):
         return doors_can_be_closed
 
 
-    def determine_if_door_is_closed(self, vessel, operation_index, direction, first_in_lock=False):
+    def determine_if_door_is_closed(self, vessel, operation_index, direction, first_in_lock=False, between_arrivals=False):
         operation_planning = self.operation_planning
         vessel_planning = self.vessel_planning
         if self.predictive:
@@ -1812,6 +1849,12 @@ class IsLockMaster(core.SimpyObject):
             vessel_planning = self.vessel_pre_planning
         vessels = operation_planning.loc[operation_index, 'vessels']
         vessel_index = vessels.index(vessel)
+
+        if between_arrivals and not self.closing_doors_in_between_arrivals:
+            return False, None, None
+
+        if not between_arrivals and not self.closing_doors_in_between_operations:
+            return False, None, None
 
         if not first_in_lock and vessel_index:
             previous_vessel_planning_index = vessel_planning[vessel_planning.id == operation_planning.loc[operation_index, 'vessels'][vessel_index-1].id].iloc[-1].name
@@ -1836,6 +1879,12 @@ class IsLockMaster(core.SimpyObject):
         doors_is_closed = False
         if doors_required_to_be_open - operation_time > last_time_doors_closed:
             doors_is_closed = True
+        if self.predictive and not operation_planning[operation_planning.index < operation_index].empty and first_in_lock:
+            last_time_doors_closed = operation_planning.loc[operation_index-1, 'time_potential_lock_door_closure_start'] + pd.Timedelta(seconds=self.doors_closing_time)
+            next_time_doors_open = operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop']
+            doors_is_closed = False
+            if next_time_doors_open - last_time_doors_closed >= self.minimum_time_between_operations_for_intermediate_door_closure:
+                doors_is_closed = True
 
         return doors_is_closed, doors_required_to_be_open, operation_time
 
