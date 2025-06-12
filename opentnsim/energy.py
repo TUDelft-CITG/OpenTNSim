@@ -109,13 +109,13 @@ def power2v(vessel, edge, upperbound):
 # %% ENERGY FUNCTIONS
 
 
-def calculate_engine_age(L_w):
+def sample_engine_age(L_w):
     """
-    Computes/samples the age of the engine based on the weight class of the vessel. The
-    age is drawn randomly from a Weibull distribution with parameters k and lmb, which
-    depend on the weight class of the ship. The age is then returned in years.
+    Samples the age of the engine based on the weight class of the vessel. The age is
+    drawn randomly from a Weibull distribution with parameters k and lmb, which depend
+    on the weight class of the ship. The age is then returned in years.
 
-    TODO: add reference to literature on which this is based
+    TODO: add reference to literature on which this is based --> H5 over Performance
 
     Parameters
     ----------
@@ -148,6 +148,58 @@ def calculate_engine_age(L_w):
     age = int(np.random.weibull(k) * lmb)
 
     return age
+
+
+def calculate_max_sinkage(v, h_0, T, B, C_B, width):
+    """
+    Calculate tha maximum sinkage of a moving vessel.
+
+    The calculation equation is described in Barrass, B. & Derrett, R.'s book (2006),
+    Ship Stability for Masters and Mates, chapter 42.
+    https://doi.org/10.1016/B978-0-08-097093-6.00042-6
+
+    Parameters
+    ----------
+    v : float
+        Velocity of the vessel relative to the water [m/s]
+    h_0 : float
+        Water depth [m]
+    T : float
+        Actual draught of the vessel [m]
+    B : float
+        Breadth of the vessel [m]
+    C_B : float
+        Block coefficient of the vessel [-]
+    width : float
+        Width of the fairway [m]
+
+    Returns
+    -------
+    float
+        The maximum sinkage of the vessel [m]
+    """
+    # checks
+    if v < 0:
+        raise ValueError("Velocity v should be >= 0")
+    if h_0 <= 0:
+        raise ValueError("Water depth h_0 should be > 0")
+    if T <= 0:
+        raise ValueError("Draught T should be > 0")
+    if B <= 0:
+        raise ValueError("Breadth B should be > 0")
+    if width <= 0:
+        raise ValueError("Width of the fairway should be > 0")
+    if C_B <= 0:
+        raise ValueError("Block coefficient C_B should be > 0")
+
+    if B > width:
+        raise ValueError(
+            f"Width of the fairway ({width}) should be larger than "
+            f"the breadth of the vessel ({B})"
+        )
+
+    # calculate the maximum sinkage
+    return (C_B * ((B * T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
 
 
 # %% CLASSES
@@ -266,7 +318,7 @@ class ConsumesEnergy:
 
         """
         # compute the age of the engine
-        self.age = calculate_engine_age(self.L_w)
+        self.age = sample_engine_age(self.L_w)
 
         # compute the construction year of the engine
         if self.year is None:
@@ -1594,10 +1646,13 @@ class ConsumesEnergy:
 
         max_sinkage = 0
         if self.h_squat:
-            max_sinkage = (
-                (self.C_B * ((self.B * self._T) / (width * h_0)) ** 0.81)
-                * ((v * 1.94) ** 2.08)
-                / 20
+            max_sinkage = calculate_max_sinkage(
+                v=v,
+                h_0=h_0,
+                T=self._T,  # TODO: why _T and not T? moreover: T stems from VesselProperties
+                B=self.B,
+                C_B=self.C_B,
+                width=width,
             )
 
         return max_sinkage
