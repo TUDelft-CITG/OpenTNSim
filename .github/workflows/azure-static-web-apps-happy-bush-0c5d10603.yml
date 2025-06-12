@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - test_master_pipeline
       - feature/book
   # # disable PR due to site limit @ azure
   # pull_request:
