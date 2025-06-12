@@ -13,7 +13,7 @@ This package combine with "optimal sailing stratigies notebook" provides stratig
 # 5) add "get_optimal_refueling_amount" function. It's not always beneficial to be fully refueled with fuel for sailing, since more fuel on board leads to less cargo and there might still be residual fuel in the tank after a round trip if refuel too much. Therefore, it's needed to calculate the optimal refuling amount for each unique sailing case (route, vessel size & type, payload, time plan, refueling spots along the route).  The optimal refueling amount for a transport case determined by both the fuel consumption in time and space and the locations of refuling spots.
 # 6) consider writting the "fix power or fix speed" example which is in the paper as a function into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it benefit if adds this function?
 
-
+import deprecated
 import functools
 import itertools
 
@@ -215,13 +215,17 @@ def Payload2T(vessel, Payload_strategy, vessel_type, bounds=(0, 5)):
 
     def seek_T_given_Payload(T_Payload2T, vessel, vessel_type):
         """function to optimize"""
-        Payload_computed = T2Payload(vessel=vessel, T_strategy=T_Payload2T, vessel_type=vessel_type)
+        Payload_computed = T2Payload(
+            vessel=vessel, T_strategy=T_Payload2T, vessel_type=vessel_type
+        )
         # compute difference between a given payload (Payload_strategy) and a computed payload (Payload_computed)
         diff = Payload_strategy - Payload_computed
         return diff**2
 
     # fill in some of the parameters that we already know
-    fun = functools.partial(seek_T_given_Payload, vessel=vessel, vessel_type=vessel_type)
+    fun = functools.partial(
+        seek_T_given_Payload, vessel=vessel, vessel_type=vessel_type
+    )
 
     # lookup a minimum
     fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method="bounded")
@@ -254,7 +258,9 @@ def get_v(vessel, width, depth, margin, bounds):
         return diff**2
 
     # goalseek to minimize
-    fun = functools.partial(seek_v_given_z, vessel=vessel, width=width, depth=depth, margin=margin)
+    fun = functools.partial(
+        seek_v_given_z, vessel=vessel, width=width, depth=depth, margin=margin
+    )
     fit = scipy.optimize.minimize_scalar(fun, bounds=bounds, method="bounded")
 
     # check if we found a minimum
@@ -263,7 +269,6 @@ def get_v(vessel, width, depth, margin, bounds):
 
     # the value of fit.x within the bound (0,20) is the velocity we find where the diff**2 reach a minimum (zero).
     v = fit.x
-
 
     return v, depth, margin
 
@@ -277,7 +282,6 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     # estimate the grounding velocity
     # here we optionally try to take sinkage into account and try to compute the maximum velocity where we still have underkeel clearance
     grounding_v, depth, margin = get_v(vessel, width, depth, margin=0, bounds=bounds)
-
 
     # The next step is to compute the maximum power for the veloctiy.
     # Here (for some reason we don't use a solver )
@@ -306,7 +310,9 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
 
         # in energy module waterdepth  is called h_0 (ignores when squat is disabled)
         h_0 = vessel.calculate_h_squat(v=row["velocity"], h_0=depth, width=width)
-        max_sinkage = vessel.calculate_max_sinkage(v=row["velocity"], h_0=depth, width=width)
+        max_sinkage = vessel.calculate_max_sinkage(
+            v=row["velocity"], h_0=depth, width=width
+        )
 
         # for the squatted water depth calculate resistance and power
         vessel.calculate_total_resistance(v=row["velocity"], h_0=h_0)
