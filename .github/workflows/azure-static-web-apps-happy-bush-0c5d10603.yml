@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - test_master_pipeline
       - feature/book
   # # disable PR due to site limit @ azure
   # pull_request:
@@ -17,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -25,10 +26,10 @@ jobs:
         run: |
           sudo apt-get -qq update
           sudo apt-get install -y gdal-bin libgdal-dev
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v3
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: 3.13
           cache: "pip"
       - name: Install Python dependencies
         run: |
