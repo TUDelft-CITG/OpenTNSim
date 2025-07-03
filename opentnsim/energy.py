@@ -358,6 +358,7 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     a : float
         Coefficient needed to calculate the Katsui friction coefficient [-]
     """
+    # TODO: makes sense to store np.log10(R_e) as constant intstead of re-calculating
     # Reynolds number
     R_e = v * L * nu
 
@@ -388,7 +389,11 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     # Van Koningsveld et al (2023) - below Eq 5.7
     a = 0.042612 * np.log10(R_e) + 0.56725
     # Van Koningsveld et al (2023) - Eq 5.7
-    Cf_Katsui = 0.0066577 / ((np.log10(R_e) - 4.3762) ** a)
+    # NOTE: implemented this way due to numpy "invalid value encountered in scalar power"
+    # TODO: check this, the test case implemented in test_energy.py yields a negative
+    # Cf_Katsui
+    _katsui_nom_aux = np.log10(R_e) - 4.3762
+    Cf_Katsui = 0.0066577 / (np.sign(_katsui_nom_aux) * np.abs(_katsui_nom_aux) ** a)
 
     # The average velocity underneath the ship, taking into account the shallow water
     # effect. This calculation is to get V_B, which will be used in the following Cf
