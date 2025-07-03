@@ -10,6 +10,13 @@ from opentnsim.energy import (
     calculate_max_sinkage,
     calculate_properties,
     calculate_frictional_resistance,
+    calculate_viscous_resistance,
+    calculate_appendage_resistance,
+    karpov,
+    calculate_wave_resistance,
+    calculate_residual_resistance,
+    calculate_total_resistance,
+    calculate_total_power_required,
 )
 
 
@@ -146,7 +153,7 @@ def test_calculate_frictional_resistance():
     # make a calculation
     R_f, C_f, R_e, Cf_deep, Cf_shallow, Cf_0, Cf_Katsui, V_B, D, a = (
         calculate_frictional_resistance(
-            v=3, h_0=4, L=50, nu=1.002e-6, T=3, S=120, S_B=100, rho=1
+            v=3, h_0=4, L=50, nu=1.002e-6, T=3, S=120, S_B=100, rho=1000
         )
     )
 
@@ -168,7 +175,7 @@ def test_calculate_frictional_draught_h0_mismatch(h_0, T):
     """Test cases where h_0 - T <= 0"""
     with pytest.raises(Exception):
         _ = calculate_frictional_resistance(
-            v=3, h_0=h_0, L=50, nu=1.0038, T=T, S=120, S_B=100, rho=1
+            v=3, h_0=h_0, L=50, nu=1.0038, T=T, S=120, S_B=100, rho=1000
         )
 
 
@@ -180,5 +187,128 @@ def test_calculate_frictional_resistance_SB_gt_S():
     """Test calculate_frictional_resistance with S_B > S."""
     with pytest.raises(Exception):
         _ = calculate_frictional_resistance(
-            v=3, h_0=4, L=50, nu=1.0038, T=3, S=120, S_B=130, rho=1
+            v=3, h_0=4, L=50, nu=1.0038, T=3, S=120, S_B=130, rho=1000
         )
+
+
+# %% TESTING calculate_viscous_resistance
+def test_calculate_viscous_resistance_1():
+    """Test the calculate_viscous_resistance function."""
+    # make a calculation
+    # c_stern = 0 is used tshould lead to c_14 equal to 1
+    c_14, one_k1, R_f_one_k1 = calculate_viscous_resistance(
+        c_stern=0, B=5, L=40, T=2, L_R=4, C_P=0.5, R_f=1, delta=100
+    )
+
+    # check the outcome
+    assert c_14 == 1.0
+    assert one_k1 == pytest.approx(1.21, abs=1e-2)
+    assert R_f_one_k1 == pytest.approx(1.21, abs=1e-2)
+
+
+def test_calculate_viscous_resistance_2():
+    """Test the calculate_viscous_resistance function."""
+    # make a calculation
+    c_14, one_k1, R_f_one_k1 = calculate_viscous_resistance(
+        c_stern=10, B=5, L=40, T=2, L_R=4, C_P=0.5, R_f=1, delta=100
+    )
+
+    # check the outcome
+    assert c_14 == pytest.approx(1.011, abs=1e-3)
+    assert one_k1 == pytest.approx(1.21, abs=1e-2)
+    assert R_f_one_k1 == pytest.approx(1.21, abs=1e-2)
+
+
+# %% TESTING calculate_appendage_resistance
+def test_calculate_appendage_resistance():
+    """Test the calculate_appendage_resistance function."""
+    # make a calculation
+    R_APP = calculate_appendage_resistance(v=3, rho=1000, S_APP=50, one_k2=1, C_f=1)
+
+    assert R_APP == 225.0
+
+
+# %% TESTING karpov
+# TODO: replace None with the expected values for F_rh, V_2, and alpha_xx
+# and perform appropriate checks on the function outcomes
+@pytest.mark.parametrize(
+    "v,T,F_rh,V_2,alpha_xx",
+    [
+        (3, 9, None, None, None),
+        (3, 5, None, None, None),
+        (3, 4, None, None, None),
+        (3, 2, None, None, None),
+        (5, 9, None, None, None),
+        (5, 5, None, None, None),
+        (5, 4, None, None, None),
+        (5, 3.3, None, None, None),
+        (5, 2.5, None, None, None),
+        (5, 2, None, None, None),
+        (5, 1.6, None, None, None),
+        (5, 1.4, None, None, None),
+        (5, 1.2, None, None, None),
+        (5, 1.1, None, None, None),
+        (5, 1, None, None, None),
+        (7, 1.1, None, None, None),
+        (7, 1, None, None, None),
+    ],
+)
+def test_karpov(v, T, F_rh, V_2, alpha_xx):
+    """Test the karpov function."""
+    # F_rh = v / np.sqrt(g * h_0)
+    # functionality distinguishes the following logic
+    # - F_rh <= 0.4
+    #   - 0 <= h_0 / T < 1.75
+    #   - 1.75 <= h_0 / T < 2.25
+    #   - 2.25 <= h_0 / T < 2.75
+    #   - h_0 / T >= 2.75
+    # - F_rh > 0.4
+    #   - 0 <= h_0 / T < 1.75
+    #   - 1.75 <= h_0 / T < 2.25
+    #   - 2.25 <= h_0 / T < 2.75
+    #   - 2.75 <= h_0 / T < 3.25
+    #   - 3.25 <= h_0 / T < 3.75
+    #   - 3.75 <= h_0 / T < 4.5
+    #   - 4.5 <= h_0 / T < 5.5
+    #   - 5.5 <= h_0 / T < 6.5
+    #   - 6.5 <= h_0 / T < 7.5
+    #   - 7.5 <= h_0 / T < 8.5
+    #   - 8.5 <= h_0 / T < 9.5
+    #        - F_rh < 0.6
+    #        - F_rh >= 0.6
+    #   - h_0 / T >= 9.5
+    #        - F_rh < 0.6
+    #        - F_rh >= 0.6
+    #
+    # test cases have been derived from these rules
+    # v=3 --> F_rh <= 0.4
+    # v=5 --> 0.4 <= F_rh <= 0.6
+    # v=7 --> F_rh >= 0.6
+    #
+    # T=9 --> 0 <= h_0 / T < 1.75
+    # T=5 --> 1.75 <= h_0 / T < 2.25
+    # T=4 --> 2.25 <= h_0 / T < 2.75
+    # T=3.3 --> 2.75 <= h_0 / T < 3.25
+    # T=3 --> 3.25 <= h_0 / T < 3.75
+    # T=2.5 --> 3.75 <= h_0 / T < 4.5
+    # T=2 --> 4.5 <= h_0 / T < 5.5
+    # T=1.6 --> 5.5 <= h_0 / T < 6.5
+    # T=1.4 --> 6.5 <= h_0 / T < 7.5
+    # T=1.2 --> 7.5 <= h_0 / T < 8.5
+    # T=1.1 --> 8.5 <= h_0 / T < 9.5
+    # T=1 --> h_0 / T >= 9.5
+
+    # make a calculation
+    F_rh, V_2, alpha_xx = karpov(v=v, h_0=10, g=9.81, T=T)
+
+
+# %% TESTING calculate_wave_resistance
+
+
+# %% TESTING calculate_residual_resistance
+
+
+# %% TESTING calculate_total_resistance
+
+
+# %% TESTING calculate_total_power_required
