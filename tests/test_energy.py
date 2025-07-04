@@ -229,28 +229,27 @@ def test_calculate_appendage_resistance():
 
 
 # %% TESTING karpov
-# TODO: replace None with the expected values for F_rh, V_2, and alpha_xx
 # and perform appropriate checks on the function outcomes
 @pytest.mark.parametrize(
     "v,T,F_rh,V_2,alpha_xx",
     [
-        (3, 9, None, None, None),
-        (3, 5, None, None, None),
-        (3, 4, None, None, None),
-        (3, 2, None, None, None),
-        (5, 9, None, None, None),
-        (5, 5, None, None, None),
-        (5, 4, None, None, None),
-        (5, 3.3, None, None, None),
-        (5, 2.5, None, None, None),
-        (5, 2, None, None, None),
-        (5, 1.6, None, None, None),
-        (5, 1.4, None, None, None),
-        (5, 1.2, None, None, None),
-        (5, 1.1, None, None, None),
-        (5, 1, None, None, None),
-        (7, 1.1, None, None, None),
-        (7, 1, None, None, None),
+        (3, 9, 0.3029, 3.1232, 0.9606),
+        (3, 5, 0.3029, 3.0159, 0.9947),
+        (3, 4, 0.3029, 3.0031, 0.999),
+        (3, 2, 0.3029, 3.0, 1),
+        (5, 9, 0.5048, 5.4655, 0.9148),
+        (5, 5, 0.5048, 5.2393, 0.9543),
+        (5, 4, 0.5048, 5.1342, 0.9739),
+        (5, 3.3, 0.5048, 5.0322, 0.9936),
+        (5, 2.5, 0.5048, 4.9938, 1.0012),
+        (5, 2, 0.5048, 4.9338, 1.0134),
+        (5, 1.6, 0.5048, 4.9401, 1.0121),
+        (5, 1.4, 0.5048, 4.9402, 1.0121),
+        (5, 1.2, 0.5048, 4.9294, 1.0143),
+        (5, 1.1, 0.5048, 5.0, 1),
+        (5, 1, 0.5048, 5.0, 1),
+        (7, 1.1, 0.7067, 7.2014, 0.972),
+        (7, 1, 0.7067, 7.1782, 0.9752),
     ],
 )
 def test_karpov(v, T, F_rh, V_2, alpha_xx):
@@ -299,13 +298,220 @@ def test_karpov(v, T, F_rh, V_2, alpha_xx):
     # T=1 --> h_0 / T >= 9.5
 
     # make a calculation
-    F_rh, V_2, alpha_xx = karpov(v=v, h_0=10, g=9.81, T=T)
+    _F_rh, _V_2, _alpha_xx = karpov(v=v, h_0=10, g=9.81, T=T)
+
+    # check the outcome
+    assert _F_rh == pytest.approx(F_rh, abs=1e-4)
+    assert _V_2 == pytest.approx(V_2, abs=1e-4)
+    assert _alpha_xx == pytest.approx(alpha_xx, abs=1e-4)
 
 
 # %% TESTING calculate_wave_resistance
+@pytest.mark.parametrize(
+    "B,L,delta,C_P,F_rL,i_E,c_1,c_2,c_5,c_7,c_15,c_16,lmbda,m_1,m_2,R_W",
+    [
+        (
+            3,
+            30,
+            100,
+            0.6,
+            0.17,
+            3.59,
+            0.8,
+            1,
+            -7.89,
+            0.1,
+            -2.34,
+            1.36,
+            0.57,
+            -1.97,
+            -0.03,
+            -0.46,
+        ),
+        (
+            10,
+            30,
+            300,
+            0.6,
+            0.17,
+            32.01,
+            28.26,
+            1,
+            -1.67,
+            0.31,
+            -3.18,
+            1.36,
+            0.78,
+            -3.21,
+            -0.04,
+            -0.03,
+        ),
+        (
+            5,
+            30,
+            150,
+            0.6,
+            0.17,
+            11.94,
+            3.68,
+            1,
+            -4.33,
+            0.17,
+            -2.69,
+            1.36,
+            0.69,
+            -2.33,
+            -0.04,
+            -0.33,
+        ),
+        (
+            10,
+            150,
+            100,
+            0.6,
+            0.08,
+            21.38,
+            0.06,
+            1,
+            -1.67,
+            0.07,
+            0,
+            1.36,
+            0.51,
+            -1.04,
+            0.0,
+            -0.0,
+        ),
+        (
+            10,
+            50,
+            100,
+            0.6,
+            0.14,
+            32.53,
+            5.28,
+            1,
+            -1.67,
+            0.2,
+            -0.52,
+            1.36,
+            0.72,
+            -2.25,
+            -0.0,
+            -0.01,
+        ),
+        (
+            10,
+            50,
+            100,
+            0.9,
+            0.14,
+            60.35,
+            13.09,
+            1,
+            -1.67,
+            0.2,
+            -0.52,
+            1.09,
+            1.15,
+            -1.98,
+            -0.0,
+            -0.13,
+        ),
+    ],
+)
+def test_calculate_wave_resistance(
+    B, L, delta, C_P, F_rL, i_E, c_1, c_2, c_5, c_7, c_15, c_16, lmbda, m_1, m_2, R_W
+):
+    """Test the calculate_wave_resistance function."""
+    # cases represented in the parametrization:
+    # - B / L < 0.11, B / L > 0.25, else
+    # - (L**3) / delta < 512, (L**3) / delta > 1727, else
+    # - C_P < 0.8, else
+    # - L / B < 12, else
+
+    # make a calculation
+    _F_rL, _i_E, _c_1, _c_2, _c_5, _c_7, _c_15, _c_16, _lmbda, _m_1, _m_2, _R_W = (
+        calculate_wave_resistance(
+            v=3,
+            h_0=10,
+            g=9.81,
+            T=3,
+            L=L,
+            B=B,
+            C_P=C_P,
+            C_WP=0.8,
+            lcb=0.5,
+            L_R=20,
+            A_T=50,
+            C_M=0.5,
+            delta=delta,
+            rho=1000,
+        )
+    )
+
+    # check the outcome
+    assert _F_rL == pytest.approx(F_rL, abs=1e-2)
+    assert _i_E == pytest.approx(i_E, abs=1e-2)
+    assert _c_1 == pytest.approx(c_1, abs=1e-2)
+    assert _c_2 == pytest.approx(c_2, abs=1e-2)
+    assert _c_5 == pytest.approx(c_5, abs=1e-2)
+    assert _c_7 == pytest.approx(c_7, abs=1e-2)
+    assert _c_15 == pytest.approx(c_15, abs=1e-2)
+    assert _c_16 == pytest.approx(c_16, abs=1e-2)
+    assert _lmbda == pytest.approx(lmbda, abs=1e-2)
+    assert _m_1 == pytest.approx(m_1, abs=1e-2)
+    assert _m_2 == pytest.approx(m_2, abs=1e-2)
+    assert _R_W == pytest.approx(R_W, abs=1e-2)
 
 
 # %% TESTING calculate_residual_resistance
+@pytest.mark.parametrize(
+    "bulbous_bow,T,F_nT, c_6, R_TR, c_4, c_2, C_A, R_A, F_ni, P_B, R_B, R_res",
+    [
+        (True, 1, 0.29, 0.19, 42.41, 0.02, 1, 0.0, 0.32, 1.04, -2.24, 0.0, 42.73),
+        (False, 5, 0.29, 0.19, 42.41, 0.04, 1, 0.0, 0.29, 1.04, -2.24, 0, 42.7),
+    ],
+)
+def test_calculate_residual_resistance(
+    bulbous_bow, T, F_nT, c_6, R_TR, c_4, c_2, C_A, R_A, F_ni, P_B, R_B, R_res
+):
+    """Test the calculate_residual_resistance function."""
+    # cases
+    # - bulbous_bow T/F, if False, then R_B=0
+    # - T / L < 0.04, else
+    # make a calculation
+    _F_nT, _c_6, _R_TR, _c_4, _c_2, _C_A, _R_A, _F_ni, _P_B, _R_B, _R_res = (
+        calculate_residual_resistance(
+            V_2=3,
+            g=9.81,
+            A_T=50,
+            B=5,
+            C_WP=0.8,
+            rho=1000,
+            T=T,
+            L=50,
+            C_B=0.8,
+            S=100,
+            T_F=1,
+            h_B=1,
+            A_BT=4,
+            bulbous_bow=bulbous_bow,
+        )
+    )
+
+    # check the outcome
+    assert _F_nT == pytest.approx(F_nT, abs=1e-2)
+    assert _c_6 == pytest.approx(c_6, abs=1e-2)
+    assert _R_TR == pytest.approx(R_TR, abs=1e-2)
+    assert _c_4 == pytest.approx(c_4, abs=1e-2)
+    assert _c_2 == pytest.approx(c_2, abs=1e-2)
+    assert _C_A == pytest.approx(C_A, abs=1e-2)
+    assert _R_A == pytest.approx(R_A, abs=1e-2)
+    assert _F_ni == pytest.approx(F_ni, abs=1e-2)
+    assert _P_B == pytest.approx(P_B, abs=1e-2)
+    assert _R_B == pytest.approx(R_B, abs=1e-2)
+    assert _R_res == pytest.approx(R_res, abs=1e-2)
 
 
 # %% TESTING calculate_total_resistance
