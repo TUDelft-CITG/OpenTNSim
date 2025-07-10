@@ -76,8 +76,16 @@ def calculate_depth(geom_start, geom_stop, FG):
 
     # Read from the FG data from vaarweginformatie.nl the General depth of each edge
     # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
-    try:  # if node_start != node_stop:
-        depth = FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
+    if node_start == node_stop:
+        return np.nan  # if the start and stop nodes are the same, return 0 depth
+
+    try:
+        if "Info" in FG.get_edge_data(node_start, node_stop).keys():
+            depth = FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
+        elif "GeneralDepth" in FG.get_edge_data(node_start, node_stop).keys():
+            depth = FG.get_edge_data(node_start, node_stop)["GeneralDepth"]
+        else:
+            return np.nan  # if no depth data is available, return NaN
     except:
         depth = np.nan  # When there is no data of the depth available of this edge, it gives a message
 
