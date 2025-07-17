@@ -6,8 +6,8 @@ from shapely import Point
 
 import opentnsim.fis
 from opentnsim.vessel import VesselProperties
-from opentnsim.energy import ConsumesEnergy
-from opentnsim.energy import (
+from opentnsim.energy.mixins import ConsumesEnergy
+from opentnsim.energy.mixins import (
     sample_engine_age,
     calculate_max_sinkage,
     calculate_properties,
@@ -19,8 +19,6 @@ from opentnsim.energy import (
     calculate_residual_resistance,
     calculate_total_resistance,
     calculate_total_power_required,
-    calculate_distance,
-    calculate_depth,
 )
 
 
@@ -491,29 +489,6 @@ def test_calculate_residual_resistance(bulbous_bow, T, F_nT, c_6, R_TR, c_4, c_2
     assert _P_B == pytest.approx(P_B, abs=1e-2)
     assert _R_B == pytest.approx(R_B, abs=1e-2)
     assert _R_res == pytest.approx(R_res, abs=1e-2)
-
-
-# %% TESTING calculate_distance
-def test_calculate_distance():
-    """Test the calculate_distance function."""
-
-    #  Define points
-    point1 = Point(52.255165, 6.162318)
-    point2 = Point(52.261667, 6.143504)
-    # Calculate distance
-    distance = calculate_distance(point1, point2)
-    assert pytest.approx(distance, abs=1) == 2201, f"Expected distance 2201.0, but got {distance}"
-
-
-def test_calculate_depth():
-    """Test the calculate_depth function.
-    TODO Loading graph takes long. put in conftest file?"""
-    geom_start = Point(52.3765489377136, 4.95297433281719)
-    geom_end = Point(52.3744310413328, 4.95421136373392)
-    # edge ('8867414', '8865307') has general depth of 4.0
-    FG = opentnsim.fis.load_network(version="0.3")
-    depth = calculate_depth(geom_start, geom_end, FG)
-    assert depth == 4.0, f"Expected depth 4.0, but got {depth}"
 
 
 # %% TESTING calculate_total_resistance
