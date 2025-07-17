@@ -46,7 +46,7 @@ class HasResource(SimpyObject):
 
     nr_resources: nr of requests that can be handled simultaneously"""
 
-    def __init__(self, capacity = 1, parallel_resources = {}, *args, **kwargs):
+    def __init__(self, capacity=1, parallel_resources={}, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         if not parallel_resources:
@@ -54,7 +54,7 @@ class HasResource(SimpyObject):
 
         else:
             self.resource = {}
-            for resource_name,capacity in independent_resources.items():
+            for resource_name, capacity in independent_resources.items():
                 self.resource[resource_name] = simpy.PriorityResource(self.env, capacity=capacity)
 
 
@@ -70,7 +70,9 @@ class Neighbours:
         self.neighbours = travel_to
 
 
-class HasLength(SimpyObject): #used by IsLock and IsLineUpArea to regulate number of vessels in each lock cycle and calculate repsective position in lock chamber/line-up area
+class HasLength(
+    SimpyObject
+):  # used by IsLock and IsLineUpArea to regulate number of vessels in each lock cycle and calculate repsective position in lock chamber/line-up area
     """Mixin class: Something with a storage capacity
     capacity: amount the container can hold
     level: amount the container holds initially
@@ -79,7 +81,7 @@ class HasLength(SimpyObject): #used by IsLock and IsLineUpArea to regulate numbe
     def __init__(self, length, remaining_length=0, total_requested=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
-        self.length = simpy.Container(self.env, capacity = length, init=remaining_length)
+        self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
 
 
 class HasContainer(SimpyObject):
@@ -191,36 +193,33 @@ class Movable(Locatable, Routable, Log):
     """
 
     def __init__(self, env, origin, destination, *args, **kwargs):
-        geometry = env.FG.nodes[origin]['geometry']
+        geometry = env.FG.nodes[origin]["geometry"]
         super().__init__(origin=origin, destination=destination, geometry=geometry, env=env, *args, **kwargs)
         """Initialization"""
+        # TODO: self.v is weg. Die staat wel in main branch. Die gebruiken we ook in de pass_edge functie, dus lijkt me dat we die ook hier moeten hebben.
         self.on_pass_node_functions = []
         self.on_pass_edge_functions = []
         self.on_complete_pass_edge_functions = []
         self.on_look_ahead_to_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-    def move(self):
-        """determine distance between origin and destination, and
-        yield the time it takes to travel it
-        Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
-        """
-
+    def _wait_for_departure(self):
+        """Wait for the arrival time.
+        TODO: Dit zat nog niet in de main branch. Kan opzich nuttige toevoeging zijn, maar we gaan er nu wel vanuit dat metadata een eigenschap arrival time heeft. Is dat een terechte aanname?
+        TODO: En hoezo wachten op arrival time, we willen toch wachten op vertrektijd?
+        TODO: write test!"""
         # time-out if arrival time lies in future
-        yield self.env.timeout((self.metadata['arrival_time'] - self.env.simulation_start).total_seconds())
+        yield self.env.timeout((self.metadata["arrival_time"] - self.env.simulation_start).total_seconds())
         self.arrival_time = self.env.now
-        self.metadata['arrival_time'] = self.env.simulation_start  # resets delay
+        self.metadata["arrival_time"] = self.env.simulation_start  # resets delay
 
-        # default distance to next node
-        self.distance = 0
+    def _move_to_start(self):
+        """Move to the start of the route.
+        TODO: write test!
+        TODO: DE self.output.copy is nieuw ten opzichte van de main branch. Daarvoor moet het al een self.HasOutput object zijn, dus lijkt me niet handig dat dit in Movable zit. Verder nadenken over wat we dan graag in de
+        output willen hebben. Was in main: self.log_entry("Sailing to start", self.env.now, self.distance, dest)
 
-        for idx,method in enumerate(self.on_pass_node_functions):
-            if method.__str__().split('method ')[1].split(' of <')[0] == 'HasPortAccess.request_terminal_access':
-                self.on_pass_node.insert(0, self.on_pass_node.pop(idx))
-                break
-
-        self.update_route_status_report()
-
+        """
         # Check if vessel is at correct location - if not, move to location
         vessel_origin_location = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
         if self.geometry != vessel_origin_location:
@@ -228,37 +227,74 @@ class Movable(Locatable, Routable, Log):
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
 
-            self.distance += self.wgs84.inv(start_location.x,
-                                            start_location.y,
-                                            vessel_origin_location.x,
-                                            vessel_origin_location.y
-                                            )[2]
+            self.distance += self.wgs84.inv(start_location.x, start_location.y, vessel_origin_location.x, vessel_origin_location.y)[
+                2
+            ]
 
             yield self.env.timeout(self.distance / self.current_speed)
             self.log_entry("Sailing to start", self.env.now, self.output.copy(), vessel_origin_location)
 
+    # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
+    def move(self):
+        """determine distance between origin and destination, and
+        yield the time it takes to travel it
+        Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
+        """
+
+        # wait for departure time
+        yield self._wait_for_departure()
+
+        # default distance to next node
+        self.distance = 0
+
+        # TODO: Wat is dit, kan dit weg? staat nog niet in main branch... er komt hier een nieuwe lijst on_pass_node, maar die wordt volgens mij niet gebruikt
+        for idx, method in enumerate(self.on_pass_node_functions):
+            if method.__str__().split("method ")[1].split(" of <")[0] == "HasPortAccess.request_terminal_access":
+                self.on_pass_node.insert(0, self.on_pass_node.pop(idx))
+                break
+
+        # TODO: Ook hiervoor moet Movable een HasOutput zijn, anders is self.update_route_status_report niet gedefinieerd
+        self.update_route_status_report()
+
+        # Check if vessel is at correct location - if not, move to location
+        yield self._move_to_start()
+
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
-            self.current_node, self.next_node = edge # origin and destination
+            self.current_node, self.next_node = edge  # origin and destination
             start_location = nx.get_node_attributes(self.env.FG, "geometry")[self.current_node]
             end_location = nx.get_node_attributes(self.env.FG, "geometry")[self.next_node]
 
             # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
-            k = sorted(self.multidigraph[self.current_node][self.next_node],key=lambda x: self.multidigraph[self.current_node][self.next_node][x]['geometry'].length)[0]
-            status_report = self.update_sailing_status_report(self.current_node, self.next_node, (self.current_node, self.next_node, k))
-            self.log_entry("Sailing from node {} to node {} start".format(self.current_node, self.next_node),
-                           self.env.now, status_report, start_location)
+            # TODO: Hier loggen we de status, weer met gebruik van de HasOutput mixin.
+            # TODO: overweging als we dit wel zo laten: willen we de update_status_report functies als (evt standaard) self.pass_edge_functies hebben?
+            k = sorted(
+                self.multidigraph[self.current_node][self.next_node],
+                key=lambda x: self.multidigraph[self.current_node][self.next_node][x]["geometry"].length,
+            )[0]
+            status_report = self.update_sailing_status_report(
+                self.current_node, self.next_node, (self.current_node, self.next_node, k)
+            )
+            self.log_entry(
+                "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+                self.env.now,
+                status_report,
+                start_location,
+            )
 
             yield from self.pass_node(self.current_node)
 
             # update to current position
+            # TODO waarom wordt self.current node al eerder geupdate, en self.geometry pas hier?
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
             self.position_on_route = index
 
             # are we already at destination?
+            # TODO: Dit lijkt mij een gekke regel. Dit zou betekenen dat we twee keer op dezelfde node komen, en dat we dan stoppen. Dat lijkt me dan een fout in de routeberekening, maar ik zou dan niet stoppen. We willen toch nog steeds naar de laatste node op de route?
             if self.next_node == self.current_node:
                 break
 
+            # TODO als we end_location steeds geburiken, zou ik er een attribute van maken.
             yield from self.pass_edge(self.current_node, self.next_node, end_location)
             yield from self.complete_pass_edge(self.next_node)
 
@@ -285,13 +321,18 @@ class Movable(Locatable, Routable, Log):
 
     def pass_edge(self, origin, destination, end_location):
         edge = self.graph.edges[origin, destination]
-        k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
-        self.distance = self.multidigraph.edges[origin, destination, k]['length']
+        # TODO: De length kunnen we zonder die k ook berekenen lijkt me. k is weer nodig voor de update_sailing_status_report, maar dat zou ook zonder kunnen.
+        k = sorted(
+            self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
+        )[0]
+        self.distance = self.multidigraph.edges[origin, destination, k]["length"]
 
+        # TODO: Zou kunnen dat we dit voor een on_pass_edge_functie nodig hebben. Checken waar dit nodig is, en of dit in de functie zelf kan...
         next_node = None
         if self.route[-1] != destination:
-            next_node = self.route[self.route.index(destination)+1]
+            next_node = self.route[self.route.index(destination) + 1]
 
+        # call all on_pass_edge_functions
         for on_pass_edge_function in self.on_pass_edge_functions:
             yield from on_pass_edge_function(origin, destination)
 
@@ -300,19 +341,21 @@ class Movable(Locatable, Routable, Log):
 
         # This is the case if we are sailing on power
         value = 0
+        # TODO: Laten we dit ook gewoon een on_pass_edge functie maken die bij de ConsumesEnergy mixin zit?
         if getattr(self, "P_tot_given", None) is not None:
             edge = self.graph.edges[origin, destination]
+            # TODO: willen we ervan uitgaan dat de edge altijd een 'Info' heeft met GeneralDepth?
             depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
 
             # You can input more power than is realistic
             # There are two mechanisms that reduce the power given:
             # 1. The grounding speed:
+            # TODO Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
             (
                 upperbound,
                 selected,
                 results_df,
             ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
-
 
             # Here the upperbound is used to estimate the actual velocity
             power_used = min(self.P_tot_given, upperbound)
@@ -326,10 +369,15 @@ class Movable(Locatable, Routable, Log):
             value = power_used
 
         # Maximum speed restriction may be limiting the on power speed
-        if 'vessel_traffic_service' in dir(self.env):
-            self.v = self.env.vessel_traffic_service.provide_speed(self,edge)
+        # TODO: Voor nu willen we dit niet meenemen in de pullrequest, maar we willen het ook niet verwijderen.
+        # TODO: lijkt mij logisch/makkelijk om ook gewoon een on_pass_edge functie te maken die dit doet. Die voor nu dan in vessel_traffic_service script zetten ofzo.
+        # TODO: deze if statement vind ik daarnaast ook onduidelijk. Wanneer zit dit in dir(self.env)?
+        if "vessel_traffic_service" in dir(self.env):
+            self.v = self.env.vessel_traffic_service.provide_speed(self, edge)
 
         # Wait for edge resources to become available
+        # TODO: Opzich mooi, maar willen we dit niet ook gewoon een functie in on_pass_edge_functies maken?
+        # TODO: wat is orig?
         if "Resources" in edge.keys():
             with self.graph.edges[origin, destination]["Resources"].request() as request:
                 yield request
@@ -349,33 +397,44 @@ class Movable(Locatable, Routable, Log):
                     )
 
         # default velocity based on current speed.
+        # TODO: Weer de statusrapport uit de HasOutput mixin.
         timeout = self.distance / self.current_speed
         yield self.env.timeout(timeout)
         if next_node:
-            status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))
+            status_report = self.update_sailing_status_report(self.next_node, next_node, (self.current_node, self.next_node, k))
         else:
-            status_report = self.update_sailing_status_report(self.next_node,self.next_node,(self.current_node, self.next_node, k))
-        self.log_entry("Sailing from node {} to node {} stop".format(self.current_node, self.next_node), self.env.now, status_report, end_location)
+            status_report = self.update_sailing_status_report(
+                self.next_node, self.next_node, (self.current_node, self.next_node, k)
+            )
+        self.log_entry(
+            "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+            self.env.now,
+            status_report,
+            end_location,
+        )
         self.geometry = end_location
 
-    def complete_pass_edge(self,destination):
+    def complete_pass_edge(self, destination):
+        # TODO: Waarom een try/except. Als het niet lukt, dan lijkt het me dat de functie gewoon niet goed is gedefinieerd. Als de simulatie blijft draaien krijg je misschien verkeerde output?
         for gen in self.on_complete_pass_edge_functions:
             try:
                 yield from gen(destination)
             except simpy.exceptions.Interrupt as e:
                 logger.debug("Completed", exc_info=True)
-                raise simpy.exceptions.Interrupt('Completed')
+                raise simpy.exceptions.Interrupt("Completed")
 
-    def look_ahead_to_node(self,destination):
+    def look_ahead_to_node(self, destination):
+        # TODO: Waarom een try/except. Als het niet lukt, dan lijkt het me dat de functie gewoon niet goed is gedefinieerd. Als de simulatie blijft draaien krijg je misschien verkeerde output?
         for gen in self.on_look_ahead_to_node_functions:
             try:
                 yield from gen(destination)
             except simpy.exceptions.Interrupt as e:
                 logger.debug("Re-routing", exc_info=True)
-                raise simpy.exceptions.Interrupt('Re-routing')
+                raise simpy.exceptions.Interrupt("Re-routing")
 
     @property
     def current_speed(self):
+        # TODO: self.v bestaat (volgens mij) alleen als we de mixin ConsumesEnergy of vessel_traffic_service gebruiken. Dit checken en anders oplossing bedenken.
         return self.v
 
 
