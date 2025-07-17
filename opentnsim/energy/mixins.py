@@ -15,8 +15,20 @@ import pandas as pd
 # OpenTNSim
 import opentnsim
 from opentnsim.graph import calculate_distance, calculate_depth
-from opentnsim.energy.algorithms import *
-from opentnsim.energy.calculations import *
+from opentnsim.energy.algorithms import power2v
+from opentnsim.energy.calculations import (
+    sample_engine_age,
+    calculate_properties,
+    calculate_frictional_resistance,
+    calculate_viscous_resistance,
+    calculate_appendage_resistance,
+    karpov,
+    calculate_wave_resistance,
+    calculate_residual_resistance,
+    calculate_total_power_required,
+    calculate_max_sinkage,
+    calculate_total_resistance,
+)
 
 
 # logging
@@ -28,7 +40,7 @@ def load_partial_engine_load_correction_factors():
     """read correction factor from package directory"""
 
     # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent / "data"
+    data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
     correctionfactors_path = data_dir / "Correctionfactors.csv"
     df = pd.read_csv(correctionfactors_path, comment="#")
 
@@ -39,7 +51,7 @@ def karpov_smooth_curves():
     """read correction factor from package directory"""
 
     # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent / "data"
+    data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
     karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
     df = pd.read_csv(karpov_smooth_curves_path, comment="#")
 
@@ -160,7 +172,7 @@ class ConsumesEnergy:
         self.one_k2 = one_k2
 
         # plugin function that computes velocity based on power
-        self.power2v = opentnsim.energy.power2v
+        self.power2v = opentnsim.energy.algorithms.power2v
 
         # TODO: C_year is obligatory, so why is this code here?
         if C_year:
@@ -656,7 +668,7 @@ class ConsumesEnergy:
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
-        self.C_partial_load = opentnsim.energy.load_partial_engine_load_correction_factors()
+        self.C_partial_load = load_partial_engine_load_correction_factors()
         self.C_partial_load_battery = 1  # assume the battery energy consumption is not influenced by different engine load
 
         for i in range(20):
