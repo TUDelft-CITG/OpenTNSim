@@ -39,18 +39,11 @@ logger = logging.getLogger(__name__)
 def load_partial_engine_load_correction_factors():
     """read correction factor from package directory"""
 
-<<<<<<< HEAD:opentnsim/energy.py
-    correction_factors_bytes = pkgutil.get_data(__name__, "data/Correctionfactors.csv")
-    correction_factors_stream = io.BytesIO(correction_factors_bytes)
-
-    df = pd.read_csv(correction_factors_stream, comment="#")
-=======
     # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
     correctionfactors_path = data_dir / "Correctionfactors.csv"
     df = pd.read_csv(correctionfactors_path, comment="#")
 
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
     return df
 
 
@@ -58,72 +51,6 @@ def karpov_smooth_curves():
     """read correction factor from package directory"""
 
     # Can't get this  to work with pkg_resourcs
-<<<<<<< HEAD:opentnsim/energy.py
-    karpov_smooth_curves_bytes = pkgutil.get_data(__name__, "data/KarpovSmoothCurves.csv")
-    karpov_smooth_curves_stream = io.BytesIO(karpov_smooth_curves_bytes)
-
-    df = pd.read_csv(karpov_smooth_curves_stream, comment="#")
-    return df
-
-
-def find_closest_node(G, point):
-    """find the closest node on the graph from a given point"""
-
-    distance = np.full((len(G.nodes)), fill_value=np.nan)
-    for ii, n in enumerate(G.nodes):
-        distance[ii] = point.distance(G.nodes[n]["geometry"])
-    name_node = list(G.nodes)[np.argmin(distance)]
-    distance_node = np.min(distance)
-
-    return name_node, distance_node
-
-
-def power2v(vessel, edge, upperbound):
-    """Compute vessel velocity given an edge and power (P_tot_given)
-
-    bounds is the limits where to look for a solution for the velocity [m/s]
-    returns velocity [m/s]
-    """
-
-    assert isinstance(vessel, opentnsim.core.VesselProperties), "vessel should be an instance of VesselProperties"
-    assert vessel.C_B is not None, "C_B cannot be None"
-
-    def seek_v_given_power(v, vessel, edge):
-        """function to optimize"""
-        # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
-        # water depth from the edge
-        h_0 = edge["Info"]["GeneralDepth"]
-        try:
-            h_0 = vessel.calculate_h_squat(v, h_0)
-        except AttributeError:
-            # no squat available
-            pass
-        # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
-        vessel.calculate_total_resistance(v, h_0)
-
-        # compute total power given
-        P_given = vessel.calculate_total_power_required(v=v, h_0=h_0)
-        if isinstance(vessel.P_tot, complex):
-            raise ValueError(f"P tot is complex: {vessel.P_tot}")
-
-        # compute difference between power setting by captain (incl hotel) and power needed for velocity (incl hotel)
-        diff = vessel.P_tot_given - P_given  # vessel.P_tot
-        logger.debug(f"optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}")
-
-        return diff**2
-
-    # fill in some of the parameters that we already know
-    fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
-    # lookup a minimum
-    fit = scipy.optimize.minimize_scalar(fun, bounds=(0, upperbound), method="bounded", options=dict(xatol=0.0000001))
-
-    # check if we found a minimum
-    if not fit.success:
-        raise ValueError(fit)
-    logger.debug(f"fit: {fit}")
-
-    return fit.x
-=======
     data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
     karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
     df = pd.read_csv(karpov_smooth_curves_path, comment="#")
@@ -132,37 +59,12 @@ def power2v(vessel, edge, upperbound):
 
 
 # %% CLASSES
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
 
 class ConsumesEnergy:
     """
     Mixin class: Something that consumes energy.
 
-<<<<<<< HEAD:opentnsim/energy.py
-    Keyword arguments:
-
-    - P_installed: installed engine power [kW]
-    - P_tot_given: Total power set by captain (includes hotel power). When P_tot_given > P_installed; P_tot_given=P_installed.
-    - bulbous_bow: inland ships generally do not have a bulbous_bow, set to False (default).
-    If a ship has a bulbous_bow, set to True.
-    - L_w: weight class of the ship (depending on carrying capacity) (classes: L1 (=1), L2 (=2), L3 (=3))
-    - current_year: current year
-    - nu: kinematic viscosity [m^2/s]
-    - rho: density of the surrounding water [kg/m^3]
-    - g: gravitational accelleration [m/s^2]
-    - x: number of propellers [-]
-    - eta_o: open water efficiency of propeller [-]
-    - eta_r: relative rotative efficiency [-]
-    - eta_t: transmission efficiency [-]
-    - eta_g: gearing efficiency [-]
-    - c_stern: determines shape of the afterbody [-]
-    - C_BB: breadth coefficient of bulbous_bow, set to 0.2 according to the paper of Kracht (1970),
-    https://doi.org/10.5957/jsr.1970.14.1.1
-    - C_B: block coefficient ('fullness') [-] (default to 0.85)
-    - one_k2: appendage resistance factor (1+k2) [-]
-    - C_year: construction year of the engine [y]
-=======
     Parameters
     ----------
     P_installed : float
@@ -207,7 +109,6 @@ class ConsumesEnergy:
         Appendage resistance factor (1+k2).
     C_year : int
         Construction year of the engine.
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
     """
 
     def __init__(
@@ -284,11 +185,6 @@ class ConsumesEnergy:
                 self.P_tot_given = self.P_installed
 
     def calculate_engine_age(self):
-<<<<<<< HEAD:opentnsim/energy.py
-        """Calculating the construction year of the engine, dependent on a Weibull function with
-        shape factor 'k', and scale factor 'lmb', which are determined by the weight class L_w
-=======
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
         Calculate the age of the engine based on the weight class of the ship (L_w).
 
@@ -311,64 +207,11 @@ class ConsumesEnergy:
         self.C_year = self.year - self.age
         logger.debug(f"Engine age calculated as {self.age}, hence construction year is {self.C_year}")
 
-<<<<<<< HEAD:opentnsim/energy.py
-        logger.debug(f"The construction year of the engine is {self.C_year}")
-
-=======
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         return self.C_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
 
-<<<<<<< HEAD:opentnsim/energy.py
-        # TODO: add properties for seagoing ships with bulbs
-
-        # (Van Koningsveld et al (2023) - Part IV Eq 5.9, 5.10 and below Eq 5.12)
-        self.C_M = 1.006 - 0.0056 * self.C_B ** (-3.56)  # Midship section coefficient (Eq 5.9)
-        self.C_WP = (1 + 2 * self.C_B) / 3  # Waterplane coefficient (Eq 5.10)
-        self.C_P = self.C_B / self.C_M  # Prismatic coefficient (see below Eq 5.12)
-
-        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        # Appendix C - Eq C.2
-        self.delta = self.C_B * self.L * self.B * self.T  # Water displacement
-
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        self.lcb = -13.5 + 19.4 * self.C_P  # longitudinal center of buoyancy
-        # Van Koningsveld et al (2023) - Part IV Eq 5.13
-        self.L_R = self.L * (
-            1 - self.C_P + ((0.06 * self.C_P * self.lcb) / (4 * self.C_P - 1)) * (19.4 * self.C_P - 13.5)
-        )  # length parameter reflecting the length of the run
-
-        # Van Koningsveld et al (2023) - below Eq 5.16
-        self.A_T = 0.1 * self.B * self.T  # transverse area of the transom
-        # calculation for A_BT (cross-sectional area of the bulb at still water level [m^2]) depends on whether a ship has a bulb
-        if self.bulbous_bow:
-            # TODO: check Holtrop and Mennen for this formulation
-            self.A_BT = self.C_BB * self.B * self.T * self.C_M  # calculate A_BT for seagoing ships having a bulb
-        else:
-            self.A_BT = 0  # most inland ships do not have a bulb. So we assume A_BT=0.
-
-        # Total wet area: S (Van Koningsveld et al (2023) - Eq 5.8)
-        assert self.C_M >= 0, f"C_M should be positive: {self.C_M}"
-        self.S = self.L * (2 * self.T + self.B) * np.sqrt(self.C_M) * (
-            0.453 + 0.4425 * self.C_B - 0.2862 * self.C_M - 0.003467 * (self.B / self.T) + 0.3696 * self.C_WP
-        ) + 2.38 * (self.A_BT / self.C_B)
-
-        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        # In the explanation under Eq 3.27
-        self.S_APP = 0.05 * self.S  # Wet area of appendages
-        # Segers (2021) Eq 3.20
-        self.S_B = self.L * self.B  # Area of flat bottom
-
-        # TODO: we D_s is a property that should be given, not calculated
-        # if self.D_s is None:
-        #     self.D_s = 0.7 * self.T  # Diameter of the screw
-
-        # TODO: check references for these equations
-        self.T_F = self.T  # Forward draught of the vessel [m]
-        self.h_B = 0.2 * self.T  # Position of the centre of the transverse area [m]
-=======
         (
             self.C_M,
             self.C_WP,
@@ -391,74 +234,13 @@ class ConsumesEnergy:
             bulbous_bow=self.bulbous_bow,
             C_BB=self.C_BB,
         )
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_frictional_resistance(self, v, h_0):
         """Frictional resistance
 
         - 1st resistance component defined by Holtrop and Mennen (1982)
-        - A modification to the original friction line is applied, based on literature of Zeng (2018),
-        to account for shallow water effects
+        - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects
         """
-<<<<<<< HEAD:opentnsim/energy.py
-
-        self.R_e = v * self.L / self.nu  # Reynolds number
-
-        self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
-        assert self.D > 0, f"D should be > 0: {self.D}"
-
-        # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
-        # Van Koningsveld et al (2023) - Eq 5.3
-        self.Cf_deep = 0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)
-        assert not isinstance(self.Cf_deep, complex), f"Cf_deep should not be complex: {self.Cf_deep}"
-
-        # Friction coefficient based on CFD computations of Zeng et al. (2018), taking into account shallow water effects
-        # Van Koningsveld et al (2023) - Eq 5.4
-        self.Cf_shallow = (0.08169 / ((np.log10(self.R_e) - 1.717) ** 2)) * (
-            1 + (0.003998 / (np.log10(self.R_e) - 4.393)) * (self.D / self.L) ** (-1.083)
-        )
-        assert not isinstance(self.Cf_shallow, complex), f"Cf_shallow should not be complex: {self.Cf_shallow}"
-
-        # Friction coefficient in deep water according to ITTC-1957 curve
-        # Van Koningsveld et al (2023) - Eq 5.6
-        self.Cf_0 = 0.075 / ((np.log10(self.R_e) - 2) ** 2)
-
-        # 'a' is the coefficient needed to calculate the Katsui friction coefficient
-        # Van Koningsveld et al (2023) - below Eq 5.7
-        self.a = 0.042612 * np.log10(self.R_e) + 0.56725
-        # Van Koningsveld et al (2023) - Eq 5.7
-        self.Cf_Katsui = 0.0066577 / ((np.log10(self.R_e) - 4.3762) ** self.a)
-
-        # The average velocity underneath the ship, taking into account the shallow water effect
-        # This calculation is to get V_B, which will be used in the following Cf for shallow water equation:
-        if h_0 / self.T <= 4:
-            self.V_B = 0.4277 * v * np.exp((h_0 / self.T) ** (-0.07625))
-        else:
-            self.V_B = v
-
-        # cf_shallow and cf_deep cannot be applied directly, since a vessel also has non-horizontal
-        # wet surfaces that have to be taken
-        # into account. Therefore, the following formula for the final friction
-        # coefficient 'C_f' for deep water or shallow water is
-        # defined according to Zeng et al. (2018)
-
-        if (h_0 - self.T) / self.L > 1:
-            # calculate Friction coefficient C_f for deep water:
-            # Zeng et al. (2018)
-            self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
-            logger.debug("now i am in the deep loop")
-        else:
-            # calculate Friction coefficient C_f for shallow water:
-            # Van Koningsveld et al (2023) - Eq 5.5
-            self.C_f = self.Cf_0 + (self.Cf_shallow - self.Cf_Katsui) * (self.S_B / self.S) * (self.V_B / v) ** 2
-            logger.debug("now i am in the shallow loop")
-        assert not isinstance(self.C_f, complex), f"C_f should not be complex: {self.C_f}"
-
-        # The total frictional resistance R_f [kN]:
-        # Van Koningsveld et al (2023) - Eq 5.2
-        self.R_f = (0.5 * self.rho * (v**2) * self.C_f * self.S) / 1000
-        assert not isinstance(self.R_f, complex), f"R_f should not be complex: {self.R_f}"
-=======
         (
             self.R_f,
             self.C_f,
@@ -480,30 +262,11 @@ class ConsumesEnergy:
             S_B=self.S_B,
             rho=self.rho,
         )
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_viscous_resistance(self):
         """Viscous resistance
 
         - 2nd resistance component defined by Holtrop and Mennen (1982)
-<<<<<<< HEAD:opentnsim/energy.py
-        - Form factor (1 + k1) has to be multiplied by the frictional
-        resistance R_f, to account for the effect of viscosity"""
-
-        # c_14 accounts for the specific shape of the afterbody
-        # TODO: check where this value comes from (Holtrop and Mennen?)
-        # (following Segers (2021) we assume c_stern = 0 which leads to c_14 to be 1
-        self.c_14 = 1 + 0.0011 * self.c_stern
-
-        # the form factor (1+k1) describes the viscous resistance
-        # Van Koningsveld et al (2023) - Eq 5.12
-        # TODO: consider to rename self.delta to self.nabla
-        self.one_k1 = 0.93 + 0.487 * self.c_14 * ((self.B / self.L) ** 1.068) * ((self.T / self.L) ** 0.461) * (
-            (self.L / self.L_R) ** 0.122
-        ) * (((self.L**3) / self.delta) ** 0.365) * ((1 - self.C_P) ** (-0.604))
-
-        self.R_f_one_k1 = self.R_f * self.one_k1
-=======
         - Form factor (1 + k1) has to be multiplied by the frictional resistance R_f, to account for the effect of viscosity
         """
 
@@ -517,7 +280,6 @@ class ConsumesEnergy:
             R_f=self.R_f,
             delta=self.delta,
         )
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_appendage_resistance(self, v):
         """Appendage resistance
@@ -526,11 +288,6 @@ class ConsumesEnergy:
         - Appendages (like a rudder, shafts, skeg) result in additional frictional resistance
         """
 
-<<<<<<< HEAD:opentnsim/energy.py
-        # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
-        # Segers (2021) - Eq 3.27 (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        self.R_APP = (0.5 * self.rho * (v**2) * self.S_APP * self.one_k2 * self.C_f) / 1000
-=======
         self.R_APP = calculate_appendage_resistance(
             v=v,
             rho=self.rho,
@@ -538,178 +295,21 @@ class ConsumesEnergy:
             one_k2=self.one_k2,
             C_f=self.C_f,
         )
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
 
-        - The Karpov method computes a velocity correction that accounts for limited water depth
-        (corrected velocity V2,
-          expressed as "Vs + delta_V" in the paper), but it also can be used for deeper water
-          depth (h_0 / T >= 9.5).
-        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance
-        terms (R_res: R_TR, R_A, R_B)
+        - The Karpov method computes a velocity correction that accounts for limited water depth (corrected velocity V2,
+          expressed as "Vs + delta_V" in the paper), but it also can be used for deeper water depth (h_0 / T >= 9.5).
+        - V2 has to be implemented in the wave resistance (R_W) and the residual resistance terms (R_res: R_TR, R_A, R_B)
         """
 
-<<<<<<< HEAD:opentnsim/energy.py
-        # The Froude number used in the Karpov method is the depth related froude number F_rh
-
-        # The different alpha** curves are determined with a sixth power
-        # polynomial approximation in Excel
-        # A distinction is made between different ranges of Froude numbers,
-        # because this resulted in a better approximation of the curve
-        assert self.g >= 0, f"g should be positive: {self.g}"
-        assert h_0 >= 0, f"h_0 should be positive: {h_0}"
-        self.F_rh = v / np.sqrt(self.g * h_0)
-
-        if self.F_rh <= 0.4:
-            if 0 <= h_0 / self.T < 1.75:
-                self.alpha_xx = (-4 * 10 ** (-12)) * self.F_rh**3 - 0.2143 * self.F_rh**2 - 0.0643 * self.F_rh + 0.9997
-            if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = -0.8333 * self.F_rh**3 + 0.25 * self.F_rh**2 - 0.0167 * self.F_rh + 1
-            if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = -1.25 * self.F_rh**4 + 0.5833 * self.F_rh**3 - 0.0375 * self.F_rh**2 - 0.0108 * self.F_rh + 1
-            if h_0 / self.T >= 2.75:
-                self.alpha_xx = 1
-
-        if self.F_rh > 0.4:
-            if 0 <= h_0 / self.T < 1.75:
-                self.alpha_xx = (
-                    -0.9274 * self.F_rh**6
-                    + 9.5953 * self.F_rh**5
-                    - 37.197 * self.F_rh**4
-                    + 69.666 * self.F_rh**3
-                    - 65.391 * self.F_rh**2
-                    + 28.025 * self.F_rh
-                    - 3.4143
-                )
-            if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = (
-                    2.2152 * self.F_rh**6
-                    - 11.852 * self.F_rh**5
-                    + 21.499 * self.F_rh**4
-                    - 12.174 * self.F_rh**3
-                    - 4.7873 * self.F_rh**2
-                    + 5.8662 * self.F_rh
-                    - 0.2652
-                )
-            if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = (
-                    1.2205 * self.F_rh**6
-                    - 5.4999 * self.F_rh**5
-                    + 5.7966 * self.F_rh**4
-                    + 6.6491 * self.F_rh**3
-                    - 16.123 * self.F_rh**2
-                    + 9.2016 * self.F_rh
-                    - 0.6342
-                )
-            if 2.75 <= h_0 / self.T < 3.25:
-                self.alpha_xx = (
-                    -0.4085 * self.F_rh**6
-                    + 4.534 * self.F_rh**5
-                    - 18.443 * self.F_rh**4
-                    + 35.744 * self.F_rh**3
-                    - 34.381 * self.F_rh**2
-                    + 15.042 * self.F_rh
-                    - 1.3807
-                )
-            if 3.25 <= h_0 / self.T < 3.75:
-                self.alpha_xx = (
-                    0.4078 * self.F_rh**6
-                    - 0.919 * self.F_rh**5
-                    - 3.8292 * self.F_rh**4
-                    + 15.738 * self.F_rh**3
-                    - 19.766 * self.F_rh**2
-                    + 9.7466 * self.F_rh
-                    - 0.6409
-                )
-            if 3.75 <= h_0 / self.T < 4.5:
-                self.alpha_xx = (
-                    0.3067 * self.F_rh**6
-                    - 0.3404 * self.F_rh**5
-                    - 5.0511 * self.F_rh**4
-                    + 16.892 * self.F_rh**3
-                    - 20.265 * self.F_rh**2
-                    + 9.9002 * self.F_rh
-                    - 0.6712
-                )
-            if 4.5 <= h_0 / self.T < 5.5:
-                self.alpha_xx = (
-                    0.3212 * self.F_rh**6
-                    - 0.3559 * self.F_rh**5
-                    - 5.1056 * self.F_rh**4
-                    + 16.926 * self.F_rh**3
-                    - 20.253 * self.F_rh**2
-                    + 10.013 * self.F_rh
-                    - 0.7196
-                )
-            if 5.5 <= h_0 / self.T < 6.5:
-                self.alpha_xx = (
-                    0.9252 * self.F_rh**6
-                    - 4.2574 * self.F_rh**5
-                    + 5.0363 * self.F_rh**4
-                    + 3.3282 * self.F_rh**3
-                    - 10.367 * self.F_rh**2
-                    + 6.3993 * self.F_rh
-                    - 0.2074
-                )
-            if 6.5 <= h_0 / self.T < 7.5:
-                self.alpha_xx = (
-                    0.8442 * self.F_rh**6
-                    - 4.0261 * self.F_rh**5
-                    + 5.313 * self.F_rh**4
-                    + 1.6442 * self.F_rh**3
-                    - 8.1848 * self.F_rh**2
-                    + 5.3209 * self.F_rh
-                    - 0.0267
-                )
-            if 7.5 <= h_0 / self.T < 8.5:
-                self.alpha_xx = (
-                    0.1211 * self.F_rh**6
-                    + 0.628 * self.F_rh**5
-                    - 6.5106 * self.F_rh**4
-                    + 16.7 * self.F_rh**3
-                    - 18.267 * self.F_rh**2
-                    + 8.7077 * self.F_rh
-                    - 0.4745
-                )
-
-            if 8.5 <= h_0 / self.T < 9.5:
-                if self.F_rh < 0.6:
-                    self.alpha_xx = 1
-                if self.F_rh >= 0.6:
-                    self.alpha_xx = (
-                        -6.4069 * self.F_rh**6
-                        + 47.308 * self.F_rh**5
-                        - 141.93 * self.F_rh**4
-                        + 220.23 * self.F_rh**3
-                        - 185.05 * self.F_rh**2
-                        + 79.25 * self.F_rh
-                        - 12.484
-                    )
-            if h_0 / self.T >= 9.5:
-                if self.F_rh < 0.6:
-                    self.alpha_xx = 1
-                if self.F_rh >= 0.6:
-                    self.alpha_xx = (
-                        -6.0727 * self.F_rh**6
-                        + 44.97 * self.F_rh**5
-                        - 135.21 * self.F_rh**4
-                        + 210.13 * self.F_rh**3
-                        - 176.72 * self.F_rh**2
-                        + 75.728 * self.F_rh
-                        - 11.893
-                    )
-
-        self.V_2 = v / self.alpha_xx
-=======
         self.F_rh, self.V_2, self.alpha_xx = karpov(
             v=v,
             h_0=h_0,
             g=self.g,
             T=self.T,
         )
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_wave_resistance(self, v, h_0):
         """Wave resistance
@@ -723,77 +323,6 @@ class ConsumesEnergy:
         # TODO: what is the purpose of executing Karpov here if the attributes set
         # (F_rh, V_2, alpha_xx) are not used in the wave resistance calculation?
 
-<<<<<<< HEAD:opentnsim/energy.py
-        assert self.g >= 0, f"g should be positive: {self.g}"
-        assert self.L >= 0, f"L should be positive: {self.L}"
-
-        self.F_rL = v / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
-
-        # parameter c_7 is determined by the B/L ratio
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        if self.B / self.L < 0.11:
-            self.c_7 = 0.229577 * (self.B / self.L) ** 0.33333
-        if self.B / self.L > 0.25:
-            self.c_7 = 0.5 - 0.0625 * (self.L / self.B)
-        else:
-            self.c_7 = self.B / self.L
-
-        # half angle of entrance in degrees
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        self.i_E = 1 + 89 * np.exp(
-            -((self.L / self.B) ** 0.80856)
-            * ((1 - self.C_WP) ** 0.30484)
-            * ((1 - self.C_P - 0.0225 * self.lcb) ** 0.6367)
-            * ((self.L_R / self.B) ** 0.34574)
-            * ((100 * self.delta / (self.L**3)) ** 0.16302)
-        )
-
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        self.c_1 = 2223105 * (self.c_7**3.78613) * ((self.T / self.B) ** 1.07961) * (90 - self.i_E) ** (-1.37165)
-        self.c_2 = 1  # accounts for the effect of the bulbous bow, which is not present at inland ships
-        self.c_5 = 1 - (0.8 * self.A_T) / (self.B * self.T * self.C_M)  # influence of the transom stern on the wave resistance
-
-        # parameter c_15 depoends on the ratio L^3 / delta
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        if (self.L**3) / self.delta < 512:
-            self.c_15 = -1.69385
-        if (self.L**3) / self.delta > 1727:
-            self.c_15 = 0
-        else:
-            self.c_15 = -1.69385 + (self.L / (self.delta ** (1 / 3)) - 8) / 2.36
-
-        # parameter c_16 depends on C_P
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        if self.C_P < 0.8:
-            self.c_16 = 8.07981 * self.C_P - 13.8673 * (self.C_P**2) + 6.984388 * (self.C_P**3)
-        else:
-            self.c_16 = 1.73014 - 0.7067 * self.C_P
-
-        if self.L / self.B < 12:
-            self.lmbda = 1.446 * self.C_P - 0.03 * (self.L / self.B)
-        else:
-            self.lmbda = 1.446 * self.C_P - 0.36
-
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        self.m_1 = (
-            0.0140407 * (self.L / self.T) - 1.75254 * ((self.delta) ** (1 / 3) / self.L) - 4.79323 * (self.B / self.L) - self.c_16
-        )
-        # Van Koningsveld et al (2023) - Part IV Table 5.1
-        self.m_2 = self.c_15 * (self.C_P**2) * np.exp((-0.1) * (self.F_rL ** (-2)))
-
-        # Van Koningsveld et al (2023) - Part IV Eq 5.16
-        self.R_W = (
-            self.c_1
-            * self.c_2
-            * self.c_5
-            * self.delta
-            * self.rho
-            * self.g
-            * np.exp(self.m_1 * (self.F_rL ** (-0.9)) + self.m_2 * np.cos(self.lmbda * (self.F_rL ** (-2))))
-            / 1000
-        )  # kN
-
-=======
         # perform calculation of wave resistance
         (
             self.F_rL,
@@ -825,7 +354,6 @@ class ConsumesEnergy:
             rho=self.rho,
         )
 
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
     def calculate_residual_resistance(self, v, h_0):
         """Residual resistance terms
 
@@ -867,27 +395,6 @@ class ConsumesEnergy:
             A_BT=self.A_BT,
             bulbous_bow=self.bulbous_bow,
         )
-<<<<<<< HEAD:opentnsim/energy.py
-        assert not isinstance(self.C_A, complex), f"C_A number should not be complex: {self.C_A}"
-
-        self.R_A = (0.5 * self.rho * (self.V_2**2) * self.S * self.C_A) / 1000  # kW
-
-        # Resistance due to the bulbous bow (R_B)
-
-        # Froude number based on immersoin of bulbous bow [-]
-        self.F_ni = self.V_2 / np.sqrt(self.g * (self.T_F - self.h_B - 0.25 * np.sqrt(self.A_BT) + 0.15 * self.V_2**2))
-
-        self.P_B = (0.56 * np.sqrt(self.A_BT)) / (self.T_F - 1.5 * self.h_B)  # P_B is coefficient for the emergence of bulbous bow
-        if self.bulbous_bow:
-            self.R_B = (
-                (0.11 * np.exp(-3 * self.P_B**2) * self.F_ni**3 * self.A_BT**1.5 * self.rho * self.g) / (1 + self.F_ni**2)
-            ) / 1000
-        else:
-            self.R_B = 0
-
-        self.R_res = self.R_TR + self.R_A + self.R_B
-=======
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_total_resistance(self, v, h_0):
         """Total resistance:
@@ -962,143 +469,11 @@ class ConsumesEnergy:
             P_installed=self.P_installed,
         )
 
-<<<<<<< HEAD:opentnsim/energy.py
-        # Required power for propulsion
-        # Effective Horse Power (EHP), P_e (Van Koningsveld et al (2023) - Part IV Eq 5.17)
-        self.P_e = v * self.R_tot
-
-        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        # Appendix C
-        if self.F_rL < 0.2:
-            self.dw = 0  # the velocity correction coefficient is 0 when FrL is smaller than 0.2
-        else:
-            self.dw = 0.1  # otherwise the velocity correction coefficient is 0.1
-
-        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        # Appendix C - Eq C.1
-        self.w = 0.11 * (0.16 / self.x) * self.C_B * np.sqrt((self.delta ** (1 / 3)) / self.D_s) - self.dw  # wake fraction 'w'
-
-        assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
-
-        if self.x == 1:
-            # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
-            self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
-        else:
-            # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
-            self.t = 0.8 * self.w * (1 + 0.25 * self.w)
-
-        self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
-
-        # TODO: check below suggestions. They were made to allow for better translation to alternative energy sources.
-        # But the changes induced unexpected behaviour.
-        # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland
-        # Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
-        # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power
-        # relation between eta_D and ship velocity v
-
-        # if h_0 >= 9:
-        #     if self.F_rh >= 0.5:
-        #         self.eta_D = 0.6
-        #     elif 0.325 <= self.F_rh < 0.5:
-        #         self.eta_D = 0.7
-        #     elif 0.28 <= self.F_rh < 0.325:
-        #         self.eta_D = 0.59
-        #     elif 0.2 < self.F_rh < 0.28:
-        #         self.eta_D = 0.56
-        #     elif 0.17 < self.F_rh <= 0.2:
-        #         self.eta_D = 0.41
-        #     elif 0.15 < self.F_rh <= 0.17:
-        #         self.eta_D = 0.35
-        #     else:
-        #         self.eta_D = 0.29
-        #
-        # elif 5 <= h_0 < 9:
-        #     if self.F_rh > 0.62:
-        #         self.eta_D = 0.7
-        #     elif 0.58 < self.F_rh < 0.62:
-        #         self.eta_D = 0.68
-        #     elif 0.57 < self.F_rh <= 0.58:
-        #         self.eta_D = 0.7
-        #     elif 0.51 < self.F_rh <= 0.57:
-        #         self.eta_D = 0.68
-        #     elif 0.475 < self.F_rh <= 0.51:
-        #         self.eta_D = 0.53
-        #     elif 0.45 < self.F_rh <= 0.475:
-        #         self.eta_D = 0.4
-        #     elif 0.36 < self.F_rh <= 0.45:
-        #         self.eta_D = 0.37
-        #     elif 0.33 < self.F_rh <= 0.36:
-        #         self.eta_D = 0.36
-        #     elif 0.3 < self.F_rh <= 0.33:
-        #         self.eta_D = 0.35
-        #     elif 0.28 < self.F_rh <= 0.3:
-        #         self.eta_D = 0.331
-        #     else:
-        #         self.eta_D = 0.33
-        # else:
-        #     if self.F_rh > 0.56:
-        #         self.eta_D = 0.28
-        #     elif 0.4 < self.F_rh <= 0.56:
-        #         self.eta_D = 0.275
-        #     elif 0.36 < self.F_rh <= 0.4:
-        #         self.eta_D = 0.345
-        #     elif 0.33 < self.F_rh <= 0.36:
-        #         self.eta_D = 0.28
-        #     elif 0.3 < self.F_rh <= 0.33:
-        #         self.eta_D = 0.27
-        #     elif 0.28 < self.F_rh <= 0.3:
-        #         self.eta_D = 0.26
-        #     else:
-        #         self.eta_D = 0.25
-        #
-        # # Delivered Horse Power (DHP), P_d
-        # self.P_d = self.P_e / self.eta_D
-
-        # logger.debug("eta_D = {:.2f}".format(self.eta_D))
-
-        # (Van Koningsveld et al (2023) - Part IV Eq 5.19)
-        self.P_d = self.P_e / (self.eta_o * self.eta_r * self.eta_h)
-
-        # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2.
-        # we do not use it in this version. The reseaon is listed in the doc string above)
-        # (Van Koningsveld et al (2023) - Part IV Eq 5.24)
-        self.P_b = self.P_d / (self.eta_t * self.eta_g)
-
-        # self.P_propulsion = self.P_d  # propulsion power is defined here as
-        # Delivered horse power, the power delivered to propellers
-        self.P_propulsion = self.P_b  # propulsion power is defined here as Delivered horse power
-
-        # TODO: consider to facilitate that all engine power can go into propulsion
-        # (Auxiliary generator for hotel)
-        self.P_tot = self.P_hotel + self.P_propulsion
-
-        # Partial engine load (P_partial): needed in the 'Emission calculations'
-        if self.P_tot > self.P_installed:
-            self.P_given = self.P_installed
-            self.P_partial = 1
-        else:
-            self.P_given = self.P_tot
-            self.P_partial = self.P_tot / self.P_installed
-
-        logger.debug(f"The total power required is {self.P_tot} kW")
-        logger.debug(f"The actual total power given is {self.P_given} kW")
-        logger.debug(f"The partial load is {self.P_partial}")
-
-        assert not isinstance(self.P_given, complex), f"P_given number should not be complex: {self.P_given}"
-
-        # return these three variables:
-        # 1) self.P_propulsion, for the convience of validation.  (propulsion power and fuel used for propulsion),
-        # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing
-        # shallower and faster
-        # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity
-        # (means installed power). This varible is used for calculating delta_energy of each sailing time step.
-=======
         # return these three variables:
         # 1) self.P_propulsion, for the convience of validation.  (propulsion power and fuel used for propulsion),
         # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
         # TODO: return description does not match the docstring and comments
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
         return self.P_given
 
@@ -1162,21 +537,15 @@ class ConsumesEnergy:
     def energy_density(self):
         """net energy density of diesel and renewable energy sources. This will be used for calculating SFC later.
 
-        - Edens_xx_mass: net gravimetric energy density, which is the amount of energy stored in a given
-        energy source in mass [kWh/kg].
-        - Edens_xx_vol: net volumetric energy density, which is the amount of energy stored in a given
-        energy source in volume [kWh/m3].
+        - Edens_xx_mass: net gravimetric energy density, which is the amount of energy stored in a given energy source in mass [kWh/kg].
+        - Edens_xx_vol: net volumetric energy density, which is the amount of energy stored in a given energy source in volume [kWh/m3].
 
 
         Data source:
-        Table 3-2 from Marin report 2019,  Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten,
-          systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design
-          aspects, system configurations
+        Table 3-2 from Marin report 2019,  Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations
 
         Note:
-        net energy density can be used for calculate fuel consumption in mass and volume, but for required
-          energy source storage space determination, the packaging factors of different energy sources also
-          need to be considered.
+        net energy density can be used for calculate fuel consumption in mass and volume, but for required energy source storage space determination, the packaging factors of different energy sources also need to be considered.
         """
 
         # gravimetric net energy density
@@ -1196,21 +565,14 @@ class ConsumesEnergy:
         self.Edens_Li_NMC_Battery_vol = 139  # kWh/m3
 
     def energy_conversion_efficiency(self):
-        """energy efficiencies for combinations of different energy source and energy-power conversion systems,
-          including engine and power plant, excluding propellers. This will be used for calculating SFC later.
+        """energy efficiencies for combinations of different energy source and energy-power conversion systems, including engine and power plant, excluding propellers. This will be used for calculating SFC later.
 
-        - Eeff_FuelCell: the efficiency of the fuel cell energy conversion system on board, includes fuel cells,
-          AC/DC converter, electric motor and gearbox. Generally this value is between 40% - 60%, here we use 45%.
-        - Eeff_ICE: the efficiency of the Internal Combustion Engine (ICE) energy conversion system on board,
-          includes ICE and gearbox. This value is approximately 35%.
-        - Eeff_Battery: the efficiency of the battery energy conversion system on board. Batteries use 80% capacity
-        to prolong life cycle, and lose efficiency in AC/DC converter, electric motor. Generally this value is
-          between 70% - 95%, here we use 80 %.
+        - Eeff_FuelCell: the efficiency of the fuel cell energy conversion system on board, includes fuel cells, AC/DC converter, electric motor and gearbox. Generally this value is between 40% - 60%, here we use 45%.
+        - Eeff_ICE: the efficiency of the Internal Combustion Engine (ICE) energy conversion system on board, includes ICE and gearbox. This value is approximately 35%.
+        - Eeff_Battery: the efficiency of the battery energy conversion system on board. Batteries use 80% capacity to prolong life cycle, and lose efficiency in AC/DC converter, electric motor. Generally this value is between 70% - 95%, here we use 80 %.
 
         data source:
-        Marin report 2019, Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem
-        configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects,
-        system configurations)
+        Marin report 2019, Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations)
         add other ref
 
         """
@@ -1220,25 +582,17 @@ class ConsumesEnergy:
 
     def SFC_general(self):
         """Specific Fuel Consumption (SFC) is calculated by energy density and energy conversion efficiency.
-        The SFC calculation equation, SFC = 1 / (energy density * energy conversion efficiency),
-          can be found in the paper of Kim et al (2020)(A Preliminary Study on an Alternative Ship
-          Propulsion System Fueled by Ammonia: Environmental and Economic Assessments,
-          https://doi.org/10.3390/jmse8030183).
+        The SFC calculation equation, SFC = 1 / (energy density * energy conversion efficiency), can be found in the paper of Kim et al (2020)(A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183).
 
         for diesel SFC, there are 3 kinds of general diesel SFC
-        - SFC_diesel_ICE_mass, calculated by net diesel gravimetric density and ICE energy-power system efficiency,
-        without considering engine performence variation due to engine ages
-        - SFC_diesel_ICE_vol, calculated by net diesel volumetric density and ICE energy-power system efficiency,
-          without considering engine performence variation due to engine ages
-        - SFC_diesel_C_year, a group of SFC considering ICE engine performence variation due to engine ages
-        (C_year), based on TNO (2019)
+        - SFC_diesel_ICE_mass, calculated by net diesel gravimetric density and ICE energy-power system efficiency, without considering engine performence variation due to engine ages
+        - SFC_diesel_ICE_vol, calculated by net diesel volumetric density and ICE energy-power system efficiency, without considering engine performence variation due to engine ages
+        - SFC_diesel_C_year, a group of SFC considering ICE engine performence variation due to engine ages (C_year), based on TNO (2019)
 
         Please note: later on a correction factor has to be applied to get the total SFC
         """
-        # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include
-        # ZES battery capacity per container here.
-        # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton,
-        # vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)
+        # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include ZES battery capacity per container here.
+        # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton, vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)
         self.energy_density()
         self.energy_conversion_efficiency()
 
@@ -1302,17 +656,12 @@ class ConsumesEnergy:
     def correction_factors(self, v, h_0):
         """Partial engine load correction factors (C_partial_load):
 
-        - The correction factors have to be multiplied by the general emission factors (or general SFC),
-        to get the total emission factors (or final SFC)
+        - The correction factors have to be multiplied by the general emission factors (or general SFC), to get the total emission factors (or final SFC)
         - The correction factor takes into account the effect of the partial engine load
-        - When the partial engine load is low, the correction factors for ICE engine are higher
-        (ICE engine is less efficient at lower enegine load)
+        - When the partial engine load is low, the correction factors for ICE engine are higher (ICE engine is less efficient at lower enegine load)
         - the correction factors for emissions and diesel fuel in ICE engine are based on literature TNO (2019)
-        - For fuel cell enegines(PEMFC & SOFC), the correction factors are lower when the partial engine
-        load is low (fuel cell enegine is more efficient at lower enegine load)
-        - the correction factors for renewable fuels used in fuel cell engine are based on literature
-          Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia:
-          Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
+        - For fuel cell enegines(PEMFC & SOFC), the correction factors are lower when the partial engine load is low (fuel cell enegine is more efficient at lower enegine load)
+        - the correction factors for renewable fuels used in fuel cell engine are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
         # TODO: create correction factors for renewable powered ship, the factor may be 100%
         self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
@@ -1323,8 +672,7 @@ class ConsumesEnergy:
         self.C_partial_load_battery = 1  # assume the battery energy consumption is not influenced by different engine load
 
         for i in range(20):
-            # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to
-            # P_partial = 5% are assigned.
+            # If the partial engine load is smaller or equal to 5%, the correction factors corresponding to P_partial = 5% are assigned.
             if self.P_partial <= self.C_partial_load.iloc[0, 0]:
                 self.C_partial_load_CO2 = self.C_partial_load.iloc[0, 5]
                 self.C_partial_load_PM10 = self.C_partial_load.iloc[0, 6]
@@ -1504,8 +852,7 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_m(self, v):
         """Total diesel fuel use in g/m:
 
-        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_)
-        diveded by the sailing distance (v * delt_t)
+        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
         """
         self.diesel_use_g_m = (self.P_given * self.final_SFC_diesel_ICE_mass / v) / 3600  # without considering C_year
         self.diesel_use_g_m_C_year = (self.P_given * self.final_SFC_diesel_C_year_ICE_mass / v) / 3600  # considering C_year
@@ -1513,12 +860,7 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_s(self):
         """Total diesel fuel use in g/s:
 
-<<<<<<< HEAD:opentnsim/energy.py
-        - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_)
-        diveded by the sailing duration (delt_t)
-=======
         - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
         self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600  # without considering C_year
         self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600  # considering C_year
@@ -1526,12 +868,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
 
-<<<<<<< HEAD:opentnsim/energy.py
-        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g
-        (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
-=======
         - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
         self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
@@ -1540,12 +877,7 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
 
-<<<<<<< HEAD:opentnsim/energy.py
-        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in
-        g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
-=======
         - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
@@ -1565,9 +897,6 @@ class ConsumesEnergy:
 
         max_sinkage = 0
         if self.h_squat:
-<<<<<<< HEAD:opentnsim/energy.py
-            max_sinkage = (self.C_B * ((self.B * self._T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
-=======
             max_sinkage = calculate_max_sinkage(
                 v=v,
                 h_0=h_0,
@@ -1576,7 +905,6 @@ class ConsumesEnergy:
                 C_B=self.C_B,
                 width=width,
             )
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
         return max_sinkage
 
@@ -1596,12 +924,7 @@ class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
     # ToDo: add other alternatives from Marin's table to have completed renewable energy sources
-<<<<<<< HEAD:opentnsim/energy.py
-    # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power
-    # plan cost to calculate the cost of ship refit or new ships.
-=======
     # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def __init__(self, FG, vessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1662,39 +985,6 @@ class EnergyCalculation:
     def calculate_energy_consumption(self):
         """Calculation of energy consumption based on total time in system and properties"""
 
-<<<<<<< HEAD:opentnsim/energy.py
-        def calculate_distance(geom_start, geom_stop):
-            """method to calculate the distance in meters between two geometries"""
-
-            wgs84 = pyproj.Geod(ellps="WGS84")
-
-            # distance between two points
-            return float(wgs84.inv(geom_start.x, geom_start.y, geom_stop.x, geom_stop.y)[2])
-
-        def calculate_depth(geom_start, geom_stop):
-            """method to calculate the depth of the waterway in meters between two geometries"""
-
-            depth = 0
-
-            # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
-
-            node_start = find_closest_node(self.FG, geom_start)[0]
-            node_stop = find_closest_node(self.FG, geom_stop)[0]
-
-            # Read from the FG data from vaarweginformatie.nl the General depth of each edge
-            # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
-            try:  # if node_start != node_stop:
-                depth = self.FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
-            except:
-                depth = np.nan  # When there is no data of the depth available of this edge, it gives a message
-
-            h_0 = depth
-
-            # depth of waterway between two points
-            return h_0
-
-=======
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         # log messages that are related to locking
         # todo: check if this still works with Floors new locking module
         stationary_phase_indicator = [
@@ -1740,13 +1030,9 @@ class EnergyCalculation:
                 logger.debug("velocity: {:.4f} m/s".format(v))
 
                 # we use the calculated velocity to determine the resistance and power required
-                # we can switch between the 'original water depth' and 'water depth considering ship squatting' for
-                # energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
+                # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
-<<<<<<< HEAD:opentnsim/energy.py
-=======
                 # print(h_0)
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
@@ -1760,21 +1046,12 @@ class EnergyCalculation:
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
                     # consuming 'energy_delta' kWh
                     # TODO: check, as it seems that stationary energy use is now not stored.
-<<<<<<< HEAD:opentnsim/energy.py
-=======
                     P_hotel_delta = self.vessel.P_hotel  # in kW
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                     P_installed_delta = self.vessel.P_installed  # in kW
 
                 else:  # otherwise log P_tot
                     # Energy consumed per time step delta_t in the propulsion stage
-<<<<<<< HEAD:opentnsim/energy.py
-                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven
-                    # with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the
-                    # available power ... that now works)
-=======
                     # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the available power ... that now works)
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                     energy_delta = (
                         self.vessel.P_tot * delta_t / 3600
                     )  # kJ/3600 = kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
@@ -1786,15 +1063,10 @@ class EnergyCalculation:
                     P_installed_delta = self.vessel.P_installed  # in kW
                     emission_delta_CO2 = (
                         self.vessel.total_factor_CO2 * energy_delta
-                    )  # Energy consumed per time step delta_t in the stationary phase # in g
+                    )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
-<<<<<<< HEAD:opentnsim/energy.py
-                    # Todo: we need to rename the factor name for fuels, not starting with "emission" ,
-                    # consider seperating it from emission factors
-=======
                     # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                     delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
@@ -1876,7 +1148,4 @@ class EnergyCalculation:
         # - en er is nog iets mis met de snelheid rond een sluis
 
         # - add HasCurrent Class or def
-<<<<<<< HEAD:opentnsim/energy.py
-=======
         # - De EnergyCalculation class heeft nu een logboek met veel variabelen. Welke variabelen worden bijgehouden hangt af van een if-statement. De lijsten zijn dus niet allemaal even lang.
->>>>>>> SALTISolutions:opentnsim/energy/mixins.py

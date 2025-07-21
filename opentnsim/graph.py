@@ -11,10 +11,17 @@ import matplotlib.pyplot as plt
 # package(s) for data handling
 import networkx as nx
 import numpy as np
+import os
+import pickle
+import requests
+import uuid
+import yaml
 
 # spatial libraries
 import pyproj
 import shapely.geometry
+from shapely.geometry import Point, LineString
+from shapely.ops import transform
 
 # package(s) related to the simulation
 import simpy
@@ -23,9 +30,100 @@ import simpy
 import opentnsim.utils
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 
 # Determine the wgs84 geoid
 wgs84 = pyproj.Geod(ellps="WGS84")
+
+
+def find_closest_node(G, point):
+    """find the closest node on the graph from a given point"""
+
+    distance = np.full((len(G.nodes)), fill_value=np.nan)
+    for ii, n in enumerate(G.nodes):
+        distance[ii] = point.distance(G.nodes[n]["geometry"])
+    name_node = list(G.nodes)[np.argmin(distance)]
+    distance_node = np.min(distance)
+
+    return name_node, distance_node
+
+
+def calculate_distance(geom_start, geom_stop):
+    """method to calculate the distance (as the bird flies) in meters between two geometries
+
+    Parameters
+    ----------
+    geom_start : shapely.geometry.Point
+        Starting point geometry. must contain x and y attributes.
+    geom_stop : shapely.geometry.Point
+        Stopping point geometry. must contain x and y attributes.
+
+    Returns
+    -------
+    float
+        Distance in meters between the two geometries.
+    """
+
+    wgs84 = pyproj.Geod(ellps="WGS84")
+
+    # distance between two points
+    return float(wgs84.inv(geom_start.x, geom_start.y, geom_stop.x, geom_stop.y)[2])
+
+
+def calculate_depth(geom_start, geom_stop, FG):
+    """method to calculate the depth of the waterway in meters between two geometries.
+
+    Parameters
+    ----------
+    geom_start : shapely.geometry.Point
+        Starting point geometry. Must represent a node in graph FG.
+    geom_stop : shapely.geometry.Point
+        Stopping point geometry. must represent a node in graph FG.
+    FG : networkx.Graph
+        The graph containing vaarweginformatie.nl data, with nodes and edges.
+        Must contain 'Info' attribute on edges with 'GeneralDepth'.
+        Must contain an edge between geom_start and geom_stop.
+
+    Returns
+    -------
+    float
+        The depth of the waterway between the two geometries in meters.
+
+    Raises
+    ------
+    ValueError
+        If geom_start or geom_stop are not nodes in the graph FG.
+        If there is no edge between the two nodes in the graph FG.
+        If the depth data is not available for the edge between the two nodes.
+    """
+
+    depth = 0
+
+    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
+
+    node_start = find_closest_node(FG, geom_start)[0]
+    node_stop = find_closest_node(FG, geom_stop)[0]
+
+    # Read from the FG data from vaarweginformatie.nl the General depth of each edge
+    # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
+    if node_start == node_stop:
+        return np.nan  # if the start and stop nodes are the same, return 0 depth
+
+    try:
+        if "Info" in FG.get_edge_data(node_start, node_stop).keys():
+            depth = FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
+        elif "GeneralDepth" in FG.get_edge_data(node_start, node_stop).keys():
+            depth = FG.get_edge_data(node_start, node_stop)["GeneralDepth"]
+        else:
+            return np.nan  # if no depth data is available, return NaN
+    except:
+        depth = np.nan  # When there is no data of the depth available of this edge, it gives a message
+
+    h_0 = depth
+
+    # depth of waterway between two points
+    return h_0
 
 
 def geom_to_edges(geom, properties):
@@ -84,6 +182,57 @@ def gdf_to_nx(gdf):
                 FG.add_node(edge_id[1], **node_properties)
                 FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
     return FG
+
+
+class Node(core.Identifiable, core.Locatable):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class DiGraph:
+
+    def __init__(self, edges, weights=[1], geometries=[None], edges_info={}, crs="EPSG:4326", bidirectional=True, *args, **kwargs):
+        """edges: a list of tuples of two Node-objects"""
+
+        super().__init__(*args, **kwargs)
+        self.graph = nx.DiGraph()
+        CRS = pyproj.CRS(crs)
+        wgs84 = pyproj.CRS("EPSG:4326")
+        CRS_to_wgs84 = pyproj.Transformer.from_crs(CRS, wgs84, always_xy=True).transform
+        for index, ((node_I, node_II), weight, geometry, edge_info) in enumerate(
+            zip(edges, cycle(weights), cycle(geometries), cycle([edges_info]))
+        ):
+            if node_I.name not in self.graph.nodes:
+                node_I.geometry = transform(CRS_to_wgs84, node_I.geometry)
+                self.graph.add_node(node_I.name, geometry=node_I.geometry)
+            if node_II.name not in self.graph.nodes:
+                node_II.geometry = transform(CRS_to_wgs84, node_II.geometry)
+                self.graph.add_node(node_II.name, geometry=node_II.geometry)
+            if not geometry:
+                geometry = LineString([node_I.geometry, node_II.geometry])
+            geod = pyproj.Geod(ellps="WGS84")
+            length = geod.geometry_length(geometry)
+            Info = {}
+            for key, value in edge_info.items():
+                Info[key] = value[index]
+            self.graph.add_edge(
+                node_I.name,
+                node_II.name,
+                weight=weight,
+                geometry=geometry,
+                length=length,
+                Info=Info,
+            )
+            if bidirectional:
+                self.graph.add_edge(
+                    node_II.name,
+                    node_I.name,
+                    weight=weight,
+                    geometry=geometry.reverse(),
+                    length=length,
+                    Info=Info,
+                )
 
 
 class Graph:
@@ -373,3 +522,79 @@ def compute_distance(edge, orig, dest):
             shapely.geometry.asShape(sub_dest).y,
         )[2]
     return distance
+
+
+class FIS:
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @functools.lru_cache
+    def load_fis_network(url):
+        """load the topological fairway information system network (vaarweginformatie.nl)"""
+
+        # get the data from the url
+        resp = requests.get(url)
+        # convert to file object
+        stream = io.StringIO(resp.text)
+
+        # This will take a minute or two
+        # Here we convert the network to a networkx object
+        G = yaml.load(stream, Loader=yaml.Loader)
+
+        # some brief info
+        n_bytes = len(resp.content)
+        msg = """Loaded network from {url} file size {mb:.2f}MB. Network has {n_nodes} nodes and {n_edges} edges."""
+        summary = msg.format(url=url, mb=n_bytes / 1000**2, n_edges=len(G.edges), n_nodes=len(G.nodes))
+        logger.info(summary)
+
+        # The topological network contains information about the original geometry.
+        # Let's convert those into python shapely objects for easier use later
+        for n in G.nodes:
+            G.nodes[n]["geometry"] = shapely.geometry.Point(G.nodes[n]["X"], G.nodes[n]["Y"])
+        for e in G.edges:
+            edge = G.edges[e]
+            edge["geometry"] = shapely.wkt.loads(edge["Wkt"])
+
+        return G
+
+    @staticmethod
+    def import_FIS(url):
+
+        fname = "fis_cache\\{}.pkl".format("FIS")
+        if os.path.exists(fname):
+            print("I am loading cached network")
+            with open(fname, "rb") as pkl_file:
+                FG = pickle.load(pkl_file)
+                pkl_file.close()
+
+        else:
+            print("I am getting new network")
+            FG = FIS.load_fis_network(url)
+
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+            with open(fname, "wb") as pkl_file:
+                pickle.dump(FG, pkl_file)
+                pkl_file.close()
+
+        return FG
+
+
+class HasMultiDiGraph:
+    """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @property
+    def multidigraph(self):
+        # create a multidigraph copy of graph if it was not done before
+        if not hasattr(self.env, "_multidigraph"):
+            self.env._multidigraph = self.copy()
+        return self.env._multidigraph
+
+    def copy(self):
+        multidigraph = self.env.FG
+        if not isinstance(self.env.FG, nx.MultiDiGraph):
+            multidigraph = nx.MultiDiGraph(multidigraph)
+        return multidigraph
