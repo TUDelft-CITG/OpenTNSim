@@ -1,35 +1,56 @@
-# packkage(s) for documentation, debugging, saving and loading
-import io
+"""Mixins for Energy
+
+This script contains the classes
+    - ConsumesEnergy: a mixin for objects that consume energy
+    - EnergyCalculations: a class to perform energy calculations and save results in a logbook. This is not a mixin, but must be called after the simulation.
+"""
+
+# %% IMPORT DEPENENDENCIES
+# generic
+import pathlib
 import logging
-
-# math packages
-import pkgutil
-import functools
-
-# packages for data handling
 import numpy as np
 import pandas as pd
 
-# Used for making the graph to visualize our problem
-import pyproj
-import scipy.optimize
-
 # OpenTNSim
 import opentnsim
+from opentnsim.graph import calculate_distance, calculate_depth
+from opentnsim.energy.algorithms import power2v
+from opentnsim.energy.calculations import (
+    sample_engine_age,
+    calculate_properties,
+    calculate_frictional_resistance,
+    calculate_viscous_resistance,
+    calculate_appendage_resistance,
+    karpov,
+    calculate_wave_resistance,
+    calculate_residual_resistance,
+    calculate_total_power_required,
+    calculate_max_sinkage,
+    calculate_total_resistance,
+)
 
-# package(s) for data handling
 
-
+# logging
 logger = logging.getLogger(__name__)
 
 
+# %% AUXILIARY FUNCTIONS
 def load_partial_engine_load_correction_factors():
     """read correction factor from package directory"""
 
+<<<<<<< HEAD:opentnsim/energy.py
     correction_factors_bytes = pkgutil.get_data(__name__, "data/Correctionfactors.csv")
     correction_factors_stream = io.BytesIO(correction_factors_bytes)
 
     df = pd.read_csv(correction_factors_stream, comment="#")
+=======
+    # Can't get this  to work with pkg_resourcs
+    data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
+    correctionfactors_path = data_dir / "Correctionfactors.csv"
+    df = pd.read_csv(correctionfactors_path, comment="#")
+
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
     return df
 
 
@@ -37,6 +58,7 @@ def karpov_smooth_curves():
     """read correction factor from package directory"""
 
     # Can't get this  to work with pkg_resourcs
+<<<<<<< HEAD:opentnsim/energy.py
     karpov_smooth_curves_bytes = pkgutil.get_data(__name__, "data/KarpovSmoothCurves.csv")
     karpov_smooth_curves_stream = io.BytesIO(karpov_smooth_curves_bytes)
 
@@ -101,11 +123,23 @@ def power2v(vessel, edge, upperbound):
     logger.debug(f"fit: {fit}")
 
     return fit.x
+=======
+    data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
+    karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
+    df = pd.read_csv(karpov_smooth_curves_path, comment="#")
+
+    return df
+
+
+# %% CLASSES
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
 
 class ConsumesEnergy:
-    """Mixin class: Something that consumes energy.
+    """
+    Mixin class: Something that consumes energy.
 
+<<<<<<< HEAD:opentnsim/energy.py
     Keyword arguments:
 
     - P_installed: installed engine power [kW]
@@ -128,13 +162,59 @@ class ConsumesEnergy:
     - C_B: block coefficient ('fullness') [-] (default to 0.85)
     - one_k2: appendage resistance factor (1+k2) [-]
     - C_year: construction year of the engine [y]
+=======
+    Parameters
+    ----------
+    P_installed : float
+         Installed engine power in kilowatts (kW).
+    P_tot_given : float
+        Total power set by captain (includes hotel power). When
+        P_tot_given > P_installed; P_tot_given=P_installed.
+    bulbous_bow : bool, optional
+        Indicates if the ship has a bulbous bow. Inland ships generally do
+        not have a bulbous bow, hence the default is False. If a ship has
+        a bulbous bow, set to True.
+    L_w : int
+        Weight class of the ship depending on carrying capacity. Classes:
+        L1 (=1), L2 (=2), L3 (=3).
+    current_year : int
+        The current year.
+    nu : float
+        Kinematic viscosity in square meters per second (m^2/s).
+    rho : float
+        Density of the surrounding water in kilograms per cubic meter
+        (kg/m^3).
+    g : float
+        Gravitational acceleration in meters per second squared (m/s^2).
+    x : int
+        Number of propellers.
+    eta_o : float
+        Open water efficiency of the propeller.
+    eta_r : float
+        Relative rotative efficiency.
+    eta_t : float
+        Transmission efficiency.
+    eta_g : float
+        Gearing efficiency.
+    c_stern : float
+        Determines the shape of the afterbody.
+    C_BB : float
+        Breadth coefficient of the bulbous bow, set to 0.2 according to the
+        paper of Kracht (1970), https://doi.org/10.5957/jsr.1970.14.1.1.
+    C_B : float, optional
+        Block coefficient ('fullness'), default to 0.85.
+    one_k2 : float
+        Appendage resistance factor (1+k2).
+    C_year : int
+        Construction year of the engine.
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
     """
 
     def __init__(
         self,
         P_installed,
         L_w,
-        C_year,
+        C_year=None,
         current_year=None,  # current_year
         bulbous_bow=False,
         P_hotel_perc=0.05,
@@ -191,7 +271,7 @@ class ConsumesEnergy:
         self.one_k2 = one_k2
 
         # plugin function that computes velocity based on power
-        self.power2v = opentnsim.energy.power2v
+        self.power2v = opentnsim.energy.algorithms.power2v
 
         # TODO: C_year is obligatory, so why is this code here?
         if C_year:
@@ -204,36 +284,44 @@ class ConsumesEnergy:
                 self.P_tot_given = self.P_installed
 
     def calculate_engine_age(self):
+<<<<<<< HEAD:opentnsim/energy.py
         """Calculating the construction year of the engine, dependent on a Weibull function with
         shape factor 'k', and scale factor 'lmb', which are determined by the weight class L_w
+=======
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
+        Calculate the age of the engine based on the weight class of the ship (L_w).
 
-        # Determining which shape and scale factor to use, based on the weight class L_w = L1, L2 or L3
-        assert self.L_w in [1, 2, 3], "Invalid value L_w, should be 1,2 or 3"
-        if self.L_w == 1:  # Weight class L1
-            self.k = 1.3
-            self.lmb = 20.5
-        elif self.L_w == 2:  # Weight class L2
-            self.k = 1.12
-            self.lmb = 18.5
-        elif self.L_w == 3:  # Weight class L3
-            self.k = 1.26
-            self.lmb = 18.6
+        The age is drawn randomly from a Weibull distribution with parameters k and lmb,
+        which depend on the weight class of the ship. The year of construction is
+        computed from the current year of the simulation and the age of the engine.
 
-        # The age of the engine
-        # TODO: I would not expect a random distribution if the function is cal
-        self.age = int(np.random.weibull(self.k) * self.lmb)
+        Notes
+        -----
+        Uses `self.L_w` and `self.year` to compute the age and construction year of the
+        engine. This method sets attributes `self.age` and `self.C_year`.
 
-        # Construction year of the engine
+        """
+        # compute the age of the engine
+        self.age = sample_engine_age(self.L_w)
+
+        # compute the construction year of the engine
+        if self.year is None:
+            raise ValueError("year must be set to calculate the construction year of the engine")
         self.C_year = self.year - self.age
+        logger.debug(f"Engine age calculated as {self.age}, hence construction year is {self.C_year}")
 
+<<<<<<< HEAD:opentnsim/energy.py
         logger.debug(f"The construction year of the engine is {self.C_year}")
 
+=======
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         return self.C_year
 
     def calculate_properties(self):
         """Calculate a number of basic vessel properties"""
 
+<<<<<<< HEAD:opentnsim/energy.py
         # TODO: add properties for seagoing ships with bulbs
 
         # (Van Koningsveld et al (2023) - Part IV Eq 5.9, 5.10 and below Eq 5.12)
@@ -280,6 +368,30 @@ class ConsumesEnergy:
         # TODO: check references for these equations
         self.T_F = self.T  # Forward draught of the vessel [m]
         self.h_B = 0.2 * self.T  # Position of the centre of the transverse area [m]
+=======
+        (
+            self.C_M,
+            self.C_WP,
+            self.C_P,
+            self.delta,
+            self.lcb,
+            self.L_R,
+            self.A_T,
+            self.A_BT,
+            self.S,
+            self.S_APP,
+            self.S_B,
+            self.T_F,
+            self.h_B,
+        ) = calculate_properties(
+            C_B=self.C_B,
+            L=self.L,
+            B=self.B,
+            T=self.T,
+            bulbous_bow=self.bulbous_bow,
+            C_BB=self.C_BB,
+        )
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_frictional_resistance(self, v, h_0):
         """Frictional resistance
@@ -288,6 +400,7 @@ class ConsumesEnergy:
         - A modification to the original friction line is applied, based on literature of Zeng (2018),
         to account for shallow water effects
         """
+<<<<<<< HEAD:opentnsim/energy.py
 
         self.R_e = v * self.L / self.nu  # Reynolds number
 
@@ -345,11 +458,35 @@ class ConsumesEnergy:
         # Van Koningsveld et al (2023) - Eq 5.2
         self.R_f = (0.5 * self.rho * (v**2) * self.C_f * self.S) / 1000
         assert not isinstance(self.R_f, complex), f"R_f should not be complex: {self.R_f}"
+=======
+        (
+            self.R_f,
+            self.C_f,
+            self.R_e,
+            self.Cf_deep,
+            self.Cf_shallow,
+            self.Cf_0,
+            self.Cf_Katsui,
+            self.V_B,
+            self.D,
+            self.a,
+        ) = calculate_frictional_resistance(
+            v=v,
+            h_0=h_0,
+            L=self.L,
+            nu=self.nu,
+            T=self.T,
+            S=self.S,
+            S_B=self.S_B,
+            rho=self.rho,
+        )
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_viscous_resistance(self):
         """Viscous resistance
 
         - 2nd resistance component defined by Holtrop and Mennen (1982)
+<<<<<<< HEAD:opentnsim/energy.py
         - Form factor (1 + k1) has to be multiplied by the frictional
         resistance R_f, to account for the effect of viscosity"""
 
@@ -366,16 +503,42 @@ class ConsumesEnergy:
         ) * (((self.L**3) / self.delta) ** 0.365) * ((1 - self.C_P) ** (-0.604))
 
         self.R_f_one_k1 = self.R_f * self.one_k1
+=======
+        - Form factor (1 + k1) has to be multiplied by the frictional resistance R_f, to account for the effect of viscosity
+        """
+
+        self.c_14, self.one_k1, self.R_f_one_k1 = calculate_viscous_resistance(
+            c_stern=self.c_stern,
+            B=self.B,
+            L=self.L,
+            T=self.T,
+            L_R=self.L_R,
+            C_P=self.C_P,
+            R_f=self.R_f,
+            delta=self.delta,
+        )
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_appendage_resistance(self, v):
         """Appendage resistance
 
         - 3rd resistance component defined by Holtrop and Mennen (1982)
-        - Appendages (like a rudder, shafts, skeg) result in additional frictional resistance"""
+        - Appendages (like a rudder, shafts, skeg) result in additional frictional resistance
+        """
 
+<<<<<<< HEAD:opentnsim/energy.py
         # Frictional resistance resulting from wetted area of appendages: R_APP [kN]
         # Segers (2021) - Eq 3.27 (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
         self.R_APP = (0.5 * self.rho * (v**2) * self.S_APP * self.one_k2 * self.C_f) / 1000
+=======
+        self.R_APP = calculate_appendage_resistance(
+            v=v,
+            rho=self.rho,
+            S_APP=self.S_APP,
+            one_k2=self.one_k2,
+            C_f=self.C_f,
+        )
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def karpov(self, v, h_0):
         """Intermediate calculation: Karpov
@@ -388,6 +551,7 @@ class ConsumesEnergy:
         terms (R_res: R_TR, R_A, R_B)
         """
 
+<<<<<<< HEAD:opentnsim/energy.py
         # The Froude number used in the Karpov method is the depth related froude number F_rh
 
         # The different alpha** curves are determined with a sixth power
@@ -538,6 +702,14 @@ class ConsumesEnergy:
                     )
 
         self.V_2 = v / self.alpha_xx
+=======
+        self.F_rh, self.V_2, self.alpha_xx = karpov(
+            v=v,
+            h_0=h_0,
+            g=self.g,
+            T=self.T,
+        )
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_wave_resistance(self, v, h_0):
         """Wave resistance
@@ -548,7 +720,10 @@ class ConsumesEnergy:
         """
 
         self.karpov(v, h_0)
+        # TODO: what is the purpose of executing Karpov here if the attributes set
+        # (F_rh, V_2, alpha_xx) are not used in the wave resistance calculation?
 
+<<<<<<< HEAD:opentnsim/energy.py
         assert self.g >= 0, f"g should be positive: {self.g}"
         assert self.L >= 0, f"L should be positive: {self.L}"
 
@@ -618,6 +793,39 @@ class ConsumesEnergy:
             / 1000
         )  # kN
 
+=======
+        # perform calculation of wave resistance
+        (
+            self.F_rL,
+            self.i_E,
+            self.c_1,
+            self.c_2,
+            self.c_5,
+            self.c_7,
+            self.c_15,
+            self.c_16,
+            self.lmbda,
+            self.m_1,
+            self.m_2,
+            self.R_W,
+        ) = calculate_wave_resistance(
+            v=v,
+            h_0=h_0,
+            g=self.g,
+            T=self.T,
+            L=self.L,
+            B=self.B,
+            C_P=self.C_P,
+            C_WP=self.C_WP,
+            lcb=self.lcb,
+            L_R=self.L_R,
+            A_T=self.A_T,
+            C_M=self.C_M,
+            delta=self.delta,
+            rho=self.rho,
+        )
+
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
     def calculate_residual_resistance(self, v, h_0):
         """Residual resistance terms
 
@@ -628,31 +836,38 @@ class ConsumesEnergy:
         """
 
         self.karpov(v, h_0)
+        self.V_2 = v  # TODO:  why overrule the just computed V_2 from Karpov?
 
-        self.V_2 = v
-        # Resistance due to immersed transom: R_TR [kN]
-        self.F_nT = self.V_2 / np.sqrt(
-            2 * self.g * self.A_T / (self.B + self.B * self.C_WP)
-        )  # Froude number based on transom immersion
-        assert not isinstance(self.F_nT, complex), f"residual? froude number should not be complex: {self.F_nT}"
-
-        self.c_6 = 0.2 * (1 - 0.2 * self.F_nT)  # Assuming F_nT < 5, this is the expression for coefficient c_6
-
-        self.R_TR = (0.5 * self.rho * (self.V_2**2) * self.A_T * self.c_6) / 1000
-
-        # Model-ship correlation resistance: R_A [kN]
-
-        if self.T / self.L < 0.04:
-            self.c_4 = self.T / self.L
-        else:
-            self.c_4 = 0.04
-        self.c_2 = 1
-
-        self.C_A = (
-            0.006 * (self.L + 100) ** (-0.16)
-            - 0.00205
-            + 0.003 * np.sqrt(self.L / 7.5) * (self.C_B**4) * self.c_2 * (0.04 - self.c_4)
+        # compute the residual resistance terms
+        (
+            self.F_nT,
+            self.c_6,
+            self.R_TR,
+            self.c_4,
+            self.c_2,
+            self.C_A,
+            self.R_A,
+            self.F_ni,
+            self.P_B,
+            self.R_B,
+            self.R_res,
+        ) = calculate_residual_resistance(
+            V_2=self.V_2,
+            g=self.g,
+            A_T=self.A_T,
+            B=self.B,
+            C_WP=self.C_WP,
+            rho=self.rho,
+            T=self.T,
+            L=self.L,
+            C_B=self.C_B,
+            S=self.S,
+            T_F=self.T_F,
+            h_B=self.h_B,
+            A_BT=self.A_BT,
+            bulbous_bow=self.bulbous_bow,
         )
+<<<<<<< HEAD:opentnsim/energy.py
         assert not isinstance(self.C_A, complex), f"C_A number should not be complex: {self.C_A}"
 
         self.R_A = (0.5 * self.rho * (self.V_2**2) * self.S * self.C_A) / 1000  # kW
@@ -671,6 +886,8 @@ class ConsumesEnergy:
             self.R_B = 0
 
         self.R_res = self.R_TR + self.R_A + self.R_B
+=======
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def calculate_total_resistance(self, v, h_0):
         """Total resistance:
@@ -716,7 +933,36 @@ class ConsumesEnergy:
         Therefore, to align with the later use of "energy conversion efficiencies" for fuel use estimation and prevent
         double use of some power efficiencies such as gearing efficiency, here we choose P_d as propulsion power.
         """
+        (
+            self.P_e,
+            self.dw,
+            self.w,
+            self.t,
+            self.eta_h,
+            self.P_d,
+            self.P_b,
+            self.P_propulsion,
+            self.P_tot,
+            self.P_given,
+            self.P_partial,
+        ) = calculate_total_power_required(
+            v=v,
+            h_0=h_0,
+            R_tot=self.R_tot,
+            F_rL=self.F_rL,
+            x=self.x,
+            C_B=self.C_B,
+            delta=self.delta,
+            D_s=self.D_s,
+            eta_o=self.eta_o,
+            eta_r=self.eta_r,
+            eta_t=self.eta_t,
+            eta_g=self.eta_g,
+            P_hotel=self.P_hotel,
+            P_installed=self.P_installed,
+        )
 
+<<<<<<< HEAD:opentnsim/energy.py
         # Required power for propulsion
         # Effective Horse Power (EHP), P_e (Van Koningsveld et al (2023) - Part IV Eq 5.17)
         self.P_e = v * self.R_tot
@@ -846,6 +1092,13 @@ class ConsumesEnergy:
         # shallower and faster
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity
         # (means installed power). This varible is used for calculating delta_energy of each sailing time step.
+=======
+        # return these three variables:
+        # 1) self.P_propulsion, for the convience of validation.  (propulsion power and fuel used for propulsion),
+        # 2) self.P_tot, know the required power, especially when it exceeds installed engine power while sailing shallower and faster
+        # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
+        # TODO: return description does not match the docstring and comments
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
         return self.P_given
 
@@ -1066,7 +1319,7 @@ class ConsumesEnergy:
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
-        self.C_partial_load = opentnsim.energy.load_partial_engine_load_correction_factors()
+        self.C_partial_load = load_partial_engine_load_correction_factors()
         self.C_partial_load_battery = 1  # assume the battery energy consumption is not influenced by different engine load
 
         for i in range(20):
@@ -1260,8 +1513,12 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_s(self):
         """Total diesel fuel use in g/s:
 
+<<<<<<< HEAD:opentnsim/energy.py
         - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_)
         diveded by the sailing duration (delt_t)
+=======
+        - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
         self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600  # without considering C_year
         self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600  # considering C_year
@@ -1269,8 +1526,12 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
 
+<<<<<<< HEAD:opentnsim/energy.py
         - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g
         (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+=======
+        - The CO2, PM10, NOX emission rates in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
         self.emission_g_m_CO2 = self.P_given * self.total_factor_CO2 / v / 3600
         self.emission_g_m_PM10 = self.P_given * self.total_factor_PM10 / v / 3600
@@ -1279,8 +1540,12 @@ class ConsumesEnergy:
     def calculate_emission_rates_g_s(self):
         """CO2, PM10, NOX emission rates in g/s:
 
+<<<<<<< HEAD:opentnsim/energy.py
         - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in
         g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
+=======
+        - The CO2, PM10, NOX emission rates in g/s can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         """
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
@@ -1300,7 +1565,18 @@ class ConsumesEnergy:
 
         max_sinkage = 0
         if self.h_squat:
+<<<<<<< HEAD:opentnsim/energy.py
             max_sinkage = (self.C_B * ((self.B * self._T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+=======
+            max_sinkage = calculate_max_sinkage(
+                v=v,
+                h_0=h_0,
+                T=self._T,  # TODO: why _T and not T? moreover: T stems from VesselProperties
+                B=self.B,
+                C_B=self.C_B,
+                width=width,
+            )
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
         return max_sinkage
 
@@ -1320,8 +1596,12 @@ class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
     # ToDo: add other alternatives from Marin's table to have completed renewable energy sources
+<<<<<<< HEAD:opentnsim/energy.py
     # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power
     # plan cost to calculate the cost of ship refit or new ships.
+=======
+    # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
 
     def __init__(self, FG, vessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1382,6 +1662,7 @@ class EnergyCalculation:
     def calculate_energy_consumption(self):
         """Calculation of energy consumption based on total time in system and properties"""
 
+<<<<<<< HEAD:opentnsim/energy.py
         def calculate_distance(geom_start, geom_stop):
             """method to calculate the distance in meters between two geometries"""
 
@@ -1412,6 +1693,8 @@ class EnergyCalculation:
             # depth of waterway between two points
             return h_0
 
+=======
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
         # log messages that are related to locking
         # todo: check if this still works with Floors new locking module
         stationary_phase_indicator = [
@@ -1449,7 +1732,7 @@ class EnergyCalculation:
                 self.energy_use["delta_t"].append(delta_t)
 
                 # calculate the water depth
-                h_0 = calculate_depth(geometries[i], geometries[i + 1])
+                h_0 = calculate_depth(geometries[i], geometries[i + 1], self.FG)
 
                 # printstatements to check the output (can be removed later)
                 logger.debug("delta_t: {:.4f} s".format(delta_t))
@@ -1460,6 +1743,10 @@ class EnergyCalculation:
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for
                 # energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
+<<<<<<< HEAD:opentnsim/energy.py
+=======
+                # print(h_0)
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v, h_0=h_0)
 
@@ -1473,13 +1760,21 @@ class EnergyCalculation:
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
                     # consuming 'energy_delta' kWh
                     # TODO: check, as it seems that stationary energy use is now not stored.
+<<<<<<< HEAD:opentnsim/energy.py
+=======
+                    P_hotel_delta = self.vessel.P_hotel  # in kW
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                     P_installed_delta = self.vessel.P_installed  # in kW
 
                 else:  # otherwise log P_tot
                     # Energy consumed per time step delta_t in the propulsion stage
+<<<<<<< HEAD:opentnsim/energy.py
                     # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven
                     # with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the
                     # available power ... that now works)
+=======
+                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the available power ... that now works)
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                     energy_delta = (
                         self.vessel.P_tot * delta_t / 3600
                     )  # kJ/3600 = kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
@@ -1494,8 +1789,12 @@ class EnergyCalculation:
                     )  # Energy consumed per time step delta_t in the stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
+<<<<<<< HEAD:opentnsim/energy.py
                     # Todo: we need to rename the factor name for fuels, not starting with "emission" ,
                     # consider seperating it from emission factors
+=======
+                    # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
                     delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
@@ -1577,3 +1876,7 @@ class EnergyCalculation:
         # - en er is nog iets mis met de snelheid rond een sluis
 
         # - add HasCurrent Class or def
+<<<<<<< HEAD:opentnsim/energy.py
+=======
+        # - De EnergyCalculation class heeft nu een logboek met veel variabelen. Welke variabelen worden bijgehouden hangt af van een if-statement. De lijsten zijn dus niet allemaal even lang.
+>>>>>>> SALTISolutions:opentnsim/energy/mixins.py
