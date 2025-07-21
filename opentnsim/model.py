@@ -173,8 +173,8 @@ class VesselGenerator:
             vessel.output = {}
             # core.Output.vessel_dependent_output(vessel)
             vessel.env = environment
-            vessel.route = nx.dijkstra_path(environment.FG, origin, destination)
-            vessel.geometry = nx.get_node_attributes(environment.FG, "geometry")[vessel.route[0]]
+            vessel.route = nx.dijkstra_path(environment.graph, origin, destination)
+            vessel.geometry = nx.get_node_attributes(environment.graph, "geometry")[vessel.route[0]]
             environment.vessels.append(vessel)
             # Move on path
             process = environment.process(vessel.move())

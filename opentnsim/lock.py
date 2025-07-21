@@ -58,8 +58,8 @@ class HasMultiDiGraph(core.SimpyObject):
         return self.env._multidigraph
 
     def copy(self):
-        multidigraph = self.env.FG
-        if not isinstance(self.env.FG, nx.MultiDiGraph):
+        multidigraph = self.env.graph
+        if not isinstance(self.env.graph, nx.MultiDiGraph):
             multidigraph = nx.MultiDiGraph(multidigraph)
         return multidigraph
 

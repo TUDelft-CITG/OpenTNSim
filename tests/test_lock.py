@@ -50,7 +50,7 @@ def env(graph):
     env.simulation_start = t_start
     env.simulation_stop = t_stop
 
-    env.FG = graph
+    env.graph = graph
     # run for a day
     return env
 
@@ -58,7 +58,7 @@ def env(graph):
 @pytest.fixture
 def hydrodynamics_env(env):
     t_end = env.simulation_stop
-    stations = list(env.FG.nodes)
+    stations = list(env.graph.nodes)
     times = np.arange(env.epoch, t_end, datetime.timedelta(seconds=600))
     water_depth = [np.linspace(10, 10, len(times)), np.linspace(10, 10, len(times))]
     water_level = [np.linspace(0, 0, len(times)), np.linspace(1, 1, len(times))]
@@ -93,7 +93,7 @@ def create_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arriv
         {},
     )
 
-    node = env.FG.nodes[origin]
+    node = env.graph.nodes[origin]
     geometry = node["geometry"]
     vessel = Vessel(
         **{
@@ -103,7 +103,7 @@ def create_vessel(env, name, origin, destination, vessel_type, L, B, T, v, arriv
             "destination": destination,
             "geometry": geometry,
             "node": origin,
-            "route": nx.dijkstra_path(env.FG, origin, destination),
+            "route": nx.dijkstra_path(env.graph, origin, destination),
             "type": vessel_type,
             "L": L,
             "B": B,

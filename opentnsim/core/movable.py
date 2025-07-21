@@ -86,7 +86,7 @@ class Routable(SimpyObject):
         if hasattr(self.env, "graph"):
             graph = self.env.graph
         elif hasattr(self.env, "FG"):
-            graph = self.env.FG
+            graph = self.env.graph
         else:
             raise ValueError("Routable expects .graph to be present on env")
 
@@ -162,8 +162,8 @@ class Movable(Locatable, Routable, Log):
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
             self.current_node, self.next_node = edge  # origin and destination
-            start_location = nx.get_node_attributes(self.env.FG, "geometry")[self.current_node]
-            end_location = nx.get_node_attributes(self.env.FG, "geometry")[self.next_node]
+            start_location = nx.get_node_attributes(self.env.graph, "geometry")[self.current_node]
+            end_location = nx.get_node_attributes(self.env.graph, "geometry")[self.next_node]
 
             # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
             # TODO: Hier loggen we de status, weer met gebruik van de HasOutput mixin.
@@ -215,7 +215,7 @@ class Movable(Locatable, Routable, Log):
 
         """
         # Check if vessel is at correct location - if not, move to location
-        vessel_origin_location = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+        vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
         if self.geometry != vessel_origin_location:
             start_location = self.geometry
             logger.debug("Origin: {orig}")

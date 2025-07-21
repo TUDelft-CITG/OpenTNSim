@@ -930,7 +930,7 @@ class EnergyCalculation:
         super().__init__(*args, **kwargs)
 
         """Initialization"""
-        self.FG = FG
+        self.graph = FG
         self.vessel = vessel
 
         self.energy_use = {

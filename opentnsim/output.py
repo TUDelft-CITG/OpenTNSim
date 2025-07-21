@@ -101,14 +101,14 @@ class HasOutput:
             self.output["sailing_distance"] = 0.0
             self.output["sailing_time"] = 0.0
             for node in self.route:
-                if "Anchorage" in self.env.FG.nodes[node]:
-                    self.output["anchorage"] = self.env.FG.nodes[node]["Anchorage"][0].name
+                if "Anchorage" in self.env.graph.nodes[node]:
+                    self.output["anchorage"] = self.env.graph.nodes[node]["Anchorage"][0].name
                 if (
-                    "Turning basin" in self.env.FG.nodes[node]
+                    "Turning basin" in self.env.graph.nodes[node]
                     and self.bound == "inbound"
-                    and self.env.FG.nodes[node]["Turning Basin"][0].length <= self.L
+                    and self.env.graph.nodes[node]["Turning Basin"][0].length <= self.L
                 ):
-                    self.output["turning_basin"] = self.env.FG.nodes[node]["Turning Basin"][0].name
+                    self.output["turning_basin"] = self.env.graph.nodes[node]["Turning Basin"][0].name
             if "terminal_of_call" in self.metadata.keys() and self.metadata["terminal_of_call"].size:
                 self.output["terminal"] = self.metadata["terminal_of_call"][0]
             if "berth_of_call" in self.metadata.keys() and self.metadata["berth_of_call"].size:
