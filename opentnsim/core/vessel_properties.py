@@ -7,6 +7,7 @@ The following classes are provided:
 - Vesselproperties
 
 """
+
 # packkage(s) for documentation, debugging, saving and loading
 import logging
 
@@ -22,7 +23,7 @@ import simpy
 
 # Use OpenCLSim objects for core objects (identifiable is imported for later use.)
 from openclsim.core import SimpyObject
-import opentnsim.graph_module
+import opentnsim.graph
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -53,7 +54,6 @@ class HasLength(SimpyObject):
         """Initialization"""
         self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
         self.pos_length = simpy.Container(self.env, capacity=length, init=remaining_length)
-
 
 
 class HasLoad:
@@ -201,7 +201,7 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.graph, route=self.route)
+            h_min = opentnsim.graph.get_minimum_depth(graph=self.graph, route=self.route)
 
         return h_min
 

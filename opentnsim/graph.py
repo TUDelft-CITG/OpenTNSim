@@ -4,6 +4,8 @@
 # packkage(s) for documentation, debugging, saving and loading
 import logging
 import os
+import functools
+
 
 # matplotlib
 import matplotlib.pyplot as plt
@@ -17,6 +19,7 @@ import requests
 import uuid
 import yaml
 
+
 # spatial libraries
 import pyproj
 import shapely.geometry
@@ -28,6 +31,7 @@ import simpy
 
 # OpenTNSim
 import opentnsim.utils
+from opentnsim.core import Identifiable, Locatable
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -184,7 +188,7 @@ def gdf_to_nx(gdf):
     return FG
 
 
-class Node(core.Identifiable, core.Locatable):
+class Node(Identifiable, Locatable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

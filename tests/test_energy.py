@@ -5,7 +5,7 @@ import pytest
 from shapely import Point
 
 import opentnsim.fis
-from opentnsim.vessel import VesselProperties
+from opentnsim.core.vessel_properties import VesselProperties
 from opentnsim.energy.mixins import ConsumesEnergy
 from opentnsim.energy.mixins import (
     sample_engine_age,
