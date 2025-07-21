@@ -188,7 +188,7 @@ class Movable(Locatable, Routable, Log):
                 break
 
             # TODO als we end_location steeds geburiken, zou ik er een attribute van maken.
-            yield from self.pass_edge(self.current_node, self.next_node, end_location)
+            yield from self.pass_edge(self.current_node, self.next_node)
             yield from self.complete_pass_edge(self.next_node)
 
             # we arrived at destination
@@ -205,7 +205,6 @@ class Movable(Locatable, Routable, Log):
             logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
         else:
             logger.debug("  current_speed:  not set")
-        self.update_route_status_report(True)
 
     def _move_to_start(self):
         """Move to the start of the route.
