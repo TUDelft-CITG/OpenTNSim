@@ -229,7 +229,7 @@ class ConsumesEnergy:
         ) = calculate_properties(
             C_B=self.C_B,
             L=self.L,
-            B=self.L,
+            B=self.B,
             T=self.T,
             bulbous_bow=self.bulbous_bow,
             C_BB=self.C_BB,
