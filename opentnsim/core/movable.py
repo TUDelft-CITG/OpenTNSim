@@ -59,6 +59,7 @@ class Routable(SimpyObject):
         super().__init__(*args, **kwargs)
         env = kwargs.get("env")
         # if env is given and env is not None
+        # TODO Niet zeker of dit nu werkt. Test toevoegen.
         if env is not None:
             has_fg = hasattr(env, "FG")
             has_graph = hasattr(env, "graph")

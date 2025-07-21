@@ -152,6 +152,7 @@ def test_is_lock(lock_env):
     assert hasattr(lock, "next_lockage_length"), "lock should have next_lockage_length"
 
 
+@pytest.mark.skip("New lock module is not jet merged in main branch.")
 def test_sail_through_lock(lock_env):
     env = lock_env
 
