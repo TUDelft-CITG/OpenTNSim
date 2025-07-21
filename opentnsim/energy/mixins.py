@@ -1148,3 +1148,4 @@ class EnergyCalculation:
         # - en er is nog iets mis met de snelheid rond een sluis
 
         # - add HasCurrent Class or def
+        # - De EnergyCalculation class heeft nu een logboek met veel variabelen. Welke variabelen worden bijgehouden hangt af van een if-statement. De lijsten zijn dus niet allemaal even lang.

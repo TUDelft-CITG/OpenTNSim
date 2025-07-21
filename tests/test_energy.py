@@ -145,9 +145,11 @@ def test_calculate_properties_no_bulbous_bow():
 # - S_B greater than S
 
 
-@pytest.mark.skip(reason="Computation of Cf_Katsui encounters an invalid value in scalar power.")
+# @pytest.mark.skip(reason="Computation of Cf_Katsui encounters an invalid value in scalar power.")
 def test_calculate_frictional_resistance():
-    """Test the calculate_frictional_resistance function."""
+    """Test the calculate_frictional_resistance function.
+    Test case comse from running code, not from a paper.
+    """
     # make a calculation
     R_f, C_f, R_e, Cf_deep, Cf_shallow, Cf_0, Cf_Katsui, V_B, D, a = calculate_frictional_resistance(
         v=3, h_0=4, L=50, nu=1.002e-6, T=3, S=120, S_B=100, rho=1000
@@ -156,14 +158,14 @@ def test_calculate_frictional_resistance():
     # check the outcome
     # assert R_f == pytest.approx(None, abs=1e-2) --> NaN
     # assert C_f == pytest.approx(2.None, abs=1e-2) --> NaN
-    assert R_e == pytest.approx(0.00015, abs=1e-5)
-    assert Cf_deep == pytest.approx(0.00266, abs=1e-5)
-    assert Cf_shallow == pytest.approx(0.00257, abs=1e-5)
-    assert Cf_0 == pytest.approx(0.00221, abs=1e-5)
+    assert R_e == pytest.approx(149700599, abs=1)
+    assert Cf_deep == pytest.approx(0.00195, abs=1e-5)
+    assert Cf_shallow == pytest.approx(0.00210, abs=1e-5)
+    assert Cf_0 == pytest.approx(0.00196, abs=1e-5)
     # assert Cf_Katsui == pytest.approx(None, abs=1e-2) --> NaN
     assert V_B == pytest.approx(3.41, abs=1e-2)
     assert D == pytest.approx(1.0, abs=1e-2)
-    assert a == pytest.approx(0.40, abs=1e-2)
+    assert a == pytest.approx(0.92, abs=1e-2)
 
 
 @pytest.mark.parametrize("h_0,T", [(1, 1), (1, 2)])

@@ -260,7 +260,7 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     """
     # TODO: makes sense to store np.log10(R_e) as constant intstead of re-calculating
     # Reynolds number
-    R_e = v * L * nu
+    R_e = v * L / nu
 
     # distance from bottom ship to the bottom of the fairway
     D = h_0 - T

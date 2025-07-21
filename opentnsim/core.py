@@ -242,7 +242,7 @@ class Movable(Locatable, Routable, Log):
         """
 
         # wait for departure time
-        yield self._wait_for_departure()
+        self._wait_for_departure()
 
         # default distance to next node
         self.distance = 0
@@ -257,7 +257,7 @@ class Movable(Locatable, Routable, Log):
         self.update_route_status_report()
 
         # Check if vessel is at correct location - if not, move to location
-        yield self._move_to_start()
+        self._move_to_start()
 
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
