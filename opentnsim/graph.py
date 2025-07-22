@@ -6,7 +6,6 @@ import logging
 import os
 import functools
 
-
 # matplotlib
 import matplotlib.pyplot as plt
 
@@ -18,6 +17,7 @@ import pickle
 import requests
 import uuid
 import yaml
+from itertools import cycle
 
 
 # spatial libraries
