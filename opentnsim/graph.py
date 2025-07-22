@@ -8,6 +8,7 @@ import functools
 
 # matplotlib
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 # package(s) for data handling
 import networkx as nx
@@ -74,6 +75,34 @@ def calculate_distance(geom_start, geom_stop):
     # distance between two points
     return float(wgs84.inv(geom_start.x, geom_start.y, geom_stop.x, geom_stop.y)[2])
 
+
+def calculate_distance_along_path(graph, path):
+    """method to calculate the greater circle distance along path in meters from WGS84 coordinates
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        The graph object.
+    path : list
+        List of nodes that together form a path.
+
+    Returns
+    -------
+    float
+        Path length in meters.
+    """
+
+    path_length = 0
+
+    for node in enumerate(path[:-1]):
+        orig = nx.get_node_attributes(graph, "geometry")[path[node[0]]]
+        dest = nx.get_node_attributes(graph, "geometry")[path[node[0]+1]]
+        path_length += calculate_distance(orig, dest)
+
+        if node[0] + 2 == len(path):
+                    break
+
+    return path_length
 
 def calculate_depth(geom_start, geom_stop, FG):
     """method to calculate the depth of the waterway in meters between two geometries.
@@ -602,3 +631,99 @@ class HasMultiDiGraph:
         if not isinstance(self.env.graph, nx.MultiDiGraph):
             multidigraph = nx.MultiDiGraph(multidigraph)
         return multidigraph
+
+
+def plot_graph(graph):
+    """method to plot a graph
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        A graph object.
+
+    Returns
+    -------
+    fig : plotly.graph_objs._figure.Figure
+        Object that contains a graph figure.
+    """
+    # Labels
+    labels = {node: node for node in graph.nodes()}
+    edge_labels = {(u, v): f"{d['weight']} km" for u, v, d in graph.edges(data=True)}
+
+    # positions
+    positions = {node: (graph.nodes[node]["geometry"].x, graph.nodes[node]["geometry"].y) for node in graph.nodes}
+
+    # Edge labels in meters
+    edge_labels = {}
+    for u, v in graph.edges():
+        origin = graph.nodes[u]['geometry']
+        destination = graph.nodes[v]['geometry']
+        distance_m = opentnsim.graph.calculate_distance(origin, destination)
+        edge_labels[(u, v)] = f"{int(distance_m)} m"
+
+    # Edge traces and arrow annotations
+    edge_traces = []
+    arrow_annotations = []
+    for u, v in graph.edges():
+        x0, y0 = positions[u]
+        x1, y1 = positions[v]
+        edge_traces.append(go.Scatter(
+            x=[x0, x1],
+            y=[y0, y1],
+            line=dict(width=2, color='red'),
+            mode='lines',
+            hoverinfo='none'
+        ))
+        arrow_annotations.append(go.layout.Annotation(
+            x=x1, y=y1,
+            ax=x0, ay=y0,
+            xref='x', yref='y',
+            axref='x', ayref='y',
+            showarrow=True,
+            arrowhead=2,  # Closed arrowhead
+            arrowsize=2,
+            arrowwidth=1,
+            arrowcolor='red'
+        ))
+
+    # Node trace
+    node_trace = go.Scatter(
+        x=[positions[node][0] for node in graph.nodes()],
+        y=[positions[node][1] for node in graph.nodes()],
+        mode='markers+text',
+        marker=dict(color='darkblue', size=20),
+        text=[labels[node] for node in graph.nodes()],
+        textposition='middle center',
+        textfont=dict(color='white', size=15),
+        hoverinfo='text'
+    )
+
+    # Edge label annotations
+    edge_label_annotations = []
+    for (u, v), label in edge_labels.items():
+        x0, y0 = positions[u]
+        x1, y1 = positions[v]
+        x_mid = (x0 + x1) / 2
+        y_mid = (y0 + y1) / 2
+        edge_label_annotations.append(go.layout.Annotation(
+            x=x_mid, y=y_mid,
+            text=label,
+            showarrow=False,
+            font=dict(color='black', size=15)
+        ))
+
+    # Combine annotations
+    annotations = arrow_annotations + edge_label_annotations
+
+    # Create figure
+    fig = go.Figure(data=edge_traces + [node_trace])
+    fig.update_layout(
+        title="Directed Geographic Network Graph (WGS84 Projection) with Edge Lengths in Meters",
+        xaxis=dict(title="Longitude", showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(title="Latitude", showgrid=False, zeroline=False, showticklabels=False),
+        annotations=annotations,
+        showlegend=False,
+        plot_bgcolor='white'
+    )
+
+    return fig
