@@ -23,7 +23,7 @@ def power2v(vessel, edge, upperbound):
     returns velocity [m/s]
     """
 
-    assert isinstance(vessel, opentnsim.vessel.VesselProperties), "vessel should be an instance of VesselProperties"
+    assert isinstance(vessel, opentnsim.core.vessel_properties.VesselProperties), "vessel should be an instance of VesselProperties"
     assert vessel.C_B is not None, "C_B cannot be None"
 
     def seek_v_given_power(v, vessel, edge):

@@ -40,7 +40,7 @@ def load_partial_engine_load_correction_factors():
     """read correction factor from package directory"""
 
     # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
+    data_dir = pathlib.Path(__file__).parent.parent / "data"
     correctionfactors_path = data_dir / "Correctionfactors.csv"
     df = pd.read_csv(correctionfactors_path, comment="#")
 
@@ -51,7 +51,7 @@ def karpov_smooth_curves():
     """read correction factor from package directory"""
 
     # Can't get this  to work with pkg_resourcs
-    data_dir = pathlib.Path(__file__).parent.parent.parent / "data"
+    data_dir = pathlib.Path(__file__).parent.parent / "data"
     karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
     df = pd.read_csv(karpov_smooth_curves_path, comment="#")
 
@@ -1022,7 +1022,7 @@ class EnergyCalculation:
                 self.energy_use["delta_t"].append(delta_t)
 
                 # calculate the water depth
-                h_0 = calculate_depth(geometries[i], geometries[i + 1], self.FG)
+                h_0 = calculate_depth(geometries[i], geometries[i + 1], self.graph)
 
                 # printstatements to check the output (can be removed later)
                 logger.debug("delta_t: {:.4f} s".format(delta_t))
