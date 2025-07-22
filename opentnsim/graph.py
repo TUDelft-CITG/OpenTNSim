@@ -723,7 +723,7 @@ def plot_graph(graph):
         yaxis=dict(title="Latitude", showgrid=False, zeroline=False, showticklabels=False),
         annotations=annotations,
         showlegend=False,
-        plot_bgcolor='white'
+        plot_bgcolor='white',
     )
 
     return fig
