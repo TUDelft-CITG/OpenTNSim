@@ -5,8 +5,7 @@ The following classes are provided:
 - Movable
 - ContainerDependentMovable
 """
-
-# packkage(s) for documentation, debugging, saving and loading
+# package(s) for documentation, debugging, saving and loading
 import logging
 import warnings
 import deprecated
@@ -23,7 +22,7 @@ from shapely import Geometry
 import networkx as nx
 import simpy
 
-# Use OpenCLSim objects for core objects (identifiable is imported for later use.)
+# use OpenCLSim objects for core objects (identifiable is imported for later use)
 import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core.container import HasContainer
@@ -289,7 +288,7 @@ class Movable(Locatable, Routable, Log):
             # You can input more power than is realistic
             # There are two mechanisms that reduce the power given:
             # 1. The grounding speed:
-            # TODO Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
+            # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
             (
                 upperbound,
                 selected,
@@ -308,7 +307,7 @@ class Movable(Locatable, Routable, Log):
             value = power_used
 
         # Wait for edge resources to become available
-        # TODO: Opzich mooi, maar willen we dit niet ook gewoon een functie in on_pass_edge_functies maken?
+        # TODO: Op zich mooi, maar willen we dit niet ook gewoon een functie in on_pass_edge_functies maken?
         # TODO: wat is orig?
         if "Resources" in edge.keys():
             with self.graph.edges[origin, destination]["Resources"].request() as request:
