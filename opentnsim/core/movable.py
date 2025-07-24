@@ -311,7 +311,8 @@ class Movable(Locatable, Routable, Log):
 
         # Wait for edge resources to become available
         # TODO: Op zich mooi, maar willen we dit niet ook gewoon een functie in on_pass_edge_functies maken?
-        # TODO: wat is orig?
+        # TODO: wat is orig? orig en dest zijn de geometries van de start en stop van de trip (short for origin destination)
+        # TODO: write test! Nu werkte het wachten niet!
         if "Resources" in edge.keys():
             with self.graph.edges[origin, destination]["Resources"].request() as request:
                 yield request
