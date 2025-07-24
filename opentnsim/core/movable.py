@@ -168,12 +168,15 @@ class Movable(Locatable, Routable, Log):
             # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
             # TODO: Hier loggen we de status, weer met gebruik van de HasOutput mixin.
             # TODO: overweging als we dit wel zo laten: willen we de update_status_report functies als (evt standaard) self.pass_edge_functies hebben?
-            self.log_entry(
-                "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
-                self.env.now,
-                0,
-                start_location,
-            )
+
+            # TODO: Sailing start en stop moeten allebij in pass edge. Bijv als een edge een resource heeft gaat anders het loggen van de wait time mis.
+            # TODO: als je pass_node al wilt loggen, dan moet het een berichtje zijn als Passing node {} start/stop
+            # self.log_entry(
+            #     "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+            #     self.env.now,
+            #     0,
+            #     start_location,
+            # )
 
             yield from self.pass_node(self.current_node)
 
@@ -312,6 +315,7 @@ class Movable(Locatable, Routable, Log):
         if "Resources" in edge.keys():
             with self.graph.edges[origin, destination]["Resources"].request() as request:
                 yield request
+
                 # we had to wait, log it
                 if arrival != self.env.now:
                     self.log_entry(
@@ -327,17 +331,45 @@ class Movable(Locatable, Routable, Log):
                         orig,
                     )
 
-        # default velocity based on current speed.
-        timeout = distance / self.current_speed
-        yield self.env.timeout(timeout)
+                self.log_entry(
+                    "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+                    self.env.now,
+                    0,
+                    orig,
+                )
 
-        self.log_entry(
-            "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
-            self.env.now,
-            0,
-            dest,
-        )
-        self.geometry = dest
+                # default velocity based on current speed.
+                timeout = distance / self.current_speed
+                yield self.env.timeout(timeout)
+
+                self.log_entry(
+                    "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+                    self.env.now,
+                    0,
+                    dest,
+                )
+                self.geometry = dest
+
+
+        else:
+            self.log_entry(
+                "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+                self.env.now,
+                0,
+                orig,
+            )
+
+            # default velocity based on current speed.
+            timeout = distance / self.current_speed
+            yield self.env.timeout(timeout)
+
+            self.log_entry(
+                "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+                self.env.now,
+                0,
+                dest,
+            )
+            self.geometry = dest
 
     def complete_pass_edge(self, destination):
         # TODO: Waarom een try/except. Als het niet lukt, dan lijkt het me dat de functie gewoon niet goed is gedefinieerd. Als de simulatie blijft draaien krijg je misschien verkeerde output?
