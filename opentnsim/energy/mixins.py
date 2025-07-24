@@ -1015,7 +1015,7 @@ class EnergyCalculation:
 
                 # calculate the distance travelled and the associated velocity
                 distance = calculate_distance(geometries[i], geometries[i + 1])
-                v = distance / delta_t
+                v = distance / delta_t # TODO: this is probably wrong. You don't want the speed over ground here, but the speed to water
                 self.energy_use["distance"].append(distance)
 
                 # calculate the delta t
