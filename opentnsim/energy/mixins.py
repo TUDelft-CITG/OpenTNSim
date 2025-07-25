@@ -542,10 +542,14 @@ class ConsumesEnergy:
 
 
         Data source:
-        Table 3-2 from Marin report 2019,  Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten, systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects, system configurations
+        Table 3-2 from Marin report 2019,  Energietransitie emissieloze binnenvaart, vooronderzoek ontwerpaspecten,
+        systeem configuraties.(Energy transition zero-emission inland shipping, preliminary research on design aspects,
+        system configurations
 
         Note:
-        net energy density can be used for calculate fuel consumption in mass and volume, but for required energy source storage space determination, the packaging factors of different energy sources also need to be considered.
+        net energy density can be used for calculate fuel consumption in mass and volume, but for required energy
+        source storage space determination, the packaging factors of different energy sources also need to be
+        considered.
         """
 
         # gravimetric net energy density
@@ -591,6 +595,9 @@ class ConsumesEnergy:
 
         Please note: later on a correction factor has to be applied to get the total SFC
         """
+
+        # ToDo: Check - in the function 'energy_density' the 'Edens*' are in kWh/kg, but the units in the comments here,
+        #  suggest that the 'SFC*' are in g/kWh (wonder if that then should not be kg/kWh)
         # to estimate the requirement of the amount of ZES_batterypacks for different IET scenarios, we include ZES battery capacity per container here.
         # ZES_batterypack capacity > 2000kWh, its average usable energy = 2000 kWh,  mass = 27 ton, vol = 20ft A60 container (6*2.5*2.5 = 37.5 m3) (source: ZES report)
         self.energy_density()
@@ -788,7 +795,7 @@ class ConsumesEnergy:
         self.correction_factors(v=v, h_0=h_0)  # You need the correction factors of CO2, PM10, NOX
 
         # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
-        # By the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
+        # by the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
 
         self.total_factor_CO2 = self.EF_CO2 * self.C_partial_load_CO2
         self.total_factor_PM10 = self.EF_PM10 * self.C_partial_load_PM10
@@ -852,7 +859,7 @@ class ConsumesEnergy:
     def calculate_diesel_use_g_m(self, v):
         """Total diesel fuel use in g/m:
 
-        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delt_t * self.total_factor_) diveded by the sailing distance (v * delt_t)
+        - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) divided by the sailing distance (v * delt_t)
         """
         self.diesel_use_g_m = (self.P_given * self.final_SFC_diesel_ICE_mass / v) / 3600  # without considering C_year
         self.diesel_use_g_m_C_year = (self.P_given * self.final_SFC_diesel_C_year_ICE_mass / v) / 3600  # considering C_year
@@ -1066,7 +1073,7 @@ class EnergyCalculation:
                     )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
                     emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
                     emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
-                    # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
+                    # Todo: we need to rename the factor name for fuels, not starting with "emission", consider seperating it from emission factors
                     delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
                     delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
