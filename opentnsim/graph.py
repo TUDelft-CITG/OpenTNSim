@@ -646,6 +646,7 @@ def plot_graph(graph):
     fig : plotly.graph_objs._figure.Figure
         Object that contains a graph figure.
     """
+    
     # Labels
     labels = {node: node for node in graph.nodes()}
     edge_labels = {(u, v): f"{d['weight']} km" for u, v, d in graph.edges(data=True)}
