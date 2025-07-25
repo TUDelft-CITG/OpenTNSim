@@ -15,14 +15,15 @@ parts:
       title: Anaconda
 - caption:  Basics of OpenTNSim
   chapters:
-    - file: examples/Example 0000 - Basic trip over a single edge.ipynb
-    - file: examples/Example 0001 - Alternative routes over a simple network.ipynb
-    - file: examples/Example 0002 - Basic trip moving cargo.ipynb
-    - file: examples/Example 0003 - Resource restriction on part of the network.ipynb
+    - file: examples/0000 - Basic trip over a single edge.ipynb
+    - file: examples/0001 - Alternative routes over a simple network.ipynb
+    - file: examples/0002 - Basic trip moving cargo.ipynb
+    - file: examples/0003 - Resource restriction on part of the network.ipynb
 - caption: Energy module
   chapters:
-    - file: examples/Example 0100 - Energy calculation for  a single edge.ipynb
-    - file: examples/Example 0101 - Energy calculation along a route.ipynb
+    - file: examples/0100 - About the OpenTNSim-Energy module.ipynb
+    - file: examples/0101 - Energy calculation for  a single edge.ipynb
+    - file: examples/0102 - Energy calculation along a route.ipynb
 - caption: Advanced simulation
   chapters:
     - file: examples/Example 17 - Lock.ipynb
