@@ -19,6 +19,7 @@ parts:
     - file: examples/0001 - Alternative routes over a simple network.ipynb
     - file: examples/0002 - Basic trip moving cargo.ipynb
     - file: examples/0003 - Resource restriction on part of the network.ipynb
+    - file: examples/0005 - Basic trip over a real-world graph.ipynb
 - caption: Energy module
   chapters:
     - file: examples/0100 - About the OpenTNSim-Energy module.ipynb
