@@ -311,17 +311,13 @@ class ConsumesEnergy:
             T=self.T,
         )
 
-    def calculate_wave_resistance(self, v, h_0):
+    def calculate_wave_resistance(self, V_2, h_0):
         """Wave resistance
 
         - 4th resistance component defined by Holtrop and Mennen (1982)
         - When the speed or the vessel size increases, the wave making resistance increases
         - In shallow water, the wave resistance shows an asymptotical behaviour by reaching the critical speed
         """
-
-        self.karpov(v, h_0)
-        # TODO: what is the purpose of executing Karpov here if the attributes set
-        # (F_rh, V_2, alpha_xx) are not used in the wave resistance calculation?
 
         # perform calculation of wave resistance
         (
@@ -338,7 +334,7 @@ class ConsumesEnergy:
             self.m_2,
             self.R_W,
         ) = calculate_wave_resistance(
-            v=v,
+            V_2=V_2,
             h_0=h_0,
             g=self.g,
             T=self.T,
@@ -354,7 +350,7 @@ class ConsumesEnergy:
             rho=self.rho,
         )
 
-    def calculate_residual_resistance(self, v, h_0):
+    def calculate_residual_resistance(self, V_2, h_0):
         """Residual resistance terms
 
         - Holtrop and Mennen (1982) defined three residual resistance terms:
@@ -362,9 +358,6 @@ class ConsumesEnergy:
         - 2) Resistance due to model-ship correlation (R_A), Karpov corrected velocity V2 is used
         - 3) Resistance due to the bulbous bow (R_B), Karpov corrected velocity V2 is used
         """
-
-        self.karpov(v, h_0)
-        self.V_2 = v  # TODO:  why overrule the just computed V_2 from Karpov?
 
         # compute the residual resistance terms
         (
@@ -380,7 +373,7 @@ class ConsumesEnergy:
             self.R_B,
             self.R_res,
         ) = calculate_residual_resistance(
-            V_2=self.V_2,
+            V_2=V_2,
             g=self.g,
             A_T=self.A_T,
             B=self.B,
@@ -401,13 +394,19 @@ class ConsumesEnergy:
 
         The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982)
         """
+        # TODO: we doen nu hier alle stappen en combineren dan alles, waarom roepen we hier niet
+        #  calculate_total_resistance uit de calculations.py aan?
 
         self.calculate_properties()
         self.calculate_frictional_resistance(v, h_0)
         self.calculate_viscous_resistance()
         self.calculate_appendage_resistance(v)
-        self.calculate_wave_resistance(v, h_0)
-        self.calculate_residual_resistance(v, h_0)
+
+        self.karpov(v, h_0)
+        # print('Original v = {} m/s, Karpov corrected V_2 = {} m/s'.format(v, self.V_2))
+
+        self.calculate_wave_resistance(self.V_2, h_0)
+        self.calculate_residual_resistance(self.V_2, h_0)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A + self.R_B

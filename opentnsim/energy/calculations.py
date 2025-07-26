@@ -3,7 +3,7 @@ Most functions are called by the ConsumesEnergy mixin.
 
 """
 
-# %% IMPORT DEPENENDENCIES
+# %% IMPORT DEPENDENCIES
 # generic
 import logging
 import numpy as np
@@ -18,7 +18,10 @@ def sample_engine_age(L_w):
     drawn randomly from a Weibull distribution with parameters k and lmb, which depend
     on the weight class of the ship. The age is then returned in years.
 
-    TODO: add reference to literature on which this is based --> H5 over Performance
+    Ligterink, N.E., R.N. van Gijlswijk, G. Kadijk, R.J. Vermeulen, A.P. Indrajuana, M. Elstgeest,
+    P. van Mensch, J.M. de Ruiter, R.P. Verbeek, J.H.J. Hulskotte, G. Geilenkirchen (PBL) and
+    M. Traa (PBL) (2019). "Emissiefactoren wegverkeer - Actualisatie 2019", TNO 2019 R10825v2.
+    https://www.pbl.nl/publicaties/emissiefactoren-wegverkeer-actualisatie-2019
 
     Parameters
     ----------
@@ -36,9 +39,10 @@ def sample_engine_age(L_w):
         raise ValueError("L_w should be 1, 2 or 3")
 
     # determine the shape (k) and scale factor (lmb) to use based on the weight class
+    # Table 8, in Ligterink et al (2019)
     if L_w == 1:  # Weight class L1
         k = 1.3
-        lmb = 20.5
+        lmb = 20.4
     elif L_w == 2:  # Weight class L2
         k = 1.12
         lmb = 18.5
@@ -47,7 +51,7 @@ def sample_engine_age(L_w):
         lmb = 18.6
 
     # the engine age
-    # TODO: I would not expect a random distribution if the function is called
+    # returns a randomly sampled estimate of the engine age (in years) for a ship, based on its weight class
     age = int(np.random.weibull(k) * lmb)
 
     return age
@@ -70,7 +74,7 @@ def calculate_max_sinkage(v, h_0, T, B, C_B, width):
     T : float
         Actual draught of the vessel [m]
     B : float
-        Breadth of the vessel [m]
+        Beam of the vessel [m]
     C_B : float
         Block coefficient of the vessel [-]
     width : float
@@ -89,14 +93,14 @@ def calculate_max_sinkage(v, h_0, T, B, C_B, width):
     if T <= 0:
         raise ValueError("Draught T should be > 0")
     if B <= 0:
-        raise ValueError("Breadth B should be > 0")
+        raise ValueError("Beam B should be > 0")
     if width <= 0:
         raise ValueError("Width of the fairway should be > 0")
     if C_B <= 0:
         raise ValueError("Block coefficient C_B should be > 0")
 
     if B > width:
-        raise ValueError(f"Width of the fairway ({width}) should be larger than " f"the breadth of the vessel ({B})")
+        raise ValueError(f"Width of the fairway ({width}) should be larger than " f"the beam of the vessel ({B})")
 
     # calculate the maximum sinkage
     return (C_B * ((B * T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
@@ -105,7 +109,7 @@ def calculate_max_sinkage(v, h_0, T, B, C_B, width):
 def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
     """
     Calculate the properties of a vessel based on its block coefficient, length,
-    breadth, draught, bulbous bow coefficient, and whether it has a bulbous bow.
+    beam, draught, bulbous bow coefficient, and whether it has a bulbous bow.
 
     Parameters
     ----------
@@ -114,7 +118,7 @@ def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
     L : float
         Length of the vessel [m]
     B : float
-        Breadth of the vessel [m]
+        Beam of the vessel [m]
     T : float
         Actual draught of the vessel [m]
     bulbous_bow : bool
@@ -194,7 +198,7 @@ def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
     # Segers (2021) Eq 3.20
     S_B = L * B  # Area of flat bottom
 
-    # TODO: we D_s is a property that should be given, not calculated
+    # TODO: D_s is a property that should be given, not calculated
     # if D_s is None:
     #     D_s = 0.7 * T  # Diameter of the screw
 
@@ -335,7 +339,7 @@ def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta):
     c_stern : float
         Determines the shape of the afterbody [-]
     B : float
-        Breadth of the vessel [m]
+        Beam of the vessel [m]
     L : float
         Length of the vessel [m]
     T : float
@@ -447,8 +451,7 @@ def karpov(v, h_0, g, T):
     - The Froude number is calculated as v / sqrt(g * h_0).
     """
 
-    # The Froude number used in the Karpov method is the depth related froude number
-    # F_rh
+    # The Froude number used in the Karpov method is the depth related Froude number F_rh
 
     # The different alpha** curves are determined with a sixth power polynomial
     # approximation in Excel
@@ -580,18 +583,18 @@ def karpov(v, h_0, g, T):
                 )
 
     V_2 = v / alpha_xx
-
+    # print('Original v = {:.2f} m/s, Karpov corrected V_2 = {:.2f} m/s'.format(v, V_2))
     return F_rh, V_2, alpha_xx
 
 
-def calculate_wave_resistance(v, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho):
+def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho):
     """
     Calculate the wave resistance and related hydrodynamic coefficients for a ship.
 
     Parameters
     ----------
-    v : float
-        Ship's speed relative to water (m/s).
+    V_2v : float
+        Karpov corrected ship speed relative to water (m/s).
     h_0 : float
         Water depth (m).
     g : float
@@ -651,7 +654,8 @@ def calculate_wave_resistance(v, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M,
     assert g >= 0, f"g should be positive: {g}"
     assert L >= 0, f"L should be positive: {L}"
 
-    F_rL = v / np.sqrt(g * L)  # Froude number based on ship's speed to water and its length of waterline
+    # TODO: v here should be the Karpov corrected V_2 (
+    F_rL = V_2 / np.sqrt(g * L)  # Froude number based on ship's speed to water and its length of waterline
 
     # parameter c_7 is determined by the B/L ratio
     # Van Koningsveld et al (2023) - Part IV Table 5.1
@@ -674,14 +678,15 @@ def calculate_wave_resistance(v, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M,
 
     # Van Koningsveld et al (2023) - Part IV Table 5.1
     c_1 = 2223105 * (c_7**3.78613) * ((T / B) ** 1.07961) * (90 - i_E) ** (-1.37165)
+    # TODO: check if we need to adapt this, for cases where we do want to calculate with bulbous bows
     c_2 = 1  # accounts for the effect of the bulbous bow, which is not present at inland ships
     c_5 = 1 - (0.8 * A_T) / (B * T * C_M)  # influence of the transom stern on the wave resistance
 
-    # parameter c_15 depoends on the ratio L^3 / delta
+    # parameter c_15 depends on the ratio L^3 / delta
     # Van Koningsveld et al (2023) - Part IV Table 5.1
     if (L**3) / delta < 512:
         c_15 = -1.69385
-    if (L**3) / delta > 1727:
+    elif (L**3) / delta > 1727: # TODO: check, here it said 'if' instead of 'elif' that is probably not right
         c_15 = 0
     else:
         c_15 = -1.69385 + (L / (delta ** (1 / 3)) - 8) / 2.36
@@ -704,6 +709,9 @@ def calculate_wave_resistance(v, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M,
     m_2 = c_15 * (C_P**2) * np.exp((-0.1) * (F_rL ** (-2)))
 
     # Van Koningsveld et al (2023) - Part IV Eq 5.16
+    # Segers (2019) distinguishes multiple Froude classes (Section 3.2.5 and Appendix C -C.2).
+    # for all reasonable combinations of ship lengths and speeds, inland ships always fall in the
+    # F_n,V_2 < 0.4 class
     R_W = c_1 * c_2 * c_5 * delta * rho * g * np.exp(m_1 * (F_rL ** (-0.9)) + m_2 * np.cos(lmbda * (F_rL ** (-2)))) / 1000  # kN
 
     return F_rL, i_E, c_1, c_2, c_5, c_7, c_15, c_16, lmbda, m_1, m_2, R_W
@@ -715,7 +723,7 @@ def calculate_residual_resistance(V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, 
     the immersed transom, model-ship correlation resistance, and bulbous bow resistance.
 
     This function computes the residual resistance components based on the ship's
-    speed, transom area, breadth, waterplane coefficient, density, draft, length,
+    speed, transom area, beam, waterplane coefficient, density, draft, length,
     block coefficient, wetted surface area, and bulbous bow presence.
 
     Parameters
@@ -727,7 +735,7 @@ def calculate_residual_resistance(V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, 
     A_T : float
         Traverse area of the transom (m^2). Van Koningsveld et al (2023) - below Eq 5.16
     B : float
-        Breadth of the ship (m).
+        Beam of the ship (m).
     C_WP : float
         Waterplane coefficient (dimensionless).
     rho : float
@@ -834,13 +842,13 @@ def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, r
     L : float
         Length of the ship (m).
     B : float
-        Breadth of the ship (m).
+        Beam of the ship (m).
     T : float
         Actual draft of the ship (m).
     bulbous_bow : bool
         Whether the ship has a bulbous bow (True) or not (False).
     C_BB : float
-        Breadth coefficient of bulbous bow (dimensionless).
+        Beam coefficient of bulbous bow (dimensionless).
     nu : float
         Kinematic viscosity of water (m^2/s).
     rho : float
@@ -855,9 +863,10 @@ def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, r
     R_tot : float
         Total resistance of the ship (kN).
     """
-    # TODO: this function is rhather odd as it calls all other resistance functions,
-    # computing lots of unused values (which are set in the corresponding method),
-    # hence the function is not yet used in the main class method.
+
+    # TODO: this function is rather odd as it calls all other resistance functions,
+    #  computing lots of unused values (which are set in the corresponding method),
+    #  hence the function is not yet used in the main class method.
 
     # vessel properties
     C_M, C_WP, C_P, delta, lcb, L_R, A_T, A_BT, S, S_APP, S_B, T_F, h_B = calculate_properties(C_B, L, B, T, bulbous_bow, C_BB)
@@ -871,11 +880,14 @@ def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, r
     # appendage resistance
     R_APP = calculate_appendage_resistance(v, rho, S_APP, one_k2, C_f)
 
+    # calculate the Karpov corrected velocity
+    F_rh, V_2, alpha_xx = karpov(v, h_0, g, T)
+    print('Original v = {} m/s, Karpov corrected V_2 = {} m/s'.format(v, V_2))
+
     # wave resistance
-    _, _, _, _, _, _, _, _, _, _, _, R_W = calculate_wave_resistance(v, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho)
+    _, _, _, _, _, _, _, _, _, _, _, R_W = calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho)
 
     # residual resistance
-    V_2 = v  # TODO: correct? this is how it is done in the original method
     _, _, R_TR, _, _, _, R_A, _, _, R_B, _ = calculate_residual_resistance(
         V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, h_B, A_BT, bulbous_bow
     )
@@ -917,13 +929,13 @@ def calculate_total_power_required(
     F_rL : float
         Froude number based on ship's speed and length (dimensionless).
     x : float
-        Propeller design factor (dimensionless).
+        Number of propellers (dimensionless).
     C_B : float
         Block coefficient of the ship (dimensionless).
     delta : float
         Displacement volume of the ship (m^3).
     D_s : float
-        Ship's draft (m).
+        Propeller diameter (m).
     eta_o : float
         Overall efficiency of the propulsion system (dimensionless).
     eta_r : float
@@ -950,27 +962,23 @@ def calculate_total_power_required(
     eta_h : float
         Hull efficiency (dimensionless).
     P_d : float,
+        Power delivered (kW)
     P_b : float
+        Power at the brake (kW)
     P_propulsion : float
         Power required for propulsion (kW).
     P_tot : float
-        Total power required for the ship (kW).
+        Total power required for the ship (propulsion + hotel power) (kW).
     P_given : float
-        Power given by the installed power (kW).
+        Power given by the captain (kW).
     P_partial : float
-        Partial power required for propulsion (kW).
+        Partial engine load (P_tot / P_installed) (dimensionless).
 
     Notes
     -----
-    In this version, we define the propulsion power as P_d (Delivered Horse Power)
-    rather than P_b (Brake Horse Power). The reason we choose P_d as propulsion
-    power is to prevent double use of the same power efficiencies. The details are:
-
-    1. The P_b calculation involves gearing efficiency and transmission efficiency
-    already, while P_d does not.
-    2. P_d is the power delivered to propellers.
-    3. To estimate the renewable fuel use, we will involve 'energy conversion
-    efficiencies' later in the calculation.
+    The P_b calculation involves gearing efficiency and transmission efficiency
+    already, while P_d does not. P_d is the power delivered to propellers. To estimate
+    the renewable fuel use, 'energy conversion efficiencies' are taken into consideration.
 
     The 'energy conversion efficiencies' for renewable fuel powered vessels are
     commonly measured/given as a whole covering the engine power systems, including
@@ -979,15 +987,18 @@ def calculate_total_power_required(
     efficiencies, AC/DC converter efficiencies, excluding the efficiency items of
     propellers.
 
-    Therefore, to align with the later use of 'energy conversion efficiencies' for
-    fuel use estimation and to prevent double use of some power efficiencies, such
-    as gearing efficiency, here we choose P_d as propulsion power.
+    It is therefore, important carefully align with the later use of 'energy conversion
+    efficiencies' for fuel use estimation and to prevent double use of some power efficiencies,
+    such as gearing efficiency. It is important to carefully consider if it is best to use
+    P_d or P_b as power starting point.
 
     """
-    # Required power for propulsion
-    # Effective Horse Power (EHP), P_e (Van Koningsveld et al (2023) - Part IV Eq 5.17)
+
+    # Effective Horse Power (EHP), 'P_e' - power associated with the vessel's speed and its resistance
+    # (Van Koningsveld et al (2023) - Part IV Eq 5.17)
     P_e = v * R_tot
 
+    # velocity correction coefficient, 'dw'
     # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
     # Appendix C
     if F_rL < 0.2:
@@ -995,27 +1006,34 @@ def calculate_total_power_required(
     else:
         dw = 0.1  # otherwise the velocity correction coefficient is 0.1
 
+    # wake fraction, 'w'
     # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
     # Appendix C - Eq C.1
     w = 0.11 * (0.16 / x) * C_B * np.sqrt((delta ** (1 / 3)) / D_s) - dw  # wake fraction 'w'
 
     assert not isinstance(w, complex), f"w should not be complex: {w}"
 
+    # thrust deduction factor, 't'
     if x == 1:
+        # if the ship has 1 propeller
         # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
-        t = 0.6 * w * (1 + 0.67 * w)  # thrust deduction factor 't'
+        t = 0.6 * w * (1 + 0.67 * w)
     else:
         # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
         t = 0.8 * w * (1 + 0.25 * w)
 
+    # hull efficiency 'eta_h'
     eta_h = (1 - t) / (1 - w)  # hull efficiency eta_h
 
-    # TODO: check below suggestions. They were made to allow for better translation to alternative energy sources. But the changes induced unexpected behaviour.
+    # TODO: check below suggestions.
+    #   They were made to allow for better translation to alternative energy sources.
+    #   But the changes induced unexpected behaviour.
+
     # Calculation hydrodynamic efficiency eta_D  according to Simic et al (2013) "On Energy Efficiency of Inland
     # Waterway Self-Propelled Cargo Vessels", https://www.researchgate.net/publication/269103117
     # hydrodynamic efficiency eta_D is a ratio of power used to propel the ship and delivered power
-    # relation between eta_D and ship velocity v
 
+    # relation between eta_D and ship velocity v
     # if h_0 >= 9:
     #     if F_rh >= 0.5:
     #         eta_D = 0.6
@@ -1076,20 +1094,26 @@ def calculate_total_power_required(
 
     # logger.debug("eta_D = {:.2f}".format(eta_D))
 
+    # Delivered Horse Power (DHP), 'P_d'
     # (Van Koningsveld et al (2023) - Part IV Eq 5.19)
     P_d = P_e / (eta_o * eta_r * eta_h)
 
-    # Brake Horse Power (BHP), P_b (P_b was used in OpenTNsim version v1.1.2. we do not use it in this version. The reseaon is listed in the doc string above)
+    # Brake Horse Power (BHP), 'P_b'
     # (Van Koningsveld et al (2023) - Part IV Eq 5.24)
     P_b = P_d / (eta_t * eta_g)
 
-    # P_propulsion = P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
-    P_propulsion = P_b  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
+    # TODO: consider how to integrate the suggestion to use P_propulsion = P_d
+    #  When working with alternative energy carriers it may be better to use
+    #  Delivered horse power, the power delivered to propellers, rather than
+    #  Power at the Brake. This may avoid double counting of efficiencies.
 
-    # TODO: consider to facilitate that all engine power can go into propulsion (Auxiliary generator for hotel)
+    # Propulsion Power, 'P_propulsion'
+    P_propulsion = P_b  # propulsion power is defined here as Power at the Brake.
+
+    # Total Power, 'P_tot'
     P_tot = P_hotel + P_propulsion
 
-    # Partial engine load (P_partial): needed in the 'Emission calculations'
+    # Partial engine load, 'P_partial': used in the 'Emission calculations'
     if P_tot > P_installed:
         P_given = P_installed
         P_partial = 1
