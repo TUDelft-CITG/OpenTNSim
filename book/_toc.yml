@@ -28,9 +28,7 @@ parts:
     - file: examples/0103 - In-depth energy module behaviour.ipynb
 - caption: Locking module
   chapters:
-    - file: examples/Example 17 - Lock.ipynb
-    - file: examples/Example 14 - Energy consumption, fuel use and emissions.ipynb
-    - file: examples/Example 11 - Multiple vessels - from database.ipynb
+    - file: examples/0200 - About the OpenTNSim-Locking module.ipynb
 - caption: Advanced programming concepts
   chapters:
     - file: CL2022-02-script-to-program
