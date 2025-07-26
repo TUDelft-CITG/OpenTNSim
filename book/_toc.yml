@@ -25,7 +25,7 @@ parts:
     - file: examples/0100 - About the OpenTNSim-Energy module.ipynb
     - file: examples/0101 - Energy calculation for a single edge.ipynb
     - file: examples/0102 - Energy calculation along a route.ipynb
-    - file: examples/0103 - In-depth  energy module behaviour.ipynb
+    - file: examples/0103 - In-depth energy module behaviour.ipynb
 - caption: Locking module
   chapters:
     - file: examples/Example 17 - Lock.ipynb
