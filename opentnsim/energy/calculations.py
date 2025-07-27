@@ -453,12 +453,12 @@ def karpov(v, h_0, g, T):
 
     # The Froude number used in the Karpov method is the depth related Froude number F_rh
 
-    # The different alpha** curves are determined with a sixth power polynomial
-    # approximation in Excel
-    # A distinction is made between different ranges of Froude numbers, because this
-    # resulted in a better approximation of the curve
+    # The different alpha** curves are determined with a sixth power polynomial approximation in Excel (Segers, 2019)
+    # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
+
     assert g >= 0, f"g should be positive: {g}"
     assert h_0 >= 0, f"h_0 should be positive: {h_0}"
+
     F_rh = v / np.sqrt(g * h_0)
 
     if F_rh <= 0.4:
@@ -470,47 +470,22 @@ def karpov(v, h_0, g, T):
             alpha_xx = -1.25 * F_rh**4 + 0.5833 * F_rh**3 - 0.0375 * F_rh**2 - 0.0108 * F_rh + 1
         if h_0 / T >= 2.75:
             alpha_xx = 1
-
-    if F_rh > 0.4:
+    elif F_rh > 0.4:
         if 0 <= h_0 / T < 1.75:
             alpha_xx = (
-                -0.9274 * F_rh**6
-                + 9.5953 * F_rh**5
-                - 37.197 * F_rh**4
-                + 69.666 * F_rh**3
-                - 65.391 * F_rh**2
-                + 28.025 * F_rh
-                - 3.4143
+                -0.9274 * F_rh**6 + 9.5953 * F_rh**5 - 37.197 * F_rh**4 + 69.666 * F_rh**3 - 65.391 * F_rh**2 + 28.025 * F_rh - 3.4143
             )
         if 1.75 <= h_0 / T < 2.25:
             alpha_xx = (
-                2.2152 * F_rh**6
-                - 11.852 * F_rh**5
-                + 21.499 * F_rh**4
-                - 12.174 * F_rh**3
-                - 4.7873 * F_rh**2
-                + 5.8662 * F_rh
-                - 0.2652
+                2.2152 * F_rh**6 - 11.852 * F_rh**5 + 21.499 * F_rh**4 - 12.174 * F_rh**3 - 4.7873 * F_rh**2 + 5.8662 * F_rh - 0.2652
             )
         if 2.25 <= h_0 / T < 2.75:
             alpha_xx = (
-                1.2205 * F_rh**6
-                - 5.4999 * F_rh**5
-                + 5.7966 * F_rh**4
-                + 6.6491 * F_rh**3
-                - 16.123 * F_rh**2
-                + 9.2016 * F_rh
-                - 0.6342
+                1.2205 * F_rh**6 - 5.4999 * F_rh**5 + 5.7966 * F_rh**4 + 6.6491 * F_rh**3 - 16.123 * F_rh**2 + 9.2016 * F_rh - 0.6342
             )
         if 2.75 <= h_0 / T < 3.25:
             alpha_xx = (
-                -0.4085 * F_rh**6
-                + 4.534 * F_rh**5
-                - 18.443 * F_rh**4
-                + 35.744 * F_rh**3
-                - 34.381 * F_rh**2
-                + 15.042 * F_rh
-                - 1.3807
+                -0.4085 * F_rh**6 + 4.534 * F_rh**5 - 18.443 * F_rh**4 + 35.744 * F_rh**3 - 34.381 * F_rh**2 + 15.042 * F_rh - 1.3807
             )
         if 3.25 <= h_0 / T < 3.75:
             alpha_xx = (
@@ -518,33 +493,15 @@ def karpov(v, h_0, g, T):
             )
         if 3.75 <= h_0 / T < 4.5:
             alpha_xx = (
-                0.3067 * F_rh**6
-                - 0.3404 * F_rh**5
-                - 5.0511 * F_rh**4
-                + 16.892 * F_rh**3
-                - 20.265 * F_rh**2
-                + 9.9002 * F_rh
-                - 0.6712
+                0.3067 * F_rh**6 - 0.3404 * F_rh**5 - 5.0511 * F_rh**4 + 16.892 * F_rh**3 - 20.265 * F_rh**2 + 9.9002 * F_rh - 0.6712
             )
         if 4.5 <= h_0 / T < 5.5:
             alpha_xx = (
-                0.3212 * F_rh**6
-                - 0.3559 * F_rh**5
-                - 5.1056 * F_rh**4
-                + 16.926 * F_rh**3
-                - 20.253 * F_rh**2
-                + 10.013 * F_rh
-                - 0.7196
+                0.3212 * F_rh**6 - 0.3559 * F_rh**5 - 5.1056 * F_rh**4 + 16.926 * F_rh**3 - 20.253 * F_rh**2 + 10.013 * F_rh - 0.7196
             )
         if 5.5 <= h_0 / T < 6.5:
             alpha_xx = (
-                0.9252 * F_rh**6
-                - 4.2574 * F_rh**5
-                + 5.0363 * F_rh**4
-                + 3.3282 * F_rh**3
-                - 10.367 * F_rh**2
-                + 6.3993 * F_rh
-                - 0.2074
+                0.9252 * F_rh**6 - 4.2574 * F_rh**5 + 5.0363 * F_rh**4 + 3.3282 * F_rh**3 - 10.367 * F_rh**2 + 6.3993 * F_rh - 0.2074
             )
         if 6.5 <= h_0 / T < 7.5:
             alpha_xx = (
@@ -554,36 +511,23 @@ def karpov(v, h_0, g, T):
             alpha_xx = (
                 0.1211 * F_rh**6 + 0.628 * F_rh**5 - 6.5106 * F_rh**4 + 16.7 * F_rh**3 - 18.267 * F_rh**2 + 8.7077 * F_rh - 0.4745
             )
-
         if 8.5 <= h_0 / T < 9.5:
-            if F_rh < 0.6:
+            if F_rh <= 0.6:
                 alpha_xx = 1
-            if F_rh >= 0.6:
+            if F_rh > 0.6:
                 alpha_xx = (
-                    -6.4069 * F_rh**6
-                    + 47.308 * F_rh**5
-                    - 141.93 * F_rh**4
-                    + 220.23 * F_rh**3
-                    - 185.05 * F_rh**2
-                    + 79.25 * F_rh
-                    - 12.484
+                    -6.4069 * F_rh**6 + 47.308 * F_rh**5 - 141.93 * F_rh**4 + 220.23 * F_rh**3 - 185.05 * F_rh**2 + 79.25 * F_rh - 12.484
                 )
         if h_0 / T >= 9.5:
-            if F_rh < 0.6:
+            if F_rh <= 0.6:
                 alpha_xx = 1
-            if F_rh >= 0.6:
+            if F_rh > 0.6:
                 alpha_xx = (
-                    -6.0727 * F_rh**6
-                    + 44.97 * F_rh**5
-                    - 135.21 * F_rh**4
-                    + 210.13 * F_rh**3
-                    - 176.72 * F_rh**2
-                    + 75.728 * F_rh
-                    - 11.893
+                    -6.0737 * F_rh**6 + 44.97 * F_rh**5 - 135.21 * F_rh**4 + 210.13 * F_rh**3 - 176.72 * F_rh**2 + 75.728 * F_rh - 11.893
                 )
 
     V_2 = v / alpha_xx
-    # print('Original v = {:.2f} m/s, Karpov corrected V_2 = {:.2f} m/s'.format(v, V_2))
+
     return F_rh, V_2, alpha_xx
 
 
