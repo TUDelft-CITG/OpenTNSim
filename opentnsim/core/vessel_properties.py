@@ -117,8 +117,8 @@ class VesselProperties:
       the value of safety margin depends on waterway bed material and ship types. For tanker vessel with rocky bed the safety
       margin is recommended as 0.3 m based on Van Dorsser et al. The value setting for safety margin depends on the risk attitude
       of the ship captain and shipping companies.
-    h_squat: float, optional
-        the water depth considering ship squatting while the ship moving (if set to False, h_squat is disabled)
+    h_squat: boolean, optional
+        the water depth considering ship squatting while the ship moving (if False, squat is disabled, if True, squat is calculated)
     payload: float, optional
         cargo load [ton], the actual draught can be determined by knowing payload based on van Dorsser et al's method.
         (https://www.researchgate.net/publication/344340126_The_effect_of_low_water_on_loading_capacity_of_inland_ships)
