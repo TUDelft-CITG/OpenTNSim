@@ -228,7 +228,7 @@ class Movable(Locatable, Routable, Log):
             ]
 
             yield self.env.timeout(self.distance / self.current_speed)
-            self.log_entry("Sailing to start", self.env.now, self.output.copy(), vessel_origin_location)
+            self.log_entry_v0("Sailing to start", self.env.now, self.output.copy(), vessel_origin_location)
 
     def pass_node(self, node):
         """pass a node and call all on_pass_node_functions
@@ -319,20 +319,20 @@ class Movable(Locatable, Routable, Log):
 
                 # we had to wait, log it
                 if arrival != self.env.now:
-                    self.log_entry(
+                    self.log_entry_v0(
                         "Waiting to pass edge {} - {} start".format(origin, destination),
                         arrival,
                         value,
                         orig,
                     )
-                    self.log_entry(
+                    self.log_entry_v0(
                         "Waiting to pass edge {} - {} stop".format(origin, destination),
                         self.env.now,
                         value,
                         orig,
                     )
 
-                self.log_entry(
+                self.log_entry_v0(
                     "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
                     self.env.now,
                     0,
@@ -343,7 +343,7 @@ class Movable(Locatable, Routable, Log):
                 timeout = distance / self.current_speed
                 yield self.env.timeout(timeout)
 
-                self.log_entry(
+                self.log_entry_v0(
                     "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
                     self.env.now,
                     0,
@@ -353,7 +353,7 @@ class Movable(Locatable, Routable, Log):
 
 
         else:
-            self.log_entry(
+            self.log_entry_v0(
                 "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
                 self.env.now,
                 0,
@@ -364,7 +364,7 @@ class Movable(Locatable, Routable, Log):
             timeout = distance / self.current_speed
             yield self.env.timeout(timeout)
 
-            self.log_entry(
+            self.log_entry_v0(
                 "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
                 self.env.now,
                 0,
