@@ -417,7 +417,7 @@ def test_calculate_wave_resistance(B, L, delta, C_P, F_rL, i_E, c_1, c_2, c_5, c
 
     # make a calculation
     _F_rL, _i_E, _c_1, _c_2, _c_5, _c_7, _c_15, _c_16, _lmbda, _m_1, _m_2, _R_W = calculate_wave_resistance(
-        v=3,
+        V_2=3,
         h_0=10,
         g=9.81,
         T=3,
