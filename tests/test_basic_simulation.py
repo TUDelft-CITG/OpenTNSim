@@ -66,7 +66,7 @@ def test_basic_simulation():
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
         "Vessel",
-        (opentnsim.core.Identifiable, opentnsim.core.Movable, opentnsim.core.Routeable),
+        (opentnsim.core.Identifiable, opentnsim.core.Movable, opentnsim.core.Routable),
         {},
     )
 

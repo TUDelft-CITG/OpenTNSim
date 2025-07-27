@@ -40,7 +40,7 @@ def graph():
 def vessel(graph, env):
     Vessel = type(
         "Vessel",
-        (opentnsim.core.Identifiable, opentnsim.core.Movable, opentnsim.core.Routeable),
+        (opentnsim.core.Identifiable, opentnsim.core.Movable, opentnsim.core.Routable),
         {},
     )
 
