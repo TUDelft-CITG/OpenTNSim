@@ -309,10 +309,18 @@ class Movable(Locatable, Routable, Log):
             # use upperbound power (used to compute the sailing speed)
             value = power_used
 
+
+        # Check if the edge has current info
+        # NB: positive current is directed from origin to destination
+        Current = 0 # m/s
+        if "Info" in edge.keys():
+            if "Current" in edge['Info'].keys():
+                Current = edge['Info']['Current']
+
         # Wait for edge resources to become available
         # TODO: Op zich mooi, maar willen we dit niet ook gewoon een functie in on_pass_edge_functies maken?
         # TODO: wat is orig? orig en dest zijn de geometries van de start en stop van de trip (short for origin destination)
-        # TODO: write test! Nu werkte het wachten niet!
+        # TODO: write test! Nu werkte het wachten niet! NB: Misschien moeten we Resources ook onder Info hangen?
         if "Resources" in edge.keys():
             with self.graph.edges[origin, destination]["Resources"].request() as request:
                 yield request
@@ -340,7 +348,7 @@ class Movable(Locatable, Routable, Log):
                 )
 
                 # default velocity based on current speed.
-                timeout = distance / self.current_speed
+                timeout = distance / (self.current_speed + Current)
                 yield self.env.timeout(timeout)
 
                 self.log_entry_v0(
@@ -361,7 +369,7 @@ class Movable(Locatable, Routable, Log):
             )
 
             # default velocity based on current speed.
-            timeout = distance / self.current_speed
+            timeout = distance / (self.current_speed + Current)
             yield self.env.timeout(timeout)
 
             self.log_entry_v0(

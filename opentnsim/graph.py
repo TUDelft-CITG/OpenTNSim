@@ -146,6 +146,7 @@ def calculate_depth(geom_start, geom_stop, FG):
     try:
         if "Info" in FG.get_edge_data(node_start, node_stop).keys():
             depth = FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
+
         elif "GeneralDepth" in FG.get_edge_data(node_start, node_stop).keys():
             depth = FG.get_edge_data(node_start, node_stop)["GeneralDepth"]
         else:
