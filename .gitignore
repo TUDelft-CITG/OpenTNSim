@@ -80,3 +80,6 @@ notebooks/Port_of_Rotterdam
 poetry.lock
 poetry.toml
 pyproject3.toml
+
+# Additional ignores
+.DS_Store
