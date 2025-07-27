@@ -72,6 +72,9 @@ class ConsumesEnergy:
     P_tot_given : float
         Total power set by captain (includes hotel power). When
         P_tot_given > P_installed; P_tot_given=P_installed.
+    karpov_correction : bool, optional
+        If True, apply Karpovs correction for velocity under the vessel, if False,
+        use the speed to water.
     bulbous_bow : bool, optional
         Indicates if the ship has a bulbous bow. Inland ships generally do
         not have a bulbous bow, hence the default is False. If a ship has
@@ -118,6 +121,7 @@ class ConsumesEnergy:
         C_year=None,
         current_year=None,  # current_year
         bulbous_bow=False,
+        karpov_correction=False,
         P_hotel_perc=0.05,
         P_hotel=None,
         P_tot_given=None,  # the actual power engine setting
@@ -144,6 +148,7 @@ class ConsumesEnergy:
 
         self.P_installed = P_installed
         self.bulbous_bow = bulbous_bow
+        self.karpov_correction = karpov_correction
 
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
         self.P_hotel_perc = P_hotel_perc
@@ -404,9 +409,12 @@ class ConsumesEnergy:
 
         self.karpov(v, h_0)
         # print('Original v = {} m/s, Karpov corrected V_2 = {} m/s'.format(v, self.V_2))
-
-        self.calculate_wave_resistance(self.V_2, h_0)
-        self.calculate_residual_resistance(self.V_2, h_0)
+        if self.karpov_correction:
+            self.calculate_wave_resistance(self.V_2, h_0)
+            self.calculate_residual_resistance(self.V_2, h_0)
+        else:
+            self.calculate_wave_resistance(v, h_0)
+            self.calculate_residual_resistance(v, h_0)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
         self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A + self.R_B
