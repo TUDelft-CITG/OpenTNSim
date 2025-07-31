@@ -8,13 +8,15 @@ from pyproj import Geod
 
 from opentnsim.core.movable import Routable, Routeable, Movable, ContainerDependentMovable
 from opentnsim.graph import calculate_distance_along_path
+from opentnsim.energy.mixins import ConsumesEnergy
+from opentnsim.core.vessel_properties import VesselProperties
 
 # %% FIXTURES
 @pytest.fixture
 def graph():
     """Fixture for Movable object."""
     # create a directed graph with distance of 100000 meters between two points
-    graph = nx.DiGraph()
+    graph = nx.Graph()
     graph.add_node(0, geometry=Point(0, 0))
     lon1, lat1, _ = Geod(ellps="WGS84").fwd(0, 0, 90, 100000)  # East from Point 0
 
@@ -47,38 +49,44 @@ def mission(env, vessel):
 
 # %% TESTING Routable
 def test_routable_initialization(env, graph):
-    routable = Routable(route=[1, 2, 3], env=env)
-    
-    assert routable.route == [1, 2, 3]
+    routable = Routable(route=[0, 1], env=env)
+
+    assert routable.route == [0, 1]
     assert routable.env == env
     assert routable.graph == graph
 
 def test_routable_no_env():
     with pytest.raises(TypeError, match="missing 1 required positional argument: 'env'"):
-        Routable(route=[1, 2, 3])   
+        Routable(route=[0, 1])
 
 def test_routable_env_has_no_graph():
     simulation_start = datetime.datetime(2024, 1, 1, 0, 0, 0)
     env = simpy.Environment(initial_time=simulation_start.timestamp())
     with pytest.raises(AssertionError, match="Routable expects `.graph`"):
-        routable = Routable(route=[1, 2, 3], env=env)
+        routable = Routable(route=[0, 1], env=env)
 
 def test_routable_env_with_fg(graph):
     simulation_start = datetime.datetime(2024, 1, 1, 0, 0, 0)
     env = simpy.Environment(initial_time=simulation_start.timestamp())
     env.FG = graph
     with pytest.warns():
-        routable = Routable(route=[1, 2, 3], env=env)
+        routable = Routable(route=[0, 1], env=env)
     assert routable.env.graph == graph
     assert routable.graph == graph
 
+
+def test_routable_wrong_route(env):
+    with pytest.raises(ValueError, match="Routable route must be on the graph"):
+        Routable(route=[0, 1, 2], env=env)
+
+
 def test_routeable_warning(env):
     with pytest.warns(DeprecationWarning, match=".Use Routable instead of Routeable"):
-        Routeable(route=[1, 2, 3], env=env)
+        Routeable(route=[0, 1], env=env)
 
 # %% TESTING Movable
 def test_movable_initialization(env):
-    path = nx.dijkstra_path(env.graph, 0,1)
+    path = [0, 1]
     geometry = env.graph.nodes[path[0]]['geometry']
     movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
 
@@ -87,6 +95,32 @@ def test_movable_initialization(env):
     assert movable.graph == env.graph
     assert movable.v == 1.0
     assert movable.on_pass_edge_functions == []
+
+
+def test_movable_no_geom():
+    graph = nx.DiGraph()
+    graph.add_node(0)
+    graph.add_node(1)
+    graph.add_edge(0, 1, weight=1)
+    env = simpy.Environment()
+    env.graph = graph
+    path = nx.dijkstra_path(graph, 0, 1)
+    with pytest.raises(ValueError, match="Nodes on route must have a geometry attribute."):
+        Movable(route=path, env=env, v=1.0, geometry=Point(0, 0))
+
+
+@pytest.mark.skip(reason="functionality not implemented yet")
+def test_movable_no_generaldepth(env):
+    path = [0, 1]
+
+    class P_tot_given_mixin:
+        def __init__(self):
+            self.P_tot_given = 1
+
+    MixinNew = type("mixinNew", (Movable, P_tot_given_mixin), {})
+    with pytest.raises(ValueError, match="Nodes on route must have a 'GeneralDepth' attribute in their 'info'."):
+        MixinNew(route=path, env=env, v=1.0, geometry=Point(0, 0))
+
 
 @pytest.mark.timeout(0.5)
 def test_movable_move_simple(env):
@@ -113,7 +147,7 @@ def test_movable_move_simple(env):
 
 @pytest.mark.timeout(0.5)
 def test_move_to_start(env):
-    path = nx.dijkstra_path(env.graph, 0, 1)
+    path = [0, 1]
     # start at the end of the path. From here we will move to start point in straight line
     geometry = env.graph.nodes[1]["geometry"]
     movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
@@ -127,4 +161,202 @@ def test_move_to_start(env):
     env.run()
 
     assert movable.geometry == env.graph.nodes[path[0]]["geometry"], "Movable should be at (0,0), not {}".format(movable.geometry)
+    assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
+    assert len(movable.logbook) == 2, "Logbook should have 2 entries, now {}".format(len(movable.logbook))
+    assert (
+        movable.logbook[0]["Message"] == "Sailing to start start"
+    ), "First log entry should be 'Sailing to start start', now {}".format(movable.logbook[0]["Message"])
+    traveltime = datetime.timedelta.total_seconds(movable.logbook[-1]["Timestamp"] - movable.logbook[0]["Timestamp"])
+    assert pytest.approx(traveltime, 1e-5) == 100000, "Expected travel time of 100000 seconds, now {}".format(traveltime)
+
+
+@pytest.mark.timeout(0.5)
+def test_move_to_start_already_there(env):
+    path = [0, 1]
+    # start at the end of the path. From here we will move to start point in straight line
+    geometry = env.graph.nodes[0]["geometry"]
+    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    starttime = env.now
+
+    assert movable.geometry == env.graph.nodes[0]["geometry"], "Movable should start at 0,0"
+
+    def mission_move_to_start(env, vessel):
+        yield from vessel._move_to_start()
+
+    env.process(mission_move_to_start(env, movable))
+    env.run()
+
+    assert movable.geometry == env.graph.nodes[path[0]]["geometry"], "Movable should be at (0,0), not {}".format(movable.geometry)
+    assert pytest.approx(movable.distance, 1e-5) == 0, "Expected distance of 100000, now {}".format(movable.distance)
+    assert len(movable.logbook) == 0, "Logbook should have 2 entries, now {}".format(len(movable.logbook))
+    assert env.now == starttime, "Environment time should not have changed, now {}".format(env.now)
+
+
+def test_movable_pass_node(env):
+    path = [0, 1]
+    geometry = env.graph.nodes[0]["geometry"]
+    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    starttime = env.now
+
+    def on_pass_node_wait_1(node):
+        yield movable.env.timeout(1)
+
+    def on_pass_node_wait_2(node):
+        yield movable.env.timeout(2)
+
+    movable.on_pass_node_functions.append(on_pass_node_wait_1)
+    movable.on_pass_node_functions.append(on_pass_node_wait_2)
+
+    def mission_pass_node(env, vessel):
+        yield from vessel.pass_node(env.graph.nodes[1])
+
+    env.process(mission_pass_node(env, movable))
+    env.run()
+
+    assert movable.geometry == env.graph.nodes[0]["geometry"], "Movable should still be at node 0"
+    assert env.now == starttime + 3, "Environment time should be 3 seconds later, now {}".format(env.now)
+
+
+def test_movable_pass_edge(env):
+    path = [0, 1]
+    geometry = env.graph.nodes[0]["geometry"]
+    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable.current_node, movable.next_node = 0, 1
+
+    starttime = env.now
+
+    def mission_pass_edge(env, vessel):
+        yield from vessel.pass_edge(origin=0, destination=1)
+
+    env.process(mission_pass_edge(env, movable))
+    env.run()
+
+    assert movable.geometry == env.graph.nodes[1]["geometry"], "Movable should be at node 1"
+    assert pytest.approx(env.now) == starttime + 100000, "Environment time should be 100000 seconds later, now {}".format(env.now)
+    assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
+
+
+# skip if ConsumesEnergy tests fails
+# @pytest.mark.skipif()
+def test_movable_pass_edge_with_energy_error(env):
+    path = [0, 1]
+    geometry = env.graph.nodes[0]["geometry"]
+    starttime = env.now
+
+    Vessel = type("vessel", (Movable, ConsumesEnergy, VesselProperties), {})
+    data_vessel = {
+        "env": env,
+        "type": "Va/M9 - Verl. Groot Rijnschip",  # This indicates the vessel class. This info is mainly informative.
+        "L": 135,  # m
+        "B": 11.45,  # m
+        "v": 5,  # m/s If None: this value is calculated based on P_tot_given
+        "h_squat": False,  # if the ship should squat while moving, set to True, otherwise set to False
+        "P_installed": 1750.0,  # kW
+        "P_tot_given": 10,  # kW If None: this value is calculated value based on speed
+        "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
+        "karpov_correction": False,  # if False, don't apply the karpov correction, if True, apply the karpov correction
+        "P_hotel_perc": 0.05,  # 0: all power goes to propulsion
+        "P_hotel": None,  # None: calculate P_hotel from percentage
+        "L_w": 3.0,
+        "C_B": 0.85,  # block coefficient
+        "C_year": 1990,  # engine build year
+        "geometry": env.graph.nodes[path[0]]["geometry"],
+        "route": path,  # the route to sail
+    }  #
+
+    # create an instance of the Vessel class using the input dict data_vessel
+    movable = Vessel(**data_vessel)
+    movable.current_node, movable.next_node = 0, 1
+
+    def mission_pass_edge(env, vessel):
+        yield from vessel.pass_edge(origin=0, destination=1)
+
+    env.process(mission_pass_edge(env, movable))
+    with pytest.raises(ValueError, match="has no GeneralDepth in Info"):
+        env.run()
+
+
+def test_movable_pass_edge_with_energy(env):
+    env.graph.edges[0, 1]["Info"] = {"GeneralDepth": 5}  # from '0' to '1' you sail against the current
+    path = [0, 1]
+    geometry = env.graph.nodes[0]["geometry"]
+    starttime = env.now
+
+    Vessel = type("vessel", (Movable, ConsumesEnergy, VesselProperties), {})
+    data_vessel = {
+        "env": env,
+        "route": path,
+        "geometry": geometry,
+        "v": None,  # m/s
+        "type": None,
+        "B": 11.4,
+        "L": 110,
+        "T": 1,
+        "P_installed": 1750.0,  # kW
+        "P_tot_given": 333,  # kW
+        "L_w": 3.0,
+        "C_year": 1990,
+    }
+
+    # create an instance of the Vessel class using the input dict data_vessel
+    movable = Vessel(**data_vessel)
+
+    movable.current_node, movable.next_node = 0, 1
+
+    def mission_pass_edge(env, vessel):
+        yield from vessel.pass_edge(origin=0, destination=1)
+
+    env.process(mission_pass_edge(env, movable))
+    env.run()
+    assert movable.geometry == env.graph.nodes[1]["geometry"], "Movable should be at node 1"
+    assert movable.v == pytest.approx(1.65, 0.01), "Expected speed of 3.5 m/s, now {}".format(movable.v)
+    assert movable._upperbound == pytest.approx(2.85, 0.01), "Expected upperbound power of 333 kW, now {}".format(
+        movable._upperbound
+    )
+    assert pytest.approx(env.now, abs=1) == starttime + 60528, "Environment time should be 100000 seconds later, now {}".format(
+        env.now - starttime
+    )
+
+
+def test_movable_pass_edge_with_current(env):
+    env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
+    path = [0, 1]
+    geometry = env.graph.nodes[0]["geometry"]
+    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable.current_node, movable.next_node = 0, 1
+
+    starttime = env.now
+
+    def mission_pass_edge(env, vessel):
+        yield from vessel.pass_edge(origin=0, destination=1)
+
+    env.process(mission_pass_edge(env, movable))
+    env.run()
+
+    assert movable.geometry == env.graph.nodes[1]["geometry"], "Movable should be at node 1"
+    assert pytest.approx(env.now, abs=1) == starttime + 66666, "Environment time should be 100000 seconds later, now {}".format(
+        env.now
+    )
+    assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
+
+
+def test_movable_pass_edge_with_current(env):
+    env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
+    path = [1, 0]
+    geometry = env.graph.nodes[0]["geometry"]
+    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable.current_node, movable.next_node = 1, 0
+
+    starttime = env.now
+
+    def mission_pass_edge(env, vessel):
+        yield from vessel.pass_edge(origin=1, destination=0)
+
+    env.process(mission_pass_edge(env, movable))
+    env.run()
+
+    assert movable.geometry == env.graph.nodes[0]["geometry"], "Movable should be at node 0"
+    assert pytest.approx(env.now, abs=1) == starttime + 66666, "Environment time should be 100000 seconds later, now {}".format(
+        env.now
+    )
     assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)

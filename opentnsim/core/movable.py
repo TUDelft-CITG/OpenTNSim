@@ -26,6 +26,7 @@ import simpy
 import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core.container import HasContainer
+from opentnsim.energy.mixins import ConsumesEnergy
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -74,6 +75,20 @@ class Routable(SimpyObject):
         # start at start of route
         self.position_on_route = 0
         self.complete_path = complete_path
+
+        self.check_attributes()
+
+    def check_attributes(self):
+        """Check if all required attributes are set."""
+        # check if route is set
+        if not hasattr(self, "route") or not isinstance(self.route, list):
+            raise ValueError("Routable requires a route (list of node IDs) to be set")
+        # check if env is set
+        if not hasattr(self, "env") or not isinstance(self.env, simpy.Environment):
+            raise ValueError("Routable requires an environment (simpy.Environment) to be set")
+        # check if route is on graph
+        if not all(node in self.graph.nodes for node in self.route):
+            raise ValueError("Routable route must be on the graph")
 
     @property
     def graph(self):
@@ -143,6 +158,25 @@ class Movable(Locatable, Routable, Log):
         self.on_complete_pass_edge_functions = []
         self.on_look_ahead_to_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
+
+        self._check_attributes()
+
+    def _check_attributes(self):
+        """Check if all required attributes are set."""
+        # each node on route should have a geometry
+        geoms = nx.get_node_attributes(self.graph, "geometry")
+        if not all(node in geoms for node in self.route):
+            raise ValueError(
+                "Nodes on route must have a geometry attribute. Missing geometries for nodes: {}".format(
+                    [node for node in self.route if node not in geoms]
+                )
+            )
+
+        # warning if current not in edge info
+        # TODO
+
+        # Error when P_tot_given is set, but no GeneralDepth in edge info
+        # TODO
 
     # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
     def move(self):
@@ -216,9 +250,8 @@ class Movable(Locatable, Routable, Log):
         """
         # Check if vessel is at correct location - if not, move to location
         vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
-        self.log_entry_v0("Sailing to start start", self.env.now, self.distance, self.geometry)
-
         if self.geometry != vessel_origin_location:
+            self.log_entry_v0("Sailing to start start", self.env.now, self.distance, self.geometry)
             start_location = self.geometry
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
@@ -284,15 +317,19 @@ class Movable(Locatable, Routable, Log):
         # This is the case if we are sailing on power
         value = 0
         # TODO: Laten we dit ook gewoon een on_pass_edge functie maken die bij de ConsumesEnergy mixin zit?
-        if getattr(self, "P_tot_given", None) is not None:
+        if isinstance(self, ConsumesEnergy) and self.P_tot_given is not None:
             edge = self.graph.edges[origin, destination]
-            # TODO: willen we ervan uitgaan dat de edge altijd een 'Info' heeft met GeneralDepth?
-            depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
-
+            try:
+                depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+            except KeyError:
+                raise ValueError(
+                    f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
+                )
             # You can input more power than is realistic
             # There are two mechanisms that reduce the power given:
             # 1. The grounding speed:
             # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
+            # TODO get_upperbound_for_power2v heeft een width hardcoded op 150. Is dat handig?
             (
                 upperbound,
                 selected,
@@ -303,12 +340,9 @@ class Movable(Locatable, Routable, Log):
             power_used = min(self.P_tot_given, upperbound)
             self.v = self.power2v(self, edge, power_used)
             # store upperbound velocity
-            # TODO: remove these three fields after debugging
-            self.selected = selected
-            self.results_df = results_df
-            self.upperbound = upperbound
-            # use upperbound power (used to compute the sailing speed)
-            value = power_used
+            self._selected = selected
+            self._results_df = results_df
+            self._upperbound = upperbound
 
         # Check if the edge has current info
         # NB: positive current is directed from origin to destination
@@ -330,20 +364,20 @@ class Movable(Locatable, Routable, Log):
                     self.log_entry_v0(
                         "Waiting to pass edge {} - {} start".format(origin, destination),
                         arrival,
-                        value,
+                        self.distance,
                         orig,
                     )
                     self.log_entry_v0(
                         "Waiting to pass edge {} - {} stop".format(origin, destination),
                         self.env.now,
-                        value,
+                        self.distance,
                         orig,
                     )
 
                 self.log_entry_v0(
                     "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
                     self.env.now,
-                    0,
+                    self.distance,
                     orig,
                 )
 
@@ -354,7 +388,7 @@ class Movable(Locatable, Routable, Log):
                 self.log_entry_v0(
                     "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
                     self.env.now,
-                    0,
+                    self.distance,
                     dest,
                 )
                 self.geometry = dest
@@ -363,7 +397,7 @@ class Movable(Locatable, Routable, Log):
             self.log_entry_v0(
                 "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
                 self.env.now,
-                0,
+                self.distance,
                 orig,
             )
 
@@ -374,7 +408,7 @@ class Movable(Locatable, Routable, Log):
             self.log_entry_v0(
                 "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
                 self.env.now,
-                0,
+                self.distance,
                 dest,
             )
             self.geometry = dest
