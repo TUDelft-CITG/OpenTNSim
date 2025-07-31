@@ -6,6 +6,7 @@ import opentnsim.graph as graph
 import opentnsim.model as model
 import opentnsim.plot as plot
 import opentnsim.strategy as strategy
+import opentnsim.logbook as logbook
 
 """Top-level package for OpenTNSim."""
 
