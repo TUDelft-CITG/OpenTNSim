@@ -208,9 +208,13 @@ class ConsumesEnergy:
 
         # compute the construction year of the engine
         if self.year is None:
-            raise ValueError("year must be set to calculate the construction year of the engine")
+            raise ValueError(
+                "year must be set to calculate the construction year of the engine"
+            )
         self.C_year = self.year - self.age
-        logger.debug(f"Engine age calculated as {self.age}, hence construction year is {self.C_year}")
+        logger.debug(
+            f"Engine age calculated as {self.age}, hence construction year is {self.C_year}"
+        )
 
         return self.C_year
 
@@ -417,7 +421,14 @@ class ConsumesEnergy:
             self.calculate_residual_resistance(v, h_0)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
-        self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A + self.R_B
+        self.R_tot = (
+            self.R_f * self.one_k1
+            + self.R_APP
+            + self.R_W
+            + self.R_TR
+            + self.R_A
+            + self.R_B
+        )
 
     def calculate_total_power_required(self, v, h_0):
         """Total required power:
@@ -613,32 +624,58 @@ class ConsumesEnergy:
         self.ZES_batterypack2000kWh = 2000  # kWh/pack,
 
         # SFC in mass for Fuel Cell engine
-        self.SFC_LH2_FuelCell_mass = 1 / (self.Edens_LH2_mass * self.Eeff_FuelCell)  # g/kWh
-        self.SFC_eLNG_FuelCell_mass = 1 / (self.Edens_eLNG_mass * self.Eeff_FuelCell)  # g/kWh
-        self.SFC_eMethanol_FuelCell_mass = 1 / (self.Edens_eMethanol_mass * self.Eeff_FuelCell)  # g/kWh
-        self.SFC_eNH3_FuelCell_mass = 1 / (self.Edens_eNH3_mass * self.Eeff_FuelCell)  # g/kWh
+        self.SFC_LH2_FuelCell_mass = 1 / (
+            self.Edens_LH2_mass * self.Eeff_FuelCell
+        )  # g/kWh
+        self.SFC_eLNG_FuelCell_mass = 1 / (
+            self.Edens_eLNG_mass * self.Eeff_FuelCell
+        )  # g/kWh
+        self.SFC_eMethanol_FuelCell_mass = 1 / (
+            self.Edens_eMethanol_mass * self.Eeff_FuelCell
+        )  # g/kWh
+        self.SFC_eNH3_FuelCell_mass = 1 / (
+            self.Edens_eNH3_mass * self.Eeff_FuelCell
+        )  # g/kWh
 
         # SFC in mass for ICE engine
         self.SFC_diesel_ICE_mass = 1 / (self.Edens_diesel_mass * self.Eeff_ICE)  # g/kWh
         self.SFC_eLNG_ICE_mass = 1 / (self.Edens_eLNG_mass * self.Eeff_ICE)  # g/kWh
-        self.SFC_eMethanol_ICE_mass = 1 / (self.Edens_eMethanol_mass * self.Eeff_ICE)  # g/kWh
+        self.SFC_eMethanol_ICE_mass = 1 / (
+            self.Edens_eMethanol_mass * self.Eeff_ICE
+        )  # g/kWh
         self.SFC_eNH3_ICE_mass = 1 / (self.Edens_eNH3_mass * self.Eeff_ICE)  # g/kWh
 
         # SFC in mass and volume for battery electric ships
-        self.SFC_Li_NMC_Battery_mass = 1 / (self.Edens_Li_NMC_Battery_mass * self.Eeff_Battery)  # g/kWh
-        self.SFC_Li_NMC_Battery_vol = 1 / (self.Edens_Li_NMC_Battery_vol * self.Eeff_Battery)  # m3/kWh
-        self.SFC_ZES_battery2000kWh = 1 / (self.ZES_batterypack2000kWh * self.Eeff_Battery)  # kWh
+        self.SFC_Li_NMC_Battery_mass = 1 / (
+            self.Edens_Li_NMC_Battery_mass * self.Eeff_Battery
+        )  # g/kWh
+        self.SFC_Li_NMC_Battery_vol = 1 / (
+            self.Edens_Li_NMC_Battery_vol * self.Eeff_Battery
+        )  # m3/kWh
+        self.SFC_ZES_battery2000kWh = 1 / (
+            self.ZES_batterypack2000kWh * self.Eeff_Battery
+        )  # kWh
 
         # SFC in volume for Fuel Cell engine
-        self.SFC_LH2_FuelCell_vol = 1 / (self.Edens_LH2_vol * self.Eeff_FuelCell)  # m3/kWh
-        self.SFC_eLNG_FuelCell_vol = 1 / (self.Edens_eLNG_vol * self.Eeff_FuelCell)  # m3/kWh
-        self.SFC_eMethanol_FuelCell_vol = 1 / (self.Edens_eMethanol_vol * self.Eeff_FuelCell)  # m3/kWh
-        self.SFC_eNH3_FuelCell_vol = 1 / (self.Edens_eNH3_vol * self.Eeff_FuelCell)  # m3/kWh
+        self.SFC_LH2_FuelCell_vol = 1 / (
+            self.Edens_LH2_vol * self.Eeff_FuelCell
+        )  # m3/kWh
+        self.SFC_eLNG_FuelCell_vol = 1 / (
+            self.Edens_eLNG_vol * self.Eeff_FuelCell
+        )  # m3/kWh
+        self.SFC_eMethanol_FuelCell_vol = 1 / (
+            self.Edens_eMethanol_vol * self.Eeff_FuelCell
+        )  # m3/kWh
+        self.SFC_eNH3_FuelCell_vol = 1 / (
+            self.Edens_eNH3_vol * self.Eeff_FuelCell
+        )  # m3/kWh
 
         # SFC in volume for ICE engine
         self.SFC_diesel_ICE_vol = 1 / (self.Edens_diesel_vol * self.Eeff_ICE)  # m3/kWh
         self.SFC_eLNG_ICE_vol = 1 / (self.Edens_eLNG_vol * self.Eeff_ICE)  # m3/kWh
-        self.SFC_eMethanol_ICE_vol = 1 / (self.Edens_eMethanol_vol * self.Eeff_ICE)  # m3/kWh
+        self.SFC_eMethanol_ICE_vol = 1 / (
+            self.Edens_eMethanol_vol * self.Eeff_ICE
+        )  # m3/kWh
         self.SFC_eNH3_ICE_vol = 1 / (self.Edens_eNH3_vol * self.Eeff_ICE)  # m3/kWh
 
         # Another source of diesel SFC: The general diesel SFC (g/kWh) which are based on the construction year of the engine (TNO)
@@ -665,7 +702,9 @@ class ConsumesEnergy:
             else:
                 self.SFC_diesel_C_year = 190
 
-        logger.debug(f"The general fuel consumption factor for diesel is {self.SFC_diesel_C_year} g/kWh")
+        logger.debug(
+            f"The general fuel consumption factor for diesel is {self.SFC_diesel_C_year} g/kWh"
+        )
 
     def correction_factors(self, v, h_0):
         """Partial engine load correction factors (C_partial_load):
@@ -678,7 +717,9 @@ class ConsumesEnergy:
         - the correction factors for renewable fuels used in fuel cell engine are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
         # TODO: create correction factors for renewable powered ship, the factor may be 100%
-        self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
+        self.calculate_total_power_required(
+            v=v, h_0=h_0
+        )  # You need the P_partial values
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
@@ -699,9 +740,13 @@ class ConsumesEnergy:
 
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.C_year < 2008:
-                    self.C_partial_load_NOX = self.C_partial_load.iloc[0, 1]  # <= CCR-1 class
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[
+                        0, 1
+                    ]  # <= CCR-1 class
                 if 2008 <= self.C_year <= 2019:
-                    self.C_partial_load_NOX = self.C_partial_load.iloc[0, 2]  # CCR-2 / Stage IIIa
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[
+                        0, 2
+                    ]  # CCR-2 / Stage IIIa
                 if self.C_year > 2019:
                     if self.L_w == 1:  #
                         self.C_partial_load_NOX = self.C_partial_load.iloc[
@@ -716,48 +761,112 @@ class ConsumesEnergy:
             # It is determined inbetween which two percentages in the table the partial engine load lies
             # The correction factor is determined by means of linear interpolation
 
-            elif self.C_partial_load.iloc[i, 0] < self.P_partial <= self.C_partial_load.iloc[i + 1, 0]:
+            elif (
+                self.C_partial_load.iloc[i, 0]
+                < self.P_partial
+                <= self.C_partial_load.iloc[i + 1, 0]
+            ):
                 self.C_partial_load_CO2 = (
                     (self.P_partial - self.C_partial_load.iloc[i, 0])
-                    * (self.C_partial_load.iloc[i + 1, 5] - self.C_partial_load.iloc[i, 5])
-                ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 5]
+                    * (
+                        self.C_partial_load.iloc[i + 1, 5]
+                        - self.C_partial_load.iloc[i, 5]
+                    )
+                ) / (
+                    self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]
+                ) + self.C_partial_load.iloc[
+                    i, 5
+                ]
                 self.C_partial_load_PM10 = (
                     (self.P_partial - self.C_partial_load.iloc[i, 0])
-                    * (self.C_partial_load.iloc[i + 1, 6] - self.C_partial_load.iloc[i, 6])
-                ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 6]
+                    * (
+                        self.C_partial_load.iloc[i + 1, 6]
+                        - self.C_partial_load.iloc[i, 6]
+                    )
+                ) / (
+                    self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]
+                ) + self.C_partial_load.iloc[
+                    i, 6
+                ]
                 self.C_partial_load_fuel_ICE = (
                     self.C_partial_load_CO2
                 )  # CO2 emission is generated from fuel consumption, so these two
                 # correction factors are equal
                 self.C_partial_load_PEMFC = (
                     (self.P_partial - self.C_partial_load.iloc[i, 0])
-                    * (self.C_partial_load.iloc[i + 1, 7] - self.C_partial_load.iloc[i, 7])
-                ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 7]
+                    * (
+                        self.C_partial_load.iloc[i + 1, 7]
+                        - self.C_partial_load.iloc[i, 7]
+                    )
+                ) / (
+                    self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]
+                ) + self.C_partial_load.iloc[
+                    i, 7
+                ]
                 self.C_partial_load_SOFC = (
                     (self.P_partial - self.C_partial_load.iloc[i, 0])
-                    * (self.C_partial_load.iloc[i + 1, 8] - self.C_partial_load.iloc[i, 8])
-                ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 8]
+                    * (
+                        self.C_partial_load.iloc[i + 1, 8]
+                        - self.C_partial_load.iloc[i, 8]
+                    )
+                ) / (
+                    self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]
+                ) + self.C_partial_load.iloc[
+                    i, 8
+                ]
                 if self.C_year < 2008:
                     self.C_partial_load_NOX = (
                         (self.P_partial - self.C_partial_load.iloc[i, 0])
-                        * (self.C_partial_load.iloc[i + 1, 1] - self.C_partial_load.iloc[i, 1])
-                    ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 1]
+                        * (
+                            self.C_partial_load.iloc[i + 1, 1]
+                            - self.C_partial_load.iloc[i, 1]
+                        )
+                    ) / (
+                        self.C_partial_load.iloc[i + 1, 0]
+                        - self.C_partial_load.iloc[i, 0]
+                    ) + self.C_partial_load.iloc[
+                        i, 1
+                    ]
                 if 2008 <= self.C_year <= 2019:
                     self.C_partial_load_NOX = (
                         (self.P_partial - self.C_partial_load.iloc[i, 0])
-                        * (self.C_partial_load.iloc[i + 1, 2] - self.C_partial_load.iloc[i, 2])
-                    ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 2]
+                        * (
+                            self.C_partial_load.iloc[i + 1, 2]
+                            - self.C_partial_load.iloc[i, 2]
+                        )
+                    ) / (
+                        self.C_partial_load.iloc[i + 1, 0]
+                        - self.C_partial_load.iloc[i, 0]
+                    ) + self.C_partial_load.iloc[
+                        i, 2
+                    ]
                 if self.C_year > 2019:
                     if self.L_w == 1:
                         self.C_partial_load_NOX = (
                             (self.P_partial - self.C_partial_load.iloc[i, 0])
-                            * (self.C_partial_load.iloc[i + 1, 3] - self.C_partial_load.iloc[i, 3])
-                        ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 3]
+                            * (
+                                self.C_partial_load.iloc[i + 1, 3]
+                                - self.C_partial_load.iloc[i, 3]
+                            )
+                        ) / (
+                            self.C_partial_load.iloc[i + 1, 0]
+                            - self.C_partial_load.iloc[i, 0]
+                        ) + self.C_partial_load.iloc[
+                            i, 3
+                        ]
                     else:
                         self.C_partial_load_NOX = (
                             (self.P_partial - self.C_partial_load.iloc[i, 0])
-                            * (self.C_partial_load.iloc[i + 1, 4] - self.C_partial_load.iloc[i, 4])
-                        ) / (self.C_partial_load.iloc[i + 1, 0] - self.C_partial_load.iloc[i, 0]) + self.C_partial_load.iloc[i, 4]
+                            * (
+                                self.C_partial_load.iloc[i + 1, 4]
+                                - self.C_partial_load.iloc[i, 4]
+                            )
+                        ) / (
+                            self.C_partial_load.iloc[i + 1, 0]
+                            - self.C_partial_load.iloc[i, 0]
+                        ) + self.C_partial_load.iloc[
+                            i, 4
+                        ]
 
             # If the partial engine load is => 100%, the correction factors corresponding to P_partial = 100% are assigned.
             elif self.P_partial >= self.C_partial_load.iloc[19, 0]:
@@ -771,9 +880,13 @@ class ConsumesEnergy:
                 self.C_partial_load_SOFC = self.C_partial_load.iloc[19, 8]
                 # The NOX correction factors are dependend on the construction year of the engine and the weight class
                 if self.C_year < 2008:
-                    self.C_partial_load_NOX = self.C_partial_load.iloc[19, 1]  # <= CCR-1 class
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[
+                        19, 1
+                    ]  # <= CCR-1 class
                 if 2008 <= self.C_year <= 2019:
-                    self.C_partial_load_NOX = self.C_partial_load.iloc[19, 2]  # CCR-2 / Stage IIIa
+                    self.C_partial_load_NOX = self.C_partial_load.iloc[
+                        19, 2
+                    ]  # CCR-2 / Stage IIIa
                 if self.C_year > 2019:
                     if self.L_w == 1:  #
                         self.C_partial_load_NOX = self.C_partial_load.iloc[
@@ -784,13 +897,27 @@ class ConsumesEnergy:
                             19, 4
                         ]  # Stage V:IWP/IWA-v/c-4 class (vessels with P >300 kw: assumed to be weight class L2-L3)
 
-        logger.debug(f"Partial engine load correction factor of CO2 is {self.C_partial_load_CO2}")
-        logger.debug(f"Partial engine load correction factor of PM10 is {self.C_partial_load_PM10}")
-        logger.debug(f"Partial engine load correction factor of NOX is {self.C_partial_load_NOX}")
-        logger.debug(f"Partial engine load correction factor of diesel fuel consumption in ICE is {self.C_partial_load_fuel_ICE}")
-        logger.debug(f"Partial engine load correction factor of fuel consumption in PEMFC is {self.C_partial_load_PEMFC}")
-        logger.debug(f"Partial engine load correction factor of fuel consumption in SOFC is {self.C_partial_load_SOFC}")
-        logger.debug(f"Partial engine load correction factor of energy consumption in battery is {self.C_partial_load_battery}")
+        logger.debug(
+            f"Partial engine load correction factor of CO2 is {self.C_partial_load_CO2}"
+        )
+        logger.debug(
+            f"Partial engine load correction factor of PM10 is {self.C_partial_load_PM10}"
+        )
+        logger.debug(
+            f"Partial engine load correction factor of NOX is {self.C_partial_load_NOX}"
+        )
+        logger.debug(
+            f"Partial engine load correction factor of diesel fuel consumption in ICE is {self.C_partial_load_fuel_ICE}"
+        )
+        logger.debug(
+            f"Partial engine load correction factor of fuel consumption in PEMFC is {self.C_partial_load_PEMFC}"
+        )
+        logger.debug(
+            f"Partial engine load correction factor of fuel consumption in SOFC is {self.C_partial_load_SOFC}"
+        )
+        logger.debug(
+            f"Partial engine load correction factor of energy consumption in battery is {self.C_partial_load_battery}"
+        )
 
     def calculate_emission_factors_total(self, v, h_0):
         """Total emission factors:
@@ -799,7 +926,9 @@ class ConsumesEnergy:
         """
 
         self.emission_factors_general()  # You need the values of the general emission factors of CO2, PM10, NOX
-        self.correction_factors(v=v, h_0=h_0)  # You need the correction factors of CO2, PM10, NOX
+        self.correction_factors(
+            v=v, h_0=h_0
+        )  # You need the correction factors of CO2, PM10, NOX
 
         # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
         # by the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
@@ -808,8 +937,12 @@ class ConsumesEnergy:
         self.total_factor_PM10 = self.EF_PM10 * self.C_partial_load_PM10
         self.total_factor_NOX = self.EF_NOX * self.C_partial_load_NOX
 
-        logger.debug(f"The total emission factor of CO2 is {self.total_factor_CO2} g/kWh")
-        logger.debug(f"The total emission factor of PM10 is {self.total_factor_PM10} g/kWh")
+        logger.debug(
+            f"The total emission factor of CO2 is {self.total_factor_CO2} g/kWh"
+        )
+        logger.debug(
+            f"The total emission factor of PM10 is {self.total_factor_PM10} g/kWh"
+        )
         logger.debug(f"The total emission factor CO2 is {self.total_factor_NOX} g/kWh")
 
     def calculate_SFC_final(self, v, h_0):
@@ -826,58 +959,122 @@ class ConsumesEnergy:
         self.correction_factors(v=v, h_0=h_0)  # You need the correction factors of SFC
 
         # final SFC of fuel cell in mass   [g/kWh]
-        self.final_SFC_LH2_mass_PEMFC = self.SFC_LH2_FuelCell_mass * self.C_partial_load_PEMFC
-        self.final_SFC_LH2_mass_SOFC = self.SFC_LH2_FuelCell_mass * self.C_partial_load_SOFC
-        self.final_SFC_eLNG_mass_PEMFC = self.SFC_eLNG_FuelCell_mass * self.C_partial_load_PEMFC
-        self.final_SFC_eLNG_mass_SOFC = self.SFC_eLNG_FuelCell_mass * self.C_partial_load_SOFC
-        self.final_SFC_eMethanol_mass_PEMFC = self.SFC_eMethanol_FuelCell_mass * self.C_partial_load_PEMFC
-        self.final_SFC_eMethanol_mass_SOFC = self.SFC_eMethanol_FuelCell_mass * self.C_partial_load_SOFC
-        self.final_SFC_eNH3_mass_PEMFC = self.SFC_eNH3_FuelCell_mass * self.C_partial_load_PEMFC
-        self.final_SFC_eNH3_mass_SOFC = self.SFC_eNH3_FuelCell_mass * self.C_partial_load_SOFC
+        self.final_SFC_LH2_mass_PEMFC = (
+            self.SFC_LH2_FuelCell_mass * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_LH2_mass_SOFC = (
+            self.SFC_LH2_FuelCell_mass * self.C_partial_load_SOFC
+        )
+        self.final_SFC_eLNG_mass_PEMFC = (
+            self.SFC_eLNG_FuelCell_mass * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_eLNG_mass_SOFC = (
+            self.SFC_eLNG_FuelCell_mass * self.C_partial_load_SOFC
+        )
+        self.final_SFC_eMethanol_mass_PEMFC = (
+            self.SFC_eMethanol_FuelCell_mass * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_eMethanol_mass_SOFC = (
+            self.SFC_eMethanol_FuelCell_mass * self.C_partial_load_SOFC
+        )
+        self.final_SFC_eNH3_mass_PEMFC = (
+            self.SFC_eNH3_FuelCell_mass * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_eNH3_mass_SOFC = (
+            self.SFC_eNH3_FuelCell_mass * self.C_partial_load_SOFC
+        )
 
         # final SFC of fuel cell in vol  [m3/kWh]
-        self.final_SFC_LH2_vol_PEMFC = self.SFC_LH2_FuelCell_vol * self.C_partial_load_PEMFC
-        self.final_SFC_LH2_vol_SOFC = self.SFC_LH2_FuelCell_vol * self.C_partial_load_SOFC
-        self.final_SFC_eLNG_vol_PEMFC = self.SFC_eLNG_FuelCell_vol * self.C_partial_load_PEMFC
-        self.final_SFC_eLNG_vol_SOFC = self.SFC_eLNG_FuelCell_vol * self.C_partial_load_SOFC
-        self.final_SFC_eMethanol_vol_PEMFC = self.SFC_eMethanol_FuelCell_vol * self.C_partial_load_PEMFC
-        self.final_SFC_eMethanol_vol_SOFC = self.SFC_eMethanol_FuelCell_vol * self.C_partial_load_SOFC
-        self.final_SFC_eNH3_vol_PEMFC = self.SFC_eNH3_FuelCell_vol * self.C_partial_load_PEMFC
-        self.final_SFC_eNH3_vol_SOFC = self.SFC_eNH3_FuelCell_vol * self.C_partial_load_SOFC
+        self.final_SFC_LH2_vol_PEMFC = (
+            self.SFC_LH2_FuelCell_vol * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_LH2_vol_SOFC = (
+            self.SFC_LH2_FuelCell_vol * self.C_partial_load_SOFC
+        )
+        self.final_SFC_eLNG_vol_PEMFC = (
+            self.SFC_eLNG_FuelCell_vol * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_eLNG_vol_SOFC = (
+            self.SFC_eLNG_FuelCell_vol * self.C_partial_load_SOFC
+        )
+        self.final_SFC_eMethanol_vol_PEMFC = (
+            self.SFC_eMethanol_FuelCell_vol * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_eMethanol_vol_SOFC = (
+            self.SFC_eMethanol_FuelCell_vol * self.C_partial_load_SOFC
+        )
+        self.final_SFC_eNH3_vol_PEMFC = (
+            self.SFC_eNH3_FuelCell_vol * self.C_partial_load_PEMFC
+        )
+        self.final_SFC_eNH3_vol_SOFC = (
+            self.SFC_eNH3_FuelCell_vol * self.C_partial_load_SOFC
+        )
 
         # final SFC of ICE in mass [g/kWh]
-        self.final_SFC_diesel_C_year_ICE_mass = self.SFC_diesel_C_year * self.C_partial_load_fuel_ICE
-        self.final_SFC_diesel_ICE_mass = self.SFC_diesel_ICE_mass * self.C_partial_load_fuel_ICE
-        self.final_SFC_eLNG_ICE_mass = self.SFC_eLNG_ICE_mass * self.C_partial_load_fuel_ICE
-        self.final_SFC_eMethanol_ICE_mass = self.SFC_eMethanol_ICE_mass * self.C_partial_load_fuel_ICE
-        self.final_SFC_eNH3_ICE_mass = self.SFC_eNH3_ICE_mass * self.C_partial_load_fuel_ICE
+        self.final_SFC_diesel_C_year_ICE_mass = (
+            self.SFC_diesel_C_year * self.C_partial_load_fuel_ICE
+        )
+        self.final_SFC_diesel_ICE_mass = (
+            self.SFC_diesel_ICE_mass * self.C_partial_load_fuel_ICE
+        )
+        self.final_SFC_eLNG_ICE_mass = (
+            self.SFC_eLNG_ICE_mass * self.C_partial_load_fuel_ICE
+        )
+        self.final_SFC_eMethanol_ICE_mass = (
+            self.SFC_eMethanol_ICE_mass * self.C_partial_load_fuel_ICE
+        )
+        self.final_SFC_eNH3_ICE_mass = (
+            self.SFC_eNH3_ICE_mass * self.C_partial_load_fuel_ICE
+        )
 
         # final SFC of ICE in vol  [m3/kWh]
-        self.final_SFC_diesel_ICE_vol = self.SFC_diesel_ICE_vol * self.C_partial_load_fuel_ICE
-        self.final_SFC_eLNG_ICE_vol = self.SFC_eLNG_ICE_vol * self.C_partial_load_fuel_ICE
-        self.final_SFC_eMethanol_ICE_vol = self.SFC_eMethanol_ICE_vol * self.C_partial_load_fuel_ICE
-        self.final_SFC_eNH3_ICE_vol = self.SFC_eNH3_ICE_vol * self.C_partial_load_fuel_ICE
+        self.final_SFC_diesel_ICE_vol = (
+            self.SFC_diesel_ICE_vol * self.C_partial_load_fuel_ICE
+        )
+        self.final_SFC_eLNG_ICE_vol = (
+            self.SFC_eLNG_ICE_vol * self.C_partial_load_fuel_ICE
+        )
+        self.final_SFC_eMethanol_ICE_vol = (
+            self.SFC_eMethanol_ICE_vol * self.C_partial_load_fuel_ICE
+        )
+        self.final_SFC_eNH3_ICE_vol = (
+            self.SFC_eNH3_ICE_vol * self.C_partial_load_fuel_ICE
+        )
 
         # final SFC of battery in mass and vol
-        self.final_SFC_Li_NMC_Battery_mass = self.SFC_Li_NMC_Battery_mass * self.C_partial_load_battery  # g/kWh
-        self.final_SFC_Li_NMC_Battery_vol = self.SFC_Li_NMC_Battery_vol * self.C_partial_load_battery  # m3/kWh
-        self.final_SFC_Battery2000kWh = self.SFC_ZES_battery2000kWh * self.C_partial_load_battery  # kWh
+        self.final_SFC_Li_NMC_Battery_mass = (
+            self.SFC_Li_NMC_Battery_mass * self.C_partial_load_battery
+        )  # g/kWh
+        self.final_SFC_Li_NMC_Battery_vol = (
+            self.SFC_Li_NMC_Battery_vol * self.C_partial_load_battery
+        )  # m3/kWh
+        self.final_SFC_Battery2000kWh = (
+            self.SFC_ZES_battery2000kWh * self.C_partial_load_battery
+        )  # kWh
 
     def calculate_diesel_use_g_m(self, v):
         """Total diesel fuel use in g/m:
 
         - The total fuel use in g/m can be computed by total fuel use in g (P_tot * delta_t * self.total_factor_) divided by the sailing distance (v * delt_t)
         """
-        self.diesel_use_g_m = (self.P_given * self.final_SFC_diesel_ICE_mass / v) / 3600  # without considering C_year
-        self.diesel_use_g_m_C_year = (self.P_given * self.final_SFC_diesel_C_year_ICE_mass / v) / 3600  # considering C_year
+        self.diesel_use_g_m = (
+            self.P_given * self.final_SFC_diesel_ICE_mass / v
+        ) / 3600  # without considering C_year
+        self.diesel_use_g_m_C_year = (
+            self.P_given * self.final_SFC_diesel_C_year_ICE_mass / v
+        ) / 3600  # considering C_year
 
     def calculate_diesel_use_g_s(self):
         """Total diesel fuel use in g/s:
 
         - The total fuel use in g/s can be computed by total emission in g (P_tot * delta_t * self.total_factor_) diveded by the sailing duration (delt_t)
         """
-        self.diesel_use_g_s = self.P_given * self.final_SFC_diesel_ICE_mass / 3600  # without considering C_year
-        self.diesel_use_g_s_C_year = self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600  # considering C_year
+        self.diesel_use_g_s = (
+            self.P_given * self.final_SFC_diesel_ICE_mass / 3600
+        )  # without considering C_year
+        self.diesel_use_g_s_C_year = (
+            self.P_given * self.final_SFC_diesel_C_year_ICE_mass / 3600
+        )  # considering C_year
 
     def calculate_emission_rates_g_m(self, v):
         """CO2, PM10, NOX emission rates in g/m:
@@ -1029,7 +1226,9 @@ class EnergyCalculation:
 
                 # calculate the distance travelled and the associated velocity
                 distance = calculate_distance(geometries[i], geometries[i + 1])
-                v = distance / delta_t # TODO: this is probably wrong. You don't want the speed over ground here, but the speed to water
+                v = (
+                    distance / delta_t
+                )  # TODO: this is probably wrong. You don't want the speed over ground here, but the speed to water
                 self.energy_use["distance"].append(distance)
 
                 # calculate the delta t
@@ -1053,7 +1252,9 @@ class EnergyCalculation:
                 self.vessel.calculate_emission_factors_total(v=v, h_0=h_0)
                 self.vessel.calculate_SFC_final(v=v, h_0=h_0)
 
-                if messages[i + 1] in stationary_phase_indicator:  # if we are in a stationary stage only log P_hotel
+                if (
+                    messages[i + 1] in stationary_phase_indicator
+                ):  # if we are in a stationary stage only log P_hotel
                     # Energy consumed per time step delta_t in the stationary stage
                     energy_delta = self.vessel.P_hotel * delta_t / 3600  # kJ/3600 = kWh
 
@@ -1072,48 +1273,110 @@ class EnergyCalculation:
 
                     # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t,
                     # consuming 'energy_delta' kWh
-                    P_tot_delta = self.vessel.P_tot  # in kW, required power, may exceed installed engine power
+                    P_tot_delta = (
+                        self.vessel.P_tot
+                    )  # in kW, required power, may exceed installed engine power
                     P_given_delta = self.vessel.P_given  # in kW, actual given power
                     P_installed_delta = self.vessel.P_installed  # in kW
                     emission_delta_CO2 = (
                         self.vessel.total_factor_CO2 * energy_delta
                     )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
-                    emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
-                    emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
+                    emission_delta_PM10 = (
+                        self.vessel.total_factor_PM10 * energy_delta
+                    )  # in g
+                    emission_delta_NOX = (
+                        self.vessel.total_factor_NOX * energy_delta
+                    )  # in g
                     # Todo: we need to rename the factor name for fuels, not starting with "emission", consider seperating it from emission factors
-                    delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
-                    delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
-                    delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
+                    delta_diesel_C_year = (
+                        self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta
+                    )  # in g
+                    delta_diesel_ICE_mass = (
+                        self.vessel.final_SFC_diesel_ICE_mass * energy_delta
+                    )  # in g
+                    delta_diesel_ICE_vol = (
+                        self.vessel.final_SFC_diesel_ICE_vol * energy_delta
+                    )  # in m3
 
-                    delta_LH2_PEMFC_mass = self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta  # in g
-                    delta_LH2_SOFC_mass = self.vessel.final_SFC_LH2_mass_SOFC * energy_delta  # in g
-                    delta_LH2_PEMFC_vol = self.vessel.final_SFC_LH2_vol_PEMFC * energy_delta  # in m3
-                    delta_LH2_SOFC_vol = self.vessel.final_SFC_LH2_vol_SOFC * energy_delta  # in m3
+                    delta_LH2_PEMFC_mass = (
+                        self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta
+                    )  # in g
+                    delta_LH2_SOFC_mass = (
+                        self.vessel.final_SFC_LH2_mass_SOFC * energy_delta
+                    )  # in g
+                    delta_LH2_PEMFC_vol = (
+                        self.vessel.final_SFC_LH2_vol_PEMFC * energy_delta
+                    )  # in m3
+                    delta_LH2_SOFC_vol = (
+                        self.vessel.final_SFC_LH2_vol_SOFC * energy_delta
+                    )  # in m3
 
-                    delta_eLNG_PEMFC_mass = self.vessel.final_SFC_eLNG_mass_PEMFC * energy_delta  # in g
-                    delta_eLNG_SOFC_mass = self.vessel.final_SFC_eLNG_mass_SOFC * energy_delta  # in g
-                    delta_eLNG_PEMFC_vol = self.vessel.final_SFC_eLNG_vol_PEMFC * energy_delta  # in m3
-                    delta_eLNG_SOFC_vol = self.vessel.final_SFC_eLNG_vol_SOFC * energy_delta  # in m3
-                    delta_eLNG_ICE_mass = self.vessel.final_SFC_eLNG_ICE_mass * energy_delta  # in g
-                    delta_eLNG_ICE_vol = self.vessel.final_SFC_eLNG_ICE_vol * energy_delta  # in m3
+                    delta_eLNG_PEMFC_mass = (
+                        self.vessel.final_SFC_eLNG_mass_PEMFC * energy_delta
+                    )  # in g
+                    delta_eLNG_SOFC_mass = (
+                        self.vessel.final_SFC_eLNG_mass_SOFC * energy_delta
+                    )  # in g
+                    delta_eLNG_PEMFC_vol = (
+                        self.vessel.final_SFC_eLNG_vol_PEMFC * energy_delta
+                    )  # in m3
+                    delta_eLNG_SOFC_vol = (
+                        self.vessel.final_SFC_eLNG_vol_SOFC * energy_delta
+                    )  # in m3
+                    delta_eLNG_ICE_mass = (
+                        self.vessel.final_SFC_eLNG_ICE_mass * energy_delta
+                    )  # in g
+                    delta_eLNG_ICE_vol = (
+                        self.vessel.final_SFC_eLNG_ICE_vol * energy_delta
+                    )  # in m3
 
-                    delta_eMethanol_PEMFC_mass = self.vessel.final_SFC_eMethanol_mass_PEMFC * energy_delta  # in g
-                    delta_eMethanol_SOFC_mass = self.vessel.final_SFC_eMethanol_mass_SOFC * energy_delta  # in g
-                    delta_eMethanol_PEMFC_vol = self.vessel.final_SFC_eMethanol_vol_PEMFC * energy_delta  # in m3
-                    delta_eMethanol_SOFC_vol = self.vessel.final_SFC_eMethanol_vol_SOFC * energy_delta  # in m3
-                    delta_eMethanol_ICE_mass = self.vessel.final_SFC_eMethanol_ICE_mass * energy_delta  # in g
-                    delta_eMethanol_ICE_vol = self.vessel.final_SFC_eMethanol_ICE_vol * energy_delta  # in m3
+                    delta_eMethanol_PEMFC_mass = (
+                        self.vessel.final_SFC_eMethanol_mass_PEMFC * energy_delta
+                    )  # in g
+                    delta_eMethanol_SOFC_mass = (
+                        self.vessel.final_SFC_eMethanol_mass_SOFC * energy_delta
+                    )  # in g
+                    delta_eMethanol_PEMFC_vol = (
+                        self.vessel.final_SFC_eMethanol_vol_PEMFC * energy_delta
+                    )  # in m3
+                    delta_eMethanol_SOFC_vol = (
+                        self.vessel.final_SFC_eMethanol_vol_SOFC * energy_delta
+                    )  # in m3
+                    delta_eMethanol_ICE_mass = (
+                        self.vessel.final_SFC_eMethanol_ICE_mass * energy_delta
+                    )  # in g
+                    delta_eMethanol_ICE_vol = (
+                        self.vessel.final_SFC_eMethanol_ICE_vol * energy_delta
+                    )  # in m3
 
-                    delta_eNH3_PEMFC_mass = self.vessel.final_SFC_eNH3_mass_PEMFC * energy_delta  # in g
-                    delta_eNH3_SOFC_mass = self.vessel.final_SFC_eNH3_mass_SOFC * energy_delta  # in g
-                    delta_eNH3_PEMFC_vol = self.vessel.final_SFC_eNH3_vol_PEMFC * energy_delta  # in m3
-                    delta_eNH3_SOFC_vol = self.vessel.final_SFC_eNH3_vol_SOFC * energy_delta  # in m3
-                    delta_eNH3_ICE_mass = self.vessel.final_SFC_eNH3_ICE_mass * energy_delta  # in g
-                    delta_eNH3_ICE_vol = self.vessel.final_SFC_eNH3_ICE_vol * energy_delta  # in m3
+                    delta_eNH3_PEMFC_mass = (
+                        self.vessel.final_SFC_eNH3_mass_PEMFC * energy_delta
+                    )  # in g
+                    delta_eNH3_SOFC_mass = (
+                        self.vessel.final_SFC_eNH3_mass_SOFC * energy_delta
+                    )  # in g
+                    delta_eNH3_PEMFC_vol = (
+                        self.vessel.final_SFC_eNH3_vol_PEMFC * energy_delta
+                    )  # in m3
+                    delta_eNH3_SOFC_vol = (
+                        self.vessel.final_SFC_eNH3_vol_SOFC * energy_delta
+                    )  # in m3
+                    delta_eNH3_ICE_mass = (
+                        self.vessel.final_SFC_eNH3_ICE_mass * energy_delta
+                    )  # in g
+                    delta_eNH3_ICE_vol = (
+                        self.vessel.final_SFC_eNH3_ICE_vol * energy_delta
+                    )  # in m3
 
-                    delta_Li_NMC_Battery_mass = self.vessel.final_SFC_Li_NMC_Battery_mass * energy_delta  # in g
-                    delta_Li_NMC_Battery_vol = self.vessel.final_SFC_Li_NMC_Battery_vol * energy_delta  # in m3
-                    delta_Battery2000kWh = self.vessel.final_SFC_Battery2000kWh * energy_delta  # in ZESpack number
+                    delta_Li_NMC_Battery_mass = (
+                        self.vessel.final_SFC_Li_NMC_Battery_mass * energy_delta
+                    )  # in g
+                    delta_Li_NMC_Battery_vol = (
+                        self.vessel.final_SFC_Li_NMC_Battery_vol * energy_delta
+                    )  # in m3
+                    delta_Battery2000kWh = (
+                        self.vessel.final_SFC_Battery2000kWh * energy_delta
+                    )  # in ZESpack number
 
                     self.energy_use["P_tot"].append(P_tot_delta)
                     self.energy_use["P_given"].append(P_given_delta)
@@ -1123,34 +1386,90 @@ class EnergyCalculation:
                     self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
                     self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
                     self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
-                    self.energy_use["total_diesel_consumption_C_year_ICE_mass"].append(delta_diesel_C_year)
-                    self.energy_use["total_diesel_consumption_ICE_mass"].append(delta_diesel_ICE_mass)
-                    self.energy_use["total_diesel_consumption_ICE_vol"].append(delta_diesel_ICE_vol)
-                    self.energy_use["total_LH2_consumption_PEMFC_mass"].append(delta_LH2_PEMFC_mass)
-                    self.energy_use["total_LH2_consumption_SOFC_mass"].append(delta_LH2_SOFC_mass)
-                    self.energy_use["total_LH2_consumption_PEMFC_vol"].append(delta_LH2_PEMFC_vol)
-                    self.energy_use["total_LH2_consumption_SOFC_vol"].append(delta_LH2_SOFC_vol)
-                    self.energy_use["total_eLNG_consumption_PEMFC_mass"].append(delta_eLNG_PEMFC_mass)
-                    self.energy_use["total_eLNG_consumption_SOFC_mass"].append(delta_eLNG_SOFC_mass)
-                    self.energy_use["total_eLNG_consumption_PEMFC_vol"].append(delta_eLNG_PEMFC_vol)
-                    self.energy_use["total_eLNG_consumption_SOFC_vol"].append(delta_eLNG_SOFC_vol)
-                    self.energy_use["total_eLNG_consumption_ICE_mass"].append(delta_eLNG_ICE_mass)
-                    self.energy_use["total_eLNG_consumption_ICE_vol"].append(delta_eLNG_ICE_vol)
-                    self.energy_use["total_eMethanol_consumption_PEMFC_mass"].append(delta_eMethanol_PEMFC_mass)
-                    self.energy_use["total_eMethanol_consumption_SOFC_mass"].append(delta_eMethanol_SOFC_mass)
-                    self.energy_use["total_eMethanol_consumption_PEMFC_vol"].append(delta_eMethanol_PEMFC_vol)
-                    self.energy_use["total_eMethanol_consumption_SOFC_vol"].append(delta_eMethanol_SOFC_vol)
-                    self.energy_use["total_eMethanol_consumption_ICE_mass"].append(delta_eMethanol_ICE_mass)
-                    self.energy_use["total_eMethanol_consumption_ICE_vol"].append(delta_eMethanol_ICE_vol)
-                    self.energy_use["total_eNH3_consumption_PEMFC_mass"].append(delta_eNH3_PEMFC_mass)
-                    self.energy_use["total_eNH3_consumption_SOFC_mass"].append(delta_eNH3_SOFC_mass)
-                    self.energy_use["total_eNH3_consumption_PEMFC_vol"].append(delta_eNH3_PEMFC_vol)
-                    self.energy_use["total_eNH3_consumption_SOFC_vol"].append(delta_eNH3_SOFC_vol)
-                    self.energy_use["total_eNH3_consumption_ICE_mass"].append(delta_eNH3_ICE_mass)
-                    self.energy_use["total_eNH3_consumption_ICE_vol"].append(delta_eNH3_ICE_vol)
-                    self.energy_use["total_Li_NMC_Battery_mass"].append(delta_Li_NMC_Battery_mass)
-                    self.energy_use["total_Li_NMC_Battery_vol"].append(delta_Li_NMC_Battery_vol)
-                    self.energy_use["total_Battery2000kWh_consumption_num"].append(delta_Battery2000kWh)
+                    self.energy_use["total_diesel_consumption_C_year_ICE_mass"].append(
+                        delta_diesel_C_year
+                    )
+                    self.energy_use["total_diesel_consumption_ICE_mass"].append(
+                        delta_diesel_ICE_mass
+                    )
+                    self.energy_use["total_diesel_consumption_ICE_vol"].append(
+                        delta_diesel_ICE_vol
+                    )
+                    self.energy_use["total_LH2_consumption_PEMFC_mass"].append(
+                        delta_LH2_PEMFC_mass
+                    )
+                    self.energy_use["total_LH2_consumption_SOFC_mass"].append(
+                        delta_LH2_SOFC_mass
+                    )
+                    self.energy_use["total_LH2_consumption_PEMFC_vol"].append(
+                        delta_LH2_PEMFC_vol
+                    )
+                    self.energy_use["total_LH2_consumption_SOFC_vol"].append(
+                        delta_LH2_SOFC_vol
+                    )
+                    self.energy_use["total_eLNG_consumption_PEMFC_mass"].append(
+                        delta_eLNG_PEMFC_mass
+                    )
+                    self.energy_use["total_eLNG_consumption_SOFC_mass"].append(
+                        delta_eLNG_SOFC_mass
+                    )
+                    self.energy_use["total_eLNG_consumption_PEMFC_vol"].append(
+                        delta_eLNG_PEMFC_vol
+                    )
+                    self.energy_use["total_eLNG_consumption_SOFC_vol"].append(
+                        delta_eLNG_SOFC_vol
+                    )
+                    self.energy_use["total_eLNG_consumption_ICE_mass"].append(
+                        delta_eLNG_ICE_mass
+                    )
+                    self.energy_use["total_eLNG_consumption_ICE_vol"].append(
+                        delta_eLNG_ICE_vol
+                    )
+                    self.energy_use["total_eMethanol_consumption_PEMFC_mass"].append(
+                        delta_eMethanol_PEMFC_mass
+                    )
+                    self.energy_use["total_eMethanol_consumption_SOFC_mass"].append(
+                        delta_eMethanol_SOFC_mass
+                    )
+                    self.energy_use["total_eMethanol_consumption_PEMFC_vol"].append(
+                        delta_eMethanol_PEMFC_vol
+                    )
+                    self.energy_use["total_eMethanol_consumption_SOFC_vol"].append(
+                        delta_eMethanol_SOFC_vol
+                    )
+                    self.energy_use["total_eMethanol_consumption_ICE_mass"].append(
+                        delta_eMethanol_ICE_mass
+                    )
+                    self.energy_use["total_eMethanol_consumption_ICE_vol"].append(
+                        delta_eMethanol_ICE_vol
+                    )
+                    self.energy_use["total_eNH3_consumption_PEMFC_mass"].append(
+                        delta_eNH3_PEMFC_mass
+                    )
+                    self.energy_use["total_eNH3_consumption_SOFC_mass"].append(
+                        delta_eNH3_SOFC_mass
+                    )
+                    self.energy_use["total_eNH3_consumption_PEMFC_vol"].append(
+                        delta_eNH3_PEMFC_vol
+                    )
+                    self.energy_use["total_eNH3_consumption_SOFC_vol"].append(
+                        delta_eNH3_SOFC_vol
+                    )
+                    self.energy_use["total_eNH3_consumption_ICE_mass"].append(
+                        delta_eNH3_ICE_mass
+                    )
+                    self.energy_use["total_eNH3_consumption_ICE_vol"].append(
+                        delta_eNH3_ICE_vol
+                    )
+                    self.energy_use["total_Li_NMC_Battery_mass"].append(
+                        delta_Li_NMC_Battery_mass
+                    )
+                    self.energy_use["total_Li_NMC_Battery_vol"].append(
+                        delta_Li_NMC_Battery_vol
+                    )
+                    self.energy_use["total_Battery2000kWh_consumption_num"].append(
+                        delta_Battery2000kWh
+                    )
 
                     self.energy_use["water depth"].append(h_0)
                     # self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
