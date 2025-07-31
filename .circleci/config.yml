@@ -32,6 +32,13 @@ jobs:
           command: |
             docker exec -it opentnsim bash -c "coverage-badge -o coverage.svg"
             docker cp opentnsim:/OpenTNSim/coverage.svg /tmp/artifacts/
+          
+      - run: 
+          name: Generate book
+          command: |
+            docker exec -it opentnsim bash -c "pip install sphinx"
+            docker exec -it opentnsim bash -c "make book"
+            docker cp opentnsim:/OpenTNSim/docs/_build/html /tmp/artifacts/book
 
       - store_artifacts:
           path: /tmp/artifacts
