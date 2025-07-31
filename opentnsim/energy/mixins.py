@@ -1122,8 +1122,9 @@ class ConsumesEnergy:
     def calculate_h_squat(self, v, h_0, width=150):
         """Calculate the water depth in case h_squat is set to True
 
-        The amount of water under the keel is calculated h_0 - T. When h_squat is set to True, we estimate a max_sinkage
-        that is subtracted from h_0. This values is returned as h_squat for further calculation.
+        The amount of water under the keel is calculated h_0 - T. When h_squat is set
+        to True, we estimate a max_sinkage that is subtracted from h_0. This values is
+        returned as h_squat for further calculation.
 
         """
         h_squat = h_0 - self.calculate_max_sinkage(v, h_0, width=width)
