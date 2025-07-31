@@ -1,144 +1,13 @@
 """
-Event table for logbook in OpenTNSim.
+Logging utilities for energy-related calculations.
 """
 
 # %% IMPORT DEPENDENCIES
 # generic
-import pandas as pd
-import plotly.express as px
+
 
 # internal
 import opentnsim.graph
-
-
-# %% CONVERT LOG TO EVENT TABLE
-def logbook2eventtable(objs):
-    """
-    Transform object logbooks into a 'minimum event table'.
-
-    Implements the basic 'event table' concept as proposed by Van der Werff:
-
-    Van der Werff, S.E., F. Baart and M. van Koningsveld (2025). “Merging Multiple
-    System Perspectives: The Key to Effective Inland Shipping Emission-Reduction
-    Policy Design.” Journal of Marine Science and engineering 13(4), 716.
-    https://doi.org/10.3390/jmse13040716
-
-    Van der Werff, S.E., S. Eppenga, A. van der Hout, F. Baart and M. van
-    Koningsveld (2025). “Multi-perspective nautical safety risk assessment of
-    allisions with offshore wind parks.” Applied Ocean Research 158(2025),104564.
-    https://doi.org/10.1016/j.apor.2025.104564
-
-    For waterborne traffic over a network, a unique event is defined by:
-     - a unique vessel,
-     - a specific section of the waterway,
-     - a specific time.
-
-    Parameters
-    ----------
-    objs: list
-        List of OpenTNSim simulation objects with log information.
-
-    Returns
-    -------
-    eventtable: pandas.DataFrame
-        DataFrame with all events from obj.logbook attributes in objs.
-    """
-    # check if all objects have a logbook with expected structure
-    for obj in objs:
-        if (
-            not hasattr(obj, "logbook")
-            or not hasattr(obj, "id")
-            or not hasattr(obj, "name")
-        ):
-            raise ValueError(
-                f"Object {obj} does not have a logbook or id/name attributes."
-            )
-
-    # construct all logged events
-    events = []
-    for obj in objs:
-        df = pd.DataFrame.from_dict(obj.logbook)
-        for i in range(0, len(df), 2):
-            activity = df.iloc[i]["Message"].replace(" start", "")
-
-            start_time = df.iloc[i]["Timestamp"]
-            stop_time = df.iloc[i + 1]["Timestamp"]
-            start_location = df.iloc[i]["Geometry"]
-            stop_location = df.iloc[i + 1]["Geometry"]
-
-            duration_seconds = (stop_time - start_time).total_seconds()
-            distance_meters = opentnsim.graph.calculate_distance(
-                start_location, stop_location
-            )
-
-            events.append(
-                {
-                    "object id": obj.id,
-                    "object name": obj.name,
-                    "activity name": activity,
-                    "start location": start_location,
-                    "stop location": stop_location,
-                    "start time": start_time,
-                    "stop time": stop_time,
-                    "distance (m)": distance_meters,
-                    "duration (s)": duration_seconds,
-                }
-            )
-
-    # Final DataFrame
-    eventtable = pd.DataFrame(events)
-
-    return eventtable
-
-
-# %% GENERATE GANTT CHART FROM EVENT TABLE
-def generate_vessel_gantt_chart(df_eventtable: pd.DataFrame):
-    """
-    Method to generate a Gantt chart from a vessel activity log DataFrame.
-
-    This method visualizes the activity timeline of vessels by combining vessel
-    names and activity types into a single label, and plotting them using Plotly
-    Express's timeline chart.
-
-    Parameters
-    ----------
-    df_eventtable : pandas.DataFrame
-        DataFrame containing columns 'object name', 'activity name', 'start time',
-        and 'stop time' representing vessel activity logs.
-
-    Returns
-    -------
-    fig : plotly.graph_objects.Figure
-        A Plotly figure object representing the Gantt chart of vessel activities.
-    """
-
-    # Add vessel name to activity label
-    df_eventtable["activity label"] = (
-        df_eventtable["object name"] + " - " + df_eventtable["activity name"]
-    )
-
-    # Create the Gantt chart
-    fig = px.timeline(
-        df_eventtable,
-        x_start="start time",
-        x_end="stop time",
-        y="activity label",
-        color="object name",
-        title="Gantt chart of logged events",
-    )
-
-    # Reverse the Y-axis to match Gantt chart style
-    fig.update_yaxes(autorange="reversed")
-
-    # Customize layout
-    fig.update_layout(
-        xaxis_title="Time",
-        yaxis_title="Activity (with Vessel)",
-        legend_title="Vessel",
-        margin=dict(l=20, r=20, t=40, b=20),
-    )
-
-    return fig
 
 
 # %% ADD ENERGY ATTRIBUTES INTO EVENT TABLE
@@ -247,6 +116,12 @@ def add_fuel_attributes_to_event_table(df, objs):
         DataFrame that contains a 'minimum event table' plus energy-related and
         fuel-related attributes.
     """
+    # check if total_energy (kWh) is in the DataFrame
+    if "total_energy (kWh)" not in df.columns:
+        raise ValueError(
+            "DataFrame must contain 'total_energy (kWh)' column to add fuel "
+            "attributes. Make sure to call add_energy_attributes_to_eventtable first."
+        )
 
     for index, row in df.iterrows():
 
@@ -269,7 +144,8 @@ def add_fuel_attributes_to_event_table(df, objs):
         df.at[index, "PM10_emission_total (g)"] = PM10_emission_total
         df.at[index, "NOX_emission_total (g)"] = NOX_emission_total
 
-        # TODO: overweeg of deze entries nuttig zijn. Ze zijn ook eenvoudig te berekenen uit andere entries
+        # TODO: see if these entries are useful. They can also be easily calculated
+        # from other entries
         df.at[index, "CO2_emission_per_m (g/m)"] = (
             CO2_emission_total / row["distance (m)"]
         )
@@ -280,7 +156,8 @@ def add_fuel_attributes_to_event_table(df, objs):
             NOX_emission_total / row["distance (m)"]
         )
 
-        # TODO: overweeg of deze entries nuttig zijn. Ze zijn ook eenvoudig te berekenen uit andere entries
+        # TODO: see if these entries are useful. They can also be easily calculated
+        # from other entries
         df.at[index, "CO2_emission_per_s (g/s)"] = (
             CO2_emission_total / row["duration (s)"]
         )
