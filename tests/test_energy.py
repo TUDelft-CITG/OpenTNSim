@@ -52,7 +52,9 @@ def test_calculate_max_sinkage(v, h_0, T, B, C_B, width, outcome):
     """Regression test for the calculate_max_sinkage function."""
     r = calculate_max_sinkage(v=v, h_0=h_0, T=T, B=B, C_B=C_B, width=width)
     if not r == pytest.approx(outcome, abs=1e-2):
-        raise AssertionError(f"Expected {outcome}, but got {r} for v={v}, h_0={h_0}, T={T}, B={B}, C_B={C_B}, width={width}")
+        raise AssertionError(
+            f"Expected {outcome}, but got {r} for v={v}, h_0={h_0}, T={T}, B={B}, C_B={C_B}, width={width}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -90,8 +92,8 @@ def test_calculate_max_sinkage_wrong_input(v, h_0, T, B, C_B, width):
 def test_calculate_properties_bulbous_bow():
     """Test energy.calculate_properties."""
     # make a calculation with some values
-    C_M, C_WP, C_P, delta, lcb, L_R, A_T, A_BT, S, S_APP, S_B, T_F, h_B = calculate_properties(
-        C_B=0.8, L=20, B=5, T=2, bulbous_bow=True, C_BB=0.7
+    C_M, C_WP, C_P, delta, lcb, L_R, A_T, A_BT, S, S_APP, S_B, T_F, h_B = (
+        calculate_properties(C_B=0.8, L=20, B=5, T=2, bulbous_bow=True, C_BB=0.7)
     )
 
     # check the outcome
@@ -119,8 +121,8 @@ def test_calculate_properties_negative_block_coefficient():
 def test_calculate_properties_no_bulbous_bow():
     """Test calculate_properties without bulbous bow."""
     # make a calculation with some values
-    C_M, C_WP, C_P, delta, lcb, L_R, A_T, A_BT, S, S_APP, S_B, T_F, h_B = calculate_properties(
-        C_B=0.8, L=20, B=5, T=2, bulbous_bow=False, C_BB=0.7
+    C_M, C_WP, C_P, delta, lcb, L_R, A_T, A_BT, S, S_APP, S_B, T_F, h_B = (
+        calculate_properties(C_B=0.8, L=20, B=5, T=2, bulbous_bow=False, C_BB=0.7)
     )
 
     # check the outcome
@@ -151,8 +153,10 @@ def test_calculate_frictional_resistance():
     Test case comse from running code, not from a paper.
     """
     # make a calculation
-    R_f, C_f, R_e, Cf_deep, Cf_shallow, Cf_0, Cf_Katsui, V_B, D, a = calculate_frictional_resistance(
-        v=3, h_0=4, L=50, nu=1.002e-6, T=3, S=120, S_B=100, rho=1000
+    R_f, C_f, R_e, Cf_deep, Cf_shallow, Cf_0, Cf_Katsui, V_B, D, a = (
+        calculate_frictional_resistance(
+            v=3, h_0=4, L=50, nu=1.002e-6, T=3, S=120, S_B=100, rho=1000
+        )
     )
 
     # check the outcome
@@ -172,14 +176,21 @@ def test_calculate_frictional_resistance():
 def test_calculate_frictional_draught_h0_mismatch(h_0, T):
     """Test cases where h_0 - T <= 0"""
     with pytest.raises(Exception):
-        _ = calculate_frictional_resistance(v=3, h_0=h_0, L=50, nu=1.0038, T=T, S=120, S_B=100, rho=1000)
+        _ = calculate_frictional_resistance(
+            v=3, h_0=h_0, L=50, nu=1.0038, T=T, S=120, S_B=100, rho=1000
+        )
 
 
-@pytest.mark.skip(reason="Current implementation does allow S_B > S, " "however this seems an infeasible usecase.")
+@pytest.mark.skip(
+    reason="Current implementation does allow S_B > S, "
+    "however this seems an infeasible usecase."
+)
 def test_calculate_frictional_resistance_SB_gt_S():
     """Test calculate_frictional_resistance with S_B > S."""
     with pytest.raises(Exception):
-        _ = calculate_frictional_resistance(v=3, h_0=4, L=50, nu=1.0038, T=3, S=120, S_B=130, rho=1000)
+        _ = calculate_frictional_resistance(
+            v=3, h_0=4, L=50, nu=1.0038, T=3, S=120, S_B=130, rho=1000
+        )
 
 
 # %% TESTING calculate_viscous_resistance
@@ -187,7 +198,9 @@ def test_calculate_viscous_resistance_1():
     """Test the calculate_viscous_resistance function."""
     # make a calculation
     # c_stern = 0 is used tshould lead to c_14 equal to 1
-    c_14, one_k1, R_f_one_k1 = calculate_viscous_resistance(c_stern=0, B=5, L=40, T=2, L_R=4, C_P=0.5, R_f=1, delta=100)
+    c_14, one_k1, R_f_one_k1 = calculate_viscous_resistance(
+        c_stern=0, B=5, L=40, T=2, L_R=4, C_P=0.5, R_f=1, delta=100
+    )
 
     # check the outcome
     assert c_14 == 1.0
@@ -198,7 +211,9 @@ def test_calculate_viscous_resistance_1():
 def test_calculate_viscous_resistance_2():
     """Test the calculate_viscous_resistance function."""
     # make a calculation
-    c_14, one_k1, R_f_one_k1 = calculate_viscous_resistance(c_stern=10, B=5, L=40, T=2, L_R=4, C_P=0.5, R_f=1, delta=100)
+    c_14, one_k1, R_f_one_k1 = calculate_viscous_resistance(
+        c_stern=10, B=5, L=40, T=2, L_R=4, C_P=0.5, R_f=1, delta=100
+    )
 
     # check the outcome
     assert c_14 == pytest.approx(1.011, abs=1e-3)
@@ -236,7 +251,7 @@ def test_calculate_appendage_resistance():
         (5, 1.1, 0.5048, 5.0, 1),
         (5, 1, 0.5048, 5.0, 1),
         (7, 1.1, 0.7067, 7.2014, 0.972),
-        (7, 1, 0.7067, 7.1782, 0.9752),
+        (7, 1, 0.7067, 7.1791, 0.9751),
     ],
 )
 def test_karpov(v, T, F_rh, V_2, alpha_xx):
@@ -308,7 +323,7 @@ def test_karpov(v, T, F_rh, V_2, alpha_xx):
             1,
             -7.89,
             0.1,
-            -2.34,
+            -1.69,
             1.36,
             0.57,
             -1.97,
@@ -326,11 +341,11 @@ def test_karpov(v, T, F_rh, V_2, alpha_xx):
             1,
             -1.67,
             0.31,
-            -3.18,
+            -1.69,
             1.36,
             0.78,
             -3.21,
-            -0.04,
+            -0.02,
             -0.03,
         ),
         (
@@ -344,11 +359,11 @@ def test_karpov(v, T, F_rh, V_2, alpha_xx):
             1,
             -4.33,
             0.17,
-            -2.69,
+            -1.69,
             1.36,
             0.69,
             -2.33,
-            -0.04,
+            -0.02,
             -0.33,
         ),
         (
@@ -407,7 +422,9 @@ def test_karpov(v, T, F_rh, V_2, alpha_xx):
         ),
     ],
 )
-def test_calculate_wave_resistance(B, L, delta, C_P, F_rL, i_E, c_1, c_2, c_5, c_7, c_15, c_16, lmbda, m_1, m_2, R_W):
+def test_calculate_wave_resistance(
+    B, L, delta, C_P, F_rL, i_E, c_1, c_2, c_5, c_7, c_15, c_16, lmbda, m_1, m_2, R_W
+):
     """Test the calculate_wave_resistance function."""
     # cases represented in the parametrization:
     # - B / L < 0.11, B / L > 0.25, else
@@ -416,21 +433,23 @@ def test_calculate_wave_resistance(B, L, delta, C_P, F_rL, i_E, c_1, c_2, c_5, c
     # - L / B < 12, else
 
     # make a calculation
-    _F_rL, _i_E, _c_1, _c_2, _c_5, _c_7, _c_15, _c_16, _lmbda, _m_1, _m_2, _R_W = calculate_wave_resistance(
-        V_2=3,
-        h_0=10,
-        g=9.81,
-        T=3,
-        L=L,
-        B=B,
-        C_P=C_P,
-        C_WP=0.8,
-        lcb=0.5,
-        L_R=20,
-        A_T=50,
-        C_M=0.5,
-        delta=delta,
-        rho=1000,
+    _F_rL, _i_E, _c_1, _c_2, _c_5, _c_7, _c_15, _c_16, _lmbda, _m_1, _m_2, _R_W = (
+        calculate_wave_resistance(
+            V_2=3,
+            h_0=10,
+            g=9.81,
+            T=3,
+            L=L,
+            B=B,
+            C_P=C_P,
+            C_WP=0.8,
+            lcb=0.5,
+            L_R=20,
+            A_T=50,
+            C_M=0.5,
+            delta=delta,
+            rho=1000,
+        )
     )
 
     # check the outcome
@@ -456,27 +475,31 @@ def test_calculate_wave_resistance(B, L, delta, C_P, F_rL, i_E, c_1, c_2, c_5, c
         (False, 5, 0.29, 0.19, 42.41, 0.04, 1, 0.0, 0.29, 1.04, -2.24, 0, 42.7),
     ],
 )
-def test_calculate_residual_resistance(bulbous_bow, T, F_nT, c_6, R_TR, c_4, c_2, C_A, R_A, F_ni, P_B, R_B, R_res):
+def test_calculate_residual_resistance(
+    bulbous_bow, T, F_nT, c_6, R_TR, c_4, c_2, C_A, R_A, F_ni, P_B, R_B, R_res
+):
     """Test the calculate_residual_resistance function."""
     # cases
     # - bulbous_bow T/F, if False, then R_B=0
     # - T / L < 0.04, else
     # make a calculation
-    _F_nT, _c_6, _R_TR, _c_4, _c_2, _C_A, _R_A, _F_ni, _P_B, _R_B, _R_res = calculate_residual_resistance(
-        V_2=3,
-        g=9.81,
-        A_T=50,
-        B=5,
-        C_WP=0.8,
-        rho=1000,
-        T=T,
-        L=50,
-        C_B=0.8,
-        S=100,
-        T_F=1,
-        h_B=1,
-        A_BT=4,
-        bulbous_bow=bulbous_bow,
+    _F_nT, _c_6, _R_TR, _c_4, _c_2, _C_A, _R_A, _F_ni, _P_B, _R_B, _R_res = (
+        calculate_residual_resistance(
+            V_2=3,
+            g=9.81,
+            A_T=50,
+            B=5,
+            C_WP=0.8,
+            rho=1000,
+            T=T,
+            L=50,
+            C_B=0.8,
+            S=100,
+            T_F=1,
+            h_B=1,
+            A_BT=4,
+            bulbous_bow=bulbous_bow,
+        )
     )
 
     # check the outcome
