@@ -146,6 +146,23 @@ class Movable(Locatable, Routable, Log):
     wsg84: pyproj.Geod
         used for distance computation
 
+    Notes
+    -----
+    This class can handle a basic graph in env.graph. This will result in a simple simulation.
+
+    The class can also handle more complex simulations. For this, extra information is needed in the graph, such as:
+    - Resources on nodes and edges, which can be requested and released.
+        - Resources on nodes are saved in env.graph.nodes[node]["Resources"]
+        - Resources on edges are saved in env.graph.edges[origin, destination]["Resources"].
+        - Several edges and nodes can have the same resource, which is usefull when a segment can only be used by one vessel at a time.
+        - When using a digraph, make sure to assign the same resource to both directions of the edge.
+    - Current on edges, which can be used to compute the speed of the vessel.
+        - Current on edges is saved in env.graph.edges[origin, destination]["Info"]["Current"].
+        - Current can only be used in a directed graph (DiGraph).
+        - Current is positive in the direction of the edge, and negative in the opposite direction.
+        - Make sure to assign current to both directions of the edge in a digraph. (the negative and positive current)
+    - TODO aanvullen met energy en width and depth.
+
     """
 
     def __init__(self, v: float, *args, **kwargs):
@@ -173,12 +190,6 @@ class Movable(Locatable, Routable, Log):
                     [node for node in self.route if node not in geoms]
                 )
             )
-
-        # warning if current not in edge info
-        # TODO
-
-        # Error when P_tot_given is set, but no GeneralDepth in edge info
-        # TODO
 
     # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
     def move(self):
@@ -478,12 +489,15 @@ class Movable(Locatable, Routable, Log):
             # There are two mechanisms that reduce the power given:
             # 1. The grounding speed:
             # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
-            # TODO get_upperbound_for_power2v heeft een width hardcoded op 150. Is dat handig?
+            # TODO get_upperbound_for_power2v heeft een width standaard 150. Is dat handig?
+            edge_width = self._get_general_width(origin, destination)
+            edge_width = edge_width if edge_width is not None else 150  # default width if not set
+
             (
                 upperbound,
                 selected,
                 results_df,
-            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
+            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=edge_width, depth=depth, margin=0)
 
             # Here the upperbound is used to estimate the actual velocity
             power_used = min(self.P_tot_given, upperbound)
@@ -491,6 +505,28 @@ class Movable(Locatable, Routable, Log):
         else:
             # if no ConsumesEnergy mixin, use the default speed
             return self.v
+
+    def _get_general_width(self, origin, destination):
+        """Get the general width of the edge.
+
+        Parameters
+        ----------
+        origin: str
+            the origin node of the edge
+        destination: str
+            the destination node of the edge
+
+        Returns
+        -------
+        float
+            the general width of the edge (in m)
+        """
+        if "Info" not in self.graph.edges[origin, destination].keys():
+            return None
+        elif "GeneralWidth" not in self.graph.edges[origin, destination]["Info"].keys():
+            return None
+        else:
+            return self.graph.edges[origin, destination]["Info"]["GeneralWidth"]
 
 
 class ContainerDependentMovable(Movable, HasContainer):
