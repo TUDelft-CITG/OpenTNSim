@@ -15,7 +15,8 @@ parts:
       title: Anaconda
 - caption:  Basics of OpenTNSim
   chapters:
-    - file: 0000 - Basic trip over a single edge.ipynb
+    - file: examples/Example 00 - Basic simulation.ipynb
+    - file: examples/0000 - Basic trip over a single edge.ipynb
     - file: examples/0001 - Basic trip over a single edge (with current).ipynb
     - file: examples/0002 - Alternative routes over a simple network.ipynb
     - file: examples/0003 - Resource restriction on part of the network.ipynb
