@@ -357,10 +357,7 @@ class Movable(Locatable, Routable, Log):
 
         # Check if the edge has current info
         # NB: positive current is directed from origin to destination
-        Current = 0 # m/s
-        if "Info" in edge.keys():
-            if "Current" in edge['Info'].keys():
-                Current = edge['Info']['Current']
+        current = self._get_current(origin, destination)
 
         # Wait for edge resources to become available
         # TODO: Misschien moeten we Resources ook onder Info hangen?
@@ -394,7 +391,7 @@ class Movable(Locatable, Routable, Log):
             yield from on_pass_edge_function(origin, destination)
 
         # default velocity based on current speed.
-        timeout = distance / (self.current_speed + Current)
+        timeout = distance / (self.current_speed + current)
         yield self.env.timeout(timeout)
         self.distance += distance
 
@@ -416,6 +413,43 @@ class Movable(Locatable, Routable, Log):
                 self.resource = None
             else:
                 pass
+
+    def _get_current(self, origin, destination):
+        """Get the current on the edge
+
+        Parameters
+        ----------
+        origin: str
+            the origin node of the edge
+        destination: str
+            the destination node of the edge
+
+        Returns
+        -------
+        float
+            the current on the edge (in m/s)
+        """
+        if "Info" not in self.graph.edges[origin, destination].keys():
+            # no info on the current, return 0
+            return 0.0
+        elif "Current" not in self.graph.edges[origin, destination]["Info"].keys():
+            # no info on current, return 0
+            return 0.0
+        elif not isinstance(self.graph, nx.DiGraph):
+            raise TypeError(
+                "Current is only available on a DiGraph. Use a Digraph to use current in your calculations.",
+                UserWarning,
+            )
+            return 0.0
+        current = self.graph.edges[origin, destination]["Info"]["Current"]
+
+        if (self.current_speed + current) <= 0:
+            raise ValueError(
+                f"Current {current} m/s is larger than current speed {self.current_speed} m/s. "
+                "This will result in a negative speed, which is not allowed.",
+                UserWarning,
+            )
+        return current
 
     @property
     def current_speed(self):

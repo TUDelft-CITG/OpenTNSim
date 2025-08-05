@@ -24,6 +24,32 @@ def graph():
     graph.add_edge(0, 1, weight=1)
     return graph
 
+
+@pytest.fixture
+def digraph():
+    """Fixture for Movable object."""
+    # create a directed graph with distance of 100000 meters between two points
+    graph = nx.DiGraph()
+    graph.add_node(0, geometry=Point(0, 0))
+    lon1, lat1, _ = Geod(ellps="WGS84").fwd(0, 0, 90, 100000)  # East from Point 0
+
+    graph.add_node(1, geometry=Point(lon1, lat1))
+    graph.add_edge(0, 1, weight=1)
+    graph.add_edge(1, 0, weight=1)
+    return graph
+
+
+@pytest.fixture
+def digraph_movable(digraph):
+    simulation_start = datetime.datetime(2024, 1, 1, 0, 0, 0)
+    env = simpy.Environment(initial_time=simulation_start.timestamp())
+    env.epoch = simulation_start
+    env.graph = digraph
+
+    movable = Movable(route=[0, 1], env=env, v=1.0, geometry=digraph.nodes[0]["geometry"])
+    return movable
+
+
 @pytest.fixture
 def env(graph):
     """Fixture for simpy environment with graph."""
@@ -84,7 +110,7 @@ def test_routeable_warning(env):
     with pytest.warns(DeprecationWarning, match=".Use Routable instead of Routeable"):
         Routeable(route=[0, 1], env=env)
 
-# %% TESTING Movable
+# %% TESTING Movable init
 def test_movable_initialization(env):
     path = [0, 1]
     geometry = env.graph.nodes[path[0]]['geometry']
@@ -95,7 +121,6 @@ def test_movable_initialization(env):
     assert movable.graph == env.graph
     assert movable.v == 1.0
     assert movable.on_pass_edge_functions == []
-
 
 def test_movable_no_geom():
     graph = nx.DiGraph()
@@ -145,6 +170,8 @@ def test_movable_move_simple(env):
     assert pytest.approx(traveltime, 1e-5) == 100000, "Expected travel time of 100000 seconds, now {}".format(traveltime)
 
 
+# %% TESTING  _move_to_start method
+
 @pytest.mark.timeout(0.5)
 def test_move_to_start(env):
     path = [0, 1]
@@ -192,13 +219,13 @@ def test_move_to_start_already_there(env):
     assert env.now == starttime, "Environment time should not have changed, now {}".format(env.now)
 
 
+# %% TESTING pass_nodes function
+
 def test_movable_pass_node_easy(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
     movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
     starttime = env.now
-
-    assert not ("Resources" in env.graph.nodes[1].keys()), "Node should not have 'Resources' key"
 
     def mission_pass_node(env, vessel):
         yield from vessel.pass_node(1)
@@ -210,7 +237,7 @@ def test_movable_pass_node_easy(env):
     assert env.now == starttime, "Environment time should be 0 seconds later, now {}".format(env.now)
 
 
-def test_movable_pass_node(env):
+def test_movable_pass_node_with_functions(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
     movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
@@ -235,6 +262,8 @@ def test_movable_pass_node(env):
     assert env.now == starttime + 3, "Environment time should be 3 seconds later, now {}".format(env.now)
 
 
+# %% test for simple pass edge
+
 def test_movable_pass_edge(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
@@ -253,7 +282,7 @@ def test_movable_pass_edge(env):
     assert pytest.approx(env.now) == starttime + 100000, "Environment time should be 100000 seconds later, now {}".format(env.now)
     assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
 
-
+# %% tests for movable with energy consumption
 # skip if ConsumesEnergy tests fails
 # @pytest.mark.skipif()
 def test_movable_pass_edge_with_energy_error(env):
@@ -333,52 +362,68 @@ def test_movable_pass_edge_with_energy(env):
     )
 
 
-@pytest.mark.skip(reason="functionality not implemented yet")
-def test_movable_pass_edge_with_current(env):
+# %% Tests for _get_current method
+def test_movable_get_current_no_info(digraph_movable):
+    current = digraph_movable._get_current(origin=0, destination=1)
+    assert current == 0.0, "Expected current to be 0.0, now {}".format(current)
+
+
+def test_movable_get_current_no_current(digraph_movable):
+    digraph_movable.env.graph.edges[0, 1]["Info"] = {}  # 0.5 current
+    current = digraph_movable._get_current(origin=0, destination=1)
+    assert current == 0.0, "Expected current to be 0.0, now {}".format(current)
+
+
+def test_movable_get_current(digraph_movable):
+    digraph_movable.env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
+    current = digraph_movable._get_current(origin=0, destination=1)
+    assert current == 0.5, "Expected current to be 0.5, now {}".format(current)
+
+
+def test_movable_get_current_negative(digraph_movable):
+    digraph_movable.env.graph.edges[0, 1]["Info"] = {"Current": -0.5}  # -0.5 current
+    current = digraph_movable._get_current(origin=0, destination=1)
+    assert current == -0.5, "Expected current to be -0.5, now {}".format(current)
+
+
+def test_movable_get_current_too_high(digraph_movable):
+    digraph_movable.env.graph.edges[0, 1]["Info"] = {"Current": -1.5}  # 1.5 current
+    with pytest.raises(ValueError, match="Current -1.5 m/s is larger than current speed 1.0 m/s"):
+        digraph_movable._get_current(origin=0, destination=1)
+
+
+def test_movable_get_current_no_digraph(digraph_movable, graph):
+    graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
+    digraph_movable.env.graph = graph  # change to a non-DiGraph
+    with pytest.raises(
+        TypeError, match="Current is only available on a DiGraph. Use a Digraph to use current in your calculations."
+    ):
+        digraph_movable._get_current(origin=0, destination=1)
+
+
+def test_movable_pass_edge_with_current(digraph_movable):
+    env = digraph_movable.env
+    # add current to the edge
     env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
-    path = [0, 1]
-    geometry = env.graph.nodes[0]["geometry"]
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable.current_node, movable.next_node = 0, 1
+    env.graph.edges[1, 0]["Info"] = {"Current": -0.5}  # -0.5 current in the opposite direction
+    digraph_movable.current_node, digraph_movable.next_node = 0, 1
 
     starttime = env.now
 
     def mission_pass_edge(env, vessel):
         yield from vessel.pass_edge(origin=0, destination=1)
 
-    env.process(mission_pass_edge(env, movable))
+    env.process(mission_pass_edge(env, digraph_movable))
     env.run()
 
-    assert movable.geometry == env.graph.nodes[1]["geometry"], "Movable should be at node 1"
+    assert digraph_movable.geometry == env.graph.nodes[1]["geometry"], "Movable should be at node 1"
     assert pytest.approx(env.now, abs=1) == starttime + 66666, "Environment time should be 100000 seconds later, now {}".format(
         env.now
     )
-    assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
+    assert pytest.approx(digraph_movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
 
 
-@pytest.mark.skip(reason="functionality not implemented yet")
-def test_movable_pass_edge_with_negative_current(env):
-    env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
-    path = [1, 0]
-    geometry = env.graph.nodes[1]["geometry"]
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable.current_node, movable.next_node = 1, 0
-
-    starttime = env.now
-
-    def mission_pass_edge(env, vessel):
-        yield from vessel.pass_edge(origin=1, destination=0)
-
-    env.process(mission_pass_edge(env, movable))
-    env.run()
-
-    assert movable.geometry == env.graph.nodes[0]["geometry"], "Movable should be at node 0"
-    assert pytest.approx(env.now, abs=1) == starttime + 200000, "Environment time should be 100000 seconds later, now {}".format(
-        env.now
-    )
-    assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
-
-
+# %% Tests for Movable with resource restrictions
 def test_movable_resource_restriction_one_edge(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
