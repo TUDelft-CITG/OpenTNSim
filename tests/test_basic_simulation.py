@@ -70,37 +70,27 @@ def test_basic_simulation():
         {},
     )
 
+    # Start simpy environment
+    simulation_start = datetime.datetime.now()
+    env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
+    env.epoch = time.mktime(simulation_start.timetuple())
+    env.graph = FG
+
+    # 3. Define path
+    path = nx.dijkstra_path(FG, node_1.name, node_4.name)
+
     # Create a dict with all important settings
     data_vessel = {
-        "env": None,
-        "name": None,
-        "route": None,
-        "geometry": None,
+        "env": env,
+        "name": "Vessel No.1",
+        "route": path,
+        "geometry": env.graph.nodes[path[0]]["geometry"],
         "v": 4,
     }  # constant speed of the vessel
 
     vessel = TransportResource(**data_vessel)
 
-    # 3. Define path
-    path = nx.dijkstra_path(FG, node_1.name, node_4.name)
-
     # 4. Run simulation
-    # Start simpy environment
-    simulation_start = datetime.datetime.now()
-    env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
-    env.epoch = time.mktime(simulation_start.timetuple())
-
-    # Add graph to environment
-    env.graph = FG
-
-    # Add environment and path to the vessel
-    vessel.env = env  # the created environment
-    vessel.name = "Vessel No.1"
-    vessel.route = path  # the route (the sequence of nodes, as stored as the second column in the path)
-    vessel.geometry = env.graph.nodes[path[0]][
-        "geometry"
-    ]  # a shapely.geometry.Point(lon,lat) (here taken as the starting node of the vessel)
-
     # Start the simulation
     env.process(vessel.move())
     env.run()
