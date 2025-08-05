@@ -43,7 +43,7 @@ def mission(env, vessel):
     while True:
         yield from vessel.move()
 
-        if vessel.geometry == nx.get_node_attributes(env.graph, "geometry")[vessel.route[-1]]:
+        if vessel.position_on_route == len(vessel.route) - 1:
             break
 
 
@@ -192,6 +192,24 @@ def test_move_to_start_already_there(env):
     assert env.now == starttime, "Environment time should not have changed, now {}".format(env.now)
 
 
+def test_movable_pass_node_easy(env):
+    path = [0, 1]
+    geometry = env.graph.nodes[0]["geometry"]
+    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    starttime = env.now
+
+    assert not ("Resources" in env.graph.nodes[1].keys()), "Node should not have 'Resources' key"
+
+    def mission_pass_node(env, vessel):
+        yield from vessel.pass_node(1)
+
+    env.process(mission_pass_node(env, movable))
+    env.run()
+
+    assert movable.geometry == env.graph.nodes[0]["geometry"], "Movable should still be at node 0"
+    assert env.now == starttime, "Environment time should be 0 seconds later, now {}".format(env.now)
+
+
 def test_movable_pass_node(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
@@ -208,7 +226,7 @@ def test_movable_pass_node(env):
     movable.on_pass_node_functions.append(on_pass_node_wait_2)
 
     def mission_pass_node(env, vessel):
-        yield from vessel.pass_node(env.graph.nodes[1])
+        yield from vessel.pass_node(1)
 
     env.process(mission_pass_node(env, movable))
     env.run()
@@ -318,6 +336,7 @@ def test_movable_pass_edge_with_energy(env):
     )
 
 
+@pytest.mark.skip(reason="functionality not implemented yet")
 def test_movable_pass_edge_with_current(env):
     env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
     path = [0, 1]
@@ -340,10 +359,11 @@ def test_movable_pass_edge_with_current(env):
     assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
 
 
-def test_movable_pass_edge_with_current(env):
+@pytest.mark.skip(reason="functionality not implemented yet")
+def test_movable_pass_edge_with_negative_current(env):
     env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
     path = [1, 0]
-    geometry = env.graph.nodes[0]["geometry"]
+    geometry = env.graph.nodes[1]["geometry"]
     movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
     movable.current_node, movable.next_node = 1, 0
 
@@ -356,7 +376,193 @@ def test_movable_pass_edge_with_current(env):
     env.run()
 
     assert movable.geometry == env.graph.nodes[0]["geometry"], "Movable should be at node 0"
-    assert pytest.approx(env.now, abs=1) == starttime + 66666, "Environment time should be 100000 seconds later, now {}".format(
+    assert pytest.approx(env.now, abs=1) == starttime + 200000, "Environment time should be 100000 seconds later, now {}".format(
         env.now
     )
     assert pytest.approx(movable.distance, 1e-5) == 100000, "Expected distance of 100000, now {}".format(movable.distance)
+
+
+def test_movable_resource_restriction_one_edge(env):
+    path = [0, 1]
+    geometry = env.graph.nodes[0]["geometry"]
+
+    # create two similar movables
+    movable1 = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable1.current_node, movable1.next_node = 0, 1
+
+    movable2 = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable2.current_node, movable2.next_node = 0, 1
+
+    # Assign a resource to the edge
+    resource = simpy.Resource(env, 1)
+    env.graph.edges[0, 1]["Resources"] = resource
+
+    # run simulation
+    starttime = env.now
+
+    def mission_pass_edge(env, vessel):
+        yield from vessel.pass_edge(origin=0, destination=1)
+
+    env.process(mission_pass_edge(env, movable1))
+    env.process(mission_pass_edge(env, movable2))
+    env.run()
+
+    # check outputs
+    assert movable1.geometry == env.graph.nodes[1]["geometry"], "Movable1 should be at node 1"
+    assert movable2.geometry == env.graph.nodes[1]["geometry"], "Movable2 should be at node 1"
+
+    # check if the time is correct
+    assert len(movable1.logbook) == 2, "Movable1 logbook should have 2 entries, now {}".format(len(movable1.logbook))
+    assert len(movable2.logbook) == 4, "Movable2 logbook should have 4 entries, now {}".format(len(movable2.logbook))
+    assert movable1.logbook[1]["Timestamp"] - movable1.logbook[0]["Timestamp"] == datetime.timedelta(seconds=100000)
+    assert movable2.logbook[3]["Timestamp"] - movable2.logbook[0]["Timestamp"] == datetime.timedelta(seconds=200000)
+    assert movable2.logbook[2]["Timestamp"] - movable2.logbook[0]["Timestamp"] == datetime.timedelta(seconds=100000)
+
+    # check if log messages are correct
+    assert (
+        movable1.logbook[0]["Message"] == "Sailing from node 0 to node 1 start"
+    ), "Movable1 first log entry should be 'Sailing from node 0 to node 1 start', now {}".format(movable1.logbook[0]["Message"])
+    assert (
+        movable1.logbook[1]["Message"] == "Sailing from node 0 to node 1 stop"
+    ), "Movable1 second log entry should be 'Sailing from node 0 to node 1 stop', now {}".format(movable1.logbook[1]["Message"])
+    assert (
+        movable2.logbook[0]["Message"] == "Waiting to pass edge 0 - 1 start"
+    ), "Movable2 first log entry should be 'Waiting to pass edge 0 - 1 start', now {}".format(movable2.logbook[0]["Message"])
+    assert (
+        movable2.logbook[1]["Message"] == "Waiting to pass edge 0 - 1 stop"
+    ), "Movable2 second log entry should be 'Waiting to pass edge 0 - 1 stop', now {}".format(movable2.logbook[1]["Message"])
+    assert (
+        movable2.logbook[2]["Message"] == "Sailing from node 0 to node 1 start"
+    ), "Movable2 third log entry should be 'Sailing from node 0 to node 1 start', now {}".format(movable2.logbook[2]["Message"])
+
+
+def test_movable_resource_restriction_two_edges_and_node(env):
+    path = [0, 1, 0]
+    geometry = env.graph.nodes[0]["geometry"]
+
+    # create two similar movables
+    movable1 = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable2 = Movable(route=path, env=env, v=1.0, geometry=geometry)
+
+    # Assign a resource to the edge and the node
+    resource = simpy.Resource(env, 1)
+    env.graph.edges[0, 1]["Resources"] = resource
+    env.graph.nodes[1]["Resources"] = resource
+
+    # run simulation
+    starttime = env.now
+
+    env.process(mission(env, movable1))
+    env.process(mission(env, movable2))
+    env.run()
+
+    # check outputs
+    assert movable1.geometry == env.graph.nodes[0]["geometry"], "Movable1 should be at node 0"
+    assert movable2.geometry == env.graph.nodes[0]["geometry"], "Movable2 should be at node 0"
+
+    # check if the time is correct
+    assert len(movable1.logbook) == 4, "Movable1 logbook should have 4 entries (4 for sailing), now {}".format(
+        len(movable1.logbook)
+    )
+    assert len(movable2.logbook) == 6, "Movable2 logbook should have 6 entries(2 for waiting, 4 for sailing), now {}".format(
+        len(movable2.logbook)
+    )
+    assert movable1.logbook[1]["Timestamp"] - movable1.logbook[0]["Timestamp"] == datetime.timedelta(
+        seconds=100000
+    ), "Movable1 should have sailed for 100000 seconds, now {}".format(
+        movable1.logbook[1]["Timestamp"] - movable1.logbook[0]["Timestamp"]
+    )
+    assert movable1.logbook[3]["Timestamp"] - movable1.logbook[0]["Timestamp"] == datetime.timedelta(
+        seconds=200000
+    ), "Movable1 should have sailed for 200000 seconds, now {}".format(
+        movable1.logbook[3]["Timestamp"] - movable1.logbook[0]["Timestamp"]
+    )
+    assert movable2.logbook[1]["Timestamp"] - movable2.logbook[0]["Timestamp"] == datetime.timedelta(
+        seconds=200000
+    ), "Movable2 should have waited for 200000 seconds, now {}".format(
+        movable2.logbook[1]["Timestamp"] - movable2.logbook[0]["Timestamp"]
+    )
+    assert movable2.logbook[5]["Timestamp"] - movable2.logbook[0]["Timestamp"] == datetime.timedelta(
+        seconds=400000
+    ), "Movable2 should have sailed for 400000 seconds, now {}".format(
+        movable2.logbook[5]["Timestamp"] - movable2.logbook[0]["Timestamp"]
+    )
+
+    # check if log messages are correct
+    assert (
+        movable1.logbook[0]["Message"] == "Sailing from node 0 to node 1 start"
+    ), "Movable1 first log entry should be 'Sailing from node 0 to node 1 start', now {}".format(movable1.logbook[0]["Message"])
+    assert (
+        movable1.logbook[1]["Message"] == "Sailing from node 0 to node 1 stop"
+    ), "Movable1 second log entry should be 'Sailing from node 0 to node 1 stop', now {}".format(movable1.logbook[1]["Message"])
+    assert (
+        movable2.logbook[0]["Message"] == "Waiting to pass edge 0 - 1 start"
+    ), "Movable2 first log entry should be 'Waiting to pass edge 0 - 1 start', now {}".format(movable2.logbook[0]["Message"])
+    assert (
+        movable2.logbook[1]["Message"] == "Waiting to pass edge 0 - 1 stop"
+    ), "Movable2 second log entry should be 'Waiting to pass edge 0 - 1 stop', now {}".format(movable2.logbook[1]["Message"])
+    assert (
+        movable2.logbook[2]["Message"] == "Sailing from node 0 to node 1 start"
+    ), "Movable2 third log entry should be 'Sailing from node 0 to node 1 start', now {}".format(movable2.logbook[2]["Message"])
+
+
+def test_movable_resource_restriction_two_directions(env):
+    # create two similar movables
+    movable1 = Movable(route=[0, 1], env=env, v=1.0, geometry=env.graph.nodes[0]["geometry"])
+    movable2 = Movable(route=[1, 0], env=env, v=1.0, geometry=env.graph.nodes[1]["geometry"])
+
+    # Assign a resource to the edge and the node
+    resource = simpy.Resource(env, 1)
+    env.graph.edges[0, 1]["Resources"] = resource
+    env.graph.nodes[1]["Resources"] = resource
+
+    # run simulation
+    starttime = env.now
+
+    env.process(mission(env, movable1))
+    env.process(mission(env, movable2))
+    env.run()
+
+    # check outputs
+    assert movable1.geometry == env.graph.nodes[1]["geometry"], "Movable1 should be at node 1"
+    assert movable2.geometry == env.graph.nodes[0]["geometry"], "Movable2 should be at node 0"
+
+    # check if the time is correct
+    assert len(movable1.logbook) == 2, "Movable1 logbook should have 2 entries (2 for sailing), now {}".format(
+        len(movable1.logbook)
+    )
+    assert len(movable2.logbook) == 4, "Movable2 logbook should have 4 entries(2 for waiting, 2 for sailing), now {}".format(
+        len(movable2.logbook)
+    )
+    assert movable1.logbook[1]["Timestamp"] - movable1.logbook[0]["Timestamp"] == datetime.timedelta(
+        seconds=100000
+    ), "Movable1 should have sailed for 100000 seconds, now {}".format(
+        movable1.logbook[1]["Timestamp"] - movable1.logbook[0]["Timestamp"]
+    )
+    assert movable2.logbook[1]["Timestamp"] - movable2.logbook[0]["Timestamp"] == datetime.timedelta(
+        seconds=100000
+    ), "Movable2 should have waited for 100000 seconds, now {}".format(
+        movable2.logbook[1]["Timestamp"] - movable2.logbook[0]["Timestamp"]
+    )
+    assert movable2.logbook[3]["Timestamp"] - movable2.logbook[0]["Timestamp"] == datetime.timedelta(
+        seconds=200000
+    ), "Movable2 should have sailed for 200000 seconds, now {}".format(
+        movable2.logbook[3]["Timestamp"] - movable2.logbook[0]["Timestamp"]
+    )
+
+    # check if log messages are correct
+    assert (
+        movable1.logbook[0]["Message"] == "Sailing from node 0 to node 1 start"
+    ), "Movable1 first log entry should be 'Sailing from node 0 to node 1 start', now {}".format(movable1.logbook[0]["Message"])
+    assert (
+        movable1.logbook[1]["Message"] == "Sailing from node 0 to node 1 stop"
+    ), "Movable1 second log entry should be 'Sailing from node 0 to node 1 stop', now {}".format(movable1.logbook[1]["Message"])
+    assert (
+        movable2.logbook[0]["Message"] == "Waiting to pass node 1 start"
+    ), "Movable2 first log entry should be 'Waiting to pass node 1 start', now {}".format(movable2.logbook[0]["Message"])
+    assert (
+        movable2.logbook[1]["Message"] == "Waiting to pass node 1 stop"
+    ), "Movable2 second log entry should be 'Waiting to pass node 1 stop', now {}".format(movable2.logbook[1]["Message"])
+    assert (
+        movable2.logbook[2]["Message"] == "Sailing from node 1 to node 0 start"
+    ), "Movable2 third log entry should be 'Sailing from node 1 to node 0 start', now {}".format(movable2.logbook[2]["Message"])

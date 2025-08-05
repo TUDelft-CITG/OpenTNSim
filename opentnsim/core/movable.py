@@ -81,7 +81,7 @@ class Routable(SimpyObject):
     def check_attributes(self):
         """Check if all required attributes are set."""
         # check if route is set
-        if not hasattr(self, "route") or not isinstance(self.route, list):
+        if self.route is None or not isinstance(self.route, list):
             raise ValueError("Routable requires a route (list of node IDs) to be set")
         # check if env is set
         if not hasattr(self, "env") or not isinstance(self.env, simpy.Environment):
@@ -161,6 +161,10 @@ class Movable(Locatable, Routable, Log):
 
         self._check_attributes()
 
+        # resource memory for passing nodes and edges
+        self.req = None
+        self.resource = None
+
     def _check_attributes(self):
         """Check if all required attributes are set."""
         # each node on route should have a geometry
@@ -237,6 +241,10 @@ class Movable(Locatable, Routable, Log):
 
             yield from self.look_ahead_to_node(self.next_node)
 
+        # arrived at end of route. release resource if needed
+        if self.req is not None:
+            self._release_resource()
+
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
             logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
@@ -277,9 +285,67 @@ class Movable(Locatable, Routable, Log):
         The time it takes to pass the node.
         """
 
+        # request resource if needed
+        if "Resources" in self.graph.nodes[node].keys() and self.req is None:
+            arrival = self.env.now  # remember when we arrived at the node
+            # request
+            yield from self._request_resource(self.graph.nodes[node]["Resources"])
+
+            # we had to wait, log it
+            if arrival != self.env.now:
+                self.log_entry_v0(
+                    "Waiting to pass node {} start".format(node),
+                    arrival,
+                    self.distance,
+                    self.graph.nodes[node]["geometry"],
+                )
+                self.log_entry_v0(
+                    "Waiting to pass node {} stop".format(node),
+                    self.env.now,
+                    self.distance,
+                    self.graph.nodes[node]["geometry"],
+                )
+
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
+
+        # release resource if needed
+        if self.req is not None:
+            # only release if resource is not needed in the next edge
+            if self.next_edge is None:
+                self._release_resource()
+            if "Resources" not in self.graph.edges[self.next_edge]:
+                self._release_resource()
+            elif self.graph.edges[self.next_edge]["Resources"] != self.resource:
+                self._release_resource()
+            else:
+                pass
+
+    def _release_resource(self):
+        """Release the resource if it is not needed in the next edge."""
+        self.resource.release(self.req)
+        self.req = None
+        self.resource = None
+
+    def _request_resource(self, resource):
+        self.resource = resource
+        self.req = self.resource.request()
+        yield self.req
+
+    @property
+    def next_edge(self):
+        """Return the next edge on the route.
+
+        Returns
+        -------
+        tuple
+            (origin, destination) of the next edge on the route.
+        """
+        if self.position_on_route < len(self.route) - 1:
+            return self.route[self.position_on_route], self.route[self.position_on_route + 1]
+        else:
+            return None
 
     def pass_edge(self, origin, destination):
         """pass an edge and call all on_pass_edge_functions.
@@ -299,9 +365,6 @@ class Movable(Locatable, Routable, Log):
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
 
-        for on_pass_edge_function in self.on_pass_edge_functions:
-            yield from on_pass_edge_function(origin, destination)
-
         distance = self.wgs84.inv(
             shapely.geometry.shape(orig).x,
             shapely.geometry.shape(orig).y,
@@ -309,13 +372,6 @@ class Movable(Locatable, Routable, Log):
             shapely.geometry.shape(dest).y,
         )[2]
 
-        self.distance += distance
-
-        value = 0  # remember when we arrived at the edge
-        arrival = self.env.now
-
-        # This is the case if we are sailing on power
-        value = 0
         # TODO: Laten we dit ook gewoon een on_pass_edge functie maken die bij de ConsumesEnergy mixin zit?
         if isinstance(self, ConsumesEnergy) and self.P_tot_given is not None:
             edge = self.graph.edges[origin, destination]
@@ -355,63 +411,58 @@ class Movable(Locatable, Routable, Log):
         # TODO: Op zich mooi, maar willen we dit niet ook gewoon een functie in on_pass_edge_functies maken?
         # TODO: wat is orig? orig en dest zijn de geometries van de start en stop van de trip (short for origin destination)
         # TODO: write test! Nu werkte het wachten niet! NB: Misschien moeten we Resources ook onder Info hangen?
-        if "Resources" in edge.keys():
-            with self.graph.edges[origin, destination]["Resources"].request() as request:
-                yield request
-
-                # we had to wait, log it
-                if arrival != self.env.now:
-                    self.log_entry_v0(
-                        "Waiting to pass edge {} - {} start".format(origin, destination),
-                        arrival,
-                        self.distance,
-                        orig,
-                    )
-                    self.log_entry_v0(
-                        "Waiting to pass edge {} - {} stop".format(origin, destination),
-                        self.env.now,
-                        self.distance,
-                        orig,
-                    )
-
+        if "Resources" in edge.keys() and self.req is None:
+            arrival = self.env.now  # remember when we arrived at the edge
+            yield from self._request_resource(self.graph.edges[origin, destination]["Resources"])
+            # we had to wait, log it
+            if arrival != self.env.now:
                 self.log_entry_v0(
-                    "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+                    "Waiting to pass edge {} - {} start".format(origin, destination),
+                    arrival,
+                    self.distance,
+                    orig,
+                )
+                self.log_entry_v0(
+                    "Waiting to pass edge {} - {} stop".format(origin, destination),
                     self.env.now,
                     self.distance,
                     orig,
                 )
 
-                # default velocity based on current speed.
-                timeout = distance / (self.current_speed + Current)
-                yield self.env.timeout(timeout)
+        self.log_entry_v0(
+            "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+            self.env.now,
+            self.distance,
+            orig,
+        )
 
-                self.log_entry_v0(
-                    "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
-                    self.env.now,
-                    self.distance,
-                    dest,
-                )
-                self.geometry = dest
+        # on pass edge functions
+        for on_pass_edge_function in self.on_pass_edge_functions:
+            yield from on_pass_edge_function(origin, destination)
 
-        else:
-            self.log_entry_v0(
-                "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
-                self.env.now,
-                self.distance,
-                orig,
-            )
+        # default velocity based on current speed.
+        timeout = distance / (self.current_speed + Current)
+        yield self.env.timeout(timeout)
+        self.distance += distance
 
-            # default velocity based on current speed.
-            timeout = distance / (self.current_speed + Current)
-            yield self.env.timeout(timeout)
+        self.log_entry_v0(
+            "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+            self.env.now,
+            self.distance,
+            dest,
+        )
+        self.geometry = dest
 
-            self.log_entry_v0(
-                "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
-                self.env.now,
-                self.distance,
-                dest,
-            )
-            self.geometry = dest
+        # release resource if needed
+        if "Resources" in edge.keys():
+            # only release if resource is not needed in the next node
+            if "Resources" not in self.graph.nodes[destination].keys():
+                self._release_resource()
+            elif self.resource != self.graph.nodes[destination]["Resources"]:
+                self._release_resource()
+                self.resource = None
+            else:
+                pass
 
     def complete_pass_edge(self, destination):
         # TODO: Waarom een try/except. Als het niet lukt, dan lijkt het me dat de functie gewoon niet goed is gedefinieerd. Als de simulatie blijft draaien krijg je misschien verkeerde output?
