@@ -328,9 +328,6 @@ def test_movable_pass_edge_with_energy(env):
     env.run()
     assert movable.geometry == env.graph.nodes[1]["geometry"], "Movable should be at node 1"
     assert movable.v == pytest.approx(1.65, 0.01), "Expected speed of 3.5 m/s, now {}".format(movable.v)
-    assert movable._upperbound == pytest.approx(2.85, 0.01), "Expected upperbound power of 333 kW, now {}".format(
-        movable._upperbound
-    )
     assert pytest.approx(env.now, abs=1) == starttime + 60528, "Environment time should be 100000 seconds later, now {}".format(
         env.now - starttime
     )

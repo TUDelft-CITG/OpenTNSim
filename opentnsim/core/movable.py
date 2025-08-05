@@ -155,8 +155,6 @@ class Movable(Locatable, Routable, Log):
         self.distance = 0
         self.on_pass_node_functions = []
         self.on_pass_edge_functions = []
-        self.on_complete_pass_edge_functions = []
-        self.on_look_ahead_to_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
         self._check_attributes()
@@ -192,54 +190,33 @@ class Movable(Locatable, Routable, Log):
 
         """
 
-        # default distance to next node
-        self.distance = 0
-
         # Check if vessel is at correct location - if not, move to location
         yield from self._move_to_start()
 
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
+            # update current position
             self.current_node, self.next_node = edge  # origin and destination
-            start_location = nx.get_node_attributes(self.env.graph, "geometry")[self.current_node]
-            end_location = nx.get_node_attributes(self.env.graph, "geometry")[self.next_node]
-
-            # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
-            # TODO: Hier loggen we de status, weer met gebruik van de HasOutput mixin.
-            # TODO: overweging als we dit wel zo laten: willen we de update_status_report functies als (evt standaard) self.pass_edge_functies hebben?
-
-            # TODO: Sailing start en stop moeten allebij in pass edge. Bijv als een edge een resource heeft gaat anders het loggen van de wait time mis.
-            # TODO: als je pass_node al wilt loggen, dan moet het een berichtje zijn als Passing node {} start/stop
-            # self.log_entry(
-            #     "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
-            #     self.env.now,
-            #     0,
-            #     start_location,
-            # )
-
-            yield from self.pass_node(self.current_node)
-
-            # update to current position
-            # TODO waarom wordt self.current node al eerder geupdate, en self.geometry pas hier?
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
             self.position_on_route = index
 
-            # are we already at destination?
-            # TODO: Dit lijkt mij een gekke regel. Dit zou betekenen dat we twee keer op dezelfde node komen, en dat we dan stoppen. Dat lijkt me dan een fout in de routeberekening, maar ik zou dan niet stoppen. We willen toch nog steeds naar de laatste node op de route?
-            if self.next_node == self.current_node:
-                break
+            yield from self.pass_node(self.current_node)
 
-            # TODO als we end_location steeds geburiken, zou ik er een attribute van maken.
+            # are we already at destination?
+            if self.next_node == self.current_node:
+                warnings.warn(
+                    "Route passes node {} twice consecutively..".format(self.current_node),
+                    UserWarning,
+                )
+                continue
+
             yield from self.pass_edge(self.current_node, self.next_node)
-            yield from self.complete_pass_edge(self.next_node)
 
             # we arrived at destination
             # update to new position
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.next_node]
             self.current_node = self.next_node
             self.position_on_route = index + 1
-
-            yield from self.look_ahead_to_node(self.next_node)
 
         # arrived at end of route. release resource if needed
         if self.req is not None:
@@ -254,7 +231,10 @@ class Movable(Locatable, Routable, Log):
 
     def _move_to_start(self):
         """Move to the start of the route.
-        TODO: write test!
+
+        Yields
+        ------
+        The time it takes to move to the start of the route.
         """
         # Check if vessel is at correct location - if not, move to location
         vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
@@ -372,33 +352,8 @@ class Movable(Locatable, Routable, Log):
             shapely.geometry.shape(dest).y,
         )[2]
 
-        # TODO: Laten we dit ook gewoon een on_pass_edge functie maken die bij de ConsumesEnergy mixin zit?
-        if isinstance(self, ConsumesEnergy) and self.P_tot_given is not None:
-            edge = self.graph.edges[origin, destination]
-            try:
-                depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
-            except KeyError:
-                raise ValueError(
-                    f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
-                )
-            # You can input more power than is realistic
-            # There are two mechanisms that reduce the power given:
-            # 1. The grounding speed:
-            # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
-            # TODO get_upperbound_for_power2v heeft een width hardcoded op 150. Is dat handig?
-            (
-                upperbound,
-                selected,
-                results_df,
-            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
-
-            # Here the upperbound is used to estimate the actual velocity
-            power_used = min(self.P_tot_given, upperbound)
-            self.v = self.power2v(self, edge, power_used)
-            # store upperbound velocity
-            self._selected = selected
-            self._results_df = results_df
-            self._upperbound = upperbound
+        # calculate velocity based on depth and power, if possible.
+        self.v = self._compute_velocity_on_edge(origin, destination)
 
         # Check if the edge has current info
         # NB: positive current is directed from origin to destination
@@ -408,9 +363,7 @@ class Movable(Locatable, Routable, Log):
                 Current = edge['Info']['Current']
 
         # Wait for edge resources to become available
-        # TODO: Op zich mooi, maar willen we dit niet ook gewoon een functie in on_pass_edge_functies maken?
-        # TODO: wat is orig? orig en dest zijn de geometries van de start en stop van de trip (short for origin destination)
-        # TODO: write test! Nu werkte het wachten niet! NB: Misschien moeten we Resources ook onder Info hangen?
+        # TODO: Misschien moeten we Resources ook onder Info hangen?
         if "Resources" in edge.keys() and self.req is None:
             arrival = self.env.now  # remember when we arrived at the edge
             yield from self._request_resource(self.graph.edges[origin, destination]["Resources"])
@@ -464,28 +417,46 @@ class Movable(Locatable, Routable, Log):
             else:
                 pass
 
-    def complete_pass_edge(self, destination):
-        # TODO: Waarom een try/except. Als het niet lukt, dan lijkt het me dat de functie gewoon niet goed is gedefinieerd. Als de simulatie blijft draaien krijg je misschien verkeerde output?
-        for gen in self.on_complete_pass_edge_functions:
-            try:
-                yield from gen(destination)
-            except simpy.exceptions.Interrupt as e:
-                logger.debug("Completed", exc_info=True)
-                raise simpy.exceptions.Interrupt("Completed")
-
-    def look_ahead_to_node(self, destination):
-        # TODO: Waarom een try/except. Als het niet lukt, dan lijkt het me dat de functie gewoon niet goed is gedefinieerd. Als de simulatie blijft draaien krijg je misschien verkeerde output?
-        for gen in self.on_look_ahead_to_node_functions:
-            try:
-                yield from gen(destination)
-            except simpy.exceptions.Interrupt as e:
-                logger.debug("Re-routing", exc_info=True)
-                raise simpy.exceptions.Interrupt("Re-routing")
-
     @property
     def current_speed(self):
         """return the current speed of the vessel"""
         return self.v
+
+    def _compute_velocity_on_edge(self, origin, destination):
+        """compute the velocity on an edge, based on the energy module and the depth.
+
+        parameters
+        ----------
+        origin: str
+            the origin node of the edge
+        destination: str
+            the destination node of the edge
+        """
+        if isinstance(self, ConsumesEnergy) and self.P_tot_given is not None:
+            edge = self.graph.edges[origin, destination]
+            try:
+                depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+            except KeyError:
+                raise ValueError(
+                    f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
+                )
+            # You can input more power than is realistic
+            # There are two mechanisms that reduce the power given:
+            # 1. The grounding speed:
+            # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
+            # TODO get_upperbound_for_power2v heeft een width hardcoded op 150. Is dat handig?
+            (
+                upperbound,
+                selected,
+                results_df,
+            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
+
+            # Here the upperbound is used to estimate the actual velocity
+            power_used = min(self.P_tot_given, upperbound)
+            return self.power2v(self, edge, power_used)
+        else:
+            # if no ConsumesEnergy mixin, use the default speed
+            return self.v
 
 
 class ContainerDependentMovable(Movable, HasContainer):
