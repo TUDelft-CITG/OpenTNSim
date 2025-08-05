@@ -38,7 +38,7 @@ jobs:
           command: |
             docker exec -it opentnsim bash -c "pip install sphinx"
             docker exec -it opentnsim bash -c "make book"
-            docker cp opentnsim:/OpenTNSim/docs/_build/html /tmp/artifacts/book
+            docker cp opentnsim:/OpenTNSim/book/_build/html /tmp/artifacts/book
 
       - store_artifacts:
           path: /tmp/artifacts
