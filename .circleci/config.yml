@@ -56,7 +56,7 @@ jobs:
       - run:
           name: Test notebooks
           command: |
-            docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks/Example*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students"
+            docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks/0*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students"
       
       - store_artifacts:
           path: /tmp/artifacts
