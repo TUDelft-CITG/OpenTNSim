@@ -145,6 +145,10 @@ class Movable(Locatable, Routable, Log):
         list of functions to call when passing a node
     wsg84: pyproj.Geod
         used for distance computation
+    req: simpy.Resource request
+        resource request for passing nodes and edges. saved for using resources over various nodes and edges.
+    resource: simpy.Resource
+        resource used for passing nodes and edges. saved for using resources over various nodes and edges.
 
     Notes
     -----
@@ -161,7 +165,11 @@ class Movable(Locatable, Routable, Log):
         - Current can only be used in a directed graph (DiGraph).
         - Current is positive in the direction of the edge, and negative in the opposite direction.
         - Make sure to assign current to both directions of the edge in a digraph. (the negative and positive current)
-    - TODO aanvullen met energy en width and depth.
+    - Power information, which can be used to compute the speed of the vessel.
+        - self must be a mixin of ConsumesEnergy.
+        - self must have the attribute P_tot_given and must not be None.
+        - general depth of fairway is saved in env.graph.edges[origin, destination]["Info"]["GeneralDepth"].
+        - width of fairway is saved in env.graph.edges[origin, destination]["Info"]["Width"]. If not given, we use 150 m.
 
     """
 
@@ -193,8 +201,10 @@ class Movable(Locatable, Routable, Log):
 
     # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
     def move(self):
-        """determine distance between origin and destination, and
+        """Moves vessel over the path defined by self.route.
+
         Assumption is that self.path is in the right order - vessel moves from route[0] to route[-1].
+
         Yields
         ------
         time it takes to travel the distance to the destination.
@@ -241,7 +251,7 @@ class Movable(Locatable, Routable, Log):
             logger.debug("  current_speed:  not set")
 
     def _move_to_start(self):
-        """Move to the start of the route.
+        """Move vessel to the start of the route.
 
         Yields
         ------
@@ -314,23 +324,33 @@ class Movable(Locatable, Routable, Log):
                 pass
 
     def _release_resource(self):
-        """Release the resource if it is not needed in the next edge."""
+        """Release the current resource."""
         self.resource.release(self.req)
         self.req = None
         self.resource = None
 
     def _request_resource(self, resource):
+        """Request a resource for passing nodes and edges.
+
+        Parameters
+        ----------
+        resource: simpy.Resource
+            the resource to request
+        Yields
+        ------
+        simpy.Resource request
+        """
         self.resource = resource
         self.req = self.resource.request()
         yield self.req
 
     @property
     def next_edge(self):
-        """Return the next edge on the route.
+        """Return the next edge on the route. based on self.position_on_route.
 
         Returns
         -------
-        tuple
+        tuple(str, str) or None
             (origin, destination) of the next edge on the route.
         """
         if self.position_on_route < len(self.route) - 1:
@@ -477,34 +497,38 @@ class Movable(Locatable, Routable, Log):
         destination: str
             the destination node of the edge
         """
-        if isinstance(self, ConsumesEnergy) and self.P_tot_given is not None:
-            edge = self.graph.edges[origin, destination]
-            try:
-                depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
-            except KeyError:
-                raise ValueError(
-                    f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
-                )
-            # You can input more power than is realistic
-            # There are two mechanisms that reduce the power given:
-            # 1. The grounding speed:
-            # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
-            # TODO get_upperbound_for_power2v heeft een width standaard 150. Is dat handig?
-            edge_width = self._get_general_width(origin, destination)
-            edge_width = edge_width if edge_width is not None else 150  # default width if not set
-
-            (
-                upperbound,
-                selected,
-                results_df,
-            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=edge_width, depth=depth, margin=0)
-
-            # Here the upperbound is used to estimate the actual velocity
-            power_used = min(self.P_tot_given, upperbound)
-            return self.power2v(self, edge, power_used)
-        else:
-            # if no ConsumesEnergy mixin, use the default speed
+        # check if we have the energy mixin and ptot_given
+        if not isinstance(self, ConsumesEnergy):
             return self.v
+        elif self.P_tot_given is None:
+            return self.v
+
+        # determine the depth of the edge
+        edge = self.graph.edges[origin, destination]
+        try:
+            depth = edge["Info"]["GeneralDepth"]
+        except KeyError:
+            raise ValueError(
+                f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
+            )
+
+        # You can input more power than is realistic
+        # There are two mechanisms that reduce the power given:
+        # 1. The grounding speed:
+        # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
+        # TODO get_upperbound_for_power2v heeft een width standaard 150. Is dat handig?
+        edge_width = self._get_general_width(origin, destination)
+        edge_width = edge_width if edge_width is not None else 150  # default width if not set
+
+        (
+            upperbound,
+            selected,
+            results_df,
+        ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=edge_width, depth=depth, margin=0)
+
+        # Here the upperbound is used to estimate the actual velocity
+        power_used = min(self.P_tot_given, upperbound)
+        return self.power2v(self, edge, power_used)
 
     def _get_general_width(self, origin, destination):
         """Get the general width of the edge.
