@@ -7,9 +7,11 @@ Core utilities related to plotting.
 import pandas as pd
 import plotly.express as px
 
+from plotly.offline import init_notebook_mode, iplot
+
 
 # %% GENERATE GANTT CHART FROM EVENT TABLE
-def generate_vessel_gantt_chart(df_eventtable: pd.DataFrame):
+def generate_vessel_gantt_chart(df_eventtable: pd.DataFrame, static: bool = False):
     """
     Method to generate a Gantt chart from a vessel activity log DataFrame.
 
@@ -22,6 +24,9 @@ def generate_vessel_gantt_chart(df_eventtable: pd.DataFrame):
     df_eventtable : pandas.DataFrame
         DataFrame containing columns 'object name', 'activity name', 'start time',
         and 'stop time' representing vessel activity logs.
+    static : bool, optional
+        If True, returns a static Plotly figure object.
+        If False, displays the figure
 
     Returns
     -------
@@ -55,4 +60,10 @@ def generate_vessel_gantt_chart(df_eventtable: pd.DataFrame):
         margin=dict(l=20, r=20, t=40, b=20),
     )
 
-    return fig
+    if static is False:
+        # Initialize notebook mode for Plotly
+        init_notebook_mode(connected=True)
+        # Display the figure in a Jupyter notebook
+        iplot(fig)
+    else:
+        return fig
