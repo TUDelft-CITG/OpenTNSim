@@ -262,7 +262,6 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     a : float
         Coefficient needed to calculate the Katsui friction coefficient [-]
     """
-    # TODO: makes sense to store np.log10(R_e) as constant intstead of re-calculating
     # Reynolds number
     R_e = v * L / nu
 
@@ -290,8 +289,6 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     a = 0.042612 * np.log10(R_e) + 0.56725
 
     # Van Koningsveld et al (2023) - Eq 5.7
-    # TODO: may lead to "invalid value encountered in scalar power"
-    # see https://github.com/orgs/TUDelft-CITG/projects/3/views/1?pane=issue&itemId=118343899&issue=TUDelft-CITG%7COpenTNSim%7C100
     Cf_Katsui = 0.0066577 / (np.log10(R_e) - 4.3762) ** a
 
     # The average velocity underneath the ship, taking into account the shallow water
@@ -365,12 +362,11 @@ def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta):
     """
     # c_14 accounts for the specific shape of the afterbody
     # TODO: check where this value comes from (Holtrop and Mennen?) (following
-    # Segers (2021) we assume c_stern = 0 which leads to c_14 to be 1)
+    #  Segers (2021) we assume c_stern = 0 which leads to c_14 to be 1)
     c_14 = 1 + 0.0011 * c_stern
 
     # the form factor (1+k1) describes the viscous resistance
     # Van Koningsveld et al (2023) - Eq 5.12
-    # TODO: consider to rename delta to nabla
     one_k1 = 0.93 + 0.487 * c_14 * ((B / L) ** 1.068) * ((T / L) ** 0.461) * ((L / L_R) ** 0.122) * (
         ((L**3) / delta) ** 0.365
     ) * ((1 - C_P) ** (-0.604))
@@ -598,7 +594,6 @@ def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_
     assert g >= 0, f"g should be positive: {g}"
     assert L >= 0, f"L should be positive: {L}"
 
-    # TODO: v here should be the Karpov corrected V_2 (
     F_rL = V_2 / np.sqrt(g * L)  # Froude number based on ship's speed to water and its length of waterline
 
     # parameter c_7 is determined by the B/L ratio
@@ -630,7 +625,7 @@ def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_
     # Van Koningsveld et al (2023) - Part IV Table 5.1
     if (L**3) / delta < 512:
         c_15 = -1.69385
-    elif (L**3) / delta > 1727: # TODO: check, here it said 'if' instead of 'elif' that is probably not right
+    elif (L**3) / delta > 1727:
         c_15 = 0
     else:
         c_15 = -1.69385 + (L / (delta ** (1 / 3)) - 8) / 2.36
@@ -653,7 +648,7 @@ def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_
     m_2 = c_15 * (C_P**2) * np.exp((-0.1) * (F_rL ** (-2)))
 
     # Van Koningsveld et al (2023) - Part IV Eq 5.16
-    # Segers (2019) distinguishes multiple Froude classes (Section 3.2.5 and Appendix C -C.2).
+    # Segers (2019) distinguishes multiple Froude classes (Section 3.2.5 and Appendix C - C.2).
     # for all reasonable combinations of ship lengths and speeds, inland ships always fall in the
     # F_n,V_2 < 0.4 class
     R_W = c_1 * c_2 * c_5 * delta * rho * g * np.exp(m_1 * (F_rL ** (-0.9)) + m_2 * np.cos(lmbda * (F_rL ** (-2)))) / 1000  # kN
