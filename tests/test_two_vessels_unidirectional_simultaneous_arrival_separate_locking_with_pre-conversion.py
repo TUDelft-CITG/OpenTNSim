@@ -86,7 +86,7 @@ def test_basic_simulation():
         "L": 155.0,
     }
 
-    env.FG = FG
+    env.graph = FG
     vessels = []
 
     for v in range(2):
@@ -155,7 +155,7 @@ def test_basic_simulation():
         env.process(vessel.move())
 
     # RUN MODEL
-    env.FG = FG
+    env.graph = FG
     env.run()
 
     # OUTPUT ANALYSIS

@@ -332,33 +332,33 @@ def graph_kml(
     shared_style.linestyle.color = "ff0055ff"  # Red
     shared_style.linestyle.width = width
 
-    nodes = list(env.FG.nodes)
+    nodes = list(env.graph.nodes)
 
     # each timestep will be represented as a single point
-    for log_index, value in enumerate(list(env.FG.nodes)[0 : -1 - 1]):
+    for log_index, value in enumerate(list(env.graph.nodes)[0 : -1 - 1]):
         pnt = fol.newpoint(
             name="",
             coords=[
                 (
-                    nx.get_node_attributes(env.FG, "geometry")[nodes[log_index]].x,
-                    nx.get_node_attributes(env.FG, "geometry")[nodes[log_index]].y,
+                    nx.get_node_attributes(env.graph, "geometry")[nodes[log_index]].x,
+                    nx.get_node_attributes(env.graph, "geometry")[nodes[log_index]].y,
                 )
             ],
         )
         pnt.style = shared_style
 
-    edges = list(env.FG.edges)
-    for log_index, value in enumerate(list(env.FG.edges)[0 : -1 - 1]):
+    edges = list(env.graph.edges)
+    for log_index, value in enumerate(list(env.graph.edges)[0 : -1 - 1]):
         lne = fol.newlinestring(
             name="",
             coords=[
                 (
-                    nx.get_node_attributes(env.FG, "geometry")[edges[log_index][0]].x,
-                    nx.get_node_attributes(env.FG, "geometry")[edges[log_index][0]].y,
+                    nx.get_node_attributes(env.graph, "geometry")[edges[log_index][0]].x,
+                    nx.get_node_attributes(env.graph, "geometry")[edges[log_index][0]].y,
                 ),
                 (
-                    nx.get_node_attributes(env.FG, "geometry")[edges[log_index][1]].x,
-                    nx.get_node_attributes(env.FG, "geometry")[edges[log_index][1]].y,
+                    nx.get_node_attributes(env.graph, "geometry")[edges[log_index][1]].x,
+                    nx.get_node_attributes(env.graph, "geometry")[edges[log_index][1]].y,
                 ),
             ],
         )

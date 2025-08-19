@@ -132,7 +132,7 @@ def test_simulation(expected_df):
         env.epoch = time.mktime(simulation_start.timetuple())
 
         # Add graph to environment
-        env.FG = FG
+        env.graph = FG
 
         # Add environment and path to the vessel
         # create a fresh instance of vessel
@@ -140,7 +140,7 @@ def test_simulation(expected_df):
         vessel.env = env  # the created environment
         vessel.name = "Vessel No.1"
         vessel.route = path  # the route (the sequence of nodes, as stored as the second column in the path)
-        vessel.geometry = env.FG.nodes[path[0]][
+        vessel.geometry = env.graph.nodes[path[0]][
             "geometry"
         ]  # a shapely.geometry.Point(lon,lat) (here taken as the starting node of the vessel)
         vessel.v = V_s

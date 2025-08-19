@@ -6,20 +6,12 @@ The following classes are provided:
 - ExtraMetadata
 
 """
-
-# packkage(s) for documentation, debugging, saving and loading
+# package(s) for documentation, debugging, saving and loading
 import logging
 from typing import Union
 
 # math packages
 import numpy as np
-
-# spatial libraries
-
-# you need these dependencies (you can get these from anaconda)
-# package(s) related to the simulation
-
-# Use OpenCLSim objects for core objects (identifiable is imported for later use.)
 
 # get logger
 logger = logging.getLogger(__name__)

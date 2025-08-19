@@ -2,7 +2,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](https://github.com/TUDelft-CITG/Transport-Network-Analysis/blob/master/LICENSE.txt)
 [![DOI](https://zenodo.org/badge/145843547.svg)](https://zenodo.org/badge/latestdoi/145843547)
 
-[![TUDelft-CITG](https://circleci.com/gh/TUDelft-CITG/OpenTNSim.svg?style=shield&circle-token=59b1f167ed771129459d86e822fd2faaae8f4a34)](https://circleci.com/gh/TUDelft-CITG/OpenTNSim)
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/TUDelft-CITG/OpenTNSim/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/TUDelft-CITG/OpenTNSim/tree/master)
 
 # OpenTNSim
 
