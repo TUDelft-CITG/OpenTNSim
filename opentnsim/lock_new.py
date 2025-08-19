@@ -191,6 +191,7 @@ class PassesLockComplex(core.Movable, graph.HasMultiDiGraph):
                                                                                                      direction,
                                                                                                      first_in_lock=first_in_lock,
                                                                                                      between_arrivals=between_arrivals)
+
         if door_is_closed:
             levelling_required = False
             if operation_time > pd.Timedelta(seconds=lock.doors_closing_time):
@@ -374,7 +375,7 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         start_sailing_out_time_after_doors_have_been_opened = 0.,
         sailing_time_before_opening_lock_doors = 180,
         sailing_time_before_closing_lock_doors = 60,
-        minimum_time_between_operations_for_intermediate_door_closure = None,
+        minimum_time_between_operations_for_intermediate_door_closure = 0.,
         sailing_distance_to_crossing_point = 500,
         passage_time_door = 300.,
         sailing_in_time_gap_through_doors = 180.,
@@ -411,10 +412,7 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         self.start_sailing_out_time_after_doors_have_been_opened = start_sailing_out_time_after_doors_have_been_opened
         self.sailing_time_before_opening_lock_doors = sailing_time_before_opening_lock_doors
         self.sailing_time_before_closing_lock_doors = sailing_time_before_closing_lock_doors
-        if minimum_time_between_operations_for_intermediate_door_closure == None:
-            self.minimum_time_between_operations_for_intermediate_door_closure = sailing_time_before_opening_lock_doors
-        else:
-            self.minimum_time_between_operations_for_intermediate_door_closure = minimum_time_between_operations_for_intermediate_door_closure
+        self.minimum_time_between_operations_for_intermediate_door_closure = minimum_time_between_operations_for_intermediate_door_closure
         self.sailing_in_time_gap_after_berthing_previous_vessel = sailing_in_time_gap_after_berthing_previous_vessel
         self.sailing_out_time_gap_after_berthing_previous_vessel = sailing_out_time_gap_after_berthing_previous_vessel
         self.sailing_in_speed_sea = sailing_in_speed_sea
@@ -1164,7 +1162,7 @@ class IsLockMaster(core.SimpyObject):
 
             doors_can_be_closed = lock.determine_if_door_can_be_closed(vessel, direction, vessel_operation_index)
 
-            next_operations = operation_planning[operation_planning.index == vessel_operation_index+1]
+            next_operations = operation_planning[operation_planning.index >= vessel_operation_index+1]
             next_lockage_is_empty = False
             if not next_operations.empty:
                 next_operation = next_operations.iloc[0]
@@ -1176,17 +1174,26 @@ class IsLockMaster(core.SimpyObject):
                 if next_lockage_is_empty:
                     next_operation = next_operations.iloc[0]
                     door_closing_start = next_operation.time_door_closing_start
-                    door_opening_start = next_operation.time_levelling_start
-                    closing_delay = np.max([0,(door_closing_start - current_time).total_seconds()])
-                    opening_delay = np.max([0, (door_opening_start - current_time).total_seconds()])
-                    if lock.closing_doors_in_between_operations and opening_delay - closing_delay > self.lock_complex.doors_closing_time:
-                        vessel.env.process(lock.close_door(delay=closing_delay))
-                        vessel.env.process(lock.convert_chamber(new_level=next_level_in_case_of_following_empty_lockage, vessel=None,close_doors=False, delay=opening_delay, direction=1 - direction))
+                    closing_delay = np.max([self.sailing_time_before_closing_lock_doors,(door_closing_start - current_time).total_seconds()])
+                    if lock.closing_doors_in_between_operations:
+                        next_next_operation = next_operations.iloc[1]
+                        door_opening_start = next_next_operation.time_potential_lock_door_opening_stop
+                        operation_time = self.determine_time_to_open_door(operation_index = vessel_operation_index+1,
+                                                                          direction = 1 - direction,
+                                                                          last_time_doors_closed = door_closing_start,
+                                                                          doors_required_to_be_open = door_opening_start,
+                                                                          same_direction=False)
+                        opening_delay = np.max([0, (door_opening_start - current_time).total_seconds()]) - operation_time.total_seconds()
+                        if opening_delay > (closing_delay+self.lock_complex.doors_closing_time):
+                            vessel.env.process(lock.close_door(delay=closing_delay))
+                            vessel.env.process(lock.convert_chamber(new_level=next_level_in_case_of_following_empty_lockage, vessel=None,close_doors=False, delay=opening_delay, direction=1 - direction))
+                        else:
+                            vessel.env.process(lock.convert_chamber(new_level=next_level_in_case_of_following_empty_lockage,vessel=None, close_doors=True, delay=closing_delay,direction=1 - direction))
                     else:
                         vessel.env.process(lock.convert_chamber(new_level=next_level_in_case_of_following_empty_lockage, vessel=None,close_doors=True, delay=closing_delay, direction=1 - direction))
                 elif doors_can_be_closed and lock.closing_doors_in_between_operations:
                     door_closing_time = made_operation.time_potential_lock_door_closure_start
-                    delay = (door_closing_time-current_time).total_seconds()
+                    delay = np.max([self.sailing_time_before_closing_lock_doors,(door_closing_time-current_time).total_seconds()])
                     vessel.env.process(lock.close_door(delay=delay))
 
             vessel.log_entry_v0("Sailing to lock complex exit start", vessel.env.now, vessel.output.copy(),second_lock_doors_position, )
@@ -1682,7 +1689,7 @@ class IsLockMaster(core.SimpyObject):
             previous_vessel_sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(previous_vessel, operation_index, direction, prognosis=prognosis,pre_planning=pre_planning)
             sailing_out_time_gap_through_doors = (vessel_sailing_out_time - previous_vessel_sailing_out_time)
             if sailing_out_time_gap_through_doors < pd.Timedelta(seconds=self.sailing_out_time_gap_through_doors):
-                delay += pd.Timedelta(seconds=self.sailing_out_time_gap_through_doors)-sailing_out_time_gap_through_doors
+                delay += number_of_previous_vessels*pd.Timedelta(seconds=self.sailing_out_time_gap_through_doors)-sailing_out_time_gap_through_doors
 
             if self.sailing_out_time_gap_after_berthing_previous_vessel is not None and delay < pd.Timedelta(seconds=self.sailing_out_time_gap_after_berthing_previous_vessel)*number_of_previous_vessels:
                 delay = pd.Timedelta(seconds=self.sailing_out_time_gap_after_berthing_previous_vessel)*number_of_previous_vessels
@@ -1691,7 +1698,7 @@ class IsLockMaster(core.SimpyObject):
         return delay
 
 
-    def calculate_lock_departure_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+    def calculate_lock_departure_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False, first_vessel=False):
         first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index, pre_planning=pre_planning)
         time_departure_start = self.calculate_vessel_departure_start_time(first_vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
         return time_departure_start
@@ -1836,7 +1843,7 @@ class IsLockMaster(core.SimpyObject):
             direction = 1 - direction
         door_opening_time = self.determine_time_to_open_door(operation_index+operation_step, direction, last_time_doors_closed,doors_required_to_be_open, same_direction)
 
-        if doors_required_to_be_open-door_opening_time < last_time_doors_closed:
+        if doors_required_to_be_open-door_opening_time < last_time_doors_closed or doors_required_to_be_open-last_time_doors_closed < self.minimum_time_between_operations_for_intermediate_door_closure:
             doors_can_be_closed = False
         return doors_can_be_closed
 
@@ -1854,6 +1861,12 @@ class IsLockMaster(core.SimpyObject):
             return False, None, None
 
         if not between_arrivals and not self.closing_doors_in_between_operations:
+            return False, None, None
+
+        last_lockage_was_empty = False
+        if operation_index - 2 in operation_planning.index:
+            last_lockage_was_empty = len(operation_planning.loc[operation_index - 1, 'vessels']) == 0
+        if last_lockage_was_empty:
             return False, None, None
 
         if not first_in_lock and vessel_index:
@@ -1877,14 +1890,10 @@ class IsLockMaster(core.SimpyObject):
 
         operation_time = self.determine_time_to_open_door(operation_index, direction, last_time_doors_closed, doors_required_to_be_open, same_direction)
         doors_is_closed = False
-        if doors_required_to_be_open - operation_time > last_time_doors_closed:
+
+
+        if doors_required_to_be_open - operation_time > last_time_doors_closed and doors_required_to_be_open-last_time_doors_closed > self.minimum_time_between_operations_for_intermediate_door_closure:
             doors_is_closed = True
-        if self.predictive and not operation_planning[operation_planning.index < operation_index].empty and first_in_lock:
-            last_time_doors_closed = operation_planning.loc[operation_index-1, 'time_potential_lock_door_closure_start'] + pd.Timedelta(seconds=self.doors_closing_time)
-            next_time_doors_open = operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop']
-            doors_is_closed = False
-            if next_time_doors_open - last_time_doors_closed >= self.minimum_time_between_operations_for_intermediate_door_closure:
-                doors_is_closed = True
 
         return doors_is_closed, doors_required_to_be_open, operation_time
 
@@ -2246,6 +2255,7 @@ class IsLockMaster(core.SimpyObject):
             vessel_planning.loc[vessel_planning_index, 'time_potential_lock_door_closure_start'] = time_vessel_entry_start + self.minimum_delay_to_close_doors(vessel, direction)
         else:
             vessel_planning.loc[vessel_planning_index, 'time_potential_lock_door_closure_start'] = time_door_closing_start
+
         vessel_planning.loc[vessel_planning_index, 'time_lock_departure_start'] = time_vessel_departure_start
         vessel_planning.loc[vessel_planning_index, 'time_lock_departure_stop'] = time_vessel_departure_stop
         vessel_planning.loc[vessel_planning_index, 'time_lock_passing_stop'] = time_vessel_passing_stop
@@ -2417,6 +2427,8 @@ class IsLockMaster(core.SimpyObject):
         if close_doors:
             yield from self.close_door(delay=delay)
         else:
+            if delay:
+                yield self.env.timeout(delay)
             hold_door_A = self.door_A.request()
             hold_levelling = self.levelling.request()
             hold_door_B = self.door_B.request()

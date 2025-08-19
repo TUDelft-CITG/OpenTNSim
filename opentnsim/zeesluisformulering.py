@@ -176,6 +176,7 @@ class ZeesluisFormulering():
 
         V_lock_init = self.L_lock * self.B_lock * (h_lock - self.z_lock)  # lock volume levelled with outer harbour [m3]
         V_lock_B = self.L_lock * self.B_lock * (h_B - self.z_lock)  # Lock volume levelled with inner harbour [m3]
+        M_init = S_lock * (V_lock_init - V_ship)
 
         # Levelling phase to inner harbour during higher water at B
         if h_B >= h_lock:
@@ -183,11 +184,12 @@ class ZeesluisFormulering():
             V_B2lock_nivB = self.L_lock * self.B_lock * (h_B - h_lock) #Levelling volume [m3]
             M_lock2B_nivB = 0
             M_B2lock_nivB = V_B2lock_nivB * S_B  # Mass flux salt from B to lock chamber [kg]
-            S_lock_nivB = (S_lock * (V_lock_init - V_ship) + M_B2lock_nivB) / (V_lock_B - V_ship)  # Salinity in lock chamber after levelling [kg/m3]
+            S_lock_nivB = (M_init + M_B2lock_nivB) / (V_lock_B - V_ship)  # Salinity in lock chamber after levelling [kg/m3]
             Q_lock2B_nivB = 0
             Q_B2lock_nivB = V_B2lock_nivB / t_levelling  # Average discharge water from outer harbour to lock chamber [m3/s]
             S_lock2B_nivB = 0
             S_B2lock_nivB = S_B  # Average salinity of discharge Q_M1 [m3/s]
+            M_end = M_init + M_B2lock_nivB
 
         # Levelling phase to inner harbour during lower water at B
         else:
@@ -200,11 +202,14 @@ class ZeesluisFormulering():
             Q_B2lock_nivB = 0
             S_lock2B_nivB = S_lock # Average salinity of discharge Q_M1 [m3/s]
             S_B2lock_nivB = 0
+            M_end = M_init - M_lock2B_nivB
 
         self.S_lock = S_lock_nivB
         self.h_lock = self.h_B
 
         output = {'S_lock':self.S_lock,
+                  'M_init':M_init,
+                  'M_end':M_end,
                   'V_lock2B_nivB': V_lock2B_nivB,
                   'V_B2lock_nivB': V_B2lock_nivB,
                   'M_lock2B_nivB': M_lock2B_nivB,
@@ -271,8 +276,9 @@ class ZeesluisFormulering():
         rho_MZ = 0.5 * (self.salinity_kgm3_to_density(S_A,T_A)+self.salinity_kgm3_to_density(S_B,T_B)) # Average water density lock complex [kg/m3]
 
         # vessels exiting lock
+        M_init = S_lock*(V_lock_B - V_ship_exit)
         M_B2lock_openBa = V_ship_exit * S_B # Mass flux salt from inner to lock chamber after vessels sailed out [kg]
-        M_lock_openBa = abs(S_lock * (V_lock_B - V_ship_exit) + M_B2lock_openBa)
+        M_lock_openBa = abs(M_init + M_B2lock_openBa)
         S_lock_openBa = M_lock_openBa / V_lock_B # Salinity in chamber after ship sails out [kg/m3]
 
         # flushing
@@ -324,11 +330,16 @@ class ZeesluisFormulering():
         # Mass flux salt to chamber due to exchange current between chamber and inner [kg]
         M_lock_openBb = M_lock_openBa + M_B2lock_openBb - M_lock2A_openBb - M_lock2B_openBb
         S_lock_openBb = M_lock_openBb / V_lock_B
+        M_after_vessel_exit = M_lock_openBa
+        S_after_vessel_exit = S_lock_openBa
+        M_before_vessel_entry = M_lock_openBb
+        S_before_vessel_entry = S_lock_openBb
 
         # vessels entering lock
         M_lock2B_openBc = V_ship_entry * S_lock_openBb  # Mass flux salt from chamber due to approaching downstream-bounded from inner to chamber [kgm3]
         M_lock_openBc = S_lock_openBb * V_lock_B - M_lock2B_openBc
-        S_lock_openBc = M_lock_openBc / (V_lock_B - V_ship_entry)  # Salinity in chamber after ship sails into lock [kg/m3]
+        M_end = M_lock_openBc
+        S_lock_openBc = M_end / (V_lock_B - V_ship_entry)  # Salinity in chamber after ship sails into lock [kg/m3]
         self.S_lock = S_lock_openBc
 
         # totals opening
@@ -355,6 +366,12 @@ class ZeesluisFormulering():
             S_lock2B_mn = S_B
 
         output = {'S_lock': self.S_lock,
+                  'M_init': M_init,
+                  'M_end': M_end,
+                  'M_after_vessel_exit': M_after_vessel_exit,
+                  'S_after_vessel_exit': S_after_vessel_exit,
+                  'M_before_vessel_entry': M_before_vessel_entry,
+                  'S_before_vessel_entry': S_before_vessel_entry,
                   'Q_B2lock_mn': Q_B2lock_mn,
                   'Q_lock2B_mn': Q_lock2B_mn,
                   'Q_lock2A_mn': Q_lock2A_mn,
@@ -404,16 +421,19 @@ class ZeesluisFormulering():
         V_lock_A = self.L_lock * self.B_lock * (h_A - self.z_lock)  # Lock volume levelled with inner harbour [m3]
 
         # Levelling phase to inner harbour during higher water at A
+        M_init = S_lock * (V_lock_init - V_ship)
         if h_A >= h_lock:
             V_lock2A_nivA = 0  # Levelling volume [m3]
             V_A2lock_nivA = self.L_lock * self.B_lock * (h_A - h_lock)  # Levelling volume [m3]
             M_lock2A_nivA = 0
             M_A2lock_nivA = V_A2lock_nivA * S_A  # Mass flux salt from A to lock chamber [kg]
-            S_lock_nivA = (S_lock * (V_lock_init - V_ship) + M_A2lock_nivA) / (V_lock_A - V_ship)  # Salinity in lock chamber after levelling [kg/m3]
+            M_end = M_init + M_A2lock_nivA
+            S_lock_nivA = M_end / (V_lock_A - V_ship)  # Salinity in lock chamber after levelling [kg/m3]
             Q_lock2A_nivA = 0
             Q_A2lock_nivA = V_A2lock_nivA / t_levelling  # Average discharge water from outer harbour to lock chamber [m3/s]
             S_lock2A_nivA = 0
             S_A2lock_nivA = S_A  # Average salinity of discharge Q_M1 [m3/s]
+
 
         # Levelling phase to inner harbour during lower water at A
         else:
@@ -426,11 +446,14 @@ class ZeesluisFormulering():
             Q_A2lock_nivA = 0
             S_lock2A_nivA = S_lock  # Average salinity of discharge Q_M1 [m3/s]
             S_A2lock_nivA = 0
+            M_end = M_init - M_lock2A_nivA
 
         self.S_lock = S_lock_nivA
         self.h_lock = self.h_A
 
         output = {'S_lock': self.S_lock,
+                  'M_init':M_init,
+                  'M_end':M_end,
                   'V_lock2A_nivA': V_lock2A_nivA,
                   'V_A2lock_nivA': V_A2lock_nivA,
                   'M_lock2A_nivA': M_lock2A_nivA,
@@ -498,7 +521,8 @@ class ZeesluisFormulering():
 
         # vessels exiting lock
         M_A2lock_openAa = V_ship_exit * S_A # Mass flux salt from inner to lock chamber after vessels sailed out [kg]
-        M_lock_openAa = abs(S_lock * (V_lock_A - V_ship_exit) + M_A2lock_openAa)
+        M_init = S_lock * (V_lock_A - V_ship_exit)
+        M_lock_openAa = abs(M_init + M_A2lock_openAa)
         S_lock_openAa = M_lock_openAa / V_lock_A # Salinity in chamber after ship sails out [kg/m3]
 
         # flushing
@@ -559,11 +583,16 @@ class ZeesluisFormulering():
         # Mass flux salt to chamber due to exchange current between chamber and inner [kg]
         M_lock_openAb = M_lock_openAa + M_A2lock_openAb - M_lock2A_openAb + M_B2lock_openAb
         S_lock_openAb = M_lock_openAb / V_lock_A
+        M_after_vessel_exit = M_lock_openAa
+        S_after_vessel_exit = S_lock_openAa
+        M_before_vessel_entry = M_lock_openAb
+        S_before_vessel_entry = S_lock_openAb
 
         # vessels entering lock
         M_lock2A_openAc = V_ship_entry * S_lock_openAb  # Mass flux salt from chamber due to approaching downstream-bounded from inner to chamber [kgm3]
         M_lock_openAc = M_lock_openAb - M_lock2A_openAc
-        S_lock_openAc = M_lock_openAc / (V_lock_A - V_ship_entry)  # Salinity in chamber after ship sails into lock [kg/m3]
+        M_end = M_lock_openAc
+        S_lock_openAc = M_end / (V_lock_A - V_ship_entry)  # Salinity in chamber after ship sails into lock [kg/m3]
         self.S_lock = S_lock_openAc
 
         # totals opening
@@ -583,6 +612,12 @@ class ZeesluisFormulering():
             S_lock2A_mn = abs(-(M_lock2A_openAtot + V_A2lock_openAtot * S_A) / V_lock2A_openAtot)
 
         output = {'S_lock': self.S_lock,
+                  'M_init': M_init,
+                  'M_after_vessel_exit':M_after_vessel_exit,
+                  'S_after_vessel_exit':S_after_vessel_exit,
+                  'M_before_vessel_entry':M_before_vessel_entry,
+                  'S_before_vessel_entry':S_before_vessel_entry,
+                  'M_end': M_end,
                   'Q_A2lock_mn': Q_A2lock_mn,
                   'Q_lock2A_mn': Q_lock2A_mn,
                   'Q_B2lock_mn': Q_B2lock_mn,
