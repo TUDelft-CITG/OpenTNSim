@@ -680,7 +680,7 @@ class IsLockChamber(core.HasResource, core.HasLength, core.Identifiable, core.Lo
         elif isinstance(t_start,pd.Timestamp):
             t_start = np.array([t_start], dtype=np.datetime64)[0]
 
-        if self.env.vessel_traffic_service.hydrodynamic_information_path or hydrodynamic_data is not None:
+        if self.env.vessel_traffic_service.hydrodynamic_information_path:
             stationA_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0][0]
             stationB_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0][0]
             H_A = hydrodynamic_data["Water level"][stationA_index].copy()
