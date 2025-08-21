@@ -217,10 +217,10 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             k = sorted(self.multidigraph[node_I][node_II], key=lambda x: self.multidigraph[node_I][node_II][x]['geometry'].length)[0]
             edge_geometry = self.multidigraph.edges[node_I, node_II, k]['geometry']
             if geometry:
-                final_geometry = shapely.ops.linemerge(MultiLineString([geometry, edge_geometry]))
+                geometry = shapely.ops.linemerge(MultiLineString([geometry, edge_geometry]))
             else:
-                final_geometry = geometry
-        return final_geometry
+                geometry = edge_geometry
+        return geometry
 
     def provide_distance_over_network_to_location(self,node_1,node_2,location,tolerance=0.0001):
         geod = pyproj.Geod(ellps="WGS84")

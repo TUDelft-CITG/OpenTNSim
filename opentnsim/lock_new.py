@@ -16,7 +16,7 @@ from IPython.display import display
 
 from opentnsim import output, graph
 from opentnsim import core
-from opentnsim.core import HasResource, Identifiable, Log, Movable, HasLength, SimpyObject
+from opentnsim.core import HasResource, Identifiable, Log, Movable, HasLength, SimpyObject, ExtraMetadata
 from opentnsim.graph import HasMultiDiGraph
 from opentnsim.output import HasOutput
 
@@ -343,7 +343,7 @@ class IsLockLineUpArea(HasResource, HasLength, Identifiable, Log, HasOutput, Has
         self.pass_line_up_area = {start_node: simpy.PriorityResource(self.env, capacity=1),}  # used to prevent vessel from entering the lock before all previously locked vessels have passed the line-up area one by one, so capacity must be 1
 
 
-class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph):
+class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph, ExtraMetadata):
     """Mixin class: Something which has lock chamber object properties as part of a lock complex [in SI-units] """
 
     def __init__(
