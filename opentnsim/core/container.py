@@ -5,13 +5,13 @@ The following classes are provided:
 - HasContainer
 
 """
-# packkage(s) for documentation, debugging, saving and loading
+# package(s) for documentation, debugging, saving and loading
 import logging
 
-# you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
-# Use OpenCLSim objects for core objects (identifiable is imported for later use.)
+
+# use OpenCLSim objects for core objects (identifiable is imported for later use)
 from openclsim.core import SimpyObject
 
 # get logger

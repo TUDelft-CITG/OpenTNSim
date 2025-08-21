@@ -1,0 +1,133 @@
+{
+  "type": "FeatureCollection",
+  "generator": "overpass-turbo",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.",
+  "timestamp": "2023-10-19T15:10:21Z",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10406114",
+        "seamark:name": "8 Anchorage",
+        "seamark:type": "anchorage",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.3391667,
+              52.5086667
+            ],
+            [
+              4.3566638,
+              52.5066681
+            ],
+            [
+              4.3393482,
+              52.527545
+            ],
+            [
+              4.2061758,
+              52.5404984
+            ],
+            [
+              4.2208333,
+              52.5225
+            ],
+            [
+              4.3391667,
+              52.5086667
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10406114"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "relation/10406115",
+        "seamark:name": "7 Anchorage",
+        "seamark:type": "anchorage",
+        "type": "multipolygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.1495,
+              52.4715
+            ],
+            [
+              3.9583333,
+              52.4425
+            ],
+            [
+              3.9071667,
+              52.4255
+            ],
+            [
+              3.9046302,
+              52.4176524
+            ],
+            [
+              4.0196872,
+              52.4225131
+            ],
+            [
+              4.0349439,
+              52.4381036
+            ],
+            [
+              4.158812,
+              52.4581186
+            ],
+            [
+              4.1495,
+              52.4715
+            ]
+          ]
+        ]
+      },
+      "id": "relation/10406115"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/755193772",
+        "seamark:name": "6 Anchorage",
+        "seamark:type": "anchorage",
+        "source": "IMO SN.1 Circ.286"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            3.8244478,
+            52.4679647
+          ],
+          [
+            3.8177329,
+            52.4471162
+          ],
+          [
+            3.730073,
+            52.4396291
+          ],
+          [
+            3.7254918,
+            52.4595103
+          ],
+          [
+            3.8244478,
+            52.4679647
+          ]
+        ]
+      },
+      "id": "way/755193772"
+    }
+  ]
+}

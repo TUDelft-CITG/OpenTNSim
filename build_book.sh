@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copy the examples from the notebooks
-cp notebooks/Example* book/examples/
+cp notebooks/*.ipynb book/examples/
 # Copy the api docs from the docs folder
 cp docs/opentnsim.rst book/docs
 # Copy the Authors list from the root folder
