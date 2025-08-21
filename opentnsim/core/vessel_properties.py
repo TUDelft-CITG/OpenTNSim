@@ -280,3 +280,4 @@ class VesselProperties:
         # If not, return shortest path
         else:
             return nx.dijkstra_path(graph, origin, destination)
+
