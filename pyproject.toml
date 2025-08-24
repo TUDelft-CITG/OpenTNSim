@@ -36,6 +36,7 @@ dependencies = [
     "tqdm >=4.67.1",
     "xarray >=2025.3.1",
     "click >=8.1.8",
+    "movingpandas>=0.22.4",
 ]
 
 [project.optional-dependencies]
