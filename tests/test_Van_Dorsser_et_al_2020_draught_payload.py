@@ -8,6 +8,8 @@ import opentnsim.core
 import opentnsim.strategy
 import itertools
 import tqdm
+import networkx as nx
+import simpy
 
 import pytest
 import utils
@@ -33,11 +35,16 @@ def test_simulation(expected_df):
         ),
         {},
     )
+
+    # create env
+    env = simpy.Environment()
+    env.graph = nx.DiGraph()
+
     # Create a dict with all important settings
     data_vessel = {
-        "env": None,
+        "env": env,
         "name": None,
-        "route": None,
+        "route": [],
         "geometry": None,
         "v": 3.5,  # m/s
         "type": None,

@@ -15,20 +15,24 @@ parts:
       title: Anaconda
 - caption:  Basics of OpenTNSim
   chapters:
-    - file: examples/Example 00 - Basic simulation.ipynb
-    - file: examples/Example 02 - Defining a basic vessel.ipynb
-    - file: examples/Example 01 - Defining a basic graph.ipynb
-    - file: examples/Example 03 - Defining a basic simulation.ipynb
-- caption: Real-world
+    - file: examples/0000 - Basic trip over a single edge.ipynb
+    - file: examples/0001 - Basic trip over a single edge (with current).ipynb
+    - file: examples/0002 - Alternative routes over a simple network.ipynb
+    - file: examples/0003 - Resource restriction on one edge.ipynb
+    - file: examples/0004 - Resource restriction on part of the network.ipynb
+    - file: examples/0005 - Basic trip moving cargo.ipynb
+    - file: examples/0006 - Basic trip over a real-world graph.ipynb
+    #- file: examples/0007 - Real-world vessel info from AIS data.ipynb
+- caption: Energy module
   chapters:
-    - file: examples/Example 05 - Defining a basic simulation on a real graph.ipynb
-    - file: examples/Example 06 - Visualizing the sailed path.ipynb
-    - file: examples/Example 07 - Using actual graphs and graph_module.py.ipynb
-- caption: Advanced simulation
+    - file: examples/0100 - About the OpenTNSim-Energy module.ipynb
+    - file: examples/0101 - Energy calculation for a single edge.ipynb
+    - file: examples/0102 - Energy calculation for a single edge (with current).ipynb
+    - file: examples/0103 - Energy calculation along a route.ipynb
+    - file: examples/0104 - In-depth energy module behaviour.ipynb
+- caption: Locking module
   chapters:
-    - file: examples/Example 17 - Lock.ipynb
-    - file: examples/Example 14 - Energy consumption, fuel use and emissions.ipynb
-    - file: examples/Example 11 - Multiple vessels - from database.ipynb
+    - file: examples/0200 - About the OpenTNSim-Locking module.ipynb
 - caption: Advanced programming concepts
   chapters:
     - file: CL2022-02-script-to-program

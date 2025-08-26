@@ -5,3 +5,4 @@ from .misc import ExtraMetadata, Neighbours
 from .movable import ContainerDependentMovable, Movable, Routable, Routeable
 from .resource import HasResource
 from .vessel_properties import HasLength, HasLoad, VesselProperties
+from . import logutils, plotutils

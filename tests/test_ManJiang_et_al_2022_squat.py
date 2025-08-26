@@ -10,6 +10,8 @@ import pathlib
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import pandas as pd
+import simpy
+import networkx as nx
 
 # package(s) for data handling
 import tqdm
@@ -49,11 +51,16 @@ def test_simulation(expected_df):
         {},
     )
 
+    # create env
+    env = simpy.Environment()
+    env.graph = nx.DiGraph()
+    # Add graph to environment
+
     # Create a dict with all important settings
     data_vessel = {
-        "env": None,
+        "env": env,
         "name": "Vessel M9",
-        "route": None,
+        "route": [],
         "geometry": None,
         "v": None,  # m/s
         "type": None,
