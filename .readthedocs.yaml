@@ -31,3 +31,5 @@ python:
 #   - requirements: pyproject.toml
     - method: pip
       path: .
+      extra_requirements:
+        - sphinx_rtd_theme
