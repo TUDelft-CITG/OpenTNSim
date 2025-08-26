@@ -36,7 +36,6 @@ dependencies = [
     "tqdm >=4.67.1",
     "xarray >=2025.3.1",
     "click >=8.1.8",
-    "movingpandas>=0.22.4",
 ]
 
 [project.optional-dependencies]
@@ -62,7 +61,12 @@ testing = [
     "openpyxl >=3.1.5",
     "pytest-datadir >=1.6.1",
     "pyyaml >=6.0.2",
-    "sphinx-rtd-theme >= 3.0.2"
+    "sphinx-rtd-theme >= 3.0.2",
+    "movingpandas>=0.22.4",
+    "stonesoup>=1.7",
+    "lonboard>=0.11.1",
+    "pyarrow>=21.0.0",
+    "anywidget>=0.9.18"
 
 ]
 
