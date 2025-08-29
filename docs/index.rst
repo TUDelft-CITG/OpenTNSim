@@ -10,7 +10,7 @@ Welcome to OpenTNSim documentation! Please check the contents below for informat
    :width: 600
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :caption: Contents:
 
    installation
