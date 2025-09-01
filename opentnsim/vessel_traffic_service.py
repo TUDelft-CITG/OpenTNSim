@@ -168,9 +168,9 @@ class VesselTrafficService(graph.HasMultiDiGraph):
 
     def provide_speed_over_edge(self,vessel,edge):
         v = vessel.v
-        self.restricted_vessel_speeds_edge = self.restricted_vessel_speeds[self.restricted_vessel_speeds.index.isin([edge])]
-        if not self.restricted_vessel_speeds_edge.empty:
-            v = self.restricted_vessel_speeds_edge.Speed.iloc[0]
+        restricted_vessel_speeds_edge = self.restricted_vessel_speeds[self.restricted_vessel_speeds.index.isin([edge])]
+        if not restricted_vessel_speeds_edge.empty:
+            v = restricted_vessel_speeds_edge.Speed.iloc[0]
         if math.isnan(v):
             v = vessel.v
         if 'restricted_speed' in dir(vessel):

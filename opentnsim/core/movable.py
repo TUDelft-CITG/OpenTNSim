@@ -216,14 +216,16 @@ class Movable(Locatable, Routable, Log):
         # Check if vessel is at correct location - if not, move to location
         yield from self._move_to_start()
 
+        # look ahead to first node
+        self.position_on_route = 0
+        yield from self.look_ahead_to_node(self.route[0])
+
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
             # update current position
             self.current_node, self.next_node = edge  # origin and destination
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
             self.position_on_route = index
-
-            yield from self.look_ahead_to_node(self.next_node)
 
             yield from self.pass_node(self.current_node)
 
@@ -243,6 +245,8 @@ class Movable(Locatable, Routable, Log):
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.next_node]
             self.current_node = self.next_node
             self.position_on_route = index + 1
+
+            yield from self.look_ahead_to_node(self.current_node)
 
         # arrived at end of route. release resource if needed
         if self.req is not None:
@@ -290,7 +294,6 @@ class Movable(Locatable, Routable, Log):
         ------
         The time it takes to pass the node.
         """
-
         # request resource if needed
         if "Resources" in self.graph.nodes[node].keys() and self.req is None:
             arrival = self.env.now  # remember when we arrived at the node
@@ -387,14 +390,12 @@ class Movable(Locatable, Routable, Log):
             shapely.geometry.shape(dest).x,
             shapely.geometry.shape(dest).y,
         )[2]
-
         # calculate velocity based on depth and power, if possible.
         self.v = self._compute_velocity_on_edge(origin, destination)
 
         # Check if the edge has current info
         # NB: positive current is directed from origin to destination
         current = self._get_current(origin, destination)
-
         # Wait for edge resources to become available
         # TODO: Misschien moeten we Resources ook onder Info hangen?
         if "Resources" in edge.keys() and self.req is None:
@@ -455,6 +456,7 @@ class Movable(Locatable, Routable, Log):
             yield from gen(destination)
 
     def look_ahead_to_node(self, destination):
+
         for gen in self.on_look_ahead_to_node_functions:
             yield from gen(destination)
 

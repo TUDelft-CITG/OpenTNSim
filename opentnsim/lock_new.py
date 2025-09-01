@@ -504,7 +504,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         if seed_nr is not None:
             np.random.seed(seed_nr)
 
-        super().__init__(lock_complex=self,capacity=100,length = lock_length, init = lock_length, *args, **kwargs)
+        super().__init__(lock_complex=self, capacity=100, length=lock_length, remaining_length=lock_length, *args, **kwargs)
         if self.env.vessel_traffic_service.hydrodynamic_information_path:
             global hydrodynamic_data
             hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
@@ -1159,9 +1159,14 @@ class IsLockMaster(SimpyObject):
                     sailing_out_time -= vessel.env.now - sailing_out_start
             vessel.log_entry_v0("Sailing to second lock doors stop", vessel.env.now, vessel.output.copy(),second_lock_doors_position, )
 
-            vessel.on_pass_edge_functions.remove(lock.allow_vessel_to_sail_in_lock)
-            vessel.on_pass_edge_functions.remove(lock.initiate_levelling)
-            vessel.on_pass_edge_functions.remove(lock.allow_vessel_to_sail_out_of_lock)
+            # remove functions specific to this lock from vessel.
+            remove_functions = [lock.allow_vessel_to_sail_in_lock, lock.initiate_levelling, lock.allow_vessel_to_sail_out_of_lock]
+            for function in vessel.on_pass_edge_functions:
+                if isinstance(function, functools.partial):
+                    if function.func in remove_functions:
+                        vessel.on_pass_edge_functions.remove(function)
+                elif function in remove_functions:
+                    vessel.on_pass_edge_functions.remove(function)
 
             made_operation = operation_planning.loc[vessel_operation_index]
             vessels = made_operation.vessels
@@ -1245,12 +1250,11 @@ class IsLockMaster(SimpyObject):
                 first_lock_door_position = lock.location_lock_doors_B
             if (lock_start_node, lock_end_node, lock.k) == waiting_area.edge:
                 distance_to_lock_position -= waiting_area.distance_from_node
-
             vessel.log_entry_v0("Sailing to first lock doors start", vessel.env.now, vessel.output.copy(),vessel.logbook[-1]['Geometry'],)
             start_sailing = vessel.env.now
             vessel_speed = lock.vessel_sailing_in_speed(vessel, direction)
-            remaining_sailing_time = distance_to_lock_position/vessel_speed
-            while remaining_sailing_time:
+            remaining_sailing_time = distance_to_lock_position / vessel_speed
+            while remaining_sailing_time > 0:
                 try:
                     yield vessel.env.timeout(remaining_sailing_time)
                     remaining_sailing_time = 0
@@ -1268,12 +1272,7 @@ class IsLockMaster(SimpyObject):
             remaining_lock_length = lock.length.level
             vessel.overruled_speed = vessel.overruled_speed.iloc[0:0]
 
-            while not lock_accessed:
-                try:
-                    yield lock.length.get(vessel.L)
-                    lock_accessed = True
-                except simpy.Interrupt as e:
-                    lock_accessed = False
+            yield lock.length.get(vessel.L)
 
             vessel.log_entry_v0("Sailing to first lock doors stop", vessel.env.now, vessel.output.copy(),first_lock_door_position, )
 
