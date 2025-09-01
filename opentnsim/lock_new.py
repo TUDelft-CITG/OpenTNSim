@@ -6,6 +6,8 @@ import datetime
 import networkx as nx
 import numpy as np
 import pandas as pd
+import functools
+
 
 # spatial libraries
 from collections import namedtuple
@@ -43,31 +45,46 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         self.on_pass_node_functions.append(self.register_to_lock_master)
         self.on_pass_edge_functions.append(self.sail_to_waiting_area)
 
-    def pre_register_to_lock_master(self,origin):
+    def pre_register_to_lock_master(self, origin):
+        """
+        Pre-register the vessel to the lock master.
 
-        route = self.route
-        origin_index = route.index(origin)
-        lock_edge = []
-        detector_node = []
-        next_route = route[origin_index:]
-        if len(next_route) <= 1:
+        This function expects the following information on locks in the graph
+        - self.multidigraph.nodes[node]['Detector]: the lock edge? #TODO: Beschrijven wat dit is.
+        - self.multidigraph.edges[lock_edge]['Lock']: Info on the lock itself? #TODO: Beschrijven wat dit is.
+        TODO: origin hoeft geen input te zijn.
+        """
+
+        # determine which part of the route we still need to consider
+        route_to_come = self.route[self.position_on_route :]
+        if len(route_to_come) <= 1:
             return
 
+        #
+        lock_edge = []
+        detector_node = []
+
+        # find the first upcoming lock
         lock = None
-        for node in next_route:
+        for node in route_to_come:
             node_info = self.multidigraph.nodes[node]
             if 'Detector' in node_info.keys():
                 lock_edge = node_info['Detector']
                 detector_node = node
-            if node in lock_edge and 'Lock' in self.multidigraph.edges[lock_edge].keys():
-                lock = self.multidigraph.edges[lock_edge]['Lock'][0]
-                break
 
+                # TODO: checken of deze loop zo doet wat de bedoeling is. De inspringing van deze if-statement was namelijk anders.
+                if node in lock_edge and "Lock" in self.multidigraph.edges[lock_edge].keys():
+                    lock = self.multidigraph.edges[lock_edge]["Lock"][0]
+                    break
+
+        # Check if lock is predictive
         if lock is not None and lock.predictive:
             operation_planning = lock.operation_pre_planning
             vessel_planning = lock.vessel_pre_planning
+            # make an estimation when ship will arrive
+            # TODO: Niet elk schip heeft een arrival time. Een andere methode verzinnen om de verwachte aankomsttijd te berekenen.
             arrival_time = np.max([self.metadata['arrival_time'],pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))])
-            for origin, destination in zip(route[:-1], route[1:]):
+            for origin, destination in zip(route_to_come[:-1], route_to_come[1:]):
                 k = sorted(self.multidigraph[origin][destination],key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
                 edge = self.multidigraph[origin][destination][k]
                 if origin == detector_node:
@@ -78,6 +95,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             if lock_edge[0] == lock.start_node:
                 direction = 0
 
+            # TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
             lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
             operation_index, add_operation, available_operations = lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
             if not available_operations.empty:
@@ -91,7 +109,10 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
             yield from lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
 
-    def register_to_lock_master(self,origin):
+    def register_to_lock_master(self, origin):
+        """Register vessel to lock master.
+        TODO: origin hoeft geen input te zijn. Kan ook met self.current_node
+        """
         if 'Detector' in self.multidigraph.nodes[origin].keys():
             edge = self.multidigraph.nodes[origin]['Detector']
             if 'Lock' in self.multidigraph.edges[edge].keys():
@@ -99,14 +120,16 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 yield from lock.register_vessel(self)
 
     def sail_to_waiting_area(self, origin, destination, *args, **kwargs):
-        route = self.route
-        origin_index = route.index(origin)
-        next_route = route[origin_index:]
-        if len(next_route) <= 1:
+        """sail to waiting area"""
+
+        # determine which part of the route we still need to consider
+        route_to_come = self.route[self.position_on_route :]
+        if len(route_to_come) <= 1:
             return
 
+        # TODO: documenteren wat hier gebeurt.
         lock = None
-        for node_start,node_stop in zip(next_route[:-1],next_route[1:]):
+        for node_start, node_stop in zip(route_to_come[:-1], route_to_come[1:]):
             k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0]
             lock_edge = (node_start,node_stop,k)
             if 'Lock' in self.multidigraph.edges[lock_edge].keys():
@@ -168,9 +191,13 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         yield waiting_area.waiting_area.release(self.waiting_area_request)
 
         # Vessel allowed to pass lock
-        self.on_pass_edge_functions.append(lock.allow_vessel_to_sail_in_lock)
-        self.on_pass_edge_functions.append(lock.initiate_levelling)
-        self.on_pass_edge_functions.append(lock.allow_vessel_to_sail_out_of_lock)
+        allow_vessel_to_sail_in_lock = functools.partial(lock.allow_vessel_to_sail_in_lock, vessel=self)
+        initiate_levelling = functools.partial(lock.initiate_levelling, vessel=self)
+        allow_vessel_to_sail_out_of_lock = functools.partial(lock.allow_vessel_to_sail_out_of_lock, vessel=self)
+
+        self.on_pass_edge_functions.append(allow_vessel_to_sail_in_lock)
+        self.on_pass_edge_functions.append(initiate_levelling)
+        self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
 
         # Check if doors should be opened
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -807,7 +834,7 @@ class IsLockMaster(SimpyObject):
             operation_planning = self.operation_pre_planning
 
         # Determine the orientation of the vessel
-        if vessel.origin == self.lock_complex.detector_nodes[0]:
+        if vessel.current_node == self.lock_complex.detector_nodes[0]:
             direction = 0
             lock_end_node = self.lock_complex.end_node
             waiting_area = self.waiting_area_A
@@ -890,10 +917,10 @@ class IsLockMaster(SimpyObject):
             distance_to_doors = self.distance_from_end_node_to_lock_doors_B-waiting_area.distance_from_node
             distance_after_doors = self.lock_complex.lock_length + self.distance_from_start_node_to_lock_doors_A
 
-        if vessel.origin != lock_start_node:
-            route_vessel = nx.dijkstra_path(self.env.FG, vessel.origin, lock_start_node)
+        if vessel.current_node != lock_start_node:
+            route_vessel = nx.dijkstra_path(self.env.FG, vessel.current_node, lock_start_node)
         else:
-            route_vessel = nx.dijkstra_path(self.env.FG, vessel.origin, vessel.destination)
+            route_vessel = nx.dijkstra_path(self.env.FG, vessel.current_node, vessel.destination)
 
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
         last_event = pd.DataFrame(vessel.logbook).iloc[-1]
@@ -909,7 +936,7 @@ class IsLockMaster(SimpyObject):
         sailing_time.loc[sailing_time[index_mask].index, 'Time'] = sailing_time.loc[sailing_time[index_mask].index, 'Time'] * interpolation
         total_distance_to_lock = sailing_time.loc[:, 'Distance'].sum()
         total_sailing_time = sailing_time.loc[:, 'Time'].sum()
-        if vessel.origin != lock_start_node:
+        if vessel.current_node != lock_start_node:
             fraction = (total_distance_to_lock-distance_after_doors)/total_distance_to_lock
             total_distance_to_lock = total_distance_to_lock*fraction
             total_sailing_time = total_sailing_time*fraction
@@ -940,7 +967,7 @@ class IsLockMaster(SimpyObject):
         if lock_end_node != self.end_node:
             distance = self.distance_from_end_node_to_lock_doors_B
 
-        route_other_vessel = nx.dijkstra_path(self.env.FG, vessel.origin, lock_end_node)
+        route_other_vessel = nx.dijkstra_path(self.env.FG, vessel.current_node, lock_end_node)
         sailing_time = self.env.vessel_traffic_service.provide_sailing_time(vessel, route_other_vessel)
         column_names = list(sailing_time.columns)
         distance_column_iloc = column_names.index('Distance')
@@ -955,7 +982,9 @@ class IsLockMaster(SimpyObject):
                 sailing_time.loc[edge_index_mask, 'Speed'] = overruled_speed.Speed
                 sailing_time.loc[edge_index_mask, 'Time'] = sailing_time.loc[edge_index_mask, 'Distance'] / sailing_time.loc[edge_index_mask, 'Speed']
 
-        index_sailing_on_first_edge = sailing_time[sailing_time.index.isin([(vessel.origin,route_other_vessel[1],0)])].iloc[0].name
+        index_sailing_on_first_edge = (
+            sailing_time[sailing_time.index.isin([(vessel.current_node, route_other_vessel[1], 0)])].iloc[0].name
+        )
         index_mask = sailing_time.index == index_sailing_on_first_edge
         interpolation = 1 - passed_time / sailing_time.loc[index_mask].Time
         sailing_time.loc[sailing_time[index_mask].index, 'Distance'] = sailing_time.loc[sailing_time[index_mask].index, 'Distance'] * interpolation
@@ -1353,7 +1382,7 @@ class IsLockMaster(SimpyObject):
             elif origin == self.lock_complex.waiting_area_B.edge[0]:
                 waiting_area_node = self.lock_complex.waiting_area_B.edge[1]
                 break
-        route_to_waiting_area = nx.dijkstra_path(self.env.FG,vessel.origin,waiting_area_node)
+        route_to_waiting_area = nx.dijkstra_path(self.env.FG, vessel.current_node, waiting_area_node)
         return route_to_waiting_area
 
     def calculate_sailing_time_to_waiting_area(self, vessel, direction, node=None , prognosis=False, pre_planning = False, overwrite=True):
@@ -1373,7 +1402,7 @@ class IsLockMaster(SimpyObject):
         # Calculate sailing time to waiting area
         distance_to_waiting_area_from_last_node = waiting_area_approach.distance_from_node
         if node is None:
-            node = vessel.origin
+            node = vessel.current_node
         route_to_waiting_area = self.determine_route_to_waiting_area_from_node(node=node,vessel=vessel)
         if not direction:
             sailing_to_waiting_area = calculate_sailing_time(vessel,
@@ -1416,7 +1445,7 @@ class IsLockMaster(SimpyObject):
 
         # Calculate sailing time to lineup area
         distance_to_lineup_area_from_last_node = lineup_area_approach.distance_from_start_edge
-        route_to_lineup_area = nx.dijkstra_path(self.env.FG,vessel.origin,lineup_area_approach.end_node)
+        route_to_lineup_area = nx.dijkstra_path(self.env.FG, vessel.current_node, lineup_area_approach.end_node)
         sailing_to_lineup_area = calculate_sailing_time(vessel,
                                                         route=route_to_lineup_area,
                                                         distance_sailed_on_last_edge=distance_to_lineup_area_from_last_node)
@@ -1471,7 +1500,7 @@ class IsLockMaster(SimpyObject):
 
         # Calculate sailing time to lock chamber
         if start_node is None:
-            start_node = vessel.origin
+            start_node = vessel.current_node
         route_to_lock_chamber = nx.dijkstra_path(self.env.FG,start_node,lock_end_node)
         sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
         sailing_to_lock_chamber_distance = sailing_to_lock_chamber['Distance'].sum()

@@ -60,27 +60,16 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         self.FG = FG
 
         # global vertical_tidal_restrictions_condition_df
-        vertical_tidal_restrictions_condition_df = pd.DataFrame()
+        self.vertical_tidal_restrictions_condition_df = pd.DataFrame()
 
         # global horizontal_tidal_restrictions_condition_df
-        horizontal_tidal_restrictions_condition_df = pd.DataFrame()
+        self.horizontal_tidal_restrictions_condition_df = pd.DataFrame()
 
         # global restricted_vessel_speeds
-        restricted_vessel_speeds = pd.DataFrame()
+        self.restricted_vessel_speeds = pd.DataFrame()
 
         # global edges_info
-        edges_info = pd.DataFrame(columns=['Edge','Distance','MBL'])
-        for edge in FG.edges:
-            edge_info = FG.edges[edge]
-            index = len(edges_info)
-            edges_info.loc[index, 'Edge'] = edge
-            if 'length' in edge_info.keys():
-                edges_info.loc[index,'Distance'] = edge_info['length']
-            if 'MBL' in edge_info.keys():
-                edges_info.loc[index,'MBL'] = edge_info['length']
-            else:
-                edges_info.loc[index, 'MBL'] = 999.
-        edges_info = edges_info.set_index('Edge')
+        self.edges_info = self.get_edges_info()
 
         index = 0
         for node in FG.nodes:
@@ -88,16 +77,18 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             if 'Horizontal tidal restriction' in node_info.keys():
                 specification_df = FG.nodes[node]['Horizontal tidal restriction']['Specifications']
                 specification_df['Node'] = node
-                horizontal_tidal_restrictions_condition_df = pd.concat([horizontal_tidal_restrictions_condition_df,specification_df])
+                self.horizontal_tidal_restrictions_condition_df = pd.concat(
+                    [self.horizontal_tidal_restrictions_condition_df, specification_df]
+                )
             if 'Vertical tidal restriction' in node_info.keys():
                 specification_df = FG.nodes[node]['Vertical tidal restriction']['Specifications']
                 specification_df['Node'] = node
-                vertical_tidal_restrictions_condition_df = pd.concat([vertical_tidal_restrictions_condition_df, specification_df])
+                self.vertical_tidal_restrictions_condition_df = pd.concat(
+                    [self.vertical_tidal_restrictions_condition_df, specification_df]
+                )
 
-        horizontal_tidal_restrictions_condition_df = horizontal_tidal_restrictions_condition_df.reset_index(drop=True)
-        self.horizontal_tidal_restrictions_condition_df = horizontal_tidal_restrictions_condition_df
-        vertical_tidal_restrictions_condition_df = vertical_tidal_restrictions_condition_df.reset_index(drop=True)
-        self.vertical_tidal_restrictions_condition_df = vertical_tidal_restrictions_condition_df
+        self.horizontal_tidal_restrictions_condition_df = self.horizontal_tidal_restrictions_condition_df.reset_index(drop=True)
+        self.vertical_tidal_restrictions_condition_df = self.vertical_tidal_restrictions_condition_df.reset_index(drop=True)
 
         if isinstance(hydrodynamic_information_path,str):
             # global hydrodynamic_data
@@ -107,7 +98,22 @@ class VesselTrafficService(graph.HasMultiDiGraph):
 
         if isinstance(vessel_speed_data_path, str):
             with open(vessel_speed_data_path, "rb") as file:
-                restricted_vessel_speeds = pickle.load(file)
+                self.restricted_vessel_speeds = pickle.load(file)
+
+    def get_edges_info(self):
+        FG = self.FG
+        edges_info = pd.DataFrame(columns=["Edge", "Distance", "MBL"])
+        for edge in FG.edges:
+            edge_info = FG.edges[edge]
+            index = len(edges_info)
+            edges_info.loc[index, "Edge"] = edge
+            if "length" in edge_info.keys():
+                edges_info.loc[index, "Distance"] = edge_info["length"]
+            if "MBL" in edge_info.keys():
+                edges_info.loc[index, "MBL"] = edge_info["length"]
+            else:
+                edges_info.loc[index, "MBL"] = 999.0
+        return edges_info.set_index("Edge")
 
     def read_tidal_periods(self,hydrodynamic_data,tidal_period_type,station_index):
         if 'tidal_period_type' not in hydrodynamic_data.variables:
@@ -162,9 +168,9 @@ class VesselTrafficService(graph.HasMultiDiGraph):
 
     def provide_speed_over_edge(self,vessel,edge):
         v = vessel.v
-        restricted_vessel_speeds_edge = restricted_vessel_speeds[restricted_vessel_speeds.index.isin([edge])]
-        if not restricted_vessel_speeds_edge.empty:
-            v = restricted_vessel_speeds_edge.Speed.iloc[0]
+        self.restricted_vessel_speeds_edge = self.restricted_vessel_speeds[self.restricted_vessel_speeds.index.isin([edge])]
+        if not self.restricted_vessel_speeds_edge.empty:
+            v = self.restricted_vessel_speeds_edge.Speed.iloc[0]
         if math.isnan(v):
             v = vessel.v
         if 'restricted_speed' in dir(vessel):
@@ -178,8 +184,8 @@ class VesselTrafficService(graph.HasMultiDiGraph):
                 edges.append((u,v,k))
 
         vessel_speed_over_route = pd.DataFrame(columns=['Speed'],index=edges)
-        if not restricted_vessel_speeds.empty:
-            vessel_speed_over_route = restricted_vessel_speeds[restricted_vessel_speeds.index.isin(edges)]
+        if not self.restricted_vessel_speeds.empty:
+            vessel_speed_over_route = self.restricted_vessel_speeds[self.restricted_vessel_speeds.index.isin(edges)]
 
         vessel_speed_over_route = vessel_speed_over_route.reindex(edges)
         vessel_speed_over_route[vessel_speed_over_route.Speed.isna() | (vessel_speed_over_route.Speed == 0)] = vessel.v
@@ -307,6 +313,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         return sailing_distance
 
     def provide_sailing_distance_over_route(self, route, edges=None):
+        edges_info = self.edges_info
         if not edges:
             edges = []
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
@@ -476,10 +483,10 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         route_after_node = route[node_index:]
         ukc = 0.
         if restriction_type == 'Horizontal':
-            restriction_condition_df = horizontal_tidal_restrictions_condition_df
+            restriction_condition_df = self.horizontal_tidal_restrictions_condition_df
             ukc, _, _, _, _, _ = self.provide_ukc_clearance(vessel, node, delay)
         elif restriction_type == 'Vertical':
-            restriction_condition_df = vertical_tidal_restrictions_condition_df
+            restriction_condition_df = self.vertical_tidal_restrictions_condition_df
 
         node_mask = restriction_condition_df.Node == node
         length_mask = ((restriction_condition_df.min_ge_Length <= vessel.L)&

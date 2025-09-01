@@ -180,6 +180,8 @@ class Movable(Locatable, Routable, Log):
         self.distance = 0
         self.on_pass_node_functions = []
         self.on_pass_edge_functions = []
+        self.on_complete_pass_edge_functions = []
+        self.on_look_ahead_to_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
         self._check_attributes()
@@ -221,6 +223,8 @@ class Movable(Locatable, Routable, Log):
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
             self.position_on_route = index
 
+            yield from self.look_ahead_to_node(self.next_node)
+
             yield from self.pass_node(self.current_node)
 
             # are we already at destination?
@@ -232,6 +236,7 @@ class Movable(Locatable, Routable, Log):
                 continue
 
             yield from self.pass_edge(self.current_node, self.next_node)
+            yield from self.complete_pass_edge(self.next_node)
 
             # we arrived at destination
             # update to new position
@@ -444,6 +449,14 @@ class Movable(Locatable, Routable, Log):
                 self.resource = None
             else:
                 pass
+
+    def complete_pass_edge(self, destination):
+        for gen in self.on_complete_pass_edge_functions:
+            yield from gen(destination)
+
+    def look_ahead_to_node(self, destination):
+        for gen in self.on_look_ahead_to_node_functions:
+            yield from gen(destination)
 
     def _get_current(self, origin, destination):
         """Get the current on the edge

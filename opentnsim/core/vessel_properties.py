@@ -171,6 +171,9 @@ class VesselProperties:
         self.renewable_fuel_volume = renewable_fuel_volume
         self.renewable_fuel_required_space = renewable_fuel_required_space
 
+        # for lock module: #TODO: op een andere manier toevoegen?
+        self.bound = "inbound"
+
     @property
     def T(self):
         """Compute the actual draught.
@@ -280,4 +283,3 @@ class VesselProperties:
         # If not, return shortest path
         else:
             return nx.dijkstra_path(graph, origin, destination)
-
