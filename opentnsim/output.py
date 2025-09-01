@@ -12,37 +12,43 @@ class HasOutput:
         super().__init__(*args, **kwargs)
 
         if self.__class__.__name__ == 'Vessel' or self.__class__.__name__ == 'IsVessel':
+
             # Route-dependent output
-            self.output['origin'] = ''
-            self.output['destination'] = ''
-            self.output['route'] = []
-            self.output['bound'] = ''
-            self.output['anchorage'] = ''
-            # Edge-dependent output
-            self.output['current_node'] = ''
-            self.output['turning_basin'] = ''
-            self.output['terminal'] = ''
-            self.output['berth'] = ''
-            self.output['length'] = np.nan
-            self.output['beam'] = np.nan
-            self.output['draught'] = np.nan
-            self.output['sailing_distance'] = np.nan
-            self.output['sailing_time'] = np.nan
+            self.output["origin"] = ""
+            self.output["destination"] = ""
+            self.output["route"] = []
+            self.output["bound"] = ""
+            self.output["anchorage"] = ""
+            self.output["turning_basin"] = ""
+            self.output["terminal"] = ""
+            self.output["berth"] = ""
+            self.output["length"] = np.nan
+            self.output["beam"] = np.nan
+            self.output["draught"] = np.nan
+            self.output["sailing_distance"] = np.nan
+            self.output["sailing_time"] = np.nan
             self.output['waiting_time'] = {}
             self.output['waiting_time']['Anchorage'] = []
             self.output['waiting_time']['Terminal'] = []
-            self.output['turning_times'] = []
-            self.output['(un)loading_times'] = []
+            self.output["waiting_times_in_anchorages"] = []
+            self.output["waiting_times_at_terminals"] = []
+            self.output["turning_times"] = []
+            self.output["(un)loading_times"] = []
 
-            self.output['next_node'] = ''
-            self.output['speed'] = np.nan
-            self.output['heading'] = np.nan
+            # Edge-dependent output
+            self.output["current_node"] = ""
+            self.output["next_node"] = ""
+            self.output["speed"] = np.nan
+            self.output["heading"] = np.nan
+            self.output["water_level"] = np.nan
+            self.output["MBL"] = np.nan
+            self.output["net_ukc"] = np.nan
+            self.output["gross_ukc"] = np.nan
+            self.output["ship_related_ukc_factors"] = {}
+
+            # Eextra output
             self.output['available_water_depth'] = np.nan
-            self.output['required_water_depth'] = np.nan
-            self.output['MBL'] = np.nan
-            self.output['net_ukc'] = np.nan
-            self.output['gross_ukc'] = np.nan
-            self.output['ship_related_ukc_factors'] = {}
+            self.output["required_water_depth"] = np.nan
             self.output["limiting current velocity"] = np.nan
 
             # Historic output
