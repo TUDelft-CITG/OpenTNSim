@@ -29,9 +29,7 @@ class HasOutput:
             self.output["sailing_time"] = np.nan
             self.output['waiting_time'] = {}
             self.output['waiting_time']['Anchorage'] = []
-            self.output['waiting_time']['Terminal'] = []
-            self.output["waiting_times_in_anchorages"] = []
-            self.output["waiting_times_at_terminals"] = []
+            self.output["waiting_time"]["Terminal"] = []
             self.output["turning_times"] = []
             self.output["(un)loading_times"] = []
 
