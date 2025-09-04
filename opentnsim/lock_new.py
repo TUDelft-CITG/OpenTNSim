@@ -56,8 +56,8 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         """
 
         # determine which part of the route we still need to consider
-        route_to_come = self.route[self.position_on_route :]
-        if len(route_to_come) <= 1:
+        route_to_come = self.route_ahead
+        if len(self.route_ahead) <= 1:
             return
 
         #
@@ -123,7 +123,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         """sail to waiting area"""
 
         # determine which part of the route we still need to consider
-        route_to_come = self.route[self.position_on_route :]
+        route_to_come = self.route_ahead
         if len(route_to_come) <= 1:
             return
 

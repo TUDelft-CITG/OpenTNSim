@@ -201,6 +201,42 @@ class Movable(Locatable, Routable, Log):
                 )
             )
 
+    @property
+    def current_node(self) -> Union[str, None]:
+        """Return the current node on the route based on self.position_on_route."""
+        if 0 <= self.position_on_route < len(self.route):
+            return self.route[self.position_on_route]
+        else:
+            return None
+
+    @property
+    def next_node(self) -> Union[str, None]:
+        """Return the next node on the route based on self.position_on_route."""
+        if 0 <= self.position_on_route < len(self.route) - 1:
+            return self.route[self.position_on_route + 1]
+        else:
+            return None
+
+    @property
+    def route_ahead(self):
+        """Return the remaining route ahead of the current position."""
+        if 0 <= self.position_on_route < len(self.route):
+            return self.route[self.position_on_route :]
+        else:
+            return []
+
+    def update_position(self, position_on_route):
+        """Update the position on the route.
+
+        Parameters
+        ----------
+        position_on_route: int
+            index of position on the route
+
+        """
+        self.position_on_route = position_on_route
+        self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
+
     # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
     def move(self):
         """Moves vessel over the path defined by self.route.
@@ -223,9 +259,7 @@ class Movable(Locatable, Routable, Log):
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
             # update current position
-            self.current_node, self.next_node = edge  # origin and destination
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
-            self.position_on_route = index
+            self.update_position(index)
 
             yield from self.pass_node(self.current_node)
 
@@ -242,10 +276,9 @@ class Movable(Locatable, Routable, Log):
 
             # we arrived at destination
             # update to new position
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.next_node]
-            self.current_node = self.next_node
-            self.position_on_route = index + 1
+            self.update_position(index + 1)
 
+            # look ahead to next node
             yield from self.look_ahead_to_node(self.current_node)
 
         # arrived at end of route. release resource if needed
