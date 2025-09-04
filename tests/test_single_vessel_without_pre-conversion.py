@@ -11,7 +11,7 @@ import math
 
 # OpenTNSim
 from opentnsim import core
-import opentnsim.lock
+import opentnsim.lock.lock
 
 # spatial libraries
 import shapely.geometry
@@ -97,15 +97,15 @@ def test_basic_simulation():
         wlev_dif[1][i] = 2
 
     # lock area parameters
-    waiting_area_1 = opentnsim.lock.IsLockWaitingArea(
+    waiting_area_1 = opentnsim.lock.lock.IsLockWaitingArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 2"
     )
 
-    lineup_area_1 = opentnsim.lock.IsLockLineUpArea(
+    lineup_area_1 = opentnsim.lock.lock.IsLockLineUpArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 3", lineup_length=300
     )
 
-    lock_1 = opentnsim.lock.IsLock(
+    lock_1 = opentnsim.lock.lock.IsLock(
         env=env,
         nr_resources=100,
         priority=True,
@@ -127,11 +127,11 @@ def test_basic_simulation():
         operating_time=25 * 60,
     )
 
-    waiting_area_2 = opentnsim.lock.IsLockWaitingArea(
+    waiting_area_2 = opentnsim.lock.lock.IsLockWaitingArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 10"
     )
 
-    lineup_area_2 = opentnsim.lock.IsLockLineUpArea(
+    lineup_area_2 = opentnsim.lock.lock.IsLockLineUpArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 9", lineup_length=300
     )
 
