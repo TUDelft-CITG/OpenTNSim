@@ -7,7 +7,9 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import functools
-
+import pyproj
+from shapely.ops import transform
+import matplotlib.pyplot as plt
 
 # spatial libraries
 from collections import namedtuple
@@ -41,6 +43,11 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.overruled_speed = pd.DataFrame(
+            data=[], columns=["Speed"],
+            index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", "k")
+                                            )
+        )
         self.on_look_ahead_to_node_functions.append(self.pre_register_to_lock_master)
         self.on_pass_node_functions.append(self.register_to_lock_master)
         self.on_pass_edge_functions.append(self.sail_to_waiting_area)
@@ -521,7 +528,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
                 self.door_A_open = False
 
         # Geometry on edge
-        edge = self.env.FG.edges[start_node,end_node,0]
+        edge = self.env.graph.edges[start_node,end_node,0]
         length_edge = edge['length']
         if distance_from_start_node_to_lock_doors_A == 0 and distance_from_end_node_to_lock_doors_B == 0:
             self.distance_from_start_node_to_lock_doors_A = self.distance_from_end_node_to_lock_doors_B = length_edge / 2 - lock_length / 2
@@ -560,7 +567,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
                 self.multidigraph.nodes[detector_node]['Detector'] = lock_edge
 
         # Add to the graph:
-        if "FG" in dir(self.env):
+        if "graph" in dir(self.env):
             k = sorted(self.multidigraph[self.start_node][self.end_node],
                        key=lambda x: self.multidigraph[self.start_node][self.end_node][x]['geometry'].length)[0]
             # Add the lock to the edge or append it to the existing list
@@ -817,7 +824,7 @@ class IsLockMaster(SimpyObject):
         if operational_hour_start_times is not None and operational_hour_stop_times is not None:
             operational_hours = self.create_operational_hours(operational_hour_start_times,operational_hour_stop_times)
         else:
-            operational_hours = self.create_operational_hours([self.env.simulation_start],[self.env.simulation_stop])
+            operational_hours = self.create_operational_hours([datetime.datetime.min],[datetime.datetime.max])
         self.operational_hours = operational_hours
 
     def create_operational_hours(self,start_times,stop_times):
@@ -918,9 +925,9 @@ class IsLockMaster(SimpyObject):
             distance_after_doors = self.lock_complex.lock_length + self.distance_from_start_node_to_lock_doors_A
 
         if vessel.current_node != lock_start_node:
-            route_vessel = nx.dijkstra_path(self.env.FG, vessel.current_node, lock_start_node)
+            route_vessel = nx.dijkstra_path(self.env.graph, vessel.current_node, lock_start_node)
         else:
-            route_vessel = nx.dijkstra_path(self.env.FG, vessel.current_node, vessel.destination)
+            route_vessel = nx.dijkstra_path(self.env.graph, vessel.current_node, vessel.destination)
 
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
         last_event = pd.DataFrame(vessel.logbook).iloc[-1]
@@ -967,7 +974,7 @@ class IsLockMaster(SimpyObject):
         if lock_end_node != self.end_node:
             distance = self.distance_from_end_node_to_lock_doors_B
 
-        route_other_vessel = nx.dijkstra_path(self.env.FG, vessel.current_node, lock_end_node)
+        route_other_vessel = nx.dijkstra_path(self.env.graph, vessel.current_node, lock_end_node)
         sailing_time = self.env.vessel_traffic_service.provide_sailing_time(vessel, route_other_vessel)
         column_names = list(sailing_time.columns)
         distance_column_iloc = column_names.index('Distance')
@@ -1121,13 +1128,13 @@ class IsLockMaster(SimpyObject):
                 second_lock_doors_position = lock.location_lock_doors_B
                 distance_from_lock_position = distance_in_lock_from_position
                 remaining_distance = lock.distance_from_end_node_to_lock_doors_B
-                exit_geom = vessel.env.FG.nodes[lock.end_node]['geometry']
+                exit_geom = vessel.env.graph.nodes[lock.end_node]['geometry']
                 next_level_in_case_of_following_empty_lockage = lock.start_node
             else:
                 second_lock_doors_position = lock.location_lock_doors_A
                 distance_from_lock_position = distance_in_lock_from_position
                 remaining_distance = lock.distance_from_start_node_to_lock_doors_A
-                exit_geom = vessel.env.FG.nodes[lock.start_node]['geometry']
+                exit_geom = vessel.env.graph.nodes[lock.start_node]['geometry']
                 next_level_in_case_of_following_empty_lockage = lock.end_node
 
             release_lock_access = False
@@ -1373,7 +1380,7 @@ class IsLockMaster(SimpyObject):
         operation_planning.loc[operation_index, 'status'] = ''
 
     def determine_route_to_waiting_area_from_node(self, node, vessel):
-        remaining_route = nx.dijkstra_path(self.env.FG,node,vessel.route[-1])
+        remaining_route = nx.dijkstra_path(self.env.graph,node,vessel.route[-1])
         for origin in remaining_route:
             if origin == self.lock_complex.waiting_area_A.edge[0]:
                 waiting_area_node = self.lock_complex.waiting_area_A.edge[1]
@@ -1381,7 +1388,7 @@ class IsLockMaster(SimpyObject):
             elif origin == self.lock_complex.waiting_area_B.edge[0]:
                 waiting_area_node = self.lock_complex.waiting_area_B.edge[1]
                 break
-        route_to_waiting_area = nx.dijkstra_path(self.env.FG, vessel.current_node, waiting_area_node)
+        route_to_waiting_area = nx.dijkstra_path(self.env.graph, vessel.current_node, waiting_area_node)
         return route_to_waiting_area
 
     def calculate_sailing_time_to_waiting_area(self, vessel, direction, node=None , prognosis=False, pre_planning = False, overwrite=True):
@@ -1444,7 +1451,7 @@ class IsLockMaster(SimpyObject):
 
         # Calculate sailing time to lineup area
         distance_to_lineup_area_from_last_node = lineup_area_approach.distance_from_start_edge
-        route_to_lineup_area = nx.dijkstra_path(self.env.FG, vessel.current_node, lineup_area_approach.end_node)
+        route_to_lineup_area = nx.dijkstra_path(self.env.graph, vessel.current_node, lineup_area_approach.end_node)
         sailing_to_lineup_area = calculate_sailing_time(vessel,
                                                         route=route_to_lineup_area,
                                                         distance_sailed_on_last_edge=distance_to_lineup_area_from_last_node)
@@ -1500,7 +1507,7 @@ class IsLockMaster(SimpyObject):
         # Calculate sailing time to lock chamber
         if start_node is None:
             start_node = vessel.current_node
-        route_to_lock_chamber = nx.dijkstra_path(self.env.FG,start_node,lock_end_node)
+        route_to_lock_chamber = nx.dijkstra_path(self.env.graph,start_node,lock_end_node)
         sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
         sailing_to_lock_chamber_distance = sailing_to_lock_chamber['Distance'].sum()
         sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
@@ -2604,7 +2611,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         edge_waiting_area_A = (self.end_node, self.start_node, self.k)
         if self.start_node != self.node_A:
             edge_waiting_area_A = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env, self.start_node, self.node_A, self.distance_lock_doors_A_to_waiting_area_A-self.distance_from_start_node_to_lock_doors_A)
-            distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG, self.start_node, edge_waiting_area_A[1]))['Distance'].sum()
+            distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.graph, self.start_node, edge_waiting_area_A[1]))['Distance'].sum()
             self.distance_waiting_area_A_from_node_waiting_area_A = distance_start_node_to_node_waiting_area_A - (self.distance_lock_doors_A_to_waiting_area_A - self.distance_from_start_node_to_lock_doors_A)
         else:
             self.distance_waiting_area_A_from_node_waiting_area_A = self.distance_from_start_node_to_lock_doors_A - self.distance_lock_doors_A_to_waiting_area_A
@@ -2612,7 +2619,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         edge_waiting_area_B = (self.start_node, self.end_node, self.k)
         if self.end_node != self.node_B:
             edge_waiting_area_B = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env, self.end_node, self.node_B, self.distance_lock_doors_B_to_waiting_area_B-self.distance_from_end_node_to_lock_doors_B)
-            distance_end_node_to_node_waiting_area_B = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG,self.end_node, edge_waiting_area_B[1]))['Distance'].sum()
+            distance_end_node_to_node_waiting_area_B = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.graph,self.end_node, edge_waiting_area_B[1]))['Distance'].sum()
             self.distance_waiting_area_B_from_node_waiting_area_B = distance_end_node_to_node_waiting_area_B-(self.distance_lock_doors_B_to_waiting_area_B-self.distance_from_end_node_to_lock_doors_B)
         else:
             self.distance_waiting_area_B_from_node_waiting_area_B = self.distance_from_end_node_to_lock_doors_B - self.distance_lock_doors_B_to_waiting_area_B
@@ -2648,7 +2655,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                                                                     self.node_A,
                                                                                                     self.distance_lock_doors_A_to_lineup_area_A - self.distance_from_start_node_to_lock_doors_A)
 
-            distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG, self.start_node, edge_lineup_area_A[1]))['Distance'].sum()
+            distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.graph, self.start_node, edge_lineup_area_A[1]))['Distance'].sum()
             self.distance_lineup_area_A_from_edge_lineup_area_A_start = distance_start_node_to_node_waiting_area_A - (self.distance_lock_doors_A_to_lineup_area_A - self.distance_from_start_node_to_lock_doors_A)
 
             # Lineup area object
@@ -2680,7 +2687,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                                                                     self.node_B,
                                                                                                     self.distance_lock_doors_B_to_lineup_area_B - self.distance_from_end_node_to_lock_doors_B)
 
-            distance_end_node_to_node_waiting_area_B = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.FG, self.end_node, edge_lineup_area_B[1]))['Distance'].sum()
+            distance_end_node_to_node_waiting_area_B = self.env.vessel_traffic_service.provide_sailing_distance_over_route(nx.dijkstra_path(self.env.graph, self.end_node, edge_lineup_area_B[1]))['Distance'].sum()
             self.distance_lineup_area_B_from_edge_lineup_area_B_start = distance_end_node_to_node_waiting_area_B - (self.distance_lock_doors_B_to_lineup_area_B - self.distance_from_end_node_to_lock_doors_B)
 
             # Lineup area object
@@ -2693,3 +2700,98 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                   effective_lineup_area_length=self.effective_lineup_area_B_length,
                                                   passing_allowed=self.passing_allowed_in_lineup_area_B,
                                                   speed_reduction_factor=self.speed_reduction_factor_lineup_area_B)
+
+    def create_time_distance_plot(self, vessels, xlimmin = None, xlimmax = None, ylimmin = None, ylimmax = None):
+        # define reference systems
+        wgs84eqd = pyproj.CRS('4087')
+        wgs84rad = pyproj.CRS('4326')
+
+        # define transformer functions
+        wgs84rad_to_wgs84eqd = pyproj.transformer.Transformer.from_crs(wgs84rad, wgs84eqd,
+                                                                       always_xy=True).transform  # radial wgs84 to equidistant wgs84
+
+        all_times = []
+        all_distances = []
+        lock_edge_geometry = transform(wgs84rad_to_wgs84eqd, self.env.graph.edges[self.start_node, self.end_node, 0]['geometry'])
+        for vessel in vessels:
+            times = []
+            distances = []
+            vessel_df = pd.DataFrame(vessel.logbook)
+            vessel_df['Geometry'] = vessel_df['Geometry'].apply(lambda x: transform(wgs84rad_to_wgs84eqd, x))
+            for index, message_info in vessel_df.iterrows():
+                time = message_info.Timestamp
+                distance = lock_edge_geometry.line_locate_point(message_info.Geometry) - lock_edge_geometry.length / 2
+                route = vessel.route
+                if self.start_node not in route or self.end_node not in route:
+                    continue
+
+                accepted_messages = [
+                    f'Sailing from node {self.start_node} to node {self.end_node} start',
+                    f'Sailing from node {self.end_node} to node {self.start_node} start',
+                    'Sailing to first lock doors start',
+                    'Sailing to first lock doors stop',
+                    'Sailing to position in lock start',
+                    'Sailing to position in lock stop',
+                    'Levelling start',
+                    'Levelling stop',
+                    'Sailing to second lock doors start',
+                    'Sailing to second lock doors stop',
+                    'Sailing to lock complex exit start',
+                    'Sailing to lock complex exit stop',
+                    f'Sailing from node {self.start_node} to node {self.end_node} stop',
+                    f'Sailing from node {self.end_node} to node {self.start_node} stop',
+                ]
+
+                if message_info.Message in accepted_messages:
+                    times.append(time)
+                    distances.append(distance)
+
+            all_times.append(times)
+            all_distances.append(distances)
+
+        fig, ax = plt.subplots()
+
+        for distances, times in zip(all_distances, all_times):
+            ax.plot(distances, times)
+
+        ylimits = ax.get_ylim()
+        if ylimmin is None:
+            ylimmin = ylimits[0]
+        if ylimmax is None:
+            ylimmax = ylimits[1]
+
+        # Plot lock chamber
+        x_lock_doorsA = lock_edge_geometry.line_locate_point(
+            transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_A)) - lock_edge_geometry.length / 2
+        x_lock_doorsB = lock_edge_geometry.line_locate_point(
+            transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_B)) - lock_edge_geometry.length / 2
+        lock_extend_x = [x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]
+        ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color='lightgrey', zorder=0)
+
+        lock_df = pd.DataFrame(self.logbook)
+
+        # Plot lock phases
+        for index, message_info in lock_df.iterrows():
+            if message_info.Message == 'Lock doors opening stop' and index != 0:
+                time_start = lock_df.loc[index - 1, 'Timestamp']
+                time_stop = message_info.Timestamp
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color='darkgrey', zorder=0)
+            if message_info.Message == 'Lock doors closing stop' and index != 0:
+                time_start = lock_df.loc[index - 1, 'Timestamp']
+                time_stop = message_info.Timestamp
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color='darkgrey', zorder=0)
+            if message_info.Message == 'Lock chamber converting stop' and index != 0:
+                time_start = lock_df.loc[index - 1, 'Timestamp']
+                time_stop = message_info.Timestamp
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color='grey', zorder=0)
+
+        sailing_distance_to_crossing_point = self.sailing_distance_to_crossing_point + self.lock_length/2
+        ax.axvline(-sailing_distance_to_crossing_point, color='lightgrey', zorder=0)
+        ax.axvline(sailing_distance_to_crossing_point, color='lightgrey', zorder=0)
+
+        if xlimmin is None:
+            xlimmin = -2 * sailing_distance_to_crossing_point
+        if xlimmax is None:
+            xlimmax = 2 * sailing_distance_to_crossing_point
+        ax.set_xlim(xlimmin, xlimmax)
+        ax.set_ylim(ylimmin, ylimmax);

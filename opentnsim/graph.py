@@ -636,8 +636,8 @@ class HasMultiDiGraph:
             graph_class = self.env
         else:
             graph_class = self
-        multidigraph = graph_class.FG
-        if not isinstance(graph_class.FG, nx.MultiDiGraph):
+        multidigraph = graph_class.graph
+        if not isinstance(graph_class.graph, nx.MultiDiGraph):
             multidigraph = nx.MultiDiGraph(multidigraph)
         return multidigraph
 
