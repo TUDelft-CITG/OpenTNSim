@@ -75,13 +75,13 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         for node in graph.nodes:
             node_info = graph.nodes[node]
             if 'Horizontal tidal restriction' in node_info.keys():
-                specification_df = graph.nodes[node]["Horizontal tidal restriction"]["Specifications"]
+                specification_df = graph.nodes[node]['Horizontal tidal restriction']['Specifications']
                 specification_df['Node'] = node
                 self.horizontal_tidal_restrictions_condition_df = pd.concat(
                     [self.horizontal_tidal_restrictions_condition_df, specification_df]
                 )
             if 'Vertical tidal restriction' in node_info.keys():
-                specification_df = graph.nodes[node]["Vertical tidal restriction"]["Specifications"]
+                specification_df = graph.nodes[node]['Vertical tidal restriction']['Specifications']
                 specification_df['Node'] = node
                 self.vertical_tidal_restrictions_condition_df = pd.concat(
                     [self.vertical_tidal_restrictions_condition_df, specification_df]
@@ -544,6 +544,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             restrictions, _ = self.provide_tidal_window_restriction(vessel, [node], node, delay)
             if restrictions.empty:
                 return [], [], available_water_depth, 0., ship_related_factors, MBL
+            specifications = self.graph.nodes['A']['Vertical tidal restriction']['Specifications']
             specifications = self.graph.nodes["A"]["Vertical tidal restriction"]["Specifications"]
             ukcs_s = []
             ukcs_p = []
@@ -590,7 +591,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         time_range = np.arange(start_time, end_time + t_step, t_step)
         nodes_of_interest = route.copy()
         for node in route:
-            if self.graph.nodes[node]["LAT"] - self.graph.nodes[node]["MBL"] >= vessel.T + np.max([1.0, vessel.T * 1.125]):
+            if self.graph.nodes[node]['LAT']-self.graph.nodes[node]['MBL'] >= vessel.T+np.max([1.0,vessel.T*1.125]):
                 nodes_of_interest.remove(node)
 
         if not nodes_of_interest:
