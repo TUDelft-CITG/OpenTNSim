@@ -193,7 +193,7 @@ class IsLockWaitingArea(core.HasResource, core.Identifiable, core.Log, output.Ha
         }
 
         # Add to the graph:
-        if "FG" in dir(self.env):
+        if "graph" in dir(self.env):
             if "Waiting area" not in self.multidigraph.nodes[node].keys():
                 self.multidigraph.nodes[node]["Waiting area"] = [self]
             else:
@@ -282,7 +282,7 @@ class IsLockLineUpArea(core.HasResource, core.HasLength, core.Identifiable, core
         # line-up area one by one, so capacity must be 1
 
         # Add to the graph:
-        if "FG" in dir(self.env):
+        if "graph" in dir(self.env):
             if "Line-up area" not in self.multidigraph.edges[self.start_node, self.end_node, k_edge].keys():
                 self.multidigraph.edges[self.start_node, self.end_node, k_edge]["Line-up area"] = [self]
             else:
@@ -449,7 +449,7 @@ class IsLock(core.HasResource, core.HasLength, core.Identifiable, CustomLog, out
                     break
 
         # Add to the graph:
-        if "FG" in dir(self.env):
+        if "graph" in dir(self.env):
             # Add the lock to the edge or append it to the existing list
             if "Lock" not in self.multidigraph.edges[self.node_doors1, self.node_doors2, k_edge].keys():
                 self.multidigraph.edges[self.node_doors1, self.node_doors2, k_edge]["Lock"] = [self]

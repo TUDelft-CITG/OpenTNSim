@@ -268,7 +268,7 @@ def test_movable_pass_edge(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
     movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable.current_node, movable.next_node = 0, 1
+    movable.update_position(0)
 
     starttime = env.now
 
@@ -313,7 +313,7 @@ def test_movable_pass_edge_with_energy_error(env):
 
     # create an instance of the Vessel class using the input dict data_vessel
     movable = Vessel(**data_vessel)
-    movable.current_node, movable.next_node = 0, 1
+    movable.update_position(0)
 
     def mission_pass_edge(env, vessel):
         yield from vessel.pass_edge(origin=0, destination=1)
@@ -348,7 +348,7 @@ def test_movable_pass_edge_with_energy(env):
     # create an instance of the Vessel class using the input dict data_vessel
     movable = Vessel(**data_vessel)
 
-    movable.current_node, movable.next_node = 0, 1
+    movable.update_position(0)
 
     def mission_pass_edge(env, vessel):
         yield from vessel.pass_edge(origin=0, destination=1)
@@ -406,7 +406,7 @@ def test_movable_pass_edge_with_current(digraph_movable):
     # add current to the edge
     env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
     env.graph.edges[1, 0]["Info"] = {"Current": -0.5}  # -0.5 current in the opposite direction
-    digraph_movable.current_node, digraph_movable.next_node = 0, 1
+    digraph_movable.update_position(0)
 
     starttime = env.now
 

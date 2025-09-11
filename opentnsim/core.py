@@ -151,7 +151,7 @@ class Routable(SimpyObject):
         self.origin = origin
         self.destination = destination
         self.next_destinations = next_destinations
-        self.route = nx.dijkstra_path(env.FG, self.origin, self.destination)
+        self.route = nx.dijkstra_path(env.graph, self.origin, self.destination)
         # start at start of route
         self.position_on_route = 0
 
@@ -167,8 +167,8 @@ class Routable(SimpyObject):
         graph = None
         if hasattr(self.env, "graph"):
             graph = self.env.graph
-        elif hasattr(self.env, "FG"):
-            graph = self.env.FG
+        elif hasattr(self.env, "graph"):
+            graph = self.env.graph
         else:
             raise ValueError("Routable expects .graph to be present on env")
 
@@ -191,7 +191,7 @@ class Movable(Locatable, Routable, Log):
     """
 
     def __init__(self, env, origin, destination, *args, **kwargs):
-        geometry = env.FG.nodes[origin]['geometry']
+        geometry = env.graph.nodes[origin]['geometry']
         super().__init__(origin=origin, destination=destination, geometry=geometry, env=env, *args, **kwargs)
         """Initialization"""
         self.on_pass_node_functions = []
@@ -225,7 +225,7 @@ class Movable(Locatable, Routable, Log):
         self.update_route_status_report()
 
         # Check if vessel is at correct location - if not, move to location
-        vessel_origin_location = nx.get_node_attributes(self.env.FG, "geometry")[self.route[0]]
+        vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
         if self.geometry != vessel_origin_location:
             start_location = self.geometry
             logger.debug("Origin: {orig}")
@@ -243,8 +243,8 @@ class Movable(Locatable, Routable, Log):
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
             self.origin, self.destination = edge # origin and destination
-            start_location = nx.get_node_attributes(self.env.FG, "geometry")[self.origin]
-            end_location = nx.get_node_attributes(self.env.FG, "geometry")[self.destination]
+            start_location = nx.get_node_attributes(self.env.graph, "geometry")[self.origin]
+            end_location = nx.get_node_attributes(self.env.graph, "geometry")[self.destination]
 
             # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
             self.k = sorted(self.multidigraph[self.origin][self.destination],key=lambda x: self.multidigraph[self.origin][self.destination][x]['geometry'].length)[0]

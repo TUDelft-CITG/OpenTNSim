@@ -50,7 +50,7 @@ def test_simulation(expected_df):
     assert len(coords) == len(depths) + 1, "nr of depths does not correspond to nr of coords"
 
     # create a graph based on coords and depths
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
     nodes = []
     path = []
 
@@ -67,7 +67,7 @@ def test_simulation(expected_df):
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
-        FG.add_node(node.name, geometry=node.geometry)
+        graph.add_node(node.name, geometry=node.geometry)
 
     # add edges
     path = [[nodes[i], nodes[i + 1]] for i in range(len(nodes) - 1)]
@@ -76,11 +76,11 @@ def test_simulation(expected_df):
         # For the energy consumption calculation we add info to the graph. We need depth info for resistance.
         # NB: the CalculateEnergy routine expects the graph to have "Info" that contains "GeneralDepth"
         #     this may not be very generic!
-        FG.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
+        graph.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
 
     # toggle to undirected and back to directed to make sure all edges are two way traffic
-    FG = FG.to_undirected()
-    FG = FG.to_directed()
+    graph = graph.to_undirected()
+    graph = graph.to_directed()
 
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
@@ -122,7 +122,7 @@ def test_simulation(expected_df):
         "C_year": 1990,
     }
 
-    path = nx.dijkstra_path(FG, nodes[0].name, nodes[3].name)
+    path = nx.dijkstra_path(graph, nodes[0].name, nodes[3].name)
 
     # Actual testing starts here
     def run_simulation(C_year):
@@ -132,7 +132,7 @@ def test_simulation(expected_df):
         env.epoch = time.mktime(simulation_start.timetuple())
 
         # Add graph to environment
-        env.graph = FG
+        env.graph = graph
 
         # Add environment and path to the vessel
         # create a fresh instance of vessel
@@ -162,7 +162,7 @@ def test_simulation(expected_df):
         vessel = run_simulation(C_year=input_data["C_year"][index])
 
         # create an EnergyCalculation object and perform energy consumption calculation
-        energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)
+        energycalculation = opentnsim.energy.EnergyCalculation(graph, vessel)
         energycalculation.calculate_energy_consumption()
 
         # create dataframe from energy calculation computation

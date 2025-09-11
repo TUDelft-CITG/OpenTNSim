@@ -20,20 +20,20 @@ import pytest
 @pytest.fixture
 def graph():
     # 1. create graph
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
 
     node_0 = {"n": "0", "geometry": shapely.geometry.Point(0, 0)}
     node_1 = {"n": "1", "geometry": shapely.geometry.Point(0.1, 0)}
 
     nodes = [node_0, node_1]
     for node in nodes:
-        FG.add_node(node["n"], geometry=node["geometry"])
+        graph.add_node(node["n"], geometry=node["geometry"])
 
     edge_info = {"GeneralDepth": [6.0]}
     # share edge info accross all edges
-    FG.add_edge("0", "1", Info=edge_info)
-    FG.add_edge("1", "0", Info=edge_info)
-    return FG
+    graph.add_edge("0", "1", Info=edge_info)
+    graph.add_edge("1", "0", Info=edge_info)
+    return graph
 
 
 @pytest.fixture

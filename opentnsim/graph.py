@@ -104,16 +104,16 @@ def calculate_distance_along_path(graph, path):
 
     return path_length
 
-def calculate_depth(geom_start, geom_stop, FG):
+def calculate_depth(geom_start, geom_stop, graph):
     """method to calculate the depth of the waterway in meters between two geometries.
 
     Parameters
     ----------
     geom_start : shapely.geometry.Point
-        Starting point geometry. Must represent a node in graph FG.
+        Starting point geometry. Must represent a node in graph graph.
     geom_stop : shapely.geometry.Point
-        Stopping point geometry. must represent a node in graph FG.
-    FG : networkx.Graph
+        Stopping point geometry. must represent a node in graph graph.
+    graph : networkx.Graph
         The graph containing vaarweginformatie.nl data, with nodes and edges.
         Must contain 'Info' attribute on edges with 'GeneralDepth'.
         Must contain an edge between geom_start and geom_stop.
@@ -126,8 +126,8 @@ def calculate_depth(geom_start, geom_stop, FG):
     Raises
     ------
     ValueError
-        If geom_start or geom_stop are not nodes in the graph FG.
-        If there is no edge between the two nodes in the graph FG.
+        If geom_start or geom_stop are not nodes in the graph graph.
+        If there is no edge between the two nodes in the graph graph.
         If the depth data is not available for the edge between the two nodes.
     """
 
@@ -135,20 +135,20 @@ def calculate_depth(geom_start, geom_stop, FG):
 
     # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
 
-    node_start = find_closest_node(FG, geom_start)[0]
-    node_stop = find_closest_node(FG, geom_stop)[0]
+    node_start = find_closest_node(graph, geom_start)[0]
+    node_stop = find_closest_node(graph, geom_stop)[0]
 
-    # Read from the FG data from vaarweginformatie.nl the General depth of each edge
+    # Read from the graph data from vaarweginformatie.nl the General depth of each edge
     # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
     if node_start == node_stop:
         return np.nan  # if the start and stop nodes are the same, return 0 depth
 
     try:
-        if "Info" in FG.get_edge_data(node_start, node_stop).keys():
-            depth = FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
+        if "Info" in graph.get_edge_data(node_start, node_stop).keys():
+            depth = graph.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
 
-        elif "GeneralDepth" in FG.get_edge_data(node_start, node_stop).keys():
-            depth = FG.get_edge_data(node_start, node_stop)["GeneralDepth"]
+        elif "GeneralDepth" in graph.get_edge_data(node_start, node_stop).keys():
+            depth = graph.get_edge_data(node_start, node_stop)["GeneralDepth"]
         else:
             return np.nan  # if no depth data is available, return NaN
     except:
@@ -195,7 +195,7 @@ def geom_to_node(geom: shapely.geometry.Point, properties: dict):
 
 def gdf_to_nx(gdf):
     """Convert a geopandas dataframe to a networkx DiGraph"""
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
     for _, feature in gdf.iterrows():
         geom = feature.geometry
         if geom is None:
@@ -204,18 +204,18 @@ def gdf_to_nx(gdf):
         # in case we have single points in the geometry, add them as nodes
         if geom.geom_type == "Point":
             node_idx = geom.coords[0]
-            FG.add_node(node_idx, **properties)
+            graph.add_node(node_idx, **properties)
             continue
         if geom.geom_type in ["LineString", "MultiLineString"]:
             for edge_id, edge_properties in geom_to_edges(geom, properties):
                 node_source, node_target = edge_properties["e"]
                 source_geom = shapely.geometry.Point(*node_source)
                 _, node_properties = geom_to_node(source_geom, {})
-                FG.add_node(edge_id[0], **node_properties)
+                graph.add_node(edge_id[0], **node_properties)
                 _, node_properties = geom_to_node(source_geom, {})
-                FG.add_node(edge_id[1], **node_properties)
-                FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
-    return FG
+                graph.add_node(edge_id[1], **node_properties)
+                graph.add_edge(edge_id[0], edge_id[1], **edge_properties)
+    return graph
 
 
 class Node(Identifiable, Locatable):
@@ -599,19 +599,19 @@ class FIS:
         if os.path.exists(fname):
             print("I am loading cached network")
             with open(fname, "rb") as pkl_file:
-                FG = pickle.load(pkl_file)
+                graph = pickle.load(pkl_file)
                 pkl_file.close()
 
         else:
             print("I am getting new network")
-            FG = FIS.load_fis_network(url)
+            graph = FIS.load_fis_network(url)
 
             os.makedirs(os.path.dirname(fname), exist_ok=True)
             with open(fname, "wb") as pkl_file:
-                pickle.dump(FG, pkl_file)
+                pickle.dump(graph, pkl_file)
                 pkl_file.close()
 
-        return FG
+        return graph
 
 
 class HasMultiDiGraph:
@@ -636,8 +636,8 @@ class HasMultiDiGraph:
             graph_class = self.env
         else:
             graph_class = self
-        multidigraph = graph_class.FG
-        if not isinstance(graph_class.FG, nx.MultiDiGraph):
+        multidigraph = graph_class.graph
+        if not isinstance(graph_class.graph, nx.MultiDiGraph):
             multidigraph = nx.MultiDiGraph(multidigraph)
         return multidigraph
 

@@ -213,7 +213,7 @@ class Simulation(core.Identifiable):
         scenario: scenario with vessels - should be coupled to the database
         """
         self.env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
-        self.env.FG = graph
+        self.env.graph = graph
         self.env.simulation_start = simulation_start
         self.env.simulation_stop = simulation_stop
         self.simulation_duration = simulation_duration
