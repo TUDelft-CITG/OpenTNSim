@@ -228,7 +228,7 @@ class Movable(Locatable, Routable, Log):
         else:
             return []
 
-    def update_position(self, position_on_route):
+    def update_position(self, position_on_route: int):
         """Update the position on the route.
 
         Parameters
