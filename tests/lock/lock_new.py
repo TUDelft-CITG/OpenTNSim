@@ -71,6 +71,16 @@ def test_islockwaitingarea_init(env, graph):
     assert waiting_area.resource.capacity == 1000000  # een van beide moet weg denk ik.
 
 
+def test_islocklineuparea_init(env, graph):
+    env.graph = graph
+    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=graph)
+    lineup_area = IsLockLineUpArea(
+        name="lineup", start_node="A", end_node="B", lineup_area_length=100, distance_from_start_edge=10, env=env
+    )
+    assert lineup_area.name == "lineup"
+    assert lineup_area.node == "A"
+
+
 @pytest.mark.skip(reason="maybe make independent of IsLockMaster")
 def test_islockchamber_init(env, graph):
     chamber = IsLockChamber(name="test chamber", start_node="A", end_node="B", env=env)
