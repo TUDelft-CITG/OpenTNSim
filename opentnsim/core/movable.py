@@ -190,6 +190,9 @@ class Movable(Locatable, Routable, Log):
         self.req = None
         self.resource = None
 
+        # keep track of distance travelled on edge
+        self.distance_left_on_edge = np.nan
+
     def _check_attributes(self):
         """Check if all required attributes are set."""
         # each node on route should have a geometry
@@ -417,12 +420,16 @@ class Movable(Locatable, Routable, Log):
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
 
+        # TODO deze distance berekening aanpassen. De fis graaf bevat deze informatie ook.
         distance = self.wgs84.inv(
             shapely.geometry.shape(orig).x,
             shapely.geometry.shape(orig).y,
             shapely.geometry.shape(dest).x,
             shapely.geometry.shape(dest).y,
         )[2]
+
+        self.distance_left_on_edge = distance
+
         # calculate velocity based on depth and power, if possible.
         self.v = self._compute_velocity_on_edge(origin, destination)
 
@@ -461,14 +468,14 @@ class Movable(Locatable, Routable, Log):
             yield from on_pass_edge_function(origin, destination)
 
         # default velocity based on current speed.
-        timeout = distance / (self.current_speed + current)
+        timeout = self.distance_left_on_edge / (self.current_speed + current)
         yield self.env.timeout(timeout)
-        self.distance += distance
+        self.distance += self.distance_left_on_edge
 
         self.log_entry_v0(
             "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
             self.env.now,
-            self.distance,
+            self.distance,  # TODO distance klopt nu  niet na een sluismodule
             dest,
         )
         self.geometry = dest

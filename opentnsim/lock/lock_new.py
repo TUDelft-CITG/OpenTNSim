@@ -7,6 +7,9 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import functools
+from shapely.ops import transform
+import pyproj
+import matplotlib.pyplot as plt
 
 
 # spatial libraries
@@ -40,10 +43,16 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
     """
 
     def __init__(self, *args, **kwargs):
+
         super().__init__(*args, **kwargs)
         self.on_look_ahead_to_node_functions.append(self.pre_register_to_lock_master)
         self.on_pass_node_functions.append(self.register_to_lock_master)
         self.on_pass_edge_functions.append(self.sail_to_waiting_area)
+
+        # Save speeds that are calculated by vessel_traffic_service
+        self.overruled_speed = pd.DataFrame(
+            data=[], columns=["Speed"], index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", "k"))
+        )
 
     def pre_register_to_lock_master(self, origin):
         """
@@ -234,7 +243,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                     time_index = np.absolute(hydrodynamic_times - np.datetime64(doors_required_to_be_open) - np.timedelta64(int(lock.doors_opening_time), 's')).argmin()
                     station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == lock.node_open)[0]
                     lock.water_level[time_index:] = hydrodynamic_data['Water level'][station_index, time_index:]
-        self.distance -= sailing_distance_to_waiting_area
+        self.distance_left_on_edge -= sailing_distance_to_waiting_area
 
     def wait_in_waiting_area(self, waiting_area):
         lock = waiting_area.lock
@@ -817,7 +826,7 @@ class IsLockMaster(SimpyObject):
         if operational_hour_start_times is not None and operational_hour_stop_times is not None:
             operational_hours = self.create_operational_hours(operational_hour_start_times,operational_hour_stop_times)
         else:
-            operational_hours = self.create_operational_hours([self.env.simulation_start], [self.env.simulation_stop])
+            operational_hours = self.create_operational_hours([datetime.datetime.min], [datetime.datetime.max])
         self.operational_hours = operational_hours
 
     def create_operational_hours(self,start_times,stop_times):
@@ -1221,7 +1230,7 @@ class IsLockMaster(SimpyObject):
                     remaining_sailing_distance = vessel_speed * sailing_out_time
                     sailing_out_time = remaining_sailing_distance / vessel.current_speed
             vessel.log_entry_v0("Sailing to lock complex exit stop", vessel.env.now, vessel.output.copy(), exit_geom, )
-            vessel.distance = 0
+            vessel.distance_left_on_edge = 0
 
     def allow_vessel_to_sail_in_lock(self, origin, destination, vessel=None, k=0, *args, **kwargs):
         if 'Lock' in vessel.multidigraph.edges[origin,destination,k].keys():
@@ -2553,6 +2562,7 @@ class IsLockMaster(SimpyObject):
         self.levelling.release(hold_levelling)
         self.door_B.release(hold_door_B)
 
+
 class IsLockComplex(IsLockChamber,IsLockMaster):
     """Class which represents a lock complex consisting of two lock chambers and associated waiting areas and line-up areas.
 
@@ -2736,3 +2746,103 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
             raise ValueError(
                 f"LockComplex {self.name} does not have an edge between node A {self.node_A} and node B {self.node_B}."
             )
+
+    def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None):
+        # define reference systems
+        wgs84eqd = pyproj.CRS("4087")
+        wgs84rad = pyproj.CRS("4326")
+
+        # define transformer functions
+        wgs84rad_to_wgs84eqd = pyproj.transformer.Transformer.from_crs(
+            wgs84rad, wgs84eqd, always_xy=True
+        ).transform  # radial wgs84 to equidistant wgs84
+
+        all_times = []
+        all_distances = []
+        lock_edge_geometry = transform(wgs84rad_to_wgs84eqd, self.env.graph.edges[self.start_node, self.end_node, 0]["geometry"])
+        for vessel in vessels:
+            times = []
+            distances = []
+            vessel_df = pd.DataFrame(vessel.logbook)
+            vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: transform(wgs84rad_to_wgs84eqd, x))
+            for index, message_info in vessel_df.iterrows():
+                time = message_info.Timestamp
+                distance = lock_edge_geometry.line_locate_point(message_info.Geometry) - lock_edge_geometry.length / 2
+                route = vessel.route
+                if self.start_node not in route or self.end_node not in route:
+                    continue
+
+                accepted_messages = [
+                    f"Sailing from node {self.start_node} to node {self.end_node} start",
+                    f"Sailing from node {self.end_node} to node {self.start_node} start",
+                    "Sailing to first lock doors start",
+                    "Sailing to first lock doors stop",
+                    "Sailing to position in lock start",
+                    "Sailing to position in lock stop",
+                    "Levelling start",
+                    "Levelling stop",
+                    "Sailing to second lock doors start",
+                    "Sailing to second lock doors stop",
+                    "Sailing to lock complex exit start",
+                    "Sailing to lock complex exit stop",
+                    f"Sailing from node {self.start_node} to node {self.end_node} stop",
+                    f"Sailing from node {self.end_node} to node {self.start_node} stop",
+                ]
+
+                if message_info.Message in accepted_messages:
+                    times.append(time)
+                    distances.append(distance)
+
+            all_times.append(times)
+            all_distances.append(distances)
+
+        fig, ax = plt.subplots()
+
+        for distances, times in zip(all_distances, all_times):
+            ax.plot(distances, times)
+
+        ylimits = ax.get_ylim()
+        if ylimmin is None:
+            ylimmin = ylimits[0]
+        if ylimmax is None:
+            ylimmax = ylimits[1]
+
+        # Plot lock chamber
+        x_lock_doorsA = (
+            lock_edge_geometry.line_locate_point(transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_A))
+            - lock_edge_geometry.length / 2
+        )
+        x_lock_doorsB = (
+            lock_edge_geometry.line_locate_point(transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_B))
+            - lock_edge_geometry.length / 2
+        )
+        lock_extend_x = [x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]
+        ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
+
+        lock_df = pd.DataFrame(self.logbook)
+
+        # Plot lock phases
+        for index, message_info in lock_df.iterrows():
+            if message_info.Message == "Lock doors opening stop" and index != 0:
+                time_start = lock_df.loc[index - 1, "Timestamp"]
+                time_stop = message_info.Timestamp
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color="darkgrey", zorder=0)
+            if message_info.Message == "Lock doors closing stop" and index != 0:
+                time_start = lock_df.loc[index - 1, "Timestamp"]
+                time_stop = message_info.Timestamp
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color="darkgrey", zorder=0)
+            if message_info.Message == "Lock chamber converting stop" and index != 0:
+                time_start = lock_df.loc[index - 1, "Timestamp"]
+                time_stop = message_info.Timestamp
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color="grey", zorder=0)
+
+        sailing_distance_to_crossing_point = self.sailing_distance_to_crossing_point + self.lock_length / 2
+        ax.axvline(-sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
+        ax.axvline(sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
+
+        if xlimmin is None:
+            xlimmin = -2 * sailing_distance_to_crossing_point
+        if xlimmax is None:
+            xlimmax = 2 * sailing_distance_to_crossing_point
+        ax.set_xlim(xlimmin, xlimmax)
+        ax.set_ylim(ylimmin, ylimmax)
