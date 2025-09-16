@@ -178,21 +178,46 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         return v
 
     def provide_speed_over_route(self,vessel,route,edges=[]):
+        """
+        Provides the speed along a vessel's route
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        route : list of str
+            str resemble node names that have to be in the graph
+        edges : list of tuple
+            tuples resemble edges with: a start_node [u] as str, end_node (v) as str, and identifier (k) as int
+
+        Returns
+        vessel_speed_over_route : pd.DataFrame
+            vessel speed per edge of the route
+        -------
+        """
+
+        # get edges of route
         if not edges:
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
                 k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
                 edges.append((u,v,k))
 
+        # construct dataframe of speed information per edge
         vessel_speed_over_route = pd.DataFrame(columns=['Speed'],index=edges)
+
+        # predefined speed restrictions should be added to the dataframe
         if not self.restricted_vessel_speeds.empty:
             vessel_speed_over_route = self.restricted_vessel_speeds[self.restricted_vessel_speeds.index.isin(edges)]
-
         vessel_speed_over_route = vessel_speed_over_route.reindex(edges)
+
+        # missing speeds should be replaced with the vessel target speed
         vessel_speed_over_route[vessel_speed_over_route.Speed.isna() | (vessel_speed_over_route.Speed == 0)] = vessel.v
 
-        if 'restricted_speed' in dir(vessel):
+        # speeds overruled by lock masters should be obeyed to
+        if 'overruled_speed' in dir(vessel):
             for edge,overruled_speed_limit in vessel.overruled_speed.iterrows():
                 vessel_speed_over_route.loc[edge,'Speed'] = overruled_speed_limit
+
         return vessel_speed_over_route
 
     def provide_heading(self, vessel, edge):
@@ -307,43 +332,141 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             break
         return (node_I,node_II,k)
 
-    def provide_sailing_distance(self,vessel,edge):
-        k = sorted(vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
-        sailing_distance = vessel.multidigraph.edges[edge[0], edge[1], k]['length']
+    def provide_sailing_distance(self,edge,k=None):
+        """
+        Calculates sailing distance of edge
+
+        Parameters
+        ----------
+        edge : tuple
+            tuple resembles an edge with: a start_node [u] as str, end_node (v) as str
+        k : int [optional]
+            identifier of the edge (used in networkx MultiDiGraph to distinguish between edges between the same pair of nodes)
+
+        Returns
+        -------
+        sailing_distance : float
+            sailing distance along the edge in [m]
+        """
+        if k is None:
+            k = sorted(self.env.multidigraph[edge[0]][edge[1]], key=lambda x: self.env.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
+
+        sailing_distance = self.env.multidigraph.edges[edge[0], edge[1], k]['length']
+
         return sailing_distance
 
     def provide_sailing_distance_over_route(self, route, edges=None):
+        """
+        Calculates sailing distance of a route
+
+        Parameters
+        ----------
+        vessel :
+            a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        edge : tuple
+            tuple resembles an edge with: a start_node [u] as str, end_node (v) as str
+
+        Returns
+        -------
+        sailing_distance_over_route : float
+            sailing distance along the route in [m]
+        """
+
+        # get edge info
         edges_info = self.edges_info
+
+        # get edges of route
         if not edges:
             edges = []
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
                 k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
                 edges.append((u,v,k))
+
+        # calculate sailing distance along route
         sailing_distance_over_route = edges_info[edges_info.index.isin(edges)]
+
         return sailing_distance_over_route
 
     def provide_sailing_time(self, vessel, route, edges=None):
+        """
+        Calculates sailing time of vessel
+
+        Parameters
+        ----------
+        vessel :
+            a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        route : list of str
+            str resemble node names that have to be in the graph
+        edges : list of tuples
+            tuples resemble edges with: a start_node [u] as str, end_node (v) as str, and identifier (k) as int
+
+        Returns
+        -------
+        sailing_time_over_route : pd.DataFrame
+            dataframe with edges as (multi)index and the following column-information: Speed, Distance, Time
+
+        """
+
+        # determine list of edges that the vessel passes given its route
         if not edges:
             edges = []
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
                 k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
                 edges.append((u,v,k))
-        sailing_distance_over_route = self.provide_sailing_distance_over_route(route, edges)
-        sailing_time_over_route = self.provide_speed_over_route(vessel, route, edges)
-        sailing_time_over_route['Distance'] = sailing_distance_over_route['Distance']
-        sailing_time_over_route['Time'] = sailing_time_over_route['Distance']/sailing_time_over_route['Speed']
-        return sailing_time_over_route
 
-    def provide_sailing_time_distance_on_edge_to_distance_on_another_edge(self, vessel, route, distance_sailed_on_first_edge=0, distance_sailed_on_last_edge=0, edges=None):
-        sailing_time = self.provide_sailing_time(vessel=vessel, route=route, edges=edges)
-        index_first_edge = pd.Index([sailing_time.iloc[0].name])
-        index_last_edge = pd.Index([sailing_time.iloc[-1].name])
-        distance_to_sail_on_first_edge = (sailing_time.loc[index_first_edge, 'Distance']-distance_sailed_on_first_edge)
-        sailing_time.loc[index_first_edge, 'Time'] = sailing_time.loc[index_first_edge, 'Time']*(distance_to_sail_on_first_edge/sailing_time.loc[index_first_edge, 'Distance'])
-        sailing_time.loc[index_first_edge, 'Distance'] = distance_to_sail_on_first_edge
-        sailing_time.loc[index_last_edge, 'Time'] = sailing_time.loc[index_last_edge, 'Time']*(distance_sailed_on_last_edge/sailing_time.loc[index_last_edge, 'Distance'])
-        sailing_time.loc[index_last_edge, 'Distance'] = distance_sailed_on_last_edge
-        return sailing_time
+        # calculate sailing distance over route
+        sailing_distance_over_route_df = self.provide_sailing_distance_over_route(route, edges)
+
+        # obtain dataframe with information of sailing speed along route
+        sailing_information_df = self.provide_speed_over_route(vessel, route, edges)
+
+        # add distance and duraction information to the sailing information dataframe
+        sailing_information_df['Distance'] = sailing_distance_over_route_df['Distance']
+        sailing_information_df['Time'] = sailing_information_df['Distance']/sailing_information_df['Speed']
+
+        return sailing_information_df
+
+    def provide_sailing_time_distance_on_edge_to_distance_on_another_edge(self, vessel, route, distance_sailed_on_first_edge=0., distance_sailed_on_last_edge=0., edges=None):
+        """
+        Calculates the distance from a location along an edge A to another location along an edge B
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        route : list of str
+            str resemble node names that have to be in the graph
+        distance_sailed_on_first_edge : float
+            distance that is already covered on the edge at which the vessel is currently sailing
+        distance_sailed_on_last_edge : float
+            distance on the last edge that the vessel has to sail to reach its location of interest
+        edges : list of tuples
+            tuples resemble edges with: a start_node [u] as str, end_node (v) as str, and identifier (k) as int
+
+        Returns
+        -------
+        sailing_information_df : pd.DataFrame
+            dataframe with edges as (multi)index and the following column-information: Speed, Distance, Time
+
+        """
+
+        # obtain dataframe with information of sailing speed, distance and time along route
+        sailing_information_df = self.provide_sailing_time(vessel=vessel, route=route, edges=edges)
+
+        # determine indexes of first and last edges
+        index_first_edge = pd.Index([sailing_information_df.iloc[0].name])
+        index_last_edge = pd.Index([sailing_information_df.iloc[-1].name])
+
+        # determine distance that must still be sailed on the current edge of the vessel
+        distance_to_sail_on_first_edge = (sailing_information_df.loc[index_first_edge, 'Distance']-distance_sailed_on_first_edge)
+
+        # adjust information of the sailing distance and sailing time on the first and last edges
+        sailing_information_df.loc[index_first_edge, 'Time'] = sailing_information_df.loc[index_first_edge, 'Time']*(distance_to_sail_on_first_edge/sailing_information_df.loc[index_first_edge, 'Distance'])
+        sailing_information_df.loc[index_first_edge, 'Distance'] = distance_to_sail_on_first_edge
+        sailing_information_df.loc[index_last_edge, 'Time'] = sailing_information_df.loc[index_last_edge, 'Time']*(distance_sailed_on_last_edge/sailing_information_df.loc[index_last_edge, 'Distance'])
+        sailing_information_df.loc[index_last_edge, 'Distance'] = distance_sailed_on_last_edge
+
+        return sailing_information_df
 
     def provide_nearest_anchorage_area(self, vessel, node):
         nodes_of_anchorages = []

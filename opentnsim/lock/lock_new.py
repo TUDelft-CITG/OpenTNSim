@@ -32,19 +32,39 @@ knots_to_ms = knots = 0.514444444
 class PassesLockComplex(Movable, HasMultiDiGraph):
     """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
 
+    Parent classes
+    --------------
+    Movable :
+        to be able to pass edges and nodes of the graph
+    HasMultiDiGraph :
+        a networkx.MultiDiGraph is constructed where edges are constructed with a start_node, end_node, and an
+        identifier (k) to be able to construct multiple edges between the same node pair (i.e., parallel lock chambers)
+
+
+    Pre-requisites
+    --------------
+    arrival_time:
+        the vessel should have an arrival_time in its metadata
+
+
     Attributes
     -----------
-    pre_register_to_lock_master: simpy.Container
-        the container that is used to limit the amount that can be requested.
-    register_to_lock_master: int
-        total amount that has been requested.
-    sail_to_waiting_area: int
-        total amount that has been requested.
+    pre_register_to_lock_master: generator
+        vessel requests registration of itself to the lock master of the lock complex, prior to sailing towards the lock
+        (for long-term planning)
+    register_to_lock_master: generator
+        vessel requests registration of itself to the lock master of the lock complex (for short-term planning)
+    sail_to_waiting_area: generator
+        the event of sailing towards the vessel's first to be encountered waiting area of the lock complex
     """
 
     def __init__(self, *args, **kwargs):
-
+        """
+        Initialization
+        """
         super().__init__(*args, **kwargs)
+
+        # Add attributes to the vessels movable functions
         self.on_look_ahead_to_node_functions.append(self.pre_register_to_lock_master)
         self.on_pass_node_functions.append(self.register_to_lock_master)
         self.on_pass_edge_functions.append(self.sail_to_waiting_area)
@@ -54,49 +74,69 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             data=[], columns=["Speed"], index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", "k"))
         )
 
-    def pre_register_to_lock_master(self, origin):
+    def pre_register_to_lock_master(self, destination):
         """
-        Pre-register the vessel to the lock master.
+        Request pre-registration to the lock master.
+
+        On starting (origin) and completion (destination) of passing of each edge, the vessel looks ahead if it should
+        request to pre-register itself to the lock master.
+
+        Parameters
+        ----------
+        destination : str
+            node name (that has to be in the graph) of the destination of the vessel
+            this input is a dummy input as this generator is grouped in the on_look_ahead_to_node_functions in the Movable-class, which requires a destination as input (other generators in on_look_ahead_to_node_functions may require this input)
+
+        Yields
+        ------
+        Update of the lock planning :
+            the vessel is added to the lock operation planning of the lock complex
+
 
         This function expects the following information on locks in the graph
-        - self.multidigraph.nodes[node]['Detector]: the lock edge? #TODO: Beschrijven wat dit is.
-        - self.multidigraph.edges[lock_edge]['Lock']: Info on the lock itself? #TODO: Beschrijven wat dit is.
-        TODO: origin hoeft geen input te zijn.
+        TODO: Beschrijven wat self.multidigraph.nodes[node]['Detector] is.
+        TODO: Beschrijven wat self.multidigraph.edges[lock_edge]['Lock'] is.
         """
 
-        # determine which part of the route we still need to consider
-        route_to_come = self.route_ahead
-        if len(self.route_ahead) <= 1:
+        # TODO: check if this replaces the code below (lines 93-96)
+        # Part I: Determine if vessel should pre-register itself
+        if self.position_on_route:
             return
 
-        #
-        lock_edge = []
-        detector_node = []
+        # # determine which part of the route we still need to consider
+        # route_to_come = self.route_ahead
+        # if len(self.route_ahead) <= 1:
+        #     return # the vessel will not pass the lock if its current location is its penultimate node ?
 
-        # find the first upcoming lock
-        lock = None
+        # Part II: Find the upcoming locks that use long-term planning by looping over the vessel's route
+        locks_with_long_term_planning_found = []
+        route_to_come = self.route_ahead
         for node in route_to_come:
             node_info = self.multidigraph.nodes[node]
-            if 'Detector' in node_info.keys():
-                lock_edge = node_info['Detector']
-                detector_node = node
+            if 'Detector' not in node_info.keys(): # TODO: rename 'Detector' so that it is lock specific and clearer to the user
+                continue
 
-                # TODO: checken of deze loop zo doet wat de bedoeling is. De inspringing van deze if-statement was namelijk anders.
-                if node in lock_edge and "Lock" in self.multidigraph.edges[lock_edge].keys():
-                    lock = self.multidigraph.edges[lock_edge]["Lock"][0]
-                    break
+            # if a detector node belonging to a lock is found, than unpack the lock complex information using the lock_edge stored in the detector node
+            lock_edge = node_info['Detector']
+            detector_node = node
+            lock = self.multidigraph.edges[lock_edge]["Lock"][0] # TODO: write test to prevent that multiple lock complexes are located at the same detector node, also: maybe we need to change "Lock" to "Lock complex"
+            if not lock.predictive: # TODO: lets rename 'preditive', as it is a bit vague, lets change it to 'long_term_planning'
+                continue
+            # if the lock is predictive store the lock object in the list of locks with long_term_planning enabled
+            locks_with_long_term_planning_found.append(lock)
 
-        # Check if lock is predictive
-        if lock is not None and lock.predictive:
-            operation_planning = lock.operation_pre_planning
+        # Part III: Pre-registration of the vessel at the lock masters of each lock complex by loop over the locks with long term planning to be encountered along the vessel's route
+        for lock in locks_with_long_term_planning_found:
+            # unpack the lock specific dataframes of planned vessels and planned lock operations
             vessel_planning = lock.vessel_pre_planning
-            # make an estimation when ship will arrive
-            # TODO: Niet elk schip heeft een arrival time. Een andere methode verzinnen om de verwachte aankomsttijd te berekenen.
-            # TODO: arrival time aanpassen naar arrival_time_at_lock
-            arrival_time = np.max([self.metadata['arrival_time'],pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))])
+            operation_planning = lock.operation_pre_planning
+
+            # unravel what is the current time
+            arrival_time = np.max([self.metadata['arrival_time'],pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))]) # TODO: check if we can replace this with just the pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)
+
+            # determine the arrival time of the vessel at the lock complex TODO: in functie zetten.
             for origin, destination in zip(route_to_come[:-1], route_to_come[1:]):
-                # de k en de multidigraph zijn nodig voor paralelle sluiskolken. Dit moet ooit worden bepaald door de sluismaster. Voor nu de kortste edge.
-                k = sorted(self.multidigraph[origin][destination],key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
+                k = sorted(self.multidigraph[origin][destination],key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0] # TODO: dit kan een route-functie worden, de identifier (k) voor multidigraphs wordt nu bepaald aan de hand van de kortste route
                 edge = self.multidigraph[origin][destination][k]
                 if origin == detector_node:
                     break
@@ -107,8 +147,10 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             if lock_edge[0] == lock.start_node:
                 direction = 0
 
-            # TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
+            # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
             lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
+
+            # request lock master to add vessel to the lock operation planning TODO: this should be a function/attribute of the lock master
             operation_index, add_operation, available_operations = lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
             if not available_operations.empty:
                 operation_index = available_operations.iloc[0].name
@@ -269,7 +311,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         vessel_planning_index = vessel_planning[vessel_planning.id == self.id].iloc[-1].name
         operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
 
-        sailing_to_approach = lock.calculate_sailing_time_to_approach(self, direction, start_node=start_node,overwrite=False)# - lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)[0]
+        sailing_to_approach = lock.calculate_sailing_time_to_approach_point(self, direction, current_node=start_node,overwrite=False)# - lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)[0]
         vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
         waiting_start = lock.env.now
         if len(vessels_in_operation) < lock.min_vessels_in_operation:
@@ -678,18 +720,18 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
             if edge in vessel.overruled_speed.index:
                 speed = vessel.overruled_speed.loc[edge, "Speed"]
 
-        # TODO: voor nu is dit te complex. Even checken of dat echt zo is. Als we complexe lock-module maken kunnen we dit optioneel toevoegen.
-        if self.sailing_distance_to_crossing_point and from_crossing_point:
-            if deceleration_stats["sailed_distance"] >= self.sailing_distance_to_crossing_point:
-                decelerating_distances_rev = -1 * (
-                    np.array(list(reversed(deceleration_stats["distance"]))) - deceleration_stats["distance"][-1]
-                )
-                sailing_time = dt * (np.absolute(decelerating_distances_rev - self.sailing_distance_to_crossing_point).argmin())
-            else:
-                sailing_time = deceleration_stats["sailing_time"]
-                remaining_distance = self.sailing_distance_to_crossing_point - deceleration_stats["sailed_distance"]
-                sailing_time += remaining_distance / speed_edge
-            speed = self.sailing_distance_to_crossing_point / sailing_time
+        # # TODO: voor nu is dit te complex. Even checken of dat echt zo is. Als we complexe lock-module maken kunnen we dit optioneel toevoegen.
+        # if self.sailing_distance_to_crossing_point and from_crossing_point:
+        #     if deceleration_stats["sailed_distance"] >= self.sailing_distance_to_crossing_point:
+        #         decelerating_distances_rev = -1 * (
+        #             np.array(list(reversed(deceleration_stats["distance"]))) - deceleration_stats["distance"][-1]
+        #         )
+        #         sailing_time = dt * (np.absolute(decelerating_distances_rev - self.sailing_distance_to_crossing_point).argmin())
+        #     else:
+        #         sailing_time = deceleration_stats["sailing_time"]
+        #         remaining_distance = self.sailing_distance_to_crossing_point - deceleration_stats["sailed_distance"]
+        #         sailing_time += remaining_distance / speed_edge
+        #     speed = self.sailing_distance_to_crossing_point / sailing_time
         return speed
 
     def vessel_sailing_out_speed(self, vessel, direction, P_used=None, h0=17, until_crossing_point=False):
@@ -1364,12 +1406,38 @@ class IsLockMaster(SimpyObject):
             if not lock.close_doors_before_vessel_is_laying_still and not last_vessel_to_enter_lock and lock.closing_doors_in_between_arrivals and doors_can_be_closed_between_vessel_arrivals:
                 vessel.env.process(lock.close_door())
 
-    def add_vessel_to_vessel_planning(self,vessel,direction, time_of_registration=None, pre_planning=False):
+    def add_vessel_to_vessel_planning(self, vessel, direction, time_of_registration=None, pre_planning=False):
+        """
+        Adds vessel to the vessel planning of the lock complex upon request
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        time_of_registration : pd.Timestamp
+            the time that the vessel registers to the lock master
+        pre_planning : bool
+            ?
+
+        Returns
+        -------
+        Nothing
+
+        """
+
+        # determining current time
         if time_of_registration is None:
             time_of_registration = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+
+        # unpacks the vessel planning
         vessel_planning = self.vessel_planning
+        # if there is a long-term planning, use this vessel planning
         if self.predictive:
             vessel_planning = self.vessel_pre_planning
+
+        # add vessel to the vessel planning dataframe with its information
         vessel_planning_index = len(vessel_planning)
         vessel_planning.loc[vessel_planning_index, 'id'] = vessel.id
         vessel_planning.loc[vessel_planning_index, 'time_of_registration'] = time_of_registration
@@ -1378,10 +1446,12 @@ class IsLockMaster(SimpyObject):
         vessel_planning.loc[vessel_planning_index, 'L'] = vessel.L
         vessel_planning.loc[vessel_planning_index, 'B'] = vessel.B
         vessel_planning.loc[vessel_planning_index, 'T'] = vessel.T
+
+        # adds to the vessel planning the arrival time at each of the infrastructures of the lock complex
         _ = self.calculate_sailing_time_to_waiting_area(vessel, direction, pre_planning=pre_planning)
-        if (not direction and self.has_lineup_area_A) or (direction and self.has_lineup_area_B):
+        if (not direction and self.has_lineup_area_A) or (direction and self.has_lineup_area_B): #if lock has a lineup area
             self.calculate_sailing_time_to_lineup_area(vessel, direction, pre_planning=pre_planning)
-        _ = self.calculate_sailing_time_to_approach(vessel, direction, pre_planning=pre_planning)
+        _ = self.calculate_sailing_time_to_approach_point(vessel, direction, pre_planning=pre_planning)
         _ = self.calculate_sailing_time_to_lock_door(vessel, direction, pre_planning=pre_planning)
 
     def add_empty_lock_operation_to_planning(self, operation_index, direction, pre_planning=False):
@@ -1438,36 +1508,72 @@ class IsLockMaster(SimpyObject):
         route_to_waiting_area = nx.dijkstra_path(self.env.graph, vessel.current_node, waiting_area_node)
         return route_to_waiting_area
 
-    def calculate_sailing_time_to_waiting_area(self, vessel, direction, node=None , prognosis=False, pre_planning = False, overwrite=True):
+    def calculate_sailing_time_to_waiting_area(self, vessel, direction, current_node=None , prognosis=False, pre_planning = False, overwrite=True):
+        """ TODO: note that this function looks a lot like other 'calculate_sailing_time_to'-functions below, so maybe we can investigate to combine the functions
+        Calculates the sailing time of a vessel from its location to the waiting area
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        current_node : str
+            the node name (which has to be in the graph) at which the vessel is currently sailing
+        prognosis: bool
+            .
+        pre_planning: bool
+            .
+        overwrite: bool
+            .
+
+        Returns
+        -------
+        sailing_to_waiting_area_time: pd.Timedelta
+            sailing time to the waiting area in [s]
+        sailing_distance: float
+            sailing distance to the waiting area in [m]
+        average_sailing_speed: float
+            average sailing speed to the lock chambers's waiting area in [m/s]
+
+        """
+
+        # determine the current node of the vessel
+        if current_node is None:
+            current_node = vessel.current_node
+
+        # determine route to the start node of the edge at which the waiting area is located
+        route_to_waiting_area = self.determine_route_to_waiting_area_from_node(node=current_node, vessel=vessel)
+
+        # unpack vessel planning
         vessel_planning = self.vessel_planning
         if self.predictive:
             vessel_planning = self.vessel_pre_planning
 
+        # unpack first encountered waiting area
         if not direction:
             waiting_area_approach = self.lock_complex.waiting_area_A
         else:
             waiting_area_approach = self.lock_complex.waiting_area_B
 
-        # Calculate sailing time function
-        vessel_traffic_service = self.env.vessel_traffic_service
-        calculate_sailing_time = vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+        # unpack the function that calculates sailing time from distance on edge to distance on another edge
+        calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
 
-        # Calculate sailing time to waiting area
-        distance_to_waiting_area_from_last_node = waiting_area_approach.distance_from_node
-        if node is None:
-            node = vessel.current_node
-        route_to_waiting_area = self.determine_route_to_waiting_area_from_node(node=node,vessel=vessel)
-        if not direction:
-            sailing_to_waiting_area = calculate_sailing_time(vessel,
-                                                             route=route_to_waiting_area,
-                                                             distance_sailed_on_last_edge=distance_to_waiting_area_from_last_node)
-            sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['Time'].sum())
-        else:
-            sailing_to_waiting_area = calculate_sailing_time(vessel,
-                                                             route=route_to_waiting_area,
-                                                             distance_sailed_on_last_edge=distance_to_waiting_area_from_last_node)
-            sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['Time'].sum())
+        # determine the distance that the vessel has to sail on the edge at which the waiting area is located (from the start node of the edge)
+        distance_to_waiting_area_on_last_edge = waiting_area_approach.distance_from_node
 
+        # calculation of the sailing information (time, distance, speed) per edge on route to the waiting area
+        sailing_to_waiting_area = calculate_sailing_time(vessel, route=route_to_waiting_area,
+                                                         distance_sailed_on_last_edge=distance_to_waiting_area_on_last_edge)
+
+        # calculation of the sailing time, distance, and average speed to the waiting area
+        sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['Time'].sum())
+        sailing_distance = sailing_to_waiting_area['Distance'].sum()
+        average_sailing_speed = sailing_to_waiting_area['Speed']
+        if sailing_to_waiting_area_time.total_seconds():
+            average_sailing_speed = sailing_distance / sailing_to_waiting_area['Time'].sum()
+
+        # calculate arrival time of vessel at the waiting area and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -1475,34 +1581,65 @@ class IsLockMaster(SimpyObject):
                 current_time = vessel_planning.loc[vessel_planning_index, 'time_of_acceptance']
             vessel_planning.loc[vessel_planning_index, 'time_arrival_at_waiting_area'] = current_time + sailing_to_waiting_area_time
 
-        sailing_distance = sailing_to_waiting_area['Distance'].sum()
-        sailing_time = sailing_to_waiting_area['Time'].sum()
-        average_sailing_speed = sailing_to_waiting_area['Speed']
-        if sailing_time:
-            average_sailing_speed = sailing_distance/sailing_to_waiting_area['Time'].sum()
         return sailing_to_waiting_area_time, sailing_distance, average_sailing_speed
 
-    def calculate_sailing_time_to_lineup_area(self, vessel, direction, prognosis=False, pre_planning=False, overwrite=True):
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+    def calculate_sailing_time_to_lineup_area(self, vessel, direction, current_node=None, prognosis=False, pre_planning=False, overwrite=True):
+        """
+        Calculates the sailing time of a vessel from its location to the line-up area
 
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        current_node : str
+            the node name (which has to be in the graph) at which the vessel is currently sailing
+        prognosis :
+            .
+        pre_planning :
+            .
+        overwrite :
+            .
+
+        Returns
+        -------
+        sailing_to_lineup_area_time : pd.Timedelta
+            sailing time to the lock chambers's line-up area in [s]
+
+        """
+        # determine the current node of the vessel
+        if current_node is None:
+            current_node = vessel.current_node
+
+        # unpack first encountered line-up area
         if not direction:
             lineup_area_approach = self.lock_complex.lineup_area_A
         else:
             lineup_area_approach = self.lock_complex.lineup_area_B
 
-        # Calculate sailing time function
-        vessel_traffic_service = self.env.vessel_traffic_service
-        calculate_sailing_time = vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+        # determine the route of the vessel to the line-up area edge
+        route_to_lineup_area = nx.dijkstra_path(self.env.graph, current_node, lineup_area_approach.end_node)
 
-        # Calculate sailing time to lineup area
+        # unpack vessel planning
+        vessel_planning = self.vessel_planning
+        if self.predictive:
+            vessel_planning = self.vessel_pre_planning
+
+        # unpack the function that calculates sailing time from distance on edge to distance on another edge
+        calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+
+        # determine the distance that the vessel has to sail on the edge at which the line-up area is located (from the start node of the edge)
         distance_to_lineup_area_from_last_node = lineup_area_approach.distance_from_start_edge
-        route_to_lineup_area = nx.dijkstra_path(self.env.graph, vessel.current_node, lineup_area_approach.end_node)
-        sailing_to_lineup_area = calculate_sailing_time(vessel,
-                                                        route=route_to_lineup_area,
+
+        # calculation of the sailing information (time, distance, speed) per edge on route to the line-up area
+        sailing_to_lineup_area = calculate_sailing_time(vessel, route=route_to_lineup_area,
                                                         distance_sailed_on_last_edge=distance_to_lineup_area_from_last_node)
+
+        # calculation of the sailing time to the line-up area
         sailing_to_lineup_area_time = pd.Timedelta(seconds=sailing_to_lineup_area['Time'].sum())
+
+        # calculate arrival time of vessel at the line-up area and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -1512,18 +1649,58 @@ class IsLockMaster(SimpyObject):
 
         return sailing_to_lineup_area_time
 
-    def calculate_sailing_time_to_approach(self, vessel, direction, start_node=None, operation_index=None,prognosis=False, pre_planning=False, overwrite=True):
+    def calculate_sailing_time_to_approach_point(self, vessel, direction, current_node=None, operation_index=None, prognosis=False, pre_planning=False, overwrite=True):
+        """
+        Calculates the sailing time of a vessel from its location to the approach point
+
+        The approach point is the closest location in front of the lock doors where the outbound vessel(s) can pass the inbound vessel waiting to enter the lock.
+        The point is located in between the line-up area and the lock doors.
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        current_node : str
+            the node name (which has to be in the graph) at which the vessel is currently sailing
+        prognosis :
+            .
+        pre_planning :
+            .
+        overwrite :
+            .
+
+        Returns
+        -------
+        sailing_to_lineup_area_time : pd.Timedelta
+            sailing time to the lock chambers's line-up area in [s]
+
+        """
+        # determine the current node of the vessel
+        if current_node is None:
+            current_node = vessel.current_node
+
+        # unpack vessel planning
         vessel_planning = self.vessel_planning
         if self.predictive:
             vessel_planning = self.vessel_pre_planning
 
-        sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, node = start_node, pre_planning=pre_planning,overwrite=overwrite)[0]
-        sailing_time_to_lock_door = self.calculate_sailing_time_to_lock_door(vessel, direction, start_node = start_node, pre_planning=pre_planning, overwrite=overwrite)
+        # unpack sailing distance from crossing point to lock doors
         sailing_distance_from_entry = self.sailing_distance_to_crossing_point
-        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction,from_crossing_point=True)
-        sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
-        sailing_time_to_start_approach = sailing_time_to_lock_door - sailing_time_entry - sailing_time_to_waiting_area
 
+        # determine the time of entering the lock
+        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction, from_crossing_point=True)
+        sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
+
+        # determine the time of the vessel to its first encountered waiting area and lock_door TODO: in the 'add_vessel_to_planning'-function these functions has already been done, so doing these again can be computational intensive and should be prevented. Can we include tests that before this function is ran, these following functions have already been ran? How can we extract the earlier output?
+        #sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, current_node = current_node, pre_planning=pre_planning,overwrite=overwrite)[0]
+        sailing_time_to_lock_door = self.calculate_sailing_time_to_lock_door(vessel, direction, current_node = current_node, pre_planning=pre_planning, overwrite=overwrite)
+
+        # determine the sailing time to the approach point
+        sailing_time_to_start_approach = sailing_time_to_lock_door - sailing_time_entry #- sailing_time_to_waiting_area TODO: later check if we indeed can get rid of the sailing time to waiting area
+
+        # calculate arrival time of vessel at the approach point and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -1537,40 +1714,72 @@ class IsLockMaster(SimpyObject):
 
         return sailing_time_to_start_approach
 
-    def calculate_sailing_time_to_lock_door(self, vessel, direction, start_node=None,prognosis=False, pre_planning=False, overwrite=True):
+    def calculate_sailing_time_to_lock_door(self, vessel, direction, current_node=None,prognosis=False, pre_planning=False, overwrite=True):
+        """
+        Calculates the sailing time of a vessel from its location to the first lock doors that it will encounter
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        current_node : str
+            the node name (which has to be in the graph) at which the vessel is currently sailing
+        prognosis :
+            .
+        pre_planning :
+            .
+        overwrite :
+            .
+
+        Returns
+        -------
+        sailing_to_lineup_area_time : pd.Timedelta
+            sailing time to the lock chambers's line-up area in [s]
+
+        """
+        # determine the current node of the vessel
+        if current_node is None:
+            current_node = vessel.current_node
+
+        # unpack vessel planning
         vessel_planning = self.vessel_planning
         if self.predictive:
             vessel_planning = self.vessel_pre_planning
 
+        # determine the end node of the lock complex from the perspective of the vessel and the distance from the start node of the lock complex to the lock doors
         if not direction:
             lock_end_node = self.lock_complex.end_node
+            distance_to_lock = self.distance_from_start_node_to_lock_doors_A
         else:
             lock_end_node = self.lock_complex.start_node
+            distance_to_lock = self.distance_from_end_node_to_lock_doors_B
 
-        # Calculate sailing time function
-        vessel_traffic_service = self.env.vessel_traffic_service
-        calculate_sailing_time = vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+        # determine the route of the vessel to the end node of the lock complex from the perspective of the vessel
+        route_to_lock_chamber = nx.dijkstra_path(self.env.graph, current_node, lock_end_node)
 
-        # Calculate sailing time to lock chamber
-        if start_node is None:
-            start_node = vessel.current_node
-        route_to_lock_chamber = nx.dijkstra_path(self.env.graph, start_node, lock_end_node)
+        # unpack the function that calculates sailing time from distance on edge to distance on another edge
+        calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
+
+        # calculate sailing time to the start node of the edge of lock complex from the perspective of the vessel
         sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
         sailing_to_lock_chamber_distance = sailing_to_lock_chamber['Distance'].sum()
         sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
-        if not direction:
-            distance_to_lock = self.distance_from_start_node_to_lock_doors_A
-        else:
-            distance_to_lock = self.distance_from_end_node_to_lock_doors_B
+
+        # add sailing distance and time to the lock doors on the edge of the lock complex to sailing information to the start node of this edge
         sailing_to_lock_chamber_distance += distance_to_lock
         sailing_to_lock_chamber_time += distance_to_lock / self.vessel_sailing_in_speed(vessel, direction)
         sailing_to_lock_chamber_time = pd.Timedelta(seconds=sailing_to_lock_chamber_time)
+
+        # calculate arrival time of vessel at the first to be encountered lock doors and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
             if pre_planning:
                 current_time = vessel_planning.loc[vessel_planning_index, 'time_of_acceptance']
             vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start'] = current_time + sailing_to_lock_chamber_time
+
         return sailing_to_lock_chamber_time
 
     def calculate_sailing_time_in_lock(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
@@ -2115,7 +2324,7 @@ class IsLockMaster(SimpyObject):
         if vessel not in operation_planning.loc[operation_index, 'vessels']:
             operation_planning.loc[operation_index, 'vessels'].append(vessel)
             vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
-            self.calculate_sailing_time_to_approach(vessel, direction, operation_index=operation_index,pre_planning=pre_planning)
+            self.calculate_sailing_time_to_approach_point(vessel, direction, operation_index=operation_index,pre_planning=pre_planning)
             if self.min_vessels_in_operation and len(vessels_in_operation) == self.min_vessels_in_operation:
                 if not pre_planning and not prognosis:
                     Operation = namedtuple('Operation', 'operation_index')
