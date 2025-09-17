@@ -150,8 +150,11 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
             lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
 
-            # request lock master to add vessel to the lock operation planning TODO: this should be a function/attribute of the lock master
+            # request lock master to add vessel to the lock operation planning
             operation_index, add_operation, available_operations = lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
+
+            # TODO: this should be a function/attribute of the lock master
+            # if a suitable already planned lock operation has been found, the vessel needs to be added to this operation
             if not available_operations.empty:
                 operation_index = available_operations.iloc[0].name
                 copy_operation_planning = operation_planning.copy()
@@ -161,6 +164,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                     operation_index = len(operation_planning)
                     add_operation = True
 
+            # the operation planning should be updated
             yield from lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
 
     def register_to_lock_master(self, origin):
@@ -461,8 +465,8 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         passage_time_door=300.0,
         sailing_in_time_gap_through_doors=180.0,
         sailing_out_time_gap_through_doors=180.0,
-        sailing_in_time_gap_after_berthing_previous_vessel=None,
-        sailing_out_time_gap_after_berthing_previous_vessel=None,
+        sailing_in_time_gap_after_berthing_previous_vessel=0.0,
+        sailing_out_time_gap_after_berthing_previous_vessel=0.0,
         sailing_in_speed_sea=2 * knots,
         sailing_out_speed_sea=2 * knots,
         sailing_in_speed_canal=2 * knots,
@@ -777,8 +781,35 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         return speed
 
     def determine_levelling_time(self, t_start, direction=None, wlev_init=None, same_direction=False, prediction=False):
+        """
+        Calculates the levelling time of a lock operation
+
+        Parameters
+        ----------
+        t_start :
+            the start time of the levelling process
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        wlev_init : float
+            initial water level difference
+        same_direction : bool
+            .
+        prediction : bool
+            .
+
+        Returns
+        -------
+        levelling_time : float
+            the time duration of the levelling process
+        t : list of float
+            the time series of the levelling process
+        z : list of float
+            the water level difference series over the time of the levelling process
+        """
         # TODO: functie maken om tstart om te zetten (met _to_array)
         # TODO: Bij andere klasses altijd checken of iets een datetime.datetime is. En als dit niet zo is een error inbouwen of hem gelijk omzetten.
+
+        # convert given t_start into np.datetime64 (this is required to communicate with the hydrodynamic data via the NetCDF package)
         if isinstance(t_start,float):
             t_start = np.datetime64(datetime.datetime.fromtimestamp(t_start))
         elif isinstance(t_start,datetime.datetime):
@@ -786,21 +817,25 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         elif isinstance(t_start,pd.Timestamp):
             t_start = np.array([t_start], dtype=np.datetime64)[0]
 
+        # if there is hydrodynamic data, unpack the water levels at the nodes of the lock complex
         if self.env.vessel_traffic_service.hydrodynamic_information_path:
             stationA_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0][0]
             stationB_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0][0]
             H_A = hydrodynamic_data["Water level"][stationA_index].copy()
             H_B = hydrodynamic_data["Water level"][stationB_index].copy()
 
+        # determine the direction
         if direction is None:
             if self.node_open == self.start_node:
                 direction = 0
             else:
                 direction = 1
 
+        # if the lock operation is in the same direction (?), swap the direction
         if same_direction:
             direction = 1 - direction
 
+        # TODO: this is strange: if not self.env.vessel_traffic_service.hydrodynamic_information_path is followed by if self.env.vessel_traffic_service.hydrodynamic_information_path (check with original code)
         if not callable(self.levelling_time) and not self.env.vessel_traffic_service.hydrodynamic_information_path:
             if not prediction:
                 if self.env.vessel_traffic_service.hydrodynamic_information_path:
@@ -1794,41 +1829,93 @@ class IsLockMaster(SimpyObject):
         return sailing_time_into_lock
 
     def calculate_sailing_in_time_delay(self, vessel, operation_index, direction, minimum_difference_with_previous_vessel=False, prognosis=False, pre_planning=False, overwrite=True):
-        vessels = self.subtract_vessels_from_lock_operation(operation_index, pre_planning=pre_planning)
+        """
+        Calculates the minimum required time gap between two entering vessels for safety, resulting in a delay
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            the index of the lock operation in the operation planning dataframe
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        minimum_difference_with_previous_vessel : bool
+            .
+        prognosis : bool
+            .
+        pre_planning : bool
+            .
+        overwrite : bool
+            .
+
+        Returns
+        -------
+        sailing_in_time_delay : pd.Timedelta
+            time delay because of waiting for the vessel to sail entering the lock [s]
+
+        """
+
+        # determine current time and set default sailing in time delay
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+        sailing_in_time_delay = pd.Timedelta(seconds=0)
+
+        # unpack the vessel planning of the lock complex master
         vessel_planning = self.vessel_planning
         if self.predictive:
             vessel_planning = self.vessel_pre_planning
 
-        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index, pre_planning=pre_planning)
-        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
-        sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis=prognosis,pre_planning=pre_planning, overwrite=overwrite)
-        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-        vessel_entry_start_timestamp = np.max([current_time + sailing_time_to_lock,vessel_planning.loc[vessel_planning_index,'time_lock_entry_start']])
+        # unpack the vessels from the lock operations
+        vessels = self.subtract_vessels_from_lock_operation(operation_index, pre_planning=pre_planning)
 
+        # determine the first vessel of the lock operation
+        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index, pre_planning=pre_planning)
+
+        # determine the index of the vessel in the vessel planning of the lock complex master
+        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+
+        # determine the sailing time to the lock door to determine the vessel entry start time (if this changed over the route of the vessel) TODO: is this required or can we extract this from the vessel planning?
+        sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis=prognosis,pre_planning=pre_planning, overwrite=overwrite)
+        vessel_entry_start_timestamp = np.max([current_time + sailing_time_to_lock, vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']])
+
+        # determine the vessel index in the vessels assigned to the lock operation
         if not prognosis:
             vessel_index = vessels.index(vessel)
         else:
             vessel_index = -1
 
+        # determine the previously assigned vessel to the lock operation
         previous_vessel = None
         if not prognosis and vessel != first_vessel:
             previous_vessel = vessels[vessel_index - 1]
         elif prognosis and len(vessels):
             previous_vessel = vessels[-1]
 
-        sailing_in_time_delay = pd.Timedelta(seconds=0)
-        if previous_vessel is not None:
-            previous_vessel_planning_index = vessel_planning[vessel_planning.id == previous_vessel.id].iloc[-1].name
-            previous_vessel_entry_start_timestamp = vessel_planning.loc[previous_vessel_planning_index,'time_lock_entry_start']
-            if minimum_difference_with_previous_vessel:
-                vessel_entry_start_timestamp = previous_vessel_entry_start_timestamp
-            difference_entry_start_timestamp = vessel_entry_start_timestamp - previous_vessel_entry_start_timestamp
-            if difference_entry_start_timestamp < pd.Timedelta(seconds=self.sailing_in_time_gap_through_doors):
-                sailing_in_time_delay = pd.Timedelta(seconds=self.sailing_in_time_gap_through_doors)-difference_entry_start_timestamp
-            previous_vessel_laying_still_time = vessel_planning.loc[previous_vessel_planning_index,'time_lock_entry_stop']
-            difference_berthing_time_previous_vessel_and_vessel_sailing_in_time = (vessel_entry_start_timestamp - previous_vessel_laying_still_time)
-            if self.sailing_in_time_gap_after_berthing_previous_vessel is not None and difference_berthing_time_previous_vessel_and_vessel_sailing_in_time < pd.Timedelta(seconds=self.sailing_in_time_gap_after_berthing_previous_vessel):
-                sailing_in_time_delay = np.max([(previous_vessel_laying_still_time+pd.Timedelta(seconds=self.sailing_in_time_gap_after_berthing_previous_vessel))-vessel_entry_start_timestamp,sailing_in_time_delay])
+        # if the assigned vessel is the first one (there is no assigned vessel), there is no delay
+        if previous_vessel is None:
+            return sailing_in_time_delay
+
+        # if there is a previous vessel: determine its entry start and stop times
+        previous_vessel_planning_index = vessel_planning[vessel_planning.id == previous_vessel.id].iloc[-1].name
+        previous_vessel_entry_start_timestamp = vessel_planning.loc[previous_vessel_planning_index,'time_lock_entry_start']
+        previous_vessel_laying_still_time = vessel_planning.loc[previous_vessel_planning_index, 'time_lock_entry_stop']
+
+        # if there is a rule set that requires a certain minimum time gap of the vessel with respect to the previous vessel, than use the previous vessel's entry time
+        if minimum_difference_with_previous_vessel:
+            vessel_entry_start_timestamp = previous_vessel_entry_start_timestamp
+
+        # determine the difference between the entry start times of the vessel and the previous vessel, and also the entry stop times
+        difference_entry_start_timestamp = vessel_entry_start_timestamp - previous_vessel_entry_start_timestamp
+        difference_berthing_time_previous_vessel_and_vessel_sailing_in_time = (vessel_entry_start_timestamp - previous_vessel_laying_still_time)
+
+        # calculate sailing in time delay if the difference between these entry start times is too small given the rule set for the time gap of the vessels sailing through the lock doors
+        if difference_entry_start_timestamp < pd.Timedelta(seconds=self.sailing_in_time_gap_through_doors):
+            sailing_in_time_delay = pd.Timedelta(seconds=self.sailing_in_time_gap_through_doors)-difference_entry_start_timestamp
+
+        # calculate sailing in time delay if the difference between these entry stop times is too small given the rule set for the time gap of the vessels between berthing in the lock
+        if difference_berthing_time_previous_vessel_and_vessel_sailing_in_time < pd.Timedelta(seconds=self.sailing_in_time_gap_after_berthing_previous_vessel):
+            sailing_in_time_delay = np.max([(previous_vessel_laying_still_time+pd.Timedelta(seconds=self.sailing_in_time_gap_after_berthing_previous_vessel))-vessel_entry_start_timestamp,sailing_in_time_delay])
+
         return sailing_in_time_delay
 
     def calculate_vessel_entry_start_time(self, vessel, direction):
@@ -1891,12 +1978,48 @@ class IsLockMaster(SimpyObject):
         return lock_entry_stop_time
 
     def calculate_lock_operation_times(self, operation_index, last_entering_time, start_time, vessel = None, direction=None, same_direction = False):
+        """
+
+        Parameters
+        ----------
+        operation_index : int
+            the index of the lock operation in the operation planning of the lock complex master
+        last_entering_time : pd.Timestamp
+            .
+        start_time : pd.Timestamp
+            .
+        vessel : type [optional]
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int [optional]
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        same_direction : bool
+            .
+
+        Returns
+        -------
+        time_door_closing_start : pd.Timestamp
+            the time that the lock doors are planned to start closing
+        time_door_closing_stop : pd.Timestamp
+            the time that the lock doors are planned to stop closing
+        time_levelling_start : pd.Timestamp
+            the time that the lock chamber is planned to start levelling
+        time_levelling_stop : pd.Timestamp
+            the time that the lock chamber is planned to stop levelling
+        time_door_opening_start : pd.Timestamp
+            the time that the lock doors are planned to start opening
+        time_door_opening_stop : pd.Timestamp
+            the time that the lock doors are planned to stop opening
+
+        """
+
+        # unpack the lock complex master's vessel and operation plannings
         operation_planning = self.operation_planning
         vessel_planning = self.vessel_planning
         if self.predictive:
             operation_planning = self.operation_pre_planning
             vessel_planning = self.vessel_pre_planning
 
+        # determine the longitudinal location (x) of the last vessel that will/has enter(ed)
         x_location_lock = 0.
         if vessel is not None:
             vessels_in_lock = operation_planning.loc[operation_index].vessels
@@ -1904,21 +2027,31 @@ class IsLockMaster(SimpyObject):
                 vessels_in_lock = [vessel]
             x_location_lock = np.sum([v.L for v in vessels_in_lock[:-1]])+0.5*vessel.L
 
+        # set default time door closing start as start time
         time_door_closing_start = start_time
+
+        # overwrite the time door closing start if there is a rule that the doors can close before a vessel is laying still and there are vessels in the lock
         if self.close_doors_before_vessel_is_laying_still and vessel is not None:
             time_door_closing_start = last_entering_time + self.minimum_delay_to_close_doors(vessel, direction, after_lock_entry=True, x_location_lock=x_location_lock)
+
+        # determine the new closing stop times of the doors and the time that the levelling can hence start
         time_door_closing_stop = time_door_closing_start + pd.Timedelta(seconds=self.lock_complex.doors_closing_time)
         time_levelling_start = time_door_closing_stop
+
+        # overwrite the time of levelling start if there is a rule that the doors can close before a vessel is laying still and there are vessels in the lock (the vessel always has to lay still before levelling can start)
         if self.close_doors_before_vessel_is_laying_still and vessel is not None:
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
             if not isinstance(vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'],float):
                 time_levelling_start = np.max([vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'],time_levelling_start])
             else:
                 time_levelling_start = time_levelling_start
+
+        # determine levelling stop time and door opening start and stop times
         time_levelling_stop,_,_ = self.lock_complex.determine_levelling_time(t_start=time_levelling_start, direction=direction, prediction=True, same_direction = same_direction)
         time_levelling_stop = time_levelling_start + pd.Timedelta(seconds=time_levelling_stop)
         time_door_opening_start = time_levelling_stop
         time_door_opening_stop = time_levelling_stop + pd.Timedelta(seconds=self.lock_complex.doors_opening_time)
+
         return time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop
 
     def calculate_vessel_departure_start_time(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
@@ -1984,7 +2117,26 @@ class IsLockMaster(SimpyObject):
         time_operation_stop = self.calculate_vessel_passing_stop_time(last_vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
         return time_operation_stop
 
-    def minimum_delay_to_close_doors(self, vessel, direction, after_lock_entry=False, x_location_lock=0):
+    def minimum_delay_to_close_doors(self, vessel, direction, after_lock_entry=False, x_location_lock=0.):
+        """
+        Calculates the time delay between when the last vessel has entered the lock and when the lock doors can be closed
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        after_lock_entry : bool
+            .
+        x_location_lock : float
+            longitudinal coordinate at which the vessel is located
+
+        Returns
+        -------
+        minimum_delay_to_close_doors : pd.Timedelta
+            the minimum time delay that the lock doors can be closed after a vessel has entered the lock
+        """
         minimum_delay_to_close_doors = pd.Timedelta(seconds=self.sailing_time_before_closing_lock_doors)
         # if not after_lock_entry:
         #     minimum_delay_to_close_doors += pd.Timedelta(seconds=0.5*vessel.L/self.vessel_sailing_out_speed(vessel,direction))
@@ -2005,10 +2157,30 @@ class IsLockMaster(SimpyObject):
         return lock_doors_closing_time
 
     def determine_first_vessel_of_lock_operation(self, vessel, operation_index, pre_planning=False):
-        vessels = self.subtract_vessels_from_lock_operation(operation_index,pre_planning=pre_planning)
+        """
+        Determines the first vessel that was assigned to the lock operation
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            the index of the lock operation in the operation planning of the lock complex master
+        pre_planning :
+            .
+
+        """
+
+        # set vessel as first vessel if no vessel has been assigned to the lock operation
         first_vessel = vessel
+
+        # unpack the vessels of the specified lock operation
+        vessels = self.subtract_vessels_from_lock_operation(operation_index,pre_planning=pre_planning)
+
+        # determine the first vessel if vessels are already assigned to the lock operation
         if len(vessels):
             first_vessel = vessels[0]
+
         return first_vessel
 
     def determine_last_vessel_of_lock_operation(self, vessel, operation_index, prognosis=False, pre_planning=False):
@@ -2174,7 +2346,21 @@ class IsLockMaster(SimpyObject):
                     wlev_B = hydrodynamic_data["Water level"][index_end_node][time_index_stop]
         return wlev_A, wlev_B
 
-    def subtract_vessels_from_lock_operation(self, operation_index, pre_planning=False):
+    def subtract_vessels_from_lock_operation(self, operation_index):
+        """
+        Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
+
+        Parameters
+        ----------
+        operation_index : int
+            index of the lock operation
+
+        Returns
+        -------
+        vessels : list of vessel type objects
+            the vessels that have been assigned to the specified lock operation
+
+        """
         vessels = []
         operation_planning = self.operation_planning
         if self.predictive:
@@ -2305,88 +2491,150 @@ class IsLockMaster(SimpyObject):
             self.add_empty_lock_operation_to_planning(operation_index, 1-direction, pre_planning=pre_planning)
 
     def add_vessel_to_planned_lock_operation(self, vessel, operation_index, direction, prognosis=True, vessel_planning=None, operation_planning=None, pre_planning=False):
+        """
+        Add vessel to a planned lock operation
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            the index of the already planned lock operation to which the vessel is added to
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        prognosis : bool
+            .
+        vessel_planning : pd.DataFrame
+            .
+        operation_planning : pd.DataFrame
+            .
+        pre_planning : bool
+            .
+
+        Returns
+        -------
+        operation_planning : pd.DataFrame
+            the lock complex master's new planning of lock operations
+
+        """
+
         if operation_planning is None and vessel_planning is None:
             prognosis = False
+
+        # unpack the lock complex' vessel and operations planning
+        if vessel_planning is None:
+            vessel_planning = self.vessel_planning
+            if self.predictive:
+                vessel_planning = self.vessel_pre_planning
 
         if operation_planning is None:
             operation_planning = self.operation_planning
             if self.predictive:
                 operation_planning = self.operation_pre_planning
 
-        if vessel_planning is None:
-            vessel_planning = self.vessel_planning
-            if self.predictive:
-                vessel_planning = self.vessel_pre_planning
-
-        # Determine capacity parameters
-        vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
-        sailing_in_gap = pd.Timedelta(seconds=0)
-        if vessel not in operation_planning.loc[operation_index, 'vessels']:
-            operation_planning.loc[operation_index, 'vessels'].append(vessel)
-            vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
-            self.calculate_sailing_time_to_approach_point(vessel, direction, operation_index=operation_index,pre_planning=pre_planning)
-            if self.min_vessels_in_operation and len(vessels_in_operation) == self.min_vessels_in_operation:
-                if not pre_planning and not prognosis:
-                    Operation = namedtuple('Operation', 'operation_index')
-                    operation = Operation(operation_index)
-                    yield self.wait_for_other_vessel_to_arrive.put(operation)
-                    yield self.env.timeout(0.) #required to update the vessel_planning
-                    sailing_in_gap = self.calculate_sailing_in_time_delay(vessel, operation_index, direction, prognosis=False,pre_planning=self.predictive, overwrite=False)
-
+        # determine the vessel index in the lock complex master's vessel planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+
+        # set sailing in time gap and vessel entry delay time
+        sailing_in_gap = pd.Timedelta(seconds=0)
+        vessel_entry_delay = pd.Timedelta(seconds=0)
+
+        # determine the number of vessels that are already assigned to the lock operation to which the vessels is/will be added
+        vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
+
+        # add vessel to the operation if it is not yet part of it
+        if vessel not in vessels_in_operation:
+            vessels_in_operation.append(vessel)
+            operation_planning.loc[operation_index, 'vessels'] = vessels_in_operation #TODO: is they redundant? or do we need to overwrite the information in the operation planning dataframe again
+            self.calculate_sailing_time_to_approach_point(vessel, direction, operation_index=operation_index,pre_planning=pre_planning) #TODO: can this be removed?
+
+            # if there is a rule that prescribes a minimum amount of vessels in the lock operation and this condition is satisfied, put an operation-object in the FilterStore to communicate that the earlier waiting vessels do not have to wait any longer
+            if self.min_vessels_in_operation and len(vessels_in_operation) == self.min_vessels_in_operation and not pre_planning and not prognosis:
+                Operation = namedtuple('Operation', 'operation_index')
+                operation = Operation(operation_index)
+                yield self.wait_for_other_vessel_to_arrive.put(operation)
+                yield self.env.timeout(0.) #required to update the vessel_planning TODO: we may want to try to remove this
+
+                #calculate the required sailing in time delay
+                sailing_in_gap = self.calculate_sailing_in_time_delay(vessel, operation_index, direction, prognosis=False,pre_planning=self.predictive, overwrite=False)
+
+        # calculate the new arrival time at the lock entry
         time_arrival_time_at_lock_entry = vessel_planning.loc[vessel_planning_index,'time_lock_passing_start'] + sailing_in_gap
+
+        # if the condition of minimum amount of vessels in the lock operation is satisfied, change status of lock operation to ready
         if len(vessels_in_operation) >= self.min_vessels_in_operation:
             operation_planning.loc[operation_index, 'status'] = 'ready'
 
+        # update capacity parameters
         operation_planning.loc[operation_index, 'capacity_L'] -= vessel.L
         operation_planning.loc[operation_index, 'capacity_B'] -= vessel.B
 
-        # Determine new entry times
-        operational_hours = self.operational_hours
+        # determine the other vessels in the lock and the planned times to start the operation and the time that the lock door has been opened
         other_vessels_in_operation = operation_planning.loc[operation_index, 'vessels'][:-1]
         time_lock_operation_start = operation_planning.loc[operation_index, 'time_operation_start']
-        vessel_entry_delay = pd.Timedelta(seconds=0)
         potential_lock_door_opening_stop = operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop']
 
-        within_operation_hours = operational_hours[(time_arrival_time_at_lock_entry + vessel_entry_delay >= operational_hours.start_time) & (time_arrival_time_at_lock_entry + vessel_entry_delay <= operational_hours.stop_time)]
+        # determine if the arrival time is now outside of the lock's operational hours, determine the additional delay TODO: does this overcomplicate things? never will a newly arriving vessel delay the whole lock planning because it will fall outside the operational hours, probably the
+        operational_hours = self.operational_hours
+        within_operation_hours = operational_hours[(time_arrival_time_at_lock_entry >= operational_hours.start_time) & (time_arrival_time_at_lock_entry <= operational_hours.stop_time)]
         if within_operation_hours.empty:
             first_available_hour = operational_hours[operational_hours.start_time >= (time_arrival_time_at_lock_entry + vessel_entry_delay)].iloc[0]
             vessel_entry_delay += first_available_hour.start_time - (time_arrival_time_at_lock_entry + vessel_entry_delay)
             if time_lock_operation_start < first_available_hour.start_time:
                 time_lock_operation_start = first_available_hour.start_time
 
+        # determine the time that the vessel has to be at the approach point
         time_first_vessel_required_to_be_at_lock_approach = (time_arrival_time_at_lock_entry + vessel_entry_delay)
+
+        # correct start time of lock operation if there are no other vessels scheduled in the lock and the approach start time lies behond than the earlier estimated operation start time
         if time_first_vessel_required_to_be_at_lock_approach > operation_planning.loc[operation_index, 'time_operation_start'] and not len(other_vessels_in_operation):
             time_lock_operation_start = time_first_vessel_required_to_be_at_lock_approach
+
+        # add to vessel entry delay if the time of starting the approach lies ahead of the operation start time
         elif time_first_vessel_required_to_be_at_lock_approach < operation_planning.loc[operation_index, 'time_operation_start']:
             vessel_entry_delay += operation_planning.loc[operation_index, 'time_operation_start']-time_first_vessel_required_to_be_at_lock_approach
 
+        # add the delay to the expected time of lock entry to the vessel
         if vessel_entry_delay > pd.Timedelta(seconds=0):
             time_arrival_time_at_lock_entry += vessel_entry_delay
 
-        # Update plannings start
+        # update the vessel planning based on the above delays
         time_vessel_entry_start = self.calculate_vessel_entry_start_time(vessel,direction) + time_arrival_time_at_lock_entry
         time_lock_entry_stop = self.calculate_lock_entry_stop_time(vessel, operation_index, direction,pre_planning=pre_planning) + time_arrival_time_at_lock_entry
         vessel_planning.loc[vessel_planning_index, 'operation_index'] = operation_index
         vessel_planning.loc[vessel_planning_index, 'time_lock_passing_start'] = time_arrival_time_at_lock_entry
         vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start'] = time_vessel_entry_start
         vessel_planning.loc[vessel_planning_index, 'time_lock_entry_stop'] = time_lock_entry_stop
+
+        # determine the operation start delay
         operation_start_delay = time_lock_operation_start - operation_planning.loc[operation_index, 'time_operation_start']
 
-        # If predictive, previous arrivals can be planned later
+        # if there is a long-term planning and there is a policy to minimize the door open times, the lock master needs to adjust the vessel planning for the other vessels that have to delay there approach based on the newly scheduled vessel
         if self.predictive and self.minimize_door_open_times and len(other_vessels_in_operation):
+
+            # set vessel as last vessel
             latter_vessel = vessel
+
+            # loop over reversed list of previous vessel
             for index,previous_vessel in enumerate(list(reversed(other_vessels_in_operation))):
+
+                # unpack planning indexes of latter vessel and the vessel before that vessel
                 latter_vessel_planning_index = vessel_planning[vessel_planning.id == latter_vessel.id].iloc[-1].name
                 previous_vessel_planning_index = vessel_planning[vessel_planning.id == previous_vessel.id].iloc[-1].name
+
+                # calculate the sailing in time delay for the previous vessel based on the latter vessel TODO: is this correct? can a vessel be earlier than its own entry start time?
                 sailing_in_gap = self.calculate_sailing_in_time_delay(latter_vessel, operation_index, direction, minimum_difference_with_previous_vessel=True, prognosis=False,pre_planning=self.predictive, overwrite=False)
                 sailing_in_delay = (vessel_planning.loc[latter_vessel_planning_index, 'time_lock_entry_start'] - vessel_planning.loc[previous_vessel_planning_index, 'time_lock_entry_start']) - sailing_in_gap
+
+                # update the vessel planning of the previous vessel
                 vessel_planning.loc[previous_vessel_planning_index, 'time_lock_passing_start'] += sailing_in_delay
                 vessel_planning.loc[previous_vessel_planning_index, 'time_lock_entry_start'] += sailing_in_delay
                 vessel_planning.loc[previous_vessel_planning_index, 'time_lock_entry_stop'] += sailing_in_delay
                 vessel_planning.loc[previous_vessel_planning_index, 'time_potential_lock_door_opening_stop'] += sailing_in_delay
                 vessel_planning.loc[previous_vessel_planning_index, 'time_potential_lock_door_closure_start'] += sailing_in_delay
                 vessel_planning.loc[previous_vessel_planning_index, 'time_arrival_at_waiting_area'] += sailing_in_delay
+
+                # update the operational planning if the first vessel is considered above
                 if index == len(other_vessels_in_operation)-1:
                     operation_planning.loc[operation_index, 'time_operation_start'] = vessel_planning.loc[previous_vessel_planning_index, 'time_lock_passing_start']
                     operation_planning.loc[operation_index, 'time_entry_start'] = vessel_planning.loc[previous_vessel_planning_index, 'time_lock_entry_start']
@@ -2395,7 +2643,7 @@ class IsLockMaster(SimpyObject):
                     latter_vessel = previous_vessel
                 # TODO for further research: speed should be changed before approaching the waiting area to arrive just in time so that a vessel can continue sailing instead of waiting in the waiting area
 
-        # Determine new lock door closing and opening and levelling times
+        # determine the times of door closing, levelling and door opening: if lock entry stop time or extract them when the new lock entry stop time is ahead of the door closing start time TODO: check if this is correct
         if time_lock_entry_stop < operation_planning.loc[operation_index, 'time_door_closing_start']:
             time_door_closing_start = operation_planning.loc[operation_index, 'time_door_closing_start']
             time_door_closing_stop = operation_planning.loc[operation_index, 'time_door_closing_stop']
@@ -2409,6 +2657,7 @@ class IsLockMaster(SimpyObject):
                                                                                                                                                                                               start_time=time_lock_entry_stop,
                                                                                                                                                                                               vessel=vessel,
                                                                                                                                                                                               direction=direction)
+
         operation_planning.loc[operation_index, 'time_operation_start'] += operation_start_delay
         if vessel_entry_delay > pd.Timedelta(seconds=0):
             vessel_planning.loc[vessel_planning_index,'delay'] += vessel_entry_delay
@@ -2469,7 +2718,7 @@ class IsLockMaster(SimpyObject):
         time_vessel_passing_stop = self.calculate_vessel_passing_stop_time(vessel, operation_index,direction,pre_planning=pre_planning) + time_door_opening_stop
         time_lock_door_closing_start = self.calculate_lock_door_closing_time(vessel, operation_index, direction,pre_planning=pre_planning) + time_door_opening_stop
 
-        # Update plannings end
+        # Update plannings
         operation_planning.loc[operation_index, 'time_departure_start'] = time_lock_departure_start
         operation_planning.loc[operation_index, 'time_departure_stop'] = time_lock_departure_stop
         operation_planning.loc[operation_index, 'time_operation_stop'] = time_lock_operation_stop
@@ -2568,24 +2817,51 @@ class IsLockMaster(SimpyObject):
         return operation_planning
 
     def assign_vessel_to_lock_operation(self,vessel,direction,pre_planning=False):
-        # Definitions
+        """
+        Function that adds a vessel to the lock operation planning
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        pre_planning : bool
+            .
+
+        Returns
+        -------
+        operation_index : int
+            index of the lock operation to which the vessel can be added (can either be an existing or a new lock operation)
+        add_operation : bool
+            determines if a new lock operation should be added (True) or not (False)
+        available_operations : pd.DataFrame
+            the available lock operations to which the vessel can be assigned including their information
+
+        """
+        # unpack the lock complex' vessel and operations planning
         operation_planning = self.lock_complex.operation_planning
         vessel_planning = self.lock_complex.vessel_planning
         if pre_planning:
             operation_planning = self.lock_complex.operation_pre_planning
             vessel_planning = self.lock_complex.vessel_pre_planning
-        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
 
-        # Parameters
+        # determine the index of the vessel in the vessel planning to determine when the vessel is estimated to pass the approach point and enters the lock#TODO: write a test that the vessel has indeed earlier be included in the vessel planning (the 'add_vessel_to_vessel_planning'-function should always be ran before this function)
+        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+        time_lock_passing_start = vessel_planning.loc[vessel_planning_index, 'time_lock_passing_start']
+        time_lock_entry_start = vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']
+
+        # add to the vessel planning that the vessel has a delay (which is still 0 [s])
+        vessel_planning.loc[vessel_planning_index, 'delay'] = pd.Timedelta(seconds=0)
+
+        # determine the current time
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
         if pre_planning:
             current_time = vessel_planning.loc[vessel_planning_index,'time_of_acceptance']
 
-        time_lock_entry_start = vessel_planning.loc[vessel_planning_index,'time_lock_entry_start']
-        time_lock_passing_start = vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']
+        # determine whether the planned approach fits within the operation hours of the lock and add a delay to the planned approach of the vessel when it is outside of the operational hours
         operational_hours = self.operational_hours
         within_operation_hours = operational_hours[(time_lock_passing_start >= operational_hours.start_time)&(time_lock_passing_start <= operational_hours.stop_time)]
-        vessel_planning.loc[vessel_planning_index, 'delay'] = pd.Timedelta(seconds = 0)
         if within_operation_hours.empty:
             first_available_hour = operational_hours[operational_hours.start_time >= time_lock_passing_start].iloc[0]
             delay = first_available_hour.start_time - time_lock_passing_start
@@ -2597,40 +2873,46 @@ class IsLockMaster(SimpyObject):
             vessel_planning.loc[vessel_planning_index, 'time_of_acceptance'] += delay
             vessel_planning.loc[vessel_planning_index, 'delay'] += delay
 
+        # determine the maximum delay of an individual vessel in all the planned lock operation if the vessel is assigned to that operation
         maximum_individual_delay = operation_planning.maximum_individual_delay + (time_lock_entry_start - operation_planning.time_entry_stop)
-        maximum_additional_waiting_time = time_lock_entry_start - operation_planning.time_entry_stop
 
-        # Filter operations to select available operation
-        mask_bound = operation_planning.bound == direction # locks in the same direction mask_bound: operation_planning.bound == direction # locks in the same direction
-        mask_status = operation_planning.status == 'waiting for vessel'
-        mask_available = operation_planning.status != 'not available'
-        mask_capacity_L = operation_planning.capacity_L >= vessel.L # vessel length fits in the lock
-        mask_capacity_B = operation_planning.capacity_B >= vessel.B # vessel width fits in the lock
-        mask_max_waiting_time = maximum_individual_delay < pd.Timedelta(seconds=self.lock_complex.clustering_time)
-        mask_empty_lock = operation_planning.vessels.apply(len) == 0 # if lock is still empty (overrules max_waiting_time which becomes irrelevant)
+        # filter the planned lock operations based on the following criteria to select available operations to which the vessel can be assigned
+        mask_bound = operation_planning.bound == direction # lock operations in the same direction as the vessel
+        mask_status = operation_planning.status == 'waiting for vessel' # lock operations that are still on hold (waiting for another vessel)
+        mask_available = operation_planning.status != 'not available' # lock operations that are not unavailable
+        mask_capacity_L = operation_planning.capacity_L >= vessel.L # lock operations that have a capacity in which the vessel fits longitudinally (based on the vessel's length)
+        mask_capacity_B = operation_planning.capacity_B >= vessel.B # lock operations that have a capacity in which the vessel fits laterally (based on the vessel's beam) TODO: implement this later
+        mask_max_waiting_time = maximum_individual_delay < pd.Timedelta(seconds=self.lock_complex.clustering_time) # lock operations that will not exceed the maximum set waiting time for individual vessels
+        mask_empty_lock = operation_planning.vessels.apply(len) == 0 # lock operations that are still empty
+
+        # max vessels mask: lock operations that do not exceed a maximum number of vessels
         mask_max_vessels = mask_available
         if self.max_vessels_in_operation:
             mask_max_vessels = operation_planning.vessels.apply(len) < self.max_vessels_in_operation
+
+        # future operations mask: lock operations that still have to take place
         if not self.predictive:
             mask_future_operations = operation_planning.time_levelling_start >= current_time
         else:
             mask_future_operations = operation_planning.time_levelling_start >= self.env.simulation_start
 
-        mask_empty_future_lockages = mask_empty_lock&mask_future_operations
-        mask_max_waiting_time = mask_max_waiting_time&~mask_empty_lock
-        mask_min_vessels = (mask_future_operations&mask_max_waiting_time)
+        # combinations of the masks TODO: this part of the code should be improved in clarity
+        mask_empty_future_lockages = mask_empty_lock&mask_future_operations # empty future lock operations
+        mask_max_waiting_time = mask_max_waiting_time&~mask_empty_lock # non-empty lock operations with non-exceedance of the maximum waiting time
+        mask_min_vessels = (mask_empty_future_lockages&mask_max_waiting_time) # future operations that do not exceed a minimum required number of vessels
         if self.min_vessels_in_operation > 1:
             mask_min_vessels = operation_planning.vessels.apply(len) < self.min_vessels_in_operation
-        mask_future_operations = (mask_future_operations&mask_max_waiting_time)|mask_min_vessels
+        mask_future_operations = (mask_empty_future_lockages&mask_max_waiting_time)|mask_min_vessels
 
+        # select available operations TODO: this part of the code should be improved in clarity and readability
         available_operations = operation_planning[mask_available&mask_bound&mask_max_vessels&mask_capacity_L&mask_future_operations&(mask_min_vessels|mask_status|mask_empty_future_lockages|mask_max_waiting_time)].copy()
         # TODO: include mask_capacity_B for 2D implementation
         # TODO: create a selection method that can pick the lock operation based on minimizing expected delay or freshwater loss/saltwater intrusion
 
+        # determine if vessel can be added to an existing lock operation planning and (if yes) to which one, or should be added to a new lock operation
         add_operation = False
         if not available_operations.empty:
             operation_index = available_operations.iloc[0].name
-
         else:
             operation_index = len(operation_planning)
             add_operation = True
