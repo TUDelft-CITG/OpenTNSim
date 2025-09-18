@@ -9,6 +9,7 @@ import functools
 # matplotlib
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+from plotly.offline import init_notebook_mode, iplot
 
 # package(s) for data handling
 import networkx as nx
@@ -642,7 +643,7 @@ class HasMultiDiGraph:
         return multidigraph
 
 
-def plot_graph(graph):
+def plot_graph(graph, static: bool = False):
     """method to plot a graph
 
     Parameters
@@ -655,7 +656,7 @@ def plot_graph(graph):
     fig : plotly.graph_objs._figure.Figure
         Object that contains a graph figure.
     """
-    
+
     # Labels
     labels = {node: node for node in graph.nodes()}
     edge_labels = {(u, v): f"{d['weight']} km" for u, v, d in graph.edges(data=True)}
@@ -736,4 +737,10 @@ def plot_graph(graph):
         plot_bgcolor='white',
     )
 
-    return fig
+    if static is False:
+        # Initialize notebook mode for Plotly
+        init_notebook_mode(connected=True)
+        # Display the figure in a Jupyter notebook
+        iplot(fig)
+    else:
+        return fig
