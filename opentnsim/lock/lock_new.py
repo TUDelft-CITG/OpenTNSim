@@ -958,6 +958,8 @@ class IsLockMaster(SimpyObject):
         return operational_hours
 
     def register_vessel(self, vessel):
+        # TODO Floor: checken of vessel en vessel_pre_planning verschillend kunnen zijn. Lijkt voor nu op hetzelfde neer te komen.
+        # TODO: van vessel_planning en operation_planning properties  maken?
         vessel_planning = self.vessel_planning
         operation_planning = self.operation_planning
         if self.predictive:
@@ -965,6 +967,18 @@ class IsLockMaster(SimpyObject):
             operation_planning = self.operation_pre_planning
 
         # Determine the orientation of the vessel
+        # TODO hier een property van maken?
+        # TODO Floor: De direction wordt hier bepaald met
+        #   - vessel.current node == self.lock_complex.detector_nodes[0].
+        # In andere formules staat
+        #   - if current_node == lock.start_node:
+        #   - if to_level == self.start_node:
+        #   - if lock_edge[0] == lock.start_node:
+        #   - if waiting_area.name == 'waiting_area_A':
+        #   - if self.node_open == self.start_node:
+        # komen al deze formules op hetzelfde neer? Kan er een algemene formule worden geschreven voor de direction, lock_end_node en waiting area die in alle berekeningen werkt?
+        # en zijn deze attributes dan eigenschappen van de lockmaster, van de lockcomplex of van de lockchamber?
+
         if vessel.current_node == self.lock_complex.detector_nodes[0]:
             direction = 0
             lock_end_node = self.lock_complex.end_node
@@ -1729,7 +1743,7 @@ class IsLockMaster(SimpyObject):
         sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
 
         # determine the time of the vessel to its first encountered waiting area and lock_door TODO: in the 'add_vessel_to_planning'-function these functions has already been done, so doing these again can be computational intensive and should be prevented. Can we include tests that before this function is ran, these following functions have already been ran? How can we extract the earlier output?
-        #sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, current_node = current_node, pre_planning=pre_planning,overwrite=overwrite)[0]
+        # sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, current_node = current_node, pre_planning=pre_planning,overwrite=overwrite)[0]
         sailing_time_to_lock_door = self.calculate_sailing_time_to_lock_door(vessel, direction, current_node = current_node, pre_planning=pre_planning, overwrite=overwrite)
 
         # determine the sailing time to the approach point
@@ -2555,7 +2569,7 @@ class IsLockMaster(SimpyObject):
                 yield self.wait_for_other_vessel_to_arrive.put(operation)
                 yield self.env.timeout(0.) #required to update the vessel_planning TODO: we may want to try to remove this
 
-                #calculate the required sailing in time delay
+                # calculate the required sailing in time delay
                 sailing_in_gap = self.calculate_sailing_in_time_delay(vessel, operation_index, direction, prognosis=False,pre_planning=self.predictive, overwrite=False)
 
         # calculate the new arrival time at the lock entry
@@ -2840,8 +2854,10 @@ class IsLockMaster(SimpyObject):
 
         """
         # unpack the lock complex' vessel and operations planning
+        # @TODO Floor: Checken of de vessel_planning en de vessel_pre_planning van elkaar verschillen.
         operation_planning = self.lock_complex.operation_planning
         vessel_planning = self.lock_complex.vessel_planning
+        # TODO Floor: Bij de meeste loops staat er: if self.predictive: operation_planning = self.lock_complex.operation_pre_planning. Waarom gebruiken we hier 'pre_planning' en niet 'self.predictive'?
         if pre_planning:
             operation_planning = self.lock_complex.operation_pre_planning
             vessel_planning = self.lock_complex.vessel_pre_planning
