@@ -1020,6 +1020,7 @@ class IsLockMaster(SimpyObject):
         yield vessel.waiting_area_request
 
         # Check if vessel speed should be changed
+        # TODO Dit is een hele geneste if-structuur. Proberen onder te verdelen in bijv functies.
         next_operation = operation_planning.loc[operation_index]
         vessel_time_lock_entry_start = vessel_planning.loc[vessel_planning_index,'time_lock_entry_start']
         if len(next_operation.vessels) > 1 and self.minimize_door_open_times:
@@ -1050,6 +1051,7 @@ class IsLockMaster(SimpyObject):
                                 vessel_planning.loc[other_vessel_planning_index, 'time_lock_entry_stop'] += datetime.timedelta(seconds=delay)
                                 other_vessel.door_open_request.interrupt(str(delay))
 
+    # TODO: Floor Deze functie wordt op dit moment niet gebruikt. Checken of we hem willen houden.
     def determine_waiting_time_while_sailing_to_lock(self, vessel, direction, waiting_time):
         if not direction:
             lock_start_node = self.start_node
@@ -1096,6 +1098,8 @@ class IsLockMaster(SimpyObject):
         waiting_time_while_sailing = waiting_time - remaining_static_waiting_time
         return remaining_static_waiting_time,waiting_time_while_sailing
 
+
+    # TODO Het lijkt alsof deze functie alleen de sailing time teruggeeft, en niks opslaat van de distance to lock. Ik zou daarom de functie calculate_sailing_time_to_lock noemen. En misschien nog een extra functie maken die distance to lock berekent. 
     def calculate_sailing_time_and_distance_to_lock(self, vessel, lock_end_node):
         vessel_df = pd.DataFrame(vessel.logbook)
         if vessel_df.empty:
@@ -1112,8 +1116,12 @@ class IsLockMaster(SimpyObject):
         if lock_end_node != self.end_node:
             distance = self.distance_from_end_node_to_lock_doors_B
 
+        # TODO Waarom is dit de route voor 'other vessel'? Welke andere vessel? 
+        # TODO en kunnen we i.p.v. dijkstra ook  vessel.route_ahead gebruiken, en dan het deel tot lock_end_node pakken? KKan namelijk zijn dat we een simulatie maken waarbij het schip bewust omvaart.
         route_other_vessel = nx.dijkstra_path(self.env.graph, vessel.current_node, lock_end_node)
         sailing_time = self.env.vessel_traffic_service.provide_sailing_time(vessel, route_other_vessel)
+        # TODO: Zijn alle indexen van de sailing time uniek? Want als dit het geval is zou ik hier voor .loc gaan i.p.v. .iloc
+        # Dan hoef je van tevoren alleen de index van de laatste rij te bepalen, in plaats van de index van de drie kolommen. 
         column_names = list(sailing_time.columns)
         distance_column_iloc = column_names.index('Distance')
         time_column_iloc = column_names.index('Time')
@@ -1139,11 +1147,14 @@ class IsLockMaster(SimpyObject):
 
     def overrule_vessel_speed(self, vessel, lock_end_node, waiting_time=0):
         sailing_time = self.calculate_sailing_time_and_distance_to_lock(vessel, lock_end_node)
+        # TODO Floor: kan de sailing time none zijn? Als dat zo is, dan een else toevoegen. Als dat niet moet kunnen, dan een error geven als ie none is
         if sailing_time is not None:
             average_speed = sailing_time.loc[:, 'Distance'].sum()/sailing_time.loc[:, 'Time'].sum()
             overruled_speed = np.max([self.minimum_manoeuvrability_speed, sailing_time.loc[:, 'Distance'].sum()/(sailing_time.loc[:, 'Time'].sum() + waiting_time)])
             sailing_time = sailing_time.iloc[::-1]
             iteration = 0
+            #TODO: Dit lijkt me een goed algoritme om los te koppelen.
+            # TODO FLoor: Wil je de naam van het algoritme in de documentatie zetten als die bestaat?
             while not np.abs(average_speed-overruled_speed) <= 0.00001:
                 if iteration == 100:
                     break
@@ -1160,6 +1171,7 @@ class IsLockMaster(SimpyObject):
                 vessel.overruled_speed.loc[edge] = sailing_time_info.Speed
 
     def initiate_levelling(self, origin, destination, vessel=None, k=0, *args, **kwargs):
+        #TODO: Moeten de origin en destination hier naast elkaar liggen? Zoja, toevoegen in documentatie.
         if 'Lock' in vessel.multidigraph.edges[origin, destination, k].keys():
             lock = vessel.multidigraph.edges[origin, destination, k]['Lock'][0]
             vessel_planning = lock.vessel_planning
@@ -1187,7 +1199,7 @@ class IsLockMaster(SimpyObject):
                 for other_vessel in vessels[:-1]:
                     terminate_waiting_time_for_other_vessel = False
                     while not terminate_waiting_time_for_other_vessel:
-                        try:
+                        try:l
                             yield lock.wait_for_other_vessels.put(other_vessel)
                             terminate_waiting_time_for_other_vessel = True
                         except simpy.Interrupt as e:
