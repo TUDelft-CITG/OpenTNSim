@@ -20,6 +20,7 @@ import uuid
 import yaml
 from itertools import cycle
 
+from plotly.offline import init_notebook_mode, iplot
 
 # spatial libraries
 import pyproj
@@ -634,20 +635,23 @@ class HasMultiDiGraph:
         return multidigraph
 
 
-def plot_graph(graph):
+def plot_graph(graph, static: bool = False):
     """method to plot a graph
 
     Parameters
     ----------
     graph : networkx.Graph
         A graph object.
+    static : bool, optional
+        If True, returns a static Plotly figure object.
+        If False, displays the figure
 
     Returns
     -------
     fig : plotly.graph_objs._figure.Figure
         Object that contains a graph figure.
     """
-    
+
     # Labels
     labels = {node: node for node in graph.nodes()}
     edge_labels = {(u, v): f"{d['weight']} km" for u, v, d in graph.edges(data=True)}
@@ -728,4 +732,10 @@ def plot_graph(graph):
         plot_bgcolor='white',
     )
 
-    return fig
+    if static is False:
+        # Initialize notebook mode for Plotly
+        init_notebook_mode(connected=True)
+        # Display the figure in a Jupyter notebook
+        iplot(fig)
+    else:
+        return fig
