@@ -25,6 +25,14 @@ opentnsim\.core module
    :undoc-members:
    :show-inheritance:
 
+opentnsim\.energy module
+--------------------------
+
+.. automodule:: opentnsim.energy
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
