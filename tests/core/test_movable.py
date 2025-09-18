@@ -430,10 +430,10 @@ def test_movable_resource_restriction_one_edge(env):
 
     # create two similar movables
     movable1 = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable1.current_node, movable1.next_node = 0, 1
+    movable1.position_on_route = 0
 
     movable2 = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable2.current_node, movable2.next_node = 0, 1
+    movable2.position_on_route = 0
 
     # Assign a resource to the edge
     resource = simpy.Resource(env, 1)
