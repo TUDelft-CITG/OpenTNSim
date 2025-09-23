@@ -4306,16 +4306,18 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         self.distance_waiting_area_B_from_node_waiting_area_B = self.distance_from_end_node_to_lock_doors_B - self.distance_lock_doors_B_to_waiting_area_B
 
         # create the waiting area objects
+        edge_waiting_area_A = (self.start_node,self.end_node,self.k)
         self.waiting_area_A = IsLockWaitingArea(env=self.env,
                                                 name="waiting_area_A",
                                                 lock=self,
-                                                edge=(edge_waiting_area_A[1],edge_waiting_area_A[0],edge_waiting_area_A[2]),
+                                                edge=edge_waiting_area_A,
                                                 distance_from_node=self.distance_waiting_area_A_from_node_waiting_area_A)
 
+        edge_waiting_area_B = (self.end_node,self.start_node,self.k)
         self.waiting_area_B = IsLockWaitingArea(env=self.env,
                                                 name="waiting_area_B",
                                                 lock=self,
-                                                edge=(edge_waiting_area_B[1],edge_waiting_area_B[0],edge_waiting_area_B[2]),
+                                                edge=edge_waiting_area_B,
                                                 distance_from_node=self.distance_waiting_area_B_from_node_waiting_area_B)
 
         # create the line-up area at side A if there is a line-up area at side A (lineup_area_A_length is not None)
