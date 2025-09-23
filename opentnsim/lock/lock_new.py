@@ -109,7 +109,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         #     return # the vessel will not pass the lock if its current location is its penultimate node ?
 
         # Part II: Find the upcoming locks that use long-term planning by looping over the vessel's route
-        locks_with_long_term_planning_found = []
+        locks_with_long_term_planning_found = {}
         route_to_come = self.route_ahead
         for node in route_to_come:
             node_info = self.multidigraph.nodes[node]
@@ -118,15 +118,15 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
             # if a detector node belonging to a lock is found, than unpack the lock complex information using the lock_edge stored in the detector node
             lock_edge = node_info['Detector']
-            detector_node = node
             lock = self.multidigraph.edges[lock_edge]["Lock"][0] # TODO: write test to prevent that multiple lock complexes are located at the same detector node, also: maybe we need to change "Lock" to "Lock complex"
-            if not lock.predictive: # TODO: lets rename 'preditive', as it is a bit vague, lets change it to 'long_term_planning'
+            if not lock.predictive: # TODO: lets rename 'predictive', as it is a bit vague, lets change it to 'long_term_planning'
                 continue
             # if the lock is predictive store the lock object in the list of locks with long_term_planning enabled
-            locks_with_long_term_planning_found.append(lock)
+            if lock not in locks_with_long_term_planning_found.values():
+                locks_with_long_term_planning_found[node] = lock
 
         # Part III: Pre-registration of the vessel at the lock masters of each lock complex by loop over the locks with long term planning to be encountered along the vessel's route
-        for lock in locks_with_long_term_planning_found:
+        for detector_node,lock in locks_with_long_term_planning_found.items():
             # unpack the lock specific dataframes of planned vessels and planned lock operations
             vessel_planning = lock.vessel_pre_planning
             operation_planning = lock.operation_pre_planning
@@ -144,7 +144,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
             # determine direction of lock passage TODO: in functie zetten.
             direction = 1
-            if lock_edge[0] == lock.start_node:
+            if self.current_node == lock.start_node:
                 direction = 0
 
             # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
@@ -160,9 +160,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 copy_operation_planning = operation_planning.copy()
                 copy_vessel_planning = vessel_planning.copy()
                 yield from lock.add_vessel_to_planned_lock_operation(self, operation_index, direction,vessel_planning=copy_vessel_planning,operation_planning=copy_operation_planning, pre_planning=True)
-                if copy_operation_planning[copy_operation_planning.index >= operation_index].maximum_individual_delay.max() > pd.Timedelta(seconds=lock.clustering_time):
-                    operation_index = len(operation_planning)
-                    add_operation = True
 
             # the operation planning should be updated
             yield from lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
@@ -201,9 +198,9 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         Parameters
         ----------
         origin : str
-
+            node name (that has to be in the graph) on which the vessel is currently sailing, to navigate an edge
         destination : str
-
+            node name (that has to be in the graph) on which the vessel is currently sailing to, to navigate an edge (should form an edge with the origin)
 
         Yields
         ------
@@ -374,7 +371,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         vessel_planning_index = vessel_planning[vessel_planning.id == self.id].iloc[-1].name
         operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
         vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
-        start_time_entering_lock = vessel_planning.loc[operation_index, 'time_lock_passing_start']
+        start_time_entering_lock = vessel_planning.loc[vessel_planning_index, 'time_lock_passing_start']
 
         # determines the sailing time to reach the approach point of the lock complex
         sailing_to_approach = lock.calculate_sailing_time_to_approach_point(self, direction, current_node=start_node,overwrite=False)# - lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)[0]
@@ -1650,103 +1647,119 @@ class IsLockMaster(SimpyObject):
 
     def initiate_levelling(self, origin, destination, vessel=None, k=0, *args, **kwargs):
         """
-        DOCUMENTATION HERE
+        Initiates levelling process as function that can be added to a vessel TODO: preferably you don't want to add this process to the vessel but let the lock master / operator handle this
 
-        :param origin:
-        :param destination:
-        :param vessel:
-        :param k:
-        :param args:
-        :param kwargs:
-        :return:
+        Parameters
+        ----------
+        origin : str
+            node name (that has to be in the graph) on which the vessel is currently sailing, to navigate an edge should form an edge with the origin)
+        destination : str
+            node name (that has to be in the graph) on which the vessel is currently sailing to, to navigate an edge (should form an edge with the origin)
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        k : int
+            identifier of the edge between two nodes in a multidigraph network
+
+
         """
         #TODO: Moeten de origin en destination hier naast elkaar liggen? Zoja, toevoegen in documentatie.
-        if 'Lock' in vessel.multidigraph.edges[origin, destination, k].keys():
-            lock = vessel.multidigraph.edges[origin, destination, k]['Lock'][0]
-            vessel_planning = lock.vessel_planning
-            operation_planning = lock.operation_planning
-            if lock.predictive:
-                vessel_planning = lock.vessel_pre_planning
-                operation_planning = lock.operation_pre_planning
 
-            vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-            operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
-            this_operation = operation_planning.loc[operation_index]
-            current_node = lock.node_open
-            if current_node == lock.start_node:
-                direction = 0
-                next_node = lock.end_node
-            else:
-                direction = 1
-                next_node = lock.start_node
+        # determine if there is a lock on the edge
+        if 'Lock' not in vessel.multidigraph.edges[origin, destination, k].keys():
+            return
 
-            vessels = this_operation.vessels
+        # get the lock complex object
+        lock = vessel.multidigraph.edges[origin, destination, k]['Lock'][0]
 
-            # If vessel is the last assigned vessel in the lock
-            if vessel == vessels[-1]:
-                # Liberate waiting vessels in lock chamber
-                for other_vessel in vessels[:-1]:
-                    terminate_waiting_time_for_other_vessel = False
-                    while not terminate_waiting_time_for_other_vessel:
-                        try:
-                            yield lock.wait_for_other_vessels.put(other_vessel)
-                            terminate_waiting_time_for_other_vessel = True
-                        except simpy.Interrupt as e:
-                            terminate_waiting_time_for_other_vessel = False
+        # unpack the lock complex master's vessel and lock operation plannings
+        vessel_planning = lock.vessel_planning
+        operation_planning = lock.operation_planning
+        if lock.predictive:
+            vessel_planning = lock.vessel_pre_planning
+            operation_planning = lock.operation_pre_planning
 
-                # Wait for other vessels to lay still
-                delay = operation_planning.loc[operation_index].time_door_closing_start.round('s').to_pydatetime().timestamp() - lock.env.now
-                if delay > 0:
-                    yield lock.env.timeout(delay)
+        # determine the index of the vessel and the lock operation to which it is assigned to and the index of this operation
+        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+        operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
+        this_operation = operation_planning.loc[operation_index]
 
-                # Convert lock chamber
-                close_doors = True
-                if lock.close_doors_before_vessel_is_laying_still and this_operation.time_door_closing_start < vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop']:
-                    close_doors = False
+        # determine the direction to the lock chamber is currently levelled to, and to which node the lock chamber will level
+        current_node = lock.node_open
+        if current_node == lock.start_node:
+            direction = 0
+            next_node = lock.end_node
+        else:
+            direction = 1
+            next_node = lock.start_node
 
-                yield from lock.convert_chamber(next_node, vessel, close_doors, direction=direction)
+        # determine the vessels that are assigned to the lock operation to which the vessel is assigned
+        vessels = this_operation.vessels
 
-                # Liberate waiting vessels in lock chamber
-                for other_vessel in vessels[:-1]:
-                    terminate_levelling_for_other_vessel = False
-                    while not terminate_levelling_for_other_vessel:
-                        try:
-                            yield lock.wait_for_levelling.put(other_vessel)
-                            terminate_levelling_for_other_vessel = True
-                        except simpy.Interrupt as e:
-                            terminate_levelling_for_other_vessel = False
-
-            # If vessel is not the last assigned vessel
-            else:
-                # Wait for last assigned vessel of lock operation
-                waiting_for_other_vessels = True
-                while waiting_for_other_vessels:
+        # initiate levelling if vessel is the last assigned vessel in the lock
+        if vessel == vessels[-1]:
+            # liberate the vessels that were requested to wait for the last vessel
+            for other_vessel in vessels[:-1]:
+                terminate_waiting_time_for_other_vessel = False
+                while not terminate_waiting_time_for_other_vessel:
                     try:
-                        yield lock.wait_for_other_vessels.get(filter=(lambda request: request.id == vessel.id))
-                        waiting_for_other_vessels = False
+                        yield lock.wait_for_other_vessels.put(other_vessel)
+                        terminate_waiting_time_for_other_vessel = True
                     except simpy.Interrupt as e:
-                        waiting_for_other_vessels = True
+                        terminate_waiting_time_for_other_vessel = False
 
-                # Follow the converting lock chamber
-                vessel.log_entry_v0("Levelling start", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
-                waiting_for_levelling = True
-                while waiting_for_levelling:
+            # Wait for other vessels to lay still
+            delay = operation_planning.loc[operation_index].time_door_closing_start.round('s').to_pydatetime().timestamp() - lock.env.now
+            if delay > 0:
+                yield lock.env.timeout(delay)
+
+            # Convert lock chamber
+            close_doors = True
+            if lock.close_doors_before_vessel_is_laying_still and this_operation.time_door_closing_start < vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop']:
+                close_doors = False
+
+            yield from lock.convert_chamber(next_node, vessel, close_doors, direction=direction)
+
+            # Liberate waiting vessels in lock chamber
+            for other_vessel in vessels[:-1]:
+                terminate_levelling_for_other_vessel = False
+                while not terminate_levelling_for_other_vessel:
                     try:
-                        yield lock.wait_for_levelling.get(filter=(lambda request: request.id == vessel.id))
-                        waiting_for_levelling = False
+                        yield lock.wait_for_levelling.put(other_vessel)
+                        terminate_levelling_for_other_vessel = True
                     except simpy.Interrupt as e:
-                        waiting_for_levelling = True
-                vessel.log_entry_v0("Levelling stop", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+                        terminate_levelling_for_other_vessel = False
 
-            # Determine and yield sailing out delay
-            sailing_out_delay = lock.calculate_vessel_departure_start_time(vessel, operation_index, direction, pre_planning=lock.predictive).total_seconds()
-            delay_start = vessel.env.now
-            while sailing_out_delay:
+        # If vessel is not the last assigned vessel
+        else:
+            # Wait for last assigned vessel of lock operation
+            waiting_for_other_vessels = True
+            while waiting_for_other_vessels:
                 try:
-                    yield vessel.env.timeout(sailing_out_delay)
-                    sailing_out_delay = 0
+                    yield lock.wait_for_other_vessels.get(filter=(lambda request: request.id == vessel.id))
+                    waiting_for_other_vessels = False
                 except simpy.Interrupt as e:
-                    sailing_out_delay -= vessel.env.now - delay_start
+                    waiting_for_other_vessels = True
+
+            # Follow the converting lock chamber
+            vessel.log_entry_v0("Levelling start", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+            waiting_for_levelling = True
+            while waiting_for_levelling:
+                try:
+                    yield lock.wait_for_levelling.get(filter=(lambda request: request.id == vessel.id))
+                    waiting_for_levelling = False
+                except simpy.Interrupt as e:
+                    waiting_for_levelling = True
+            vessel.log_entry_v0("Levelling stop", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+
+        # Determine and yield sailing out delay
+        sailing_out_delay = lock.calculate_vessel_departure_start_time(vessel, operation_index, direction, pre_planning=lock.predictive).total_seconds()
+        delay_start = vessel.env.now
+        while sailing_out_delay:
+            try:
+                yield vessel.env.timeout(sailing_out_delay)
+                sailing_out_delay = 0
+            except simpy.Interrupt as e:
+                sailing_out_delay -= vessel.env.now - delay_start
 
     def allow_vessel_to_sail_out_of_lock(self, origin, destination, vessel=None, k=0, *args, **kwargs):
         """
@@ -3177,7 +3190,7 @@ class IsLockMaster(SimpyObject):
             previous_vessel_planning_index = vessel_planning[vessel_planning.id == operation_planning.loc[operation_index, 'vessels'][vessel_index-1].id].iloc[-1].name
             last_time_doors_closed = vessel_planning.loc[previous_vessel_planning_index,'time_potential_lock_door_closure_start'] + pd.Timedelta(seconds=self.doors_closing_time)
         elif operation_index == 0:
-            last_time_doors_closed = self.env.simulation_start
+            last_time_doors_closed = datetime.datetime.fromtimestamp(self.env.now)
         else:
             last_time_doors_closed = operation_planning.loc[operation_index - 1].time_potential_lock_door_closure_start + pd.Timedelta(seconds=self.doors_closing_time)
 
@@ -3347,7 +3360,7 @@ class IsLockMaster(SimpyObject):
 
         # add vessel to a new lock operation or to a planned one
         if operation_planning.empty or add_operation:
-            self.add_vessel_to_new_lock_operation(vessel, operation_index, direction, pre_planning=pre_planning)
+            yield from self.add_vessel_to_new_lock_operation(vessel, operation_index, direction, pre_planning=pre_planning)
         else:
             yield from self.add_vessel_to_planned_lock_operation(vessel, operation_index, direction, pre_planning=pre_planning)
 
@@ -3356,7 +3369,7 @@ class IsLockMaster(SimpyObject):
         operation_planning.loc[operation_index, 'maximum_individual_delay'] = np.max(vessel_planning[vessel_planning.operation_index == operation_index].delay)
         operation_planning.loc[operation_index, 'total_delay'] = np.sum(vessel_planning[vessel_planning.operation_index == operation_index].delay)
 
-    def add_vessel_to_new_lock_operation(self, vessel, operation_index, direction,pre_planning=False):
+    def add_vessel_to_new_lock_operation(self, vessel, operation_index, direction, pre_planning=False):
         """
         Adds a vessel to a newly to be planned lock operation
 
@@ -3371,7 +3384,7 @@ class IsLockMaster(SimpyObject):
         pre_planning : bool
             .
 
-        Returns
+        Yields
         -------
         nothing
 
@@ -3383,6 +3396,12 @@ class IsLockMaster(SimpyObject):
             vessel_planning = self.lock_complex.vessel_pre_planning
             operation_planning = self.lock_complex.operation_pre_planning
 
+        node_of_approach = self.end_node
+        to_node = self.start_node
+        if not direction:
+            node_of_approach = self.start_node
+            to_node = self.end_node
+
         # determine if the new lock operation should follow a empty lock operation (when the new lock operation has the same direction as the previous lock operation)
         previous_planned_operations = operation_planning[operation_planning.index <= operation_index]
         if not previous_planned_operations.empty:
@@ -3390,6 +3409,10 @@ class IsLockMaster(SimpyObject):
             if previous_planned_operation.bound == direction:
                 self.add_empty_lock_operation_to_planning(operation_index, 1 - direction)
                 operation_index += 1 # the new operation index lies now one ahead
+        elif self.node_open != node_of_approach:
+            self.add_empty_lock_operation_to_planning(operation_index, 1 - direction)
+            self.env.process(self.convert_chamber(new_level = to_node))
+            operation_index += 1  # the new operation index lies now one ahead
 
         # get the new previous planned operations (including the empty one)
         previous_planned_operations = operation_planning[operation_planning.index <= operation_index]
@@ -3504,6 +3527,8 @@ class IsLockMaster(SimpyObject):
             next_operation = later_planned_operations.iloc[0]
             if direction == next_operation['bound']:
                 self.add_empty_lock_operation_to_planning(operation_index, 1-direction)
+
+        yield from []
 
 
     def add_vessel_to_planned_lock_operation(self, vessel, operation_index, direction, prognosis=True, vessel_planning=None, operation_planning=None, pre_planning=False):
@@ -3928,15 +3953,15 @@ class IsLockMaster(SimpyObject):
         if not self.predictive:
             mask_future_operations = operation_planning.time_levelling_start >= current_time
         else:
-            mask_future_operations = operation_planning.time_levelling_start >= self.env.simulation_start
+            mask_future_operations = operation_planning.time_levelling_start >= datetime.datetime.fromtimestamp(0.0)
 
         # combinations of the masks TODO: this part of the code should be improved in clarity
         mask_empty_future_lockages = mask_empty_lock&mask_future_operations # empty future lock operations
         mask_max_waiting_time = mask_max_waiting_time&~mask_empty_lock # non-empty lock operations with non-exceedance of the maximum waiting time
-        mask_min_vessels = (mask_empty_future_lockages&mask_max_waiting_time) # future operations that do not exceed a minimum required number of vessels
+        mask_min_vessels = mask_future_operations # future operations that do not exceed a minimum required number of vessels
         if self.min_vessels_in_operation > 1:
             mask_min_vessels = operation_planning.vessels.apply(len) < self.min_vessels_in_operation
-        mask_future_operations = (mask_empty_future_lockages&mask_max_waiting_time)|mask_min_vessels
+        mask_future_operations = (mask_empty_future_lockages&mask_max_waiting_time)|(mask_min_vessels&mask_future_operations)
 
         # select available operations TODO: this part of the code should be improved in clarity and readability
         available_operations = operation_planning[mask_available&mask_bound&mask_max_vessels&mask_capacity_L&mask_future_operations&(mask_min_vessels|mask_status|mask_empty_future_lockages|mask_max_waiting_time)].copy()
