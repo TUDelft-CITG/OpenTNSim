@@ -29,6 +29,33 @@ from opentnsim.output import HasOutput
 knots_to_ms = knots = 0.514444444
 
 
+def _get_lock_on_node(multidigraph, detector_node):
+    """Get the lock complex object that is associated with a detector node
+
+    Parameters
+    ----------
+    detector_node : str
+        node name (that has to be in the graph) on which the vessel is currently starting to navigate an edge
+
+    Returns
+    -------
+    lock : Union(class, None)
+        the lock complex object that is associated with the detector node, or None if no lock complex is associated with the detector node
+    """
+    # check if node is a detector node
+    if "Detector" not in multidigraph.nodes[detector_node].keys():
+        return None
+
+    edge = multidigraph.nodes[detector_node]["Detector"]
+    # return lock if it exists on the edge
+    if "Lock" in multidigraph.edges[edge].keys():
+        lock = multidigraph.edges[edge]["Lock"][0]
+        return lock
+    # Return None if no lock exists on the edge
+    else:
+        return None
+
+
 class PassesLockComplex(Movable, HasMultiDiGraph):
     """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
 
@@ -74,6 +101,125 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             data=[], columns=["Speed"], index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", "k"))
         )
 
+    def _find_upcoming_locks(self, only_predictive=True):
+        """
+        Find the upcoming locks that use long-term planning by looping over the vessel's route
+
+        Parameters
+        ----------
+        only_predictive : bool, optional
+            if True, only locks that use long-term planning are included, by default True
+            if False, all locks are included
+
+        Returns
+        -------
+        upcoming_locks : dict
+            dictionary of lock objects that are to be encountered on the vessel's route
+            mapping from node (key) to lock object (value)
+        """
+        # initiate empty lists
+        upcoming_locks = {}
+
+        # loop over all nodes on the route ahead.
+        route_to_come = self.route_ahead
+        for node in route_to_come:
+            node_info = self.multidigraph.nodes[node]
+
+            # check if the node has a detector node
+            if (
+                "Detector" not in node_info.keys()
+            ):  # TODO: @Floor: rename 'Detector' so that it is lock specific and clearer to the user
+                continue
+
+            # unpack the lock complex information using the lock_edge stored in the detector node
+            lock_edge = node_info["Detector"]
+            lock = self.multidigraph.edges[lock_edge]["Lock"][
+                0
+            ]  # TODO: write test to prevent that multiple lock complexes are located at the same detector node, also: maybe we need to change "Lock" to "Lock complex"
+
+            # only add non-predictive locks if only_predictive is False
+            if (only_predictive) and (
+                not lock.predictive
+            ):  # TODO: lets rename 'predictive', as it is a bit vague, lets change it to 'long_term_planning'
+                continue
+
+            # check if lock is already stored
+            if lock in upcoming_locks.values():
+                continue
+            # store the lock object in the list of locks with long_term_planning enabled
+            upcoming_locks[lock] = node
+        return upcoming_locks
+
+    def _pre_register_to_lock(self, lock):
+        """pre-register to one specific lock"""
+        # unpack the lock specific dataframes of planned vessels and planned lock operations
+        vessel_planning = lock.vessel_pre_planning
+        operation_planning = lock.operation_pre_planning
+
+        # unravel what is the current time
+        arrival_time = np.max(
+            [
+                self.metadata["arrival_time"],
+                pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)),
+            ]
+        )  # TODO: check if we can replace this with just the pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)
+
+        # determine the arrival time of the vessel at the lock complex TODO: in functie zetten.
+        route_to_come = self.route_ahead
+        for origin, destination in zip(route_to_come[:-1], route_to_come[1:]):
+            k = sorted(
+                self.multidigraph[origin][destination],
+                key=lambda x: self.multidigraph[origin][destination][x][
+                    "geometry"
+                ].length,
+            )[
+                0
+            ]  # TODO: dit kan een route-functie worden, de identifier (k) voor multidigraphs wordt nu bepaald aan de hand van de kortste route
+            edge = self.multidigraph[origin][destination][k]
+            if origin == detector_node:
+                break
+            arrival_time += pd.Timedelta(
+                seconds=edge["length"]
+                / self.env.vessel_traffic_service.provide_speed_over_edge(
+                    self, (origin, destination, k)
+                )
+            )
+
+        # determine direction of lock passage TODO: in functie zetten.
+        direction = 1
+        if self.current_node == lock.start_node:
+            direction = 0
+
+        # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
+        lock.add_vessel_to_vessel_planning(
+            self, direction, time_of_registration=arrival_time, pre_planning=True
+        )
+
+        # request lock master to add vessel to the lock operation planning
+        operation_index, add_operation, available_operations = (
+            lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
+        )
+
+        # TODO: this should be a function/attribute of the lock master
+        # if a suitable already planned lock operation has been found, the vessel needs to be added to this operation
+        if not available_operations.empty:
+            operation_index = available_operations.iloc[0].name
+            copy_operation_planning = operation_planning.copy()
+            copy_vessel_planning = vessel_planning.copy()
+            yield from lock.add_vessel_to_planned_lock_operation(
+                self,
+                operation_index,
+                direction,
+                vessel_planning=copy_vessel_planning,
+                operation_planning=copy_operation_planning,
+                pre_planning=True,
+            )
+
+        # the operation planning should be updated
+        yield from lock.update_operation_planning(
+            self, direction, operation_index, add_operation, pre_planning=True
+        )
+
     def pre_register_to_lock_master(self, destination):
         """
         Request pre-registration to the lock master.
@@ -103,66 +249,12 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         if self.position_on_route:
             return
 
-        # # determine which part of the route we still need to consider
-        # route_to_come = self.route_ahead
-        # if len(self.route_ahead) <= 1:
-        #     return # the vessel will not pass the lock if its current location is its penultimate node ?
-
         # Part II: Find the upcoming locks that use long-term planning by looping over the vessel's route
-        locks_with_long_term_planning_found = {}
-        route_to_come = self.route_ahead
-        for node in route_to_come:
-            node_info = self.multidigraph.nodes[node]
-            if 'Detector' not in node_info.keys(): # TODO: rename 'Detector' so that it is lock specific and clearer to the user
-                continue
-
-            # if a detector node belonging to a lock is found, than unpack the lock complex information using the lock_edge stored in the detector node
-            lock_edge = node_info['Detector']
-            lock = self.multidigraph.edges[lock_edge]["Lock"][0] # TODO: write test to prevent that multiple lock complexes are located at the same detector node, also: maybe we need to change "Lock" to "Lock complex"
-            if not lock.predictive: # TODO: lets rename 'predictive', as it is a bit vague, lets change it to 'long_term_planning'
-                continue
-            # if the lock is predictive store the lock object in the list of locks with long_term_planning enabled
-            if lock not in locks_with_long_term_planning_found.values():
-                locks_with_long_term_planning_found[node] = lock
+        locks_with_long_term_planning = self._find_upcoming_locks(only_predictive=True)
 
         # Part III: Pre-registration of the vessel at the lock masters of each lock complex by loop over the locks with long term planning to be encountered along the vessel's route
-        for detector_node,lock in locks_with_long_term_planning_found.items():
-            # unpack the lock specific dataframes of planned vessels and planned lock operations
-            vessel_planning = lock.vessel_pre_planning
-            operation_planning = lock.operation_pre_planning
-
-            # unravel what is the current time
-            arrival_time = np.max([self.metadata['arrival_time'],pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))]) # TODO: check if we can replace this with just the pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)
-
-            # determine the arrival time of the vessel at the lock complex TODO: in functie zetten.
-            for origin, destination in zip(route_to_come[:-1], route_to_come[1:]):
-                k = sorted(self.multidigraph[origin][destination],key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0] # TODO: dit kan een route-functie worden, de identifier (k) voor multidigraphs wordt nu bepaald aan de hand van de kortste route
-                edge = self.multidigraph[origin][destination][k]
-                if origin == detector_node:
-                    break
-                arrival_time += pd.Timedelta(seconds=edge['length'] / self.env.vessel_traffic_service.provide_speed_over_edge(self,(origin, destination, k)))
-
-            # determine direction of lock passage TODO: in functie zetten.
-            direction = 1
-            if self.current_node == lock.start_node:
-                direction = 0
-
-            # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
-            lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
-
-            # request lock master to add vessel to the lock operation planning
-            operation_index, add_operation, available_operations = lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
-
-            # TODO: this should be a function/attribute of the lock master
-            # if a suitable already planned lock operation has been found, the vessel needs to be added to this operation
-            if not available_operations.empty:
-                operation_index = available_operations.iloc[0].name
-                copy_operation_planning = operation_planning.copy()
-                copy_vessel_planning = vessel_planning.copy()
-                yield from lock.add_vessel_to_planned_lock_operation(self, operation_index, direction,vessel_planning=copy_vessel_planning,operation_planning=copy_operation_planning, pre_planning=True)
-
-            # the operation planning should be updated
-            yield from lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
+        for detector_node, lock in locks_with_long_term_planning.items():
+            yield from self._pre_register_to_lock(lock, detector_node)
 
     def register_to_lock_master(self, origin):
         """
@@ -180,15 +272,10 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         TODO: origin hoeft geen input te zijn. Kan ook met self.current_node (comment: dit nagaan, want deze generator wordt toegevoegd aan lijst 'on_pass_node_functions', welke in de movable met input = origin wordt gevoed)
         """
 
-        # if there is no detector node on the the origin node, then yield nothing
-        if not 'Detector' in self.multidigraph.nodes[origin].keys():
-            yield from []
-            return
-
-        # else: identify the lock and request lock master to register the vessel
-        edge = self.multidigraph.nodes[origin]['Detector']
-        if 'Lock' in self.multidigraph.edges[edge].keys():
-            lock = self.multidigraph.edges[edge]['Lock'][0]
+        # find the lock complex object that is associated with the detector node
+        lock = _get_lock_on_node(self.multidigraph, origin)
+        # if a lock complex object is found, request registration to the lock master of the lock complex
+        if lock:
             yield from lock.register_vessel(self)
 
     def sail_to_waiting_area(self, origin, destination):
@@ -334,7 +421,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             time_index = np.absolute(hydrodynamic_times - np.datetime64(doors_required_to_be_open) - np.timedelta64(int(lock.doors_opening_time), 's')).argmin()
             station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == lock.node_open)[0]
             lock.water_level[time_index:] = hydrodynamic_data['Water level'][station_index, time_index:]
-
 
     def wait_in_waiting_area(self, waiting_area):
         """
@@ -4366,7 +4452,6 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                                                                     self.start_node,
                                                                                                     self.node_A,
                                                                                                     distance_from_start_node_to_lineup_A)
-
 
             route_to_lineup_area_A = nx.dijkstra_path(self.env.graph, self.start_node, edge_lineup_area_A[1]) # TODO: can a lock complex be located along multiple edges?
             distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(route_to_lineup_area_A)["Distance"].sum()

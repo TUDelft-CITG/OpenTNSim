@@ -94,6 +94,7 @@ def test_islockcomplex_init(env, graph):
 
     lock = IsLockComplex(node_A="A", node_B="B", name="test lock", env=env)
 
+    # check attributes
     assert isinstance(lock.waiting_area_A, IsLockWaitingArea)
     assert isinstance(lock.waiting_area_B, IsLockWaitingArea)
 
@@ -129,3 +130,11 @@ def test_passeslockcomplex_init(env, graph):
     assert len(vessel.on_look_ahead_to_node_functions) == 1
     assert len(vessel.on_pass_node_functions) == 1
     assert len(vessel.on_pass_edge_functions) == 1
+
+
+def test_find_upcoming_locks(env, graph):
+    env.graph = graph
+    vessel = PassesLockComplex(v=4, geometry=graph.nodes["A"]["geometry"], route=["A", "B"], env=env)
+    vessel.position_on_route = 0
+
+    assert vessel.route_ahead == ["A", "B"]
