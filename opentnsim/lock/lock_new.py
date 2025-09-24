@@ -4453,6 +4453,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                                                                     self.node_A,
                                                                                                     distance_from_start_node_to_lineup_A)
 
+
             route_to_lineup_area_A = nx.dijkstra_path(self.env.graph, self.start_node, edge_lineup_area_A[1]) # TODO: can a lock complex be located along multiple edges?
             distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(route_to_lineup_area_A)["Distance"].sum()
             self.distance_lineup_area_A_from_edge_lineup_area_A_start = distance_start_node_to_node_waiting_area_A - (self.distance_lock_doors_A_to_lineup_area_A - self.distance_from_start_node_to_lock_doors_A)
