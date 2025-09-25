@@ -316,7 +316,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # TODO: @Floor. Ziet eruit alsof dit de laatste lock is die op de route ligt. Ik den kdat we juist de eerste willen hebben toch?
         # TODO: @Floor: in register_to_lock_master zoeken we gewoon de lock die aan de origin-node grenst. Kunnen we dat hier niet ook doen?
         lock = None
-        print(route_to_come)
         for node_start, node_stop in zip(route_to_come[:-1], route_to_come[1:]):
             k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
             lock_edge = (node_start,node_stop,k)
@@ -632,24 +631,42 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
 
     def __init__(
         self,
-        start_node,  # a string which indicates the location of the first pair of lock doors
-        end_node,  # a string which indicates the location of the second pair of lock doors
-        lock_length,  # a float which contains the length of the lock chamber
-        lock_width,  # a float which contains the width of the lock chamber
-        lock_depth,  # a float which contains the depth of the lock chamber
-        k=0,  # a int which is the identifier of the edge between two nodes in a multidigraph network
-        distance_from_start_node_to_lock_doors_A=0.0,  # a float that is the distance between the start_node of the edge and the lock doors A [m]
-        distance_from_end_node_to_lock_doors_B=0.0,  # a float that is the distance between the end_node of the edge and the lock doors B [m]
-        detector_nodes=[],  # a list of str with the node names at which the vessels request registration to the lock complex master
-        doors_opening_time=300.0,  # a float which contains the time it takes to open the doors [s]
-        doors_closing_time=300.0,  # a float which contains the time it takes to close the doors [s]
-        disch_coeff=0.0,  # a float which contains the discharge coefficient of filling system
-        opening_area=0.0,  # a float which contains the cross-sectional area of filling system [m^2]
-        opening_depth=0.0,  # a float which contains the depth at which filling system is located [m^2]
-        speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
-        start_sailing_out_time_after_doors_have_been_opened=0.0,  # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
-        sailing_time_before_opening_lock_doors=600.0,  # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
-        sailing_time_before_closing_lock_doors=120.0,  # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
+        # start_node,  # a string which indicates the location of the first pair of lock doors
+        # end_node,  # a string which indicates the location of the second pair of lock doors
+        # lock_length,  # a float which contains the length of the lock chamber
+        # lock_width,  # a float which contains the width of the lock chamber
+        # lock_depth,  # a float which contains the depth of the lock chamber
+        # k=0,  # a int which is the identifier of the edge between two nodes in a multidigraph network
+        # distance_from_start_node_to_lock_doors_A=0.0,  # a float that is the distance between the start_node of the edge and the lock doors A [m]
+        # distance_from_end_node_to_lock_doors_B=0.0,  # a float that is the distance between the end_node of the edge and the lock doors B [m]
+        # detector_nodes=[],  # a list of str with the node names at which the vessels request registration to the lock complex master
+        # doors_opening_time=300.0,  # a float which contains the time it takes to open the doors [s]
+        # doors_closing_time=300.0,  # a float which contains the time it takes to close the doors [s]
+        # disch_coeff=0.0,  # a float which contains the discharge coefficient of filling system
+        # opening_area=0.0,  # a float which contains the cross-sectional area of filling system [m^2]
+        # opening_depth=0.0,  # a float which contains the depth at which filling system is located [m^2]
+        # speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
+        # start_sailing_out_time_after_doors_have_been_opened=0.0,  # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
+        # sailing_time_before_opening_lock_doors=600.0,  # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
+        # sailing_time_before_closing_lock_doors=120.0,  # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
+        start_node,                                                         # a string which indicates the location of the first pair of lock doors
+        end_node,                                                           # a string which indicates the location of the second pair of lock doors
+        lock_length,                                                        # a float which contains the length of the lock chamber
+        lock_width,                                                         # a float which contains the width of the lock chamber
+        lock_depth,                                                         # a float which contains the depth of the lock chamber
+        k=0,                                                                # a int which is the identifier of the edge between two nodes in a multidigraph network
+        distance_from_start_node_to_lock_doors_A=0.0,                       # a float that is the distance between the start_node of the edge and the lock doors A [m]
+        distance_from_end_node_to_lock_doors_B=0.0,                         # a float that is the distance between the end_node of the edge and the lock doors B [m]
+        detector_nodes=[],                                                  # a list of str with the node names at which the vessels request registration to the lock complex master
+        doors_opening_time=300.0,                                           # a float which contains the time it takes to open the doors [s]
+        doors_closing_time=300.0,                                           # a float which contains the time it takes to close the doors [s]
+        disch_coeff=0.4,                                                    # a float which contains the discharge coefficient of filling system
+        opening_area=12.0,                                                  # a float which contains the cross-sectional area of filling system [m^2]
+        opening_depth=None,                                                 # a float which contains the depth at which filling system is located [m^2]
+        speed_reduction_factor_lock_chamber=0.3,                            # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
+        start_sailing_out_time_after_doors_have_been_opened=0.0,            # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
+        sailing_time_before_opening_lock_doors=600.,                        # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
+        sailing_time_before_closing_lock_doors=120.,                        # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
         minimum_time_between_operations_for_intermediate_door_closure=0.0,  # a float that is the minimum required time between lock operations that the lock doors can be both closed (to reduce salt intrusion) [s]
         sailing_distance_to_crossing_point=500.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
         passage_time_door=300.0,  # a float [s] ?
@@ -692,6 +709,8 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         self.disch_coeff = disch_coeff
 
         self.opening_area = opening_area
+        if opening_depth is None:
+            opening_depth = lock_depth/2
         self.opening_depth = opening_depth
         self.levelling_time = levelling_time
         self.start_sailing_out_time_after_doors_have_been_opened = start_sailing_out_time_after_doors_have_been_opened
@@ -775,11 +794,17 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         # TODO: als lockmaster een parent klasse is, zou lock_complex=self weg moeten kunnen.
         # TODO: capaciteit = 100. checken of deze info overbodig is doordat er al een lock_length is. En anders kijken of de capaciteit op oneindig kan.
         super().__init__(lock_complex=self, capacity=100, length=lock_length, remaining_length=lock_length, *args, **kwargs)
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
             global hydrodynamic_data
-            hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
+            if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path,str):
+                hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
+            else:
+                hydrodynamic_data = self.env.vessel_traffic_service.hydrodynamic_information
             global hydrodynamic_times
-            hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + self.env.vessel_traffic_service.hydrodynamic_start_time
+            if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path, str):
+                hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + self.env.vessel_traffic_service.hydrodynamic_start_time
+            else:
+                hydrodynamic_times = hydrodynamic_data['TIME'][:]
 
         if self.node_open is None:
             self.node_open = np.random.choice([start_node, end_node])
@@ -825,10 +850,15 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         # Water level
         assert start_node != end_node
 
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
-            station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.node_open)[0]
-            water_level = hydrodynamic_data['Water level'][station_index][0][0]
-            self.water_level = np.ones(len(hydrodynamic_data['Water level'][station_index,:][0]))*water_level
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
+            if isinstance(hydrodynamic_data,xr.Dataset):
+                station_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.node_open)[0][0]
+                water_level = hydrodynamic_data['Water level'][station_index][0].values
+                self.water_level = np.ones(len(hydrodynamic_data['Water level'][station_index].values)) * water_level
+            else:
+                station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.node_open)[0]
+                water_level = hydrodynamic_data['Water level'][station_index][0][0]
+                self.water_level = np.ones(len(hydrodynamic_data['Water level'][station_index,:][0]))*water_level
 
         # TODO: in functie zetten.
         # TODO: In de documentatie zetten dat detecotr nodes op volgorde moeten komen. En ook een assert maken.
@@ -1015,7 +1045,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         z = np.zeros_like(t)
 
         # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
-        if not self.env.vessel_traffic_service.hydrodynamic_information_path:
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is None:
             levelling_time = self.levelling_time
             return levelling_time, t, z
 
@@ -1028,11 +1058,17 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
             t_start = np.array([t_start], dtype=np.datetime64)[0]
 
         # if there is hydrodynamic data, unpack the water levels at the nodes of the lock complex
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
-            stationA_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0][0]
-            stationB_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0][0]
-            H_A = hydrodynamic_data["Water level"][stationA_index].copy()
-            H_B = hydrodynamic_data["Water level"][stationB_index].copy()
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
+            if isinstance(hydrodynamic_data, xr.Dataset):
+                stationA_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.start_node)[0][0]
+                stationB_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.end_node)[0][0]
+                H_A = hydrodynamic_data["Water level"][stationA_index].values.copy()
+                H_B = hydrodynamic_data["Water level"][stationB_index].values.copy()
+            else:
+                stationA_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0][0]
+                stationB_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0][0]
+                H_A = hydrodynamic_data["Water level"][stationA_index].copy()
+                H_B = hydrodynamic_data["Water level"][stationB_index].copy()
 
         # determine the direction
         if direction is None:
@@ -1090,6 +1126,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
 
             # calculate change in water level difference between time = i and time = i + 1
             z_i = abs(z[i])  # absolute water level difference at time = i
+
             dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch # change in water level difference over time [m/s]
             if z[i] < 0: # correct if water level difference is negative
                 dz_dt = -dz_dt
@@ -1105,13 +1142,18 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
                 break
 
         # determining levelling time based on the first nan of the series TODO: Class-functie maken _determine_levelling_time()
-        if not levelling_time and len(np.argwhere(np.isnan(z))):
+        if len(np.argwhere(np.isnan(z))):
             levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
+        else:
+            levelling_time = t[-1]
 
         # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber
         if not prediction:
             # TODO: de self.water_level wordt niet gebruikt, maar is wel leuk om als logging terug te zien na een berekening. Nadenken of we dat zo willen laten, of anders willen bijhouden.
-            t_index_final = np.absolute(hydrodynamic_times - (t_start+np.timedelta64(int(levelling_time),'s'))).argmin()
+            if isinstance(hydrodynamic_data, xr.Dataset):
+                t_index_final = np.absolute(hydrodynamic_times - (t_start + np.timedelta64(int(levelling_time), 's'))).argmin().values
+            else:
+                t_index_final = np.absolute(hydrodynamic_times - (t_start+np.timedelta64(int(levelling_time),'s'))).argmin()
             if not direction:
                 self.water_level[t_index_final:] = H_B[t_index_final:].copy()
             else:
@@ -4012,14 +4054,26 @@ class IsLockMaster(SimpyObject):
                 remaining_doors_closing_time -= (self.env.now - start_time_closing)
 
         # set water level to the side at which the door has been closed
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
-            time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
-            if self.node_open == self.start_node:
-                station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0]
-                self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].copy()
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
+            if isinstance(hydrodynamic_data,xr.Dataset):
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin().values
             else:
-                station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0]
-                self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].copy()
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
+
+            if self.node_open == self.start_node:
+                if isinstance(hydrodynamic_data,xr.Dataset):
+                    station_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.start_node)[0][0]
+                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].values.copy()
+                else:
+                    station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0]
+                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].copy()
+            else:
+                if isinstance(hydrodynamic_data,xr.Dataset):
+                    station_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.end_node)[0][0]
+                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].values.copy()
+                else:
+                    station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0]
+                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].copy()
 
         # log the end of the event
         self.log_entry_v0("Lock doors closing stop", self.env.now, self.output.copy(), self.node_open)
@@ -4123,8 +4177,11 @@ class IsLockMaster(SimpyObject):
 
         # determine the water level in the lock chamber
         wlev_chamber = 0.
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
-            time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
+            if isinstance(hydrodynamic_data, xr.Dataset):
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin().values
+            else:
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
             wlev_chamber = self.water_level[time_index]
 
         # determine to_level
@@ -4133,8 +4190,11 @@ class IsLockMaster(SimpyObject):
 
         # determine the water level in the harbour
         wlev_harbour = 0.
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
-            time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
+            if isinstance(hydrodynamic_data, xr.Dataset):
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin().values
+            else:
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
             if to_level == self.start_node:
                 wlev_harbour = hydrodynamic_data["Water level"][0][time_index]
             else:
@@ -4161,9 +4221,13 @@ class IsLockMaster(SimpyObject):
 
         # adjust water level of the lock chamber to the harbour side
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
-            time_index = np.absolute(hydrodynamic_times - np.datetime64(current_time)).argmin()+1
-            station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.node_open)[0]
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
+            if isinstance(hydrodynamic_data, xr.Dataset):
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(current_time)).argmin().values + 1
+                station_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.node_open)[0][0]
+            else:
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(current_time)).argmin() + 1
+                station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.node_open)[0]
             self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index,time_index:].copy()
 
         # make sure that all lock elements are requested, so only one process is occurring

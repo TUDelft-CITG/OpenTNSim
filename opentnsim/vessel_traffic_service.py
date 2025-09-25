@@ -40,38 +40,37 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def __init__(
         self,
         graph,
-        hydrodynamic_start_time=None,
         hydrodynamic_information_path=None,
-        vessel_speed_data_path=None,
-        hydrodynamic_data=None,
-        vessel_speed_data=None,
+        vessel_speed_information_path=None,
+        hydrodynamic_information=None,
+        vessel_speed_information=None,
+        hydrodynamic_start_time=pd.Timedelta(seconds=0),
         *args,
         **kwargs,
     ):
-        self.hydrodynamic_start_time = hydrodynamic_start_time
+        self.hydrodynamic_information = hydrodynamic_information
         self.hydrodynamic_information_path = hydrodynamic_information_path
         super().__init__(*args, **kwargs)
 
-        if isinstance(hydrodynamic_data, xr.Dataset):
-            self.hydrodynamic_information = hydrodynamic_data
-        if isinstance(vessel_speed_data, xr.Dataset):
-            self.vessel_speeds = vessel_speed_data
+        if isinstance(hydrodynamic_information, xr.Dataset):
+            self.hydrodynamic_information_path = False
+        if isinstance(vessel_speed_information, xr.Dataset):
+            self.vessel_speeds = vessel_speed_information
 
         self.graph = graph
 
-        # global vertical_tidal_restrictions_condition_df
+        global vertical_tidal_restrictions_condition_df
         self.vertical_tidal_restrictions_condition_df = pd.DataFrame()
 
-        # global horizontal_tidal_restrictions_condition_df
+        global horizontal_tidal_restrictions_condition_df
         self.horizontal_tidal_restrictions_condition_df = pd.DataFrame()
 
-        # global restricted_vessel_speeds
+        global restricted_vessel_speeds
         self.restricted_vessel_speeds = pd.DataFrame()
 
-        # global edges_info
+        global edges_info
         self.edges_info = self.get_edges_info()
 
-        index = 0
         for node in graph.nodes:
             node_info = graph.nodes[node]
             if 'Horizontal tidal restriction' in node_info.keys():
@@ -90,14 +89,22 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         self.horizontal_tidal_restrictions_condition_df = self.horizontal_tidal_restrictions_condition_df.reset_index(drop=True)
         self.vertical_tidal_restrictions_condition_df = self.vertical_tidal_restrictions_condition_df.reset_index(drop=True)
 
-        if isinstance(hydrodynamic_information_path,str):
-            # global hydrodynamic_data
-            hydrodynamic_data = netCDF4.Dataset(self.hydrodynamic_information_path)
-            # global hydrodynamic_times
-            self.hydrodynamic_times = hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + hydrodynamic_start_time
+        if self.hydrodynamic_information_path is not None:
+            global hydrodynamic_data
+            if isinstance(hydrodynamic_information_path,str):
+                hydrodynamic_data = netCDF4.Dataset(self.hydrodynamic_information_path)
+            else:
+                hydrodynamic_data = hydrodynamic_information
 
-        if isinstance(vessel_speed_data_path, str):
-            with open(vessel_speed_data_path, "rb") as file:
+            global hydrodynamic_times
+            self.hydrodynamic_start_time = hydrodynamic_start_time
+            if isinstance(hydrodynamic_information_path, str):
+                self.hydrodynamic_times = hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + hydrodynamic_start_time
+            else:
+                self.hydrodynamic_times = hydrodynamic_data['TIME'][:]
+
+        if isinstance(vessel_speed_information_path, str):
+            with open(vessel_speed_information_path, "rb") as file:
                 self.restricted_vessel_speeds = pickle.load(file)
 
     def get_edges_info(self):
