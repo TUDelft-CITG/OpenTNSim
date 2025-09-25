@@ -175,7 +175,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             upcoming_locks[lock] = node
         return upcoming_locks
 
-    def _pre_register_to_lock(self, lock):
+    def _pre_register_to_lock(self, detector_node, lock):
         """pre-register to one specific lock"""
         # unpack the lock specific dataframes of planned vessels and planned lock operations
         vessel_planning = lock.vessel_pre_planning
@@ -183,20 +183,14 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
         # unravel what is the current time
         arrival_time = np.max(
-            [
-                self.metadata["arrival_time"],
-                pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)),
-            ]
+            [self.metadata["arrival_time"], pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))]
         )  # TODO: check if we can replace this with just the pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)
 
         # determine the arrival time of the vessel at the lock complex TODO: in functie zetten.
         route_to_come = self.route_ahead
         for origin, destination in zip(route_to_come[:-1], route_to_come[1:]):
             k = sorted(
-                self.multidigraph[origin][destination],
-                key=lambda x: self.multidigraph[origin][destination][x][
-                    "geometry"
-                ].length,
+                self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]["geometry"].length
             )[
                 0
             ]  # TODO: dit kan een route-functie worden, de identifier (k) voor multidigraphs wordt nu bepaald aan de hand van de kortste route
@@ -204,10 +198,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             if origin == detector_node:
                 break
             arrival_time += pd.Timedelta(
-                seconds=edge["length"]
-                / self.env.vessel_traffic_service.provide_speed_over_edge(
-                    self, (origin, destination, k)
-                )
+                seconds=edge["length_m"] / self.env.vessel_traffic_service.provide_speed_over_edge(self, (origin, destination, k))
             )
 
         # determine direction of lock passage TODO: in functie zetten.
@@ -216,13 +207,11 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             direction = 0
 
         # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
-        lock.add_vessel_to_vessel_planning(
-            self, direction, time_of_registration=arrival_time, pre_planning=True
-        )
+        lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
 
         # request lock master to add vessel to the lock operation planning
-        operation_index, add_operation, available_operations = (
-            lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
+        operation_index, add_operation, available_operations = lock.assign_vessel_to_lock_operation(
+            self, direction, pre_planning=True
         )
 
         # TODO: this should be a function/attribute of the lock master
@@ -241,9 +230,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             )
 
         # the operation planning should be updated
-        yield from lock.update_operation_planning(
-            self, direction, operation_index, add_operation, pre_planning=True
-        )
+        yield from lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
 
     def pre_register_to_lock_master(self, destination):
         """
@@ -279,42 +266,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
         # Part III: Pre-registration of the vessel at the lock masters of each lock complex by loop over the locks with long term planning to be encountered along the vessel's route
         for detector_node,lock in locks_with_long_term_planning.items():
-            # unpack the lock specific dataframes of planned vessels and planned lock operations
-            vessel_planning = lock.vessel_pre_planning
-            operation_planning = lock.operation_pre_planning
-
-            # unravel what is the current time
-            arrival_time = np.max([self.metadata['arrival_time'],pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))]) # TODO: check if we can replace this with just the pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)
-
-            # determine the arrival time of the vessel at the lock complex TODO: in functie zetten.
-            for origin, destination in zip(route_to_come[:-1], route_to_come[1:]):
-                k = sorted(self.multidigraph[origin][destination],key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0] # TODO: dit kan een route-functie worden, de identifier (k) voor multidigraphs wordt nu bepaald aan de hand van de kortste route
-                edge = self.multidigraph[origin][destination][k]
-                if origin == detector_node:
-                    break
-                arrival_time += pd.Timedelta(seconds=edge['length_m'] / self.env.vessel_traffic_service.provide_speed_over_edge(self,(origin, destination, k)))
-
-            # determine direction of lock passage TODO: in functie zetten.
-            direction = 1
-            if self.current_node == lock.start_node:
-                direction = 0
-
-            # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
-            lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
-
-            # request lock master to add vessel to the lock operation planning
-            operation_index, add_operation, available_operations = lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
-
-            # TODO: this should be a function/attribute of the lock master
-            # if a suitable already planned lock operation has been found, the vessel needs to be added to this operation
-            if not available_operations.empty:
-                operation_index = available_operations.iloc[0].name
-                copy_operation_planning = operation_planning.copy()
-                copy_vessel_planning = vessel_planning.copy()
-                yield from lock.add_vessel_to_planned_lock_operation(self, operation_index, direction,vessel_planning=copy_vessel_planning,operation_planning=copy_operation_planning, pre_planning=True)
-
-            # the operation planning should be updated
-            yield from lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
+            yield from self._pre_register_to_lock(detector_node, lock)
 
     def register_to_lock_master(self, origin):
         """
@@ -639,74 +591,6 @@ class IsLockWaitingArea(HasResource, Identifiable, Log, HasOutput, HasMultiDiGra
         # TODO: checken of deze parents allemaal nodig zijn.
         # TODO: locatable mixin gebruiken in plaats van self.location
 
-# class IsLockLineUpArea(HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph):
-# TODO: Deze klasse is nog niet af. Die moet nog gerepareerd worden.
-#
-#     """Mixin class: lock complex has line-up area:
-#
-#     creates a line-up area with the following resources:
-#     - enter_line_up_area: resource used when entering the line-up area (assures one-by-one entry of the line-up area by vessels)
-#     - line_up_area: resource with unlimited capacity used to formally request access to the line-up area
-#     - converting_while_in_line_up_area: resource used when requesting for an empty conversion of the lock chamber
-#     - pass_line_up_area: resource used to pass the second encountered line-up area
-#
-#     Parent classes
-#     --------------
-#     HasResource :
-#         to be able to pass edges and nodes of the graph
-#     HasLength :
-#         to have a length that can be requested by a vessel
-#     Identifiable :
-#         to be identifiable (id)
-#     Log :
-#         to maintain a logbook
-#     HasOutput :
-#         to keep track of specific output
-#     HasMultiDiGraph :
-#         a networkx.MultiDiGraph is constructed where edges are constructed with a start_node, end_node, and an
-#         identifier (k) to be able to construct multiple edges between the same node pair (i.e., parallel lock chambers)
-#
-#     Attributes
-#     ----------
-#     none
-#
-#     """
-#
-#     def __init__(
-#         self,
-#         start_node, #a string which indicates the location of the start of the line-up area
-#         end_node, #a string which indicates the location of the start of the line-up area
-#         lineup_area_length, #a float which contains the length of the line-up area
-#         distance_from_start_edge,
-#         effective_lineup_area_length = None,
-#         passing_allowed = False,
-#         speed_reduction_factor = 0.75,
-#         k=0,
-#         *args,
-#         **kwargs):
-
-#         self.start_node = start_node
-#         self.end_node = end_node
-#         self.k = k
-#         self.lineup_area_length = self.effective_lineup_area_length = lineup_area_length
-#         self.distance_from_start_edge = distance_from_start_edge
-#         if effective_lineup_area_length:
-#             self.effective_lineup_area_length = effective_lineup_area_length
-#         self.passing_allowed = passing_allowed
-#         self.speed_reduction_factor = speed_reduction_factor
-#         super().__init__(length = self.effective_lineup_area_length, init = self.effective_lineup_area_length, *args, **kwargs)
-
-#         """Initialization"""
-#         # Geometry
-#         self.start_location = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, distance_from_start_edge)
-#         self.end_location = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, distance_from_start_edge+lineup_area_length)
-
-#         # Lay-Out
-#         self.enter_line_up_area = {start_node: simpy.PriorityResource(self.env, capacity=1),}  # used to regulate one by one entering of line-up area, so capacity must be 1
-#         self.line_up_area = {start_node: simpy.PriorityResource(self.env, capacity=100),}  # line-up area itself, infinite capacity, as this is regulated by the HasLength, so capacity = inf
-#         self.converting_while_in_line_up_area = {start_node: simpy.PriorityResource(self.env, capacity=1),}  # used to minimize the number of empty convertion requests by one by multiple waiting vessels, so capacity must be 1
-#         self.pass_line_up_area = {start_node: simpy.PriorityResource(self.env, capacity=1),}  # used to prevent vessel from entering the lock before all previously locked vessels have passed the line-up area one by one, so capacity must be 1
-
 
 class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph, ExtraMetadata):
     """Mixin class: lock complex has a lock chamber:
@@ -748,45 +632,50 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
 
     def __init__(
         self,
-        start_node,                                                         # a string which indicates the location of the first pair of lock doors
-        end_node,                                                           # a string which indicates the location of the second pair of lock doors
-        lock_length,                                                        # a float which contains the length of the lock chamber
-        lock_width,                                                         # a float which contains the width of the lock chamber
-        lock_depth,                                                         # a float which contains the depth of the lock chamber
-        k=0,                                                                # a int which is the identifier of the edge between two nodes in a multidigraph network
-        distance_from_start_node_to_lock_doors_A=0.0,                       # a float that is the distance between the start_node of the edge and the lock doors A [m]
-        distance_from_end_node_to_lock_doors_B=0.0,                         # a float that is the distance between the end_node of the edge and the lock doors B [m]
-        detector_nodes=[],                                                  # a list of str with the node names at which the vessels request registration to the lock complex master
-        doors_opening_time=300.0,                                           # a float which contains the time it takes to open the doors [s]
-        doors_closing_time=300.0,                                           # a float which contains the time it takes to close the doors [s]
-        disch_coeff=0.0,                                                    # a float which contains the discharge coefficient of filling system
-        opening_area=0.0,                                                   # a float which contains the cross-sectional area of filling system [m^2]
-        opening_depth=0.0,                                                  # a float which contains the depth at which filling system is located [m^2]
-        speed_reduction_factor_lock_chamber=0.3,                            # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
-        start_sailing_out_time_after_doors_have_been_opened=0.0,            # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
-        sailing_time_before_opening_lock_doors=600.,                        # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
-        sailing_time_before_closing_lock_doors=120.,                        # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
+        start_node,  # a string which indicates the location of the first pair of lock doors
+        end_node,  # a string which indicates the location of the second pair of lock doors
+        lock_length,  # a float which contains the length of the lock chamber
+        lock_width,  # a float which contains the width of the lock chamber
+        lock_depth,  # a float which contains the depth of the lock chamber
+        k=0,  # a int which is the identifier of the edge between two nodes in a multidigraph network
+        distance_from_start_node_to_lock_doors_A=0.0,  # a float that is the distance between the start_node of the edge and the lock doors A [m]
+        distance_from_end_node_to_lock_doors_B=0.0,  # a float that is the distance between the end_node of the edge and the lock doors B [m]
+        detector_nodes=[],  # a list of str with the node names at which the vessels request registration to the lock complex master
+        doors_opening_time=300.0,  # a float which contains the time it takes to open the doors [s]
+        doors_closing_time=300.0,  # a float which contains the time it takes to close the doors [s]
+        disch_coeff=0.0,  # a float which contains the discharge coefficient of filling system
+        opening_area=0.0,  # a float which contains the cross-sectional area of filling system [m^2]
+        opening_depth=0.0,  # a float which contains the depth at which filling system is located [m^2]
+        speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
+        start_sailing_out_time_after_doors_have_been_opened=0.0,  # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
+        sailing_time_before_opening_lock_doors=600.0,  # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
+        sailing_time_before_closing_lock_doors=120.0,  # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
         minimum_time_between_operations_for_intermediate_door_closure=0.0,  # a float that is the minimum required time between lock operations that the lock doors can be both closed (to reduce salt intrusion) [s]
-        sailing_distance_to_crossing_point=500.,                            # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
-        passage_time_door=300.0,                                            # a float [s] ?
-        sailing_in_time_gap_through_doors=180.0,                            # a float that is the time gap after which the next vessel can sail into the lock through the lock doors (after another vessel has sailed through to enter the lock) [s]
-        sailing_out_time_gap_through_doors=180.0,                           # a float that is the time gap after which the next vessel can sail out of the lock through the lock doors (after another vessel has sailed through to leave the lock)[s]
-        sailing_in_time_gap_after_berthing_previous_vessel=0.0,             # a float that is the time gap after which the next vessel can sail into the lock (after another vessel has berthed) [s]
-        sailing_out_time_gap_after_berthing_previous_vessel=0.0,            # a float that is the time gap after which the next vessel can sail out of the lock (after another vessel has deberthed) [s]
-        sailing_in_speed_sea=2 * knots,                                     # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
-        sailing_out_speed_sea=2 * knots,                                    # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
-        sailing_in_speed_canal=2 * knots,                                   # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
-        sailing_out_speed_canal=2 * knots,                                  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
-        minimum_manoeuvrability_speed=2 * knots,                            # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
-        levelling_time=600.0,                                               # a float that fixates the levelling time [s]
-        grav_acc=9.81,                                                      # a float that is the gravitational acceleration g [m/s^2]
-        time_step=10.0,                                                     # a float that is the integration time step to determine the levelling time [s]
-        gate_opening_time=60.0,                                             # a float that is the time it takes for the levelling gate to open [s]
-        node_open=None,                                                     # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
-        conditions=None,                                                    # maybe obsolete ???
-        priority_rules=None,                                                # maybe obsolete ???
-        used_as_one_way_traffic_regulation=False,                           # maybe obsolete ???
-        seed_nr=None,                                                       # a int for the seed to fix the determination of the node_open when node_open is None
+        sailing_distance_to_crossing_point=500.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
+        passage_time_door=300.0,  # a float [s] ?
+        sailing_in_time_gap_through_doors=180.0,  # a float that is the time gap after which the next vessel can sail into the lock through the lock doors (after another vessel has sailed through to enter the lock) [s]
+        sailing_out_time_gap_through_doors=180.0,  # a float that is the time gap after which the next vessel can sail out of the lock through the lock doors (after another vessel has sailed through to leave the lock)[s]
+        sailing_in_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail into the lock (after another vessel has berthed) [s]
+        sailing_out_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail out of the lock (after another vessel has deberthed) [s]
+        # TODO: @Floor: Het voelt een beetje gek om hier zowel zee als kanaal op te geven. Ik zou denken dat een sluis óf op zee óf in een kanaal is, en dat de andere sailing speed dus niet nodig is. Kunnen deze params worden samengevoegd, of wel echt nodig?
+        sailing_in_speed_sea=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
+        sailing_out_speed_sea=2
+        * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
+        sailing_in_speed_canal=2
+        * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
+        sailing_out_speed_canal=2
+        * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
+        minimum_manoeuvrability_speed=2
+        * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
+        levelling_time=600.0,  # a float that fixates the levelling time [s]
+        grav_acc=9.81,  # a float that is the gravitational acceleration g [m/s^2]
+        time_step=10.0,  # a float that is the integration time step to determine the levelling time [s]
+        gate_opening_time=60.0,  # a float that is the time it takes for the levelling gate to open [s]
+        node_open=None,  # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
+        conditions=None,  # maybe obsolete ???
+        priority_rules=None,  # maybe obsolete ???
+        used_as_one_way_traffic_regulation=False,  # maybe obsolete ???
+        seed_nr=None,  # a int for the seed to fix the determination of the node_open when node_open is None
         *args,
         **kwargs,
     ):
@@ -959,7 +848,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
                 self.multidigraph.edges[self.start_node, self.end_node, k]["Lock"].append(self)
                 self.multidigraph.edges[self.end_node, self.start_node, k]["Lock"].append(self)
 
-    def vessel_sailing_speed_in_lock(self, vessel, x_location_lock, P_used=None):
+    def vessel_sailing_speed_in_lock(self, vessel):
         """
         Calculates the average speed in the lock when entering
 
@@ -983,20 +872,9 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         if vessel.bound == 'inbound':
             speed = self.sailing_in_speed_sea
 
-        # TODO: voor nu is dit te complex. Als we complexe lock-module maken kunnen we dit optioneel toevoegen.
-        # h0 = self.lock_depth
-        # if P_used is None:
-        #     P_used = self.P_used_to_break_in_lock
-        # if P_used is not None:
-        #     deceleration_stats = vessel.distance_to_desired_speed(v_target=0.1, P_used=P_used, h0=h0,v0=speed)
-        #     length_decelerating = deceleration_stats['sailed_distance']
-        #     length_to_lock_doors_steady = x_location_lock - length_decelerating
-        #     sailing_time_steady = length_to_lock_doors_steady / speed
-        #     sailing_time_decelerating = deceleration_stats['sailing_time']
-        #     speed = x_location_lock / (sailing_time_steady + sailing_time_decelerating)
         return speed
 
-    def vessel_sailing_speed_out_lock(self, vessel, x_location_lock, P_used=None):
+    def vessel_sailing_speed_out_lock(self, vessel):
         """
         Calculates the average speed to in the lock when leaving
 
@@ -1020,20 +898,9 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         if vessel.bound == 'inbound':
             speed = self.sailing_out_speed_canal
 
-        # TODO: voor nu is dit te complex. Als we complexe lock-module maken kunnen we dit optioneel toevoegen.
-        # h0 = self.lock_depth
-        # if P_used is None:
-        #     P_used = self.P_used_to_accelerate_in_lock
-        # if P_used is not None:
-        #     acceleration_stats = vessel.distance_to_desired_speed(v_target=speed, P_used=P_used, h0=h0, v0=0.1)
-        #     length_accelerating = acceleration_stats['sailed_distance']
-        #     length_to_lock_doors_steady = np.max([x_location_lock - length_accelerating,0.])
-        #     sailing_time_steady = length_to_lock_doors_steady / speed
-        #     sailing_time_accelerating = acceleration_stats['sailing_time']
-        #     speed = x_location_lock / (sailing_time_steady + sailing_time_accelerating)
         return speed
 
-    def vessel_sailing_in_speed(self, vessel, direction, P_used=None, h0=17, from_crossing_point=False):
+    def vessel_sailing_in_speed(self, vessel, direction):
         """
         Calculates the average speed when sailing towards the lock chamber
 
@@ -1053,8 +920,6 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
 
         """
         # determine the edge on which the vessel is sailing and the distance to the lock doors
-        edge = None
-        distance_to_lock_doors = 0.
         if not direction:
             edge = (self.start_node,self.end_node,self.k)
             distance_to_lock_doors = self.distance_from_start_node_to_lock_doors_A
@@ -1063,40 +928,13 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
             distance_to_lock_doors = self.distance_from_end_node_to_lock_doors_B
 
         # determine the speed of the vessel over the edge
-        speed = speed_edge = self.env.vessel_traffic_service.provide_speed_over_edge(vessel, edge)
+        speed = self.env.vessel_traffic_service.provide_speed_over_edge(vessel, edge)
 
         # if there is an overruled speed on the edge, use this speed TODO: checken of dit nu goed gaat. De indentatie is veranderd.
         if "overruled_speed" in dir(vessel) and not vessel.overruled_speed.empty:
             if edge in vessel.overruled_speed.index:
                 speed = vessel.overruled_speed.loc[edge, "Speed"]
 
-        # TODO: voor nu is dit te complex. Als we complexe lock-module maken kunnen we dit optioneel toevoegen.
-        # if P_used is None:
-        #     P_used = self.P_used_to_break_before_lock
-
-        # if P_used is not None:
-        #     speed = self.sailing_in_speed_canal
-        #     if vessel.bound == 'inbound':
-        #         speed = self.sailing_in_speed_sea
-        #     deceleration_stats = vessel.distance_to_desired_speed(v_target=speed,P_used=P_used,h0=h0,v0=speed)
-        #     length_decelerating = deceleration_stats['sailed_distance']
-        #     dt = deceleration_stats['time'][-1] - deceleration_stats['time'][-2]
-        #     length_to_lock_doors_steady = distance_to_lock_doors - length_decelerating
-        #     sailing_time_steady = length_to_lock_doors_steady/speed
-        #     sailing_time_decelerating = deceleration_stats['sailing_time']
-        #     speed = distance_to_lock_doors/(sailing_time_steady+sailing_time_decelerating)
-
-        # if self.sailing_distance_to_crossing_point and from_crossing_point:
-        #     if deceleration_stats["sailed_distance"] >= self.sailing_distance_to_crossing_point:
-        #         decelerating_distances_rev = -1 * (
-        #             np.array(list(reversed(deceleration_stats["distance"]))) - deceleration_stats["distance"][-1]
-        #         )
-        #         sailing_time = dt * (np.absolute(decelerating_distances_rev - self.sailing_distance_to_crossing_point).argmin())
-        #     else:
-        #         sailing_time = deceleration_stats["sailing_time"]
-        #         remaining_distance = self.sailing_distance_to_crossing_point - deceleration_stats["sailed_distance"]
-        #         sailing_time += remaining_distance / speed_edge
-        #     speed = self.sailing_distance_to_crossing_point / sailing_time
         return speed
 
     def vessel_sailing_out_speed(self, vessel, direction, P_used=None, h0=17, until_crossing_point=False):
@@ -1137,31 +975,6 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         if 'overruled_speed' in dir(vessel) and not vessel.overruled_speed.empty:
             if edge in vessel.overruled_speed.index:
                 speed = vessel.overruled_speed.loc[edge, 'Speed']
-
-        # TODO: voor nu is dit te complex. Even checken of dat echt zo is. Als we complexe lock-module maken kunnen we dit optioneel toevoegen.
-
-        # if P_used is None:
-        #     P_used = self.P_used_to_accelerate_after_lock
-        # if P_used is not None:
-        #     speed = self.sailing_out_speed_sea
-        #     if vessel.bound == 'inbound':
-        #         speed = self.sailing_out_speed_canal
-        #     acceleration_stats = vessel.distance_to_desired_speed(v_target=speed, P_used=P_used, h0=h0, v0=speed)
-        #     dt = acceleration_stats['time'][-1]-acceleration_stats['time'][-2]
-        #     length_accelerating = acceleration_stats['sailed_distance']
-        #     length_exit_steady = distance_to_exit - length_accelerating
-        #     sailing_time_steady = length_exit_steady / speed
-        #     sailing_time_accelerating = acceleration_stats['sailing_time']
-        #     speed = distance_to_exit / (sailing_time_steady + sailing_time_accelerating)
-
-            # if self.sailing_distance_to_crossing_point and until_crossing_point:
-            #     if acceleration_stats['sailed_distance'] <= self.sailing_distance_to_crossing_point:
-            #         sailing_time = acceleration_stats['sailing_time']
-            #         remaining_distance_to_crossing_point = self.sailing_distance_to_crossing_point - acceleration_stats['sailed_distance']
-            #         sailing_time += remaining_distance_to_crossing_point/speed_edge
-            #     else:
-            #         sailing_time = dt*(np.absolute(np.array(acceleration_stats['distance'])-self.sailing_distance_to_crossing_point).argmin())
-            #     speed = self.sailing_distance_to_crossing_point/sailing_time
 
         return speed
 
@@ -1952,7 +1765,7 @@ class IsLockMaster(SimpyObject):
                     waiting_to_sail_out_time -= vessel.env.now - waiting_to_sail_out_time_start
 
             vessel.log_entry_v0("Sailing to second lock doors start", vessel.env.now, vessel.output.copy(),vessel.position_in_lock, )
-            vessel_speed = lock.vessel_sailing_speed_out_lock(vessel, distance_from_lock_position)
+            vessel_speed = lock.vessel_sailing_speed_out_lock(vessel)
             sailing_out_time = distance_from_lock_position/vessel_speed
             sailing_out_start = vessel.env.now
             while sailing_out_time:
@@ -2108,7 +1921,7 @@ class IsLockMaster(SimpyObject):
             elif direction:
                 vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock.end_node,lock.start_node,lock.distance_from_end_node_to_lock_doors_B + vessel.distance_position_from_first_lock_doors)
 
-            vessel_speed = lock.vessel_sailing_speed_in_lock(vessel, vessel.distance_position_from_first_lock_doors)
+            vessel_speed = lock.vessel_sailing_speed_in_lock(vessel)
             remaining_sailing_time = vessel.distance_position_from_first_lock_doors / vessel_speed
             while remaining_sailing_time > 0:
                 try:
@@ -2418,7 +2231,7 @@ class IsLockMaster(SimpyObject):
         sailing_distance_from_entry = self.sailing_distance_to_crossing_point
 
         # determine the time of entering the lock
-        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction, from_crossing_point=True)
+        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction)
         sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
 
         # determine the time of the vessel to its first encountered waiting area and lock_door TODO: in the 'add_vessel_to_planning'-function these functions has already been done, so doing these again can be computational intensive and should be prevented. Can we include tests that before this function is ran, these following functions have already been ran? How can we extract the earlier output?
@@ -2442,7 +2255,9 @@ class IsLockMaster(SimpyObject):
 
         return sailing_time_to_start_approach
 
-    def calculate_sailing_time_to_lock_door(self, vessel, direction, current_node=None,prognosis=False, pre_planning=False, overwrite=True):
+    def calculate_sailing_time_to_lock_door(
+        self, vessel, direction, current_node=None, prognosis=False, pre_planning=False, overwrite=True
+    ):
         """
         Calculates the sailing time of a vessel from its location to the first lock doors that it will encounter
 
@@ -2475,14 +2290,11 @@ class IsLockMaster(SimpyObject):
         vessel_planning = self.appropriate_vessel_planning
 
         # determine the end node of the lock complex from the perspective of the vessel and the distance from the start node of the lock complex to the lock doors
-        if not direction:
-            lock_end_node = self.lock_complex.end_node
-            distance_to_lock = self.distance_from_start_node_to_lock_doors_A
-        else:
-            lock_end_node = self.lock_complex.start_node
-            distance_to_lock = self.distance_from_end_node_to_lock_doors_B
+        lock_end_node = self._lock_end_node(direction)
+        distance_to_lock = self._distance_to_lock(direction)
 
         # determine the route of the vessel to the end node of the lock complex from the perspective of the vessel
+        # TODO: @Floor: kan dit ook worden worden (vessel.route_to_come tot de lock complex)?
         route_to_lock_chamber = nx.dijkstra_path(self.env.graph, current_node, lock_end_node)
 
         # unpack the function that calculates sailing time from distance on edge to distance on another edge
@@ -2508,7 +2320,33 @@ class IsLockMaster(SimpyObject):
 
         return sailing_to_lock_chamber_time
 
-    def calculate_sailing_time_in_lock(self, vessel, operation_index, direction, prognosis=False, pre_planning=False):
+    def _lock_end_node(self, direction):
+        """get the end node of the lock from the perspective of the vessel
+
+        Parameters
+        ----------
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        """
+        if not direction:
+            return self.lock_complex.end_node
+        else:
+            return self.lock_complex.start_node
+
+    def _distance_to_lock(self, direction):
+        """get the distance from the start node of the lock to the lock doors from the perspective of the vessel
+
+        Parameters
+        ----------
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+        """
+        if not direction:
+            return self.distance_from_start_node_to_lock_doors_A
+        else:
+            return self.distance_from_end_node_to_lock_doors_B
+
+    def calculate_sailing_time_in_lock(self, vessel, operation_index, prognosis=False, pre_planning=False):
         """
         Calculates the time duration that a vessel needs to enter the lock until laying still
 
@@ -2539,13 +2377,14 @@ class IsLockMaster(SimpyObject):
 
         # determine the sailing distance from the lock door to the position assigned to the vessel
         if not prognosis:
+            # TODO: @Floor: In principe werkt de eerste formule altijd toch? Stel er zitten 2 vessels in de lock, dan wil je dat de afstand verschilt per vessel toch?
             vessel_index = vessels.index(vessel)
             sailing_distance_from_lock_doors = (self.lock_length - np.sum([vessel.L for vessel in vessels[:vessel_index]])) - 0.5 * vessel.L
         else:
             sailing_distance_from_lock_doors = (self.lock_length - np.sum([vessel.L for vessel in vessels]) - 0.5 * vessel.L)
 
         # determine the sailing speed of the vessel in the lock
-        sailing_speed_into_lock = self.vessel_sailing_speed_in_lock(vessel, sailing_distance_from_lock_doors)
+        sailing_speed_into_lock = self.vessel_sailing_speed_in_lock(vessel)
 
         # calculate the time required to complete the process of sailing from the lock doors to laying still in the lock chamber on the assigned longitudinal coordinate (x)
         sailing_time_into_lock = pd.Timedelta(seconds=sailing_distance_from_lock_doors / sailing_speed_into_lock)
@@ -2664,7 +2503,7 @@ class IsLockMaster(SimpyObject):
         sailing_distance_from_entry = self.sailing_distance_to_crossing_point
 
         # determine the vessel speed when entering the lock
-        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction,from_crossing_point=True)
+        sailing_speed_during_entry = self.vessel_sailing_in_speed(vessel, direction)
 
         # determine the time of the process of entering
         sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
@@ -2820,7 +2659,7 @@ class IsLockMaster(SimpyObject):
         vessel_entry_start_time = self.calculate_vessel_entry_start_time(vessel, direction)
 
         # determine the time duration of the vessel in the lock
-        sailing_time_in_lock = self.calculate_sailing_time_in_lock(vessel, operation_index, direction, prognosis, pre_planning=pre_planning)
+        sailing_time_in_lock = self.calculate_sailing_time_in_lock(vessel, operation_index, prognosis, pre_planning=pre_planning)
 
         # calculate the moment in time that the vessel stops entering the lock
         vessel_entry_stop_time = vessel_entry_start_time + sailing_time_in_lock
@@ -3007,7 +2846,7 @@ class IsLockMaster(SimpyObject):
             distance_to_lock = np.sum([vessel.L for vessel in vessels[:vessel_index]]) + 0.5 * vessel.L
         else:
             distance_to_lock = np.sum([vessel.L for vessel in vessels]) + 0.5 * vessel.L
-        vessel_speed = self.vessel_sailing_speed_out_lock(vessel, distance_to_lock)
+        vessel_speed = self.vessel_sailing_speed_out_lock(vessel)
         sailing_out_time = pd.Timedelta(seconds=distance_to_lock / vessel_speed)
         return sailing_out_time
 
@@ -3097,7 +2936,7 @@ class IsLockMaster(SimpyObject):
         # if not after_lock_entry:
         #     minimum_delay_to_close_doors += pd.Timedelta(seconds=0.5*vessel.L/self.vessel_sailing_out_speed(vessel,direction))
         # else:
-        #     minimum_delay_to_close_doors += pd.Timedelta(seconds=0.5*vessel.L/self.vessel_sailing_speed_in_lock(vessel, x_location_lock = x_location_lock, distance = 0.5*vessel.L))
+        #     minimum_delay_to_close_doors += pd.Timedelta(seconds=0.5*vessel.L/self.vessel_sailing_speed_in_lock(vessel)
         # TODO: take into account the vessels' bows and sterns to determine the time before and after which the door should be respectively opened and closed
         return minimum_delay_to_close_doors
 
@@ -3189,13 +3028,13 @@ class IsLockMaster(SimpyObject):
         last_vessel : type
             the last assigned vessel of the lock operation (the one that will enter and leave the lock chamber last)
         """
-
         # identify the vessels assigned the lock operation
         vessels = subtract_vessels_from_lock_operation(
             operation_planning=self.appropriate_operation_planning,
             operation_index=operation_index,
         )
 
+        # TODO @Floor: moeten we hier vessel opgeven als input? of kan die ook worden bepaald uit de berekende vessels als prognosis=True?
         # determine the last vessel
         last_vessel = vessel
         if not prognosis:
