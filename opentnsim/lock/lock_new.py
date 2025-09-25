@@ -27,7 +27,7 @@ from opentnsim.output import HasOutput
 
 # Constants
 knots_to_ms = knots = 0.514444444
-
+gravitational_acceleration = 9.81
 
 def subtract_vessels_from_lock_operation(operation_planning, operation_index):
     """
@@ -668,7 +668,6 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         minimum_manoeuvrability_speed=2
         * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
         levelling_time=600.0,  # a float that fixates the levelling time [s]
-        grav_acc=9.81,  # a float that is the gravitational acceleration g [m/s^2]
         time_step=10.0,  # a float that is the integration time step to determine the levelling time [s]
         gate_opening_time=60.0,  # a float that is the time it takes for the levelling gate to open [s]
         node_open=None,  # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
@@ -687,9 +686,11 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         # set input parameters as properties
         self.lock_length = lock_length
         self.lock_width = lock_width
+        # TODO: @Floor lock_depth wordt niet gebruikt... Willen we die houden?
         self.lock_depth = lock_depth
+        # TODO @Floor, is deze coefficient afhankelijk van de lock, of is dit een standaard coefficient die we ergens anders kunnen opslaan?
         self.disch_coeff = disch_coeff
-        self.grav_acc = grav_acc
+
         self.opening_area = opening_area
         self.opening_depth = opening_depth
         self.levelling_time = levelling_time
@@ -1066,7 +1067,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         # if no function has been included: compute the levelling time based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
         A_ch = self.lock_length * self.lock_width # surface area of the lock chamber [m^2] (constant over time)
         m = self.disch_coeff # discharge coefficient [-] (constant over time)
-        g = self.grav_acc # gravitational acceleration [m/(s^2)] (constant over time)
+        g = gravitational_acceleration # gravitational acceleration [m/(s^2)] (constant over time)
         T1 = self.gate_opening_time # time to open the gate [s] (constant over time)
         A_s = np.linspace(0, self.opening_area, int(T1 / float(dt))) # sluice opening area over time when opening [m^2] (time-dependent)
         A_s = np.append(A_s, [self.opening_area] * (len(z) - len(A_s))) # sluice opening over full levelling process [m^2] (time-dependent)
