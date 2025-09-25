@@ -10,7 +10,7 @@ import functools
 from shapely.ops import transform
 import pyproj
 import matplotlib.pyplot as plt
-
+import plotly.graph_objects as go
 
 # spatial libraries
 from collections import namedtuple
@@ -4556,3 +4556,129 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
             xlimmax = 2 * sailing_distance_to_crossing_point
         ax.set_xlim(xlimmin, xlimmax)
         ax.set_ylim(ylimmin, ylimmax)
+
+    def create_time_distance_plot_plotly(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None):
+        # Define reference systems
+        wgs84eqd = pyproj.CRS("4087")
+        wgs84rad = pyproj.CRS("4326")
+        wgs84rad_to_wgs84eqd = pyproj.transformer.Transformer.from_crs(wgs84rad, wgs84eqd, always_xy=True).transform
+
+        # Create lock edge geometry
+        lock_edge_geometry = transform(wgs84rad_to_wgs84eqd,
+                                       self.multidigraph.edges[self.start_node, self.end_node, 0]["geometry"])
+
+        # Collect vessel traces
+        traces = []
+        all_times = []
+        all_distances = []
+
+        for vessel in vessels:
+            times = []
+            distances = []
+            vessel_df = pd.DataFrame(vessel.logbook)
+            vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: transform(wgs84rad_to_wgs84eqd, x))
+            for index, message_info in vessel_df.iterrows():
+                time = message_info.Timestamp
+                distance = lock_edge_geometry.line_locate_point(message_info.Geometry) - lock_edge_geometry.length / 2
+                route = vessel.route
+                if self.start_node not in route or self.end_node not in route:
+                    continue
+
+                accepted_messages = [
+                    f"Sailing from node {self.start_node} to node {self.end_node} start",
+                    f"Sailing from node {self.end_node} to node {self.start_node} start",
+                    "Sailing to first lock doors start",
+                    "Sailing to first lock doors stop",
+                    "Sailing to position in lock start",
+                    "Sailing to position in lock stop",
+                    "Levelling start",
+                    "Levelling stop",
+                    "Sailing to second lock doors start",
+                    "Sailing to second lock doors stop",
+                    "Sailing to lock complex exit start",
+                    "Sailing to lock complex exit stop",
+                    f"Sailing from node {self.start_node} to node {self.end_node} stop",
+                    f"Sailing from node {self.end_node} to node {self.start_node} stop",
+                ]
+
+                if message_info.Message in accepted_messages:
+                    times.append(time)
+                    distances.append(distance)
+
+            all_times.append(times)
+            all_distances.append(distances)
+
+            # Add vessel trace with vessel.name in legend
+            traces.append(go.Scatter(x=distances, y=times, mode='lines', name=vessel.name))
+
+        # Determine y-axis limits
+        all_y_values = [t for sublist in all_times for t in sublist]
+        if all_y_values:
+            if ylimmin is None:
+                ylimmin = min(all_y_values)
+            if ylimmax is None:
+                ylimmax = max(all_y_values)
+
+        # Determine x-axis limits
+        sailing_distance_to_crossing_point = self.sailing_distance_to_crossing_point + self.lock_length / 2
+        if xlimmin is None:
+            xlimmin = -2 * sailing_distance_to_crossing_point
+        if xlimmax is None:
+            xlimmax = 2 * sailing_distance_to_crossing_point
+
+        # Create figure
+        fig = go.Figure(data=traces)
+
+        # Lock geometry shading
+        location_lock_doors_A = transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_A)
+        location_lock_doors_B = transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_B)
+        x_lock_doorsA = lock_edge_geometry.line_locate_point(location_lock_doors_A) - lock_edge_geometry.length / 2
+        x_lock_doorsB = lock_edge_geometry.line_locate_point(location_lock_doors_B) - lock_edge_geometry.length / 2
+
+        fig.add_shape(type="rect",
+                      x0=x_lock_doorsA, x1=x_lock_doorsB,
+                      y0=ylimmin, y1=ylimmax,
+                      fillcolor="lightgrey", opacity=0.5,
+                      layer="below", line_width=0,
+                      name="Lock Geometry")
+
+        # Lock phases shading
+        lock_df = pd.DataFrame(self.logbook)
+        for index, message_info in lock_df.iterrows():
+            if index == 0:
+                continue
+            time_start = lock_df.loc[index - 1, "Timestamp"]
+            time_stop = message_info.Timestamp
+            if message_info.Message == "Lock doors opening stop":
+                color = "darkgrey"
+                name = "Lock doors opening"
+            elif message_info.Message == "Lock doors closing stop":
+                color = "darkgrey"
+                name = "Lock doors closing"
+            elif message_info.Message == "Lock chamber converting stop":
+                color = "grey"
+                name = "Lock chamber converting"
+            else:
+                continue
+
+            fig.add_shape(type="rect",
+                          x0=x_lock_doorsA, x1=x_lock_doorsB,
+                          y0=time_start, y1=time_stop,
+                          fillcolor=color, opacity=0.5,
+                          layer="below", line_width=0,
+                          name=name)
+
+        # Approach points
+        fig.add_vline(x=-sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
+        fig.add_vline(x=sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
+
+        # Update layout
+        fig.update_layout(title="Time-Distance Plot of Vessel Movements",
+                          xaxis_title="Distance from Lock Complex [m]",
+                          yaxis_title="Timestamp",
+                          xaxis_range=[xlimmin, xlimmax],
+                          yaxis_range=[ylimmin, ylimmax],
+                          showlegend=True)
+
+        # Save the plot
+        return fig
