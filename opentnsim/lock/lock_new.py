@@ -29,7 +29,7 @@ from opentnsim.output import HasOutput
 knots_to_ms = knots = 0.514444444
 
 
-def subtract_vessels_from_lock_operation(self, operation_planning, operation_index):
+def subtract_vessels_from_lock_operation(operation_planning, operation_index):
     """
     Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
 
