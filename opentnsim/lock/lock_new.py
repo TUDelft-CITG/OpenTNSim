@@ -301,6 +301,8 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
         # TODO: misschien losse functie maken hier
         # find the lock the vessel has been assigned to TODO: this should be faster, so that if the vessel has not been assigned to a lock, it does not check the entire route
+        # TODO: @Floor. Ziet eruit alsof dit de laatste lock is die op de route ligt. Ik den kdat we juist de eerste willen hebben toch?
+        # TODO: @Floor: in register_to_lock_master zoeken we gewoon de lock die aan de origin-node grenst. Kunnen we dat hier niet ook doen?
         lock = None
         for node_start, node_stop in zip(route_to_come[:-1], route_to_come[1:]):
             k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
@@ -309,7 +311,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 continue
             lock = self.multidigraph.edges[lock_edge]["Lock"][0]
 
-        # if no lock is found, then
+        # if no lock is found, stop function
         if lock is None:
             return
 
@@ -4453,7 +4455,6 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                                                                     self.node_A,
                                                                                                     distance_from_start_node_to_lineup_A)
 
-
             route_to_lineup_area_A = nx.dijkstra_path(self.env.graph, self.start_node, edge_lineup_area_A[1]) # TODO: can a lock complex be located along multiple edges?
             distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(route_to_lineup_area_A)["Distance"].sum()
             self.distance_lineup_area_A_from_edge_lineup_area_A_start = distance_start_node_to_node_waiting_area_A - (self.distance_lock_doors_A_to_lineup_area_A - self.distance_from_start_node_to_lock_doors_A)
@@ -4519,6 +4520,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
 
     def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None):
         """Function to verify if nodes A and B are part of the graph, and have an edge between them.
+        #TODO: @Floor, dit lijkt me niet de juiste beschrijving van deze functie
 
         Parameters
         ----------
@@ -4538,6 +4540,8 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         nothing, but creates a plot
 
         """
+
+        # TODO @Floor: Wil je een titel en x,y labels toevoegen aan deze plot?
 
         # define reference systems
         wgs84eqd = pyproj.CRS("4087")
