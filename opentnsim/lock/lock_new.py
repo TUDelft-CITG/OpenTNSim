@@ -29,6 +29,31 @@ from opentnsim.output import HasOutput
 knots_to_ms = knots = 0.514444444
 
 
+def subtract_vessels_from_lock_operation(self, operation_planning, operation_index):
+    """
+    Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
+
+    Parameters
+    ----------
+    operation_index : int
+        index of the lock operation
+
+    Returns
+    -------
+    vessels : list of vessel type objects
+        the vessels that have been assigned to the specified lock operation (a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput)
+
+    """
+    # set default list of vessels (empty)
+    vessels = []
+
+    # determines the vessels in the lock operation
+    selected_operation = operation_planning[operation_planning.index == operation_index]
+    if not selected_operation.empty:
+        vessels = operation_planning.loc[operation_index, "vessels"].copy()
+    return vessels
+
+
 def _get_lock_on_node(multidigraph, detector_node):
     """Get the lock complex object that is associated with a detector node
 
@@ -330,11 +355,8 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             return
 
         # unpack the vessel and lock operation planning of the lock
-        operation_planning = lock.operation_planning
-        vessel_planning = lock.vessel_planning
-        if lock.predictive:
-            operation_planning = lock.operation_pre_planning
-            vessel_planning = lock.vessel_pre_planning
+        operation_planning = lock.appropriate_operation_planning
+        vessel_planning = lock.appropriate_vessel_planning
 
         # determine the vessel index and operation index
         vessel_planning_index = vessel_planning[vessel_planning.id == self.id].iloc[-1].name
@@ -449,11 +471,8 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             direction = 1
 
         # unpacks the lock complex master's vessel and lock planning
-        vessel_planning = lock.lock_complex.vessel_planning
-        operation_planning = lock.lock_complex.operation_planning
-        if lock.predictive:
-            vessel_planning = lock.lock_complex.vessel_pre_planning
-            operation_planning = lock.lock_complex.operation_pre_planning
+        vessel_planning = lock.appropriate_vessel_planning
+        operation_planning = lock.appropriate_operation_planning
 
         # determines the vessel index and lock operation index to which the vessel is assigned -> determine how many vessels are assigned to this operation and at which time the vessel starts entering the lock
         vessel_planning_index = vessel_planning[vessel_planning.id == self.id].iloc[-1].name
@@ -1366,7 +1385,6 @@ class IsLockMaster(SimpyObject):
 
         """
 
-
     def __init__(self,
                  lock_complex,
                  min_vessels_in_operation = 0,
@@ -1441,15 +1459,11 @@ class IsLockMaster(SimpyObject):
 
         """
 
-        # TODO Floor: checken of vessel en vessel_pre_planning verschillend kunnen zijn. Lijkt voor nu op hetzelfde neer te komen. #Antwoord Floor: ja, deze zijn hetzelfde, en kunnen er 1 van maken. De master gebruikt pre_plannings als alle schepen worden ingepland, dan blijft de normale planning leeg, we moeten dan goed kijken of er geen fouten optreden
         # TODO: van vessel_planning en operation_planning properties  maken? #Antwoord Floor: ja, lijkt me een goed plan
 
         # unpacks the lock complex master's vessel and lock operation planning
-        vessel_planning = self.vessel_planning
-        operation_planning = self.operation_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
-            operation_planning = self.operation_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
+        operation_planning = self.appropriate_operation_planning
 
         # determine the orientation of the vessel to unpack the lock complex infrastructure at the correct side of the lock chamber
         # TODO hier een property van maken?
@@ -1604,7 +1618,6 @@ class IsLockMaster(SimpyObject):
     #     waiting_time_while_sailing = waiting_time - remaining_static_waiting_time
     #     return remaining_static_waiting_time,waiting_time_while_sailing
 
-
     def calculate_sailing_information_on_route_to_lock_complex(self, vessel, lock_end_node):
         """
         Calculates the sailing information (i.e., duration, distance, and speed) of the vessel per edge of its route between its current location and the lock doors
@@ -1700,8 +1713,8 @@ class IsLockMaster(SimpyObject):
         overruled_speed = np.max([self.minimum_manoeuvrability_speed, sailing_information.loc[:, 'Distance'].sum()/(sailing_information.loc[:, 'Time'].sum() + waiting_time)])
         reversed_sailing_information = sailing_information.iloc[::-1]
 
-        #TODO: Dit lijkt me een goed algoritme om los te koppelen.
-        #TODO Floor: Wil je de naam van het algoritme in de documentatie zetten als die bestaat? #Comment Floor: we moeten hier samen even naar kijken
+        # TODO: Dit lijkt me een goed algoritme om los te koppelen.
+        # TODO Floor: Wil je de naam van het algoritme in de documentatie zetten als die bestaat? #Comment Floor: we moeten hier samen even naar kijken
 
         # loops over the sailing information of the edges to adhere to the overruled speed (averaged over the route), the stops if too much iterations are required or when the difference between the new average speed and the overruled speed are sufficiently close to each other or when there are no speeds to be reduced
         iteration = 0
@@ -1750,7 +1763,7 @@ class IsLockMaster(SimpyObject):
 
 
         """
-        #TODO: Moeten de origin en destination hier naast elkaar liggen? Zoja, toevoegen in documentatie.
+        # TODO: Moeten de origin en destination hier naast elkaar liggen? Zoja, toevoegen in documentatie.
 
         # determine if there is a lock on the edge
         if 'Lock' not in vessel.multidigraph.edges[origin, destination, k].keys():
@@ -1863,11 +1876,8 @@ class IsLockMaster(SimpyObject):
         """
         if 'Lock' in vessel.multidigraph.edges[origin, destination, k].keys():
             lock = vessel.multidigraph.edges[origin, destination, k]['Lock'][0]
-            vessel_planning = lock.vessel_planning
-            operation_planning = lock.operation_planning
-            if lock.predictive:
-                vessel_planning = lock.vessel_pre_planning
-                operation_planning = lock.operation_pre_planning
+            vessel_planning = lock.appropriate_vessel_planning
+            operation_planning = lock.appropriate_operation_planning
 
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
             direction = vessel_planning.loc[vessel_planning_index,'bound']
@@ -1995,11 +2005,8 @@ class IsLockMaster(SimpyObject):
         """
         if 'Lock' in vessel.multidigraph.edges[origin,destination,k].keys():
             lock = vessel.multidigraph.edges[origin,destination,k]['Lock'][0]
-            vessel_planning = lock.vessel_planning
-            operation_planning = lock.operation_planning
-            if lock.predictive:
-                vessel_planning = lock.vessel_pre_planning
-                operation_planning = lock.operation_pre_planning
+            vessel_planning = lock.appropriate_vessel_planning
+            operation_planning = lock.appropriate_operation_planning
 
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
             direction = vessel_planning.loc[vessel_planning_index,'bound']
@@ -2105,10 +2112,7 @@ class IsLockMaster(SimpyObject):
             time_of_registration = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
 
         # unpacks the vessel planning
-        vessel_planning = self.vessel_planning
-        # if there is a long-term planning, use this vessel planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # add vessel to the vessel planning dataframe with its information
         vessel_planning_index = len(vessel_planning)
@@ -2143,9 +2147,7 @@ class IsLockMaster(SimpyObject):
         nothing
         """
         # unpack the lock master's lock operation planning
-        operation_planning = self.operation_planning
-        if self.predictive:
-            operation_planning = self.operation_pre_planning
+        operation_planning = self.appropriate_operation_planning
 
         # determine the start time of this empty lock operation
         preceding_operations = operation_planning[operation_planning.index < operation_index]
@@ -2242,9 +2244,7 @@ class IsLockMaster(SimpyObject):
         route_to_waiting_area = self.determine_route_to_waiting_area_from_node(node=current_node, vessel=vessel)
 
         # unpack vessel planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # unpack first encountered waiting area
         if not direction:
@@ -2318,9 +2318,7 @@ class IsLockMaster(SimpyObject):
         route_to_lineup_area = nx.dijkstra_path(self.env.graph, current_node, lineup_area_approach.end_node)
 
         # unpack vessel planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # unpack the function that calculates sailing time from distance on edge to distance on another edge
         calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
@@ -2378,9 +2376,7 @@ class IsLockMaster(SimpyObject):
             current_node = vessel.current_node
 
         # unpack vessel planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # unpack sailing distance from crossing point to lock doors
         sailing_distance_from_entry = self.sailing_distance_to_crossing_point
@@ -2440,9 +2436,7 @@ class IsLockMaster(SimpyObject):
             current_node = vessel.current_node
 
         # unpack vessel planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # determine the end node of the lock complex from the perspective of the vessel and the distance from the start node of the lock complex to the lock doors
         if not direction:
@@ -2502,7 +2496,10 @@ class IsLockMaster(SimpyObject):
 
         """
         # determine the vessels assigned to the lock operation (that are already in the lock)
-        vessels = self.subtract_vessels_from_lock_operation(operation_index)
+        vessels = subtract_vessels_from_lock_operation(
+            operation_planning=self.appropriate_operation_planning,
+            operation_index=operation_index,
+        )
 
         # determine the sailing distance from the lock door to the position assigned to the vessel
         if not prognosis:
@@ -2552,12 +2549,13 @@ class IsLockMaster(SimpyObject):
         sailing_in_time_delay = pd.Timedelta(seconds=0)
 
         # unpack the vessel planning of the lock complex master
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # unpack the vessels from the lock operations
-        vessels = self.subtract_vessels_from_lock_operation(operation_index)
+        vessels = subtract_vessels_from_lock_operation(
+            operation_planning=self.appropriate_operation_planning,
+            operation_index=operation_index,
+        )
 
         # determine the first vessel of the lock operation
         first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index, pre_planning=pre_planning)
@@ -2663,9 +2661,7 @@ class IsLockMaster(SimpyObject):
 
         """
         # unpack the lock complex master's vessel planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
 
         # determines the current time
@@ -2709,9 +2705,7 @@ class IsLockMaster(SimpyObject):
 
         """
         # unpacks the lock complex master's operation planning
-        operation_planning = self.operation_planning
-        if pre_planning:
-            operation_planning = self.operation_pre_planning
+        operation_planning = self.appropriate_operation_planning
 
         # determines the lock operation start time based on the first vessel that was assigned to this lock operation
         first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
@@ -2865,11 +2859,8 @@ class IsLockMaster(SimpyObject):
         """
 
         # unpack the lock complex master's vessel and operation plannings
-        operation_planning = self.operation_planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            operation_planning = self.operation_pre_planning
-            vessel_planning = self.vessel_pre_planning
+        operation_planning = self.appropriate_operation_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # determine the longitudinal location (x) of the last vessel that will/has enter(ed)
         x_location_lock = 0.
@@ -2917,7 +2908,10 @@ class IsLockMaster(SimpyObject):
         :param pre_planning:
         :return:
         """
-        vessels = self.subtract_vessels_from_lock_operation(operation_index)
+        vessels = subtract_vessels_from_lock_operation(
+            operation_planning=self.appropriate_operation_planning,
+            operation_index=operation_index,
+        )
         if not prognosis:
             vessel_index = vessels.index(vessel)
             number_of_previous_vessels = vessel_index
@@ -2967,7 +2961,10 @@ class IsLockMaster(SimpyObject):
         :param pre_planning:
         :return:
         """
-        vessels = self.subtract_vessels_from_lock_operation(operation_index)
+        vessels = subtract_vessels_from_lock_operation(
+            operation_planning=self.appropriate_operation_planning,
+            operation_index=operation_index,
+        )
         # Time to sail out
         if not prognosis:
             vessel_index = vessels.index(vessel)
@@ -3125,7 +3122,10 @@ class IsLockMaster(SimpyObject):
         first_vessel = vessel
 
         # unpack the vessels of the specified lock operation
-        vessels = self.subtract_vessels_from_lock_operation(operation_index)
+        vessels = subtract_vessels_from_lock_operation(
+            operation_planning=self.appropriate_operation_planning,
+            operation_index=operation_index,
+        )
 
         # determine the first vessel if vessels are already assigned to the lock operation
         if len(vessels):
@@ -3155,7 +3155,10 @@ class IsLockMaster(SimpyObject):
         """
 
         # identify the vessels assigned the lock operation
-        vessels = self.subtract_vessels_from_lock_operation(operation_index)
+        vessels = subtract_vessels_from_lock_operation(
+            operation_planning=self.appropriate_operation_planning,
+            operation_index=operation_index,
+        )
 
         # determine the last vessel
         last_vessel = vessel
@@ -3171,9 +3174,7 @@ class IsLockMaster(SimpyObject):
         :param vessel:
         :return:
         """
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            vessel_planning = self.vessel_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         arrival_time_at_lock = vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']
         time_index = np.absolute(hydrodynamic_times - np.datetime64(arrival_time_at_lock) - np.timedelta64(int(self.doors_opening_time),'s')).argmin()
@@ -3198,11 +3199,8 @@ class IsLockMaster(SimpyObject):
             return doors_can_be_closed
         doors_can_be_closed = True
 
-        operation_planning = self.operation_planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            operation_planning = self.operation_pre_planning
-            vessel_planning = self.vessel_pre_planning
+        operation_planning = self.appropriate_operation_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         if not between_arrivals:
             last_time_doors_closed = operation_planning.loc[operation_index,'time_potential_lock_door_closure_start']+pd.Timedelta(seconds=self.doors_closing_time)
@@ -3254,11 +3252,8 @@ class IsLockMaster(SimpyObject):
         :param between_arrivals:
         :return:
         """
-        operation_planning = self.operation_planning
-        vessel_planning = self.vessel_planning
-        if self.predictive:
-            operation_planning = self.operation_pre_planning
-            vessel_planning = self.vessel_pre_planning
+        operation_planning = self.appropriate_operation_planning
+        vessel_planning = self.appropriate_vessel_planning
         vessels = operation_planning.loc[operation_index, 'vessels']
         vessel_index = vessels.index(vessel)
 
@@ -3368,7 +3363,7 @@ class IsLockMaster(SimpyObject):
         station_index_start_node = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0]
         station_index_end_node = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0]
 
-        #determine the start and stop time indexes of the levelling process
+        # determine the start and stop time indexes of the levelling process
         time_index_start = np.absolute(hydrodynamic_times - np.datetime64(levelling_start)).argmin()
         time_index_stop = np.absolute(hydrodynamic_times - np.datetime64(levelling_stop)).argmin()
 
@@ -3388,34 +3383,32 @@ class IsLockMaster(SimpyObject):
 
         return wlev_A, wlev_B
 
-    def subtract_vessels_from_lock_operation(self, operation_index):
+    @property
+    def appropriate_operation_planning(self):
         """
-        Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
-
-        Parameters
-        ----------
-        operation_index : int
-            index of the lock operation
-
-        Returns
-        -------
-        vessels : list of vessel type objects
-            the vessels that have been assigned to the specified lock operation (a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput)
-
+        Returns the appropriate lock operation planning (predictive or not)
         """
-        # set default list of vessels (empty)
-        vessels = []
+        # TODO: Deze property hoort eigenlijk bij lock-complex, maar wordt gebruikt in lock-master
+        # TODO Floor: checken of vessel en vessel_pre_planning verschillend kunnen zijn. Lijkt voor nu op hetzelfde neer te komen. #Antwoord Floor: ja, deze zijn hetzelfde, en kunnen er 1 van maken. De master gebruikt pre_plannings als alle schepen worden ingepland, dan blijft de normale planning leeg, we moeten dan goed kijken of er geen fouten optreden
 
-        # unpacks the operation planning
-        operation_planning = self.operation_planning
         if self.predictive:
-            operation_planning = self.operation_pre_planning
+            return self.lock_complex.operation_pre_planning
+        else:
+            return self.lock_complex.operation_planning
 
-        # determines the vessels in the lock operation
-        selected_operation = operation_planning[operation_planning.index == operation_index]
-        if not selected_operation.empty:
-            vessels = operation_planning.loc[operation_index, 'vessels'].copy()
-        return vessels
+    @property
+    def appropriate_vessel_planning(self):
+        """
+        Returns the appropriate lock operation planning (predictive or not)
+        """
+        # TODO: Deze property hoort eigenlijk bij lock-complex, maar wordt gebruikt in lock-master
+        # TODO Floor: checken of vessel en vessel_pre_planning verschillend kunnen zijn. Lijkt voor nu op hetzelfde neer te komen. #Antwoord Floor: ja, deze zijn hetzelfde, en kunnen er 1 van maken. De master gebruikt pre_plannings als alle schepen worden ingepland, dan blijft de normale planning leeg, we moeten dan goed kijken of er geen fouten optreden
+        # TODO @Floor: Bij de meeste functies werdt gebruikt if self.predictive: operation_planning = self.lock_complex.operation_pre_planning. op één plek gebruikte je 'pre_planning' en niet 'self.predictive'. Kan dit gewoon een op een worden vervangen, zodat we altijd deze functie gebruiken?
+
+        if self.predictive:
+            return self.lock_complex.vessel_pre_planning
+        else:
+            return self.lock_complex.vessel_planning
 
     def update_operation_planning(self,vessel,direction,operation_index,add_operation,pre_planning=False):
         """
@@ -3440,11 +3433,8 @@ class IsLockMaster(SimpyObject):
 
         """
         # unpack the lock master's vessel and lock operation plannings
-        operation_planning = self.lock_complex.operation_planning
-        vessel_planning = self.lock_complex.vessel_planning
-        if self.predictive:
-            operation_planning = self.lock_complex.operation_pre_planning
-            vessel_planning = self.lock_complex.vessel_pre_planning
+        operation_planning = self.appropriate_operation_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # add vessel to a new lock operation or to a planned one
         if operation_planning.empty or add_operation:
@@ -3478,11 +3468,8 @@ class IsLockMaster(SimpyObject):
 
         """
         # unpack the lock master's vessel and lock operation plannings
-        vessel_planning = self.lock_complex.vessel_planning
-        operation_planning = self.lock_complex.operation_planning
-        if self.predictive:
-            vessel_planning = self.lock_complex.vessel_pre_planning
-            operation_planning = self.lock_complex.operation_pre_planning
+        vessel_planning = self.appropriate_vessel_planning
+        operation_planning = self.appropriate_operation_planning
 
         node_of_approach = self.end_node
         to_node = self.start_node
@@ -3618,7 +3605,6 @@ class IsLockMaster(SimpyObject):
 
         yield from []
 
-
     def add_vessel_to_planned_lock_operation(self, vessel, operation_index, direction, prognosis=True, vessel_planning=None, operation_planning=None, pre_planning=False):
         """
         Add vessel to a planned lock operation
@@ -3652,14 +3638,10 @@ class IsLockMaster(SimpyObject):
 
         # unpack the lock complex' vessel and operations planning
         if vessel_planning is None:
-            vessel_planning = self.vessel_planning
-            if self.predictive:
-                vessel_planning = self.vessel_pre_planning
+            vessel_planning = self.appropriate_vessel_planning
 
         if operation_planning is None:
-            operation_planning = self.operation_planning
-            if self.predictive:
-                operation_planning = self.operation_pre_planning
+            operation_planning = self.appropriate_operation_planning
 
         # determine the vessel index in the lock complex master's vessel planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -3985,13 +3967,8 @@ class IsLockMaster(SimpyObject):
 
         """
         # unpack the lock complex' vessel and operations planning
-        # @TODO Floor: Checken of de vessel_planning en de vessel_pre_planning van elkaar verschillen.
-        operation_planning = self.lock_complex.operation_planning
-        vessel_planning = self.lock_complex.vessel_planning
-        # TODO Floor: Bij de meeste loops staat er: if self.predictive: operation_planning = self.lock_complex.operation_pre_planning. Waarom gebruiken we hier 'pre_planning' en niet 'self.predictive'?
-        if pre_planning:
-            operation_planning = self.lock_complex.operation_pre_planning
-            vessel_planning = self.lock_complex.vessel_pre_planning
+        operation_planning = self.appropriate_operation_planning
+        vessel_planning = self.appropriate_vessel_planning
 
         # determine the index of the vessel in the vessel planning to determine when the vessel is estimated to pass the approach point and enters the lock#TODO: write a test that the vessel has indeed earlier be included in the vessel planning (the 'add_vessel_to_vessel_planning'-function should always be ran before this function)
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
