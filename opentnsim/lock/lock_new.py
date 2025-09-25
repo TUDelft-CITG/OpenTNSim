@@ -29,7 +29,7 @@ from opentnsim.output import HasOutput
 knots_to_ms = knots = 0.514444444
 
 
-def subtract_vessels_from_lock_operation(self, operation_planning, operation_index):
+def subtract_vessels_from_lock_operation(operation_planning, operation_index):
     """
     Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
 
@@ -278,8 +278,43 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         locks_with_long_term_planning = self._find_upcoming_locks(only_predictive=True)
 
         # Part III: Pre-registration of the vessel at the lock masters of each lock complex by loop over the locks with long term planning to be encountered along the vessel's route
-        for detector_node, lock in locks_with_long_term_planning.items():
-            yield from self._pre_register_to_lock(lock, detector_node)
+        for detector_node,lock in locks_with_long_term_planning.items():
+            # unpack the lock specific dataframes of planned vessels and planned lock operations
+            vessel_planning = lock.vessel_pre_planning
+            operation_planning = lock.operation_pre_planning
+
+            # unravel what is the current time
+            arrival_time = np.max([self.metadata['arrival_time'],pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))]) # TODO: check if we can replace this with just the pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)
+
+            # determine the arrival time of the vessel at the lock complex TODO: in functie zetten.
+            for origin, destination in zip(route_to_come[:-1], route_to_come[1:]):
+                k = sorted(self.multidigraph[origin][destination],key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0] # TODO: dit kan een route-functie worden, de identifier (k) voor multidigraphs wordt nu bepaald aan de hand van de kortste route
+                edge = self.multidigraph[origin][destination][k]
+                if origin == detector_node:
+                    break
+                arrival_time += pd.Timedelta(seconds=edge['length_m'] / self.env.vessel_traffic_service.provide_speed_over_edge(self,(origin, destination, k)))
+
+            # determine direction of lock passage TODO: in functie zetten.
+            direction = 1
+            if self.current_node == lock.start_node:
+                direction = 0
+
+            # request lock master to add vessel to the vessel planning TODO: checken wat er gebeurt als de lock al in de planning zit... Moet er niet twee keer inkomen.
+            lock.add_vessel_to_vessel_planning(self, direction, time_of_registration=arrival_time, pre_planning=True)
+
+            # request lock master to add vessel to the lock operation planning
+            operation_index, add_operation, available_operations = lock.assign_vessel_to_lock_operation(self, direction, pre_planning=True)
+
+            # TODO: this should be a function/attribute of the lock master
+            # if a suitable already planned lock operation has been found, the vessel needs to be added to this operation
+            if not available_operations.empty:
+                operation_index = available_operations.iloc[0].name
+                copy_operation_planning = operation_planning.copy()
+                copy_vessel_planning = vessel_planning.copy()
+                yield from lock.add_vessel_to_planned_lock_operation(self, operation_index, direction,vessel_planning=copy_vessel_planning,operation_planning=copy_operation_planning, pre_planning=True)
+
+            # the operation planning should be updated
+            yield from lock.update_operation_planning(self, direction, operation_index, add_operation, pre_planning=True)
 
     def register_to_lock_master(self, origin):
         """
@@ -329,6 +364,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # TODO: @Floor. Ziet eruit alsof dit de laatste lock is die op de route ligt. Ik den kdat we juist de eerste willen hebben toch?
         # TODO: @Floor: in register_to_lock_master zoeken we gewoon de lock die aan de origin-node grenst. Kunnen we dat hier niet ook doen?
         lock = None
+        print(route_to_come)
         for node_start, node_stop in zip(route_to_come[:-1], route_to_come[1:]):
             k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
             lock_edge = (node_start,node_stop,k)
@@ -867,8 +903,8 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
             self.door_A_open = False
 
         # Geometry on edge
-        edge = self.env.graph.edges[start_node, end_node, 0]
-        length_edge = edge['length']
+        edge = self.multidigraph.edges[start_node, end_node, 0]
+        length_edge = edge['length_m']
         # TODO Checken of de distance bepalen werkt, en misschien automatiseren op basis van geometrie
         # TODO: nodes verwijderen uit graaf als die precies op de sluis liggen. (wellicht als voorbewerking van de graaf)
         # TODO: losse klasse maken van de lock-doors die locatable, hasresource (capacity=1) en identifiable is en eigenschap open/dicht heeft.
@@ -4528,7 +4564,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         wgs84rad_to_wgs84eqd = pyproj.transformer.Transformer.from_crs(wgs84rad, wgs84eqd, always_xy=True).transform  # radial wgs84 to equidistant wgs84
 
         # create lock edge geometry in [m]
-        lock_edge_geometry = transform(wgs84rad_to_wgs84eqd,self.env.graph.edges[self.start_node, self.end_node, 0]["geometry"])
+        lock_edge_geometry = transform(wgs84rad_to_wgs84eqd,self.multidigraph.edges[self.start_node, self.end_node, 0]["geometry"])
 
         # loop over vessels to extract time and distance from lock passage messages and store them in a list
         all_times = []
