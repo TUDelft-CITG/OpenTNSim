@@ -172,7 +172,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             if lock in upcoming_locks.values():
                 continue
             # store the lock object in the list of locks with long_term_planning enabled
-            upcoming_locks[lock] = node
+            upcoming_locks[node] = lock
         return upcoming_locks
 
     def _pre_register_to_lock(self, detector_node, lock):
@@ -263,7 +263,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
         # Part II: Find the upcoming locks that use long-term planning by looping over the vessel's route
         locks_with_long_term_planning = self._find_upcoming_locks(only_predictive=True)
-
+        print(locks_with_long_term_planning)
         # Part III: Pre-registration of the vessel at the lock masters of each lock complex by loop over the locks with long term planning to be encountered along the vessel's route
         for detector_node,lock in locks_with_long_term_planning.items():
             yield from self._pre_register_to_lock(detector_node, lock)
