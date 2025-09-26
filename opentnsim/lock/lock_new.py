@@ -54,24 +54,24 @@ def subtract_vessels_from_lock_operation(operation_planning, operation_index):
     return vessels
 
 
-def _get_lock_on_node(multidigraph, detector_node):
-    """Get the lock complex object that is associated with a detector node
+def _get_lock_on_node(multidigraph, registration_node):
+    """Get the lock complex object that is associated with a registration node node
 
     Parameters
     ----------
-    detector_node : str
+    registration_node : str
         node name (that has to be in the graph) on which the vessel is currently starting to navigate an edge
 
     Returns
     -------
     lock : Union(class, None)
-        the lock complex object that is associated with the detector node, or None if no lock complex is associated with the detector node
+        the lock complex object that is associated with the registration node, or None if no lock complex is associated with the registration node
     """
-    # check if node is a detector node
-    if "Detector" not in multidigraph.nodes[detector_node].keys():
+    # check if node is a registration node
+    if "Lock_registration_node" not in multidigraph.nodes[registration_node].keys():
         return None
 
-    edge = multidigraph.nodes[detector_node]["Detector"]
+    edge = multidigraph.nodes[registration_node]["Lock_registration_node"]
     # return lock if it exists on the edge
     if "Lock" in multidigraph.edges[edge].keys():
         lock = multidigraph.edges[edge]["Lock"][0]
@@ -126,7 +126,8 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             data=[], columns=["Speed"], index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", "k"))
         )
 
-    def _find_upcoming_locks(self, only_predictive=True):
+
+    def _find_upcoming_lock_registration_nodes(self, only_predictive=True):
         """
         Find the upcoming locks that use long-term planning by looping over the vessel's route
 
@@ -150,21 +151,19 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         for node in route_to_come:
             node_info = self.multidigraph.nodes[node]
 
-            # check if the node has a detector node
-            if (
-                "Detector" not in node_info.keys()
-            ):  # TODO: @Floor: rename 'Detector' so that it is lock specific and clearer to the user
+            # check if the node has a registration node
+            if ("Lock_registration_node" not in node_info.keys()):
                 continue
 
-            # unpack the lock complex information using the lock_edge stored in the detector node
-            lock_edge = node_info["Detector"]
+            # unpack the lock complex information using the lock_edge stored in the registration node
+            lock_edge = node_info["Lock_registration_node"]
             lock = self.multidigraph.edges[lock_edge]["Lock"][
                 0
-            ]  # TODO: write test to prevent that multiple lock complexes are located at the same detector node, also: maybe we need to change "Lock" to "Lock complex"
+            ]  # TODO: write test to prevent that multiple lock complexes are located at the same registration node, also: maybe we need to change "Lock" to "Lock complex"
 
             # only add non-predictive locks if only_predictive is False
             if (only_predictive) and (
-                not lock.predictive
+                    not lock.predictive
             ):  # TODO: lets rename 'predictive', as it is a bit vague, lets change it to 'long_term_planning'
                 continue
 
@@ -175,7 +174,49 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             upcoming_locks[node] = lock
         return upcoming_locks
 
-    def _pre_register_to_lock(self, detector_node, lock):
+
+    def _find_upcoming_locks(self, only_predictive=True):
+        """
+        Find the upcoming locks that use long-term planning by looping over the vessel's route
+
+        Parameters
+        ----------
+        only_predictive : bool, optional
+            if True, only locks that use long-term planning are included, by default True
+            if False, all locks are included
+
+        Returns
+        -------
+        upcoming_locks : dict
+            dictionary of lock objects that are to be encountered on the vessel's route
+            mapping from node (key) to lock object (value)
+        """
+        # initiate empty lists
+        upcoming_locks = {}
+
+        # loop over all edges on the route ahead.
+        route_to_come = self.route_ahead
+        for node_start, node_stop in zip(route_to_come[:-1], route_to_come[1:]):
+            k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
+            lock_edge = (node_start,node_stop,k)
+            if "Lock" not in self.multidigraph.edges[lock_edge].keys():
+                continue
+            lock = self.multidigraph.edges[lock_edge]["Lock"][0]
+
+            # only add non-predictive locks if only_predictive is False
+            if (only_predictive) and (not lock.predictive):  # TODO: lets rename 'predictive', as it is a bit vague, lets change it to 'long_term_planning'
+                continue
+
+            # check if lock is already stored
+            if lock in upcoming_locks.values():
+                continue
+
+            # store the lock object in the list of locks with long_term_planning enabled
+            upcoming_locks[node_start] = lock
+
+        return upcoming_locks
+
+    def _pre_register_to_lock(self, registration_node, lock):
         """pre-register to one specific lock"""
         # unpack the lock specific dataframes of planned vessels and planned lock operations
         vessel_planning = lock.vessel_pre_planning
@@ -195,7 +236,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 0
             ]  # TODO: dit kan een route-functie worden, de identifier (k) voor multidigraphs wordt nu bepaald aan de hand van de kortste route
             edge = self.multidigraph[origin][destination][k]
-            if origin == detector_node:
+            if origin == registration_node:
                 break
             arrival_time += pd.Timedelta(
                 seconds=edge["length_m"] / self.env.vessel_traffic_service.provide_speed_over_edge(self, (origin, destination, k))
@@ -252,8 +293,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
 
         This function expects the following information on locks in the graph
-        TODO: Beschrijven wat self.multidigraph.nodes[node]['Detector] is.
-        TODO: Beschrijven wat self.multidigraph.edges[lock_edge]['Lock'] is.
         """
 
         # TODO: check if this replaces the code below (lines 93-96)
@@ -262,15 +301,15 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             return
 
         # Part II: Find the upcoming locks that use long-term planning by looping over the vessel's route
-        locks_with_long_term_planning = self._find_upcoming_locks(only_predictive=True)
-        print(locks_with_long_term_planning)
+        locks_with_long_term_planning = self._find_upcoming_lock_registration_nodes(only_predictive=True)
+
         # Part III: Pre-registration of the vessel at the lock masters of each lock complex by loop over the locks with long term planning to be encountered along the vessel's route
-        for detector_node,lock in locks_with_long_term_planning.items():
-            yield from self._pre_register_to_lock(detector_node, lock)
+        for registration_node,lock in locks_with_long_term_planning.items():
+            yield from self._pre_register_to_lock(registration_node, lock)
 
     def register_to_lock_master(self, origin):
         """
-        Request lock master to register when vessel reaches a detector node of a lock complex object
+        Request lock master to register when vessel reaches a registration node of a lock complex object
 
         Parameters
         ----------
@@ -284,7 +323,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         TODO: origin hoeft geen input te zijn. Kan ook met self.current_node (comment: dit nagaan, want deze generator wordt toegevoegd aan lijst 'on_pass_node_functions', welke in de movable met input = origin wordt gevoed)
         """
 
-        # find the lock complex object that is associated with the detector node
+        # find the lock complex object that is associated with the registration node
         lock = _get_lock_on_node(self.multidigraph, origin)
         # if a lock complex object is found, request registration to the lock master of the lock complex
         if lock:
@@ -315,123 +354,117 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # find the lock the vessel has been assigned to TODO: this should be faster, so that if the vessel has not been assigned to a lock, it does not check the entire route
         # TODO: @Floor. Ziet eruit alsof dit de laatste lock is die op de route ligt. Ik den kdat we juist de eerste willen hebben toch?
         # TODO: @Floor: in register_to_lock_master zoeken we gewoon de lock die aan de origin-node grenst. Kunnen we dat hier niet ook doen?
-        lock = None
-        for node_start, node_stop in zip(route_to_come[:-1], route_to_come[1:]):
-            k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
-            lock_edge = (node_start,node_stop,k)
-            if "Lock" not in self.multidigraph.edges[lock_edge].keys():
-                continue
-            lock = self.multidigraph.edges[lock_edge]["Lock"][0]
+        # k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
+        locks = self._find_upcoming_locks(only_predictive=False)
 
         # if no lock is found, stop function
-        if lock is None:
+        if not bool(locks):
             return
 
         # determine the waiting area based on the direction of the vessel
-        if node_start == lock.start_node:
-            direction = 0
-            lock_start_node = lock.start_node
-            waiting_area = lock.waiting_area_A
-        else:
-            direction = 1
-            lock_start_node = lock.end_node
-            waiting_area = lock.waiting_area_B
+        for lock_start_node,lock in locks.items():
+            if lock_start_node == lock.start_node:
+                direction = 0
+                waiting_area = lock.waiting_area_A
+            else:
+                direction = 1
+                waiting_area = lock.waiting_area_B
 
-        # if the origin of the vessel has not reached the waiting area edge, then skip this function
-        if origin != waiting_area.edge[0]:
-            return
+            # if the origin of the vessel has not reached the waiting area edge, then skip this function
+            if origin != waiting_area.edge[0]:
+                return
 
-        # unpack the vessel and lock operation planning of the lock
-        operation_planning = lock.appropriate_operation_planning
-        vessel_planning = lock.appropriate_vessel_planning
+            # unpack the vessel and lock operation planning of the lock
+            operation_planning = lock.appropriate_operation_planning
+            vessel_planning = lock.appropriate_vessel_planning
 
-        # determine the vessel index and operation index
-        vessel_planning_index = vessel_planning[vessel_planning.id == self.id].iloc[-1].name
-        operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
+            # determine the vessel index and operation index
+            vessel_planning_index = vessel_planning[vessel_planning.id == self.id].iloc[-1].name
+            operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
 
-        # calculate the sailing duration left to the waiting area
-        sailing_time_to_waiting_area, sailing_distance_to_waiting_area, vessel_speed = lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)
-        sailing_time_to_waiting_area = sailing_time_to_waiting_area.total_seconds()
+            # calculate the sailing duration left to the waiting area
+            sailing_time_to_waiting_area, sailing_distance_to_waiting_area, vessel_speed = lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)
+            sailing_time_to_waiting_area = sailing_time_to_waiting_area.total_seconds()
 
-        # if there is still sailing time left to the waiting area then continue sailing and log this process (here the locking module takes over the function of the movable)
-        if sailing_time_to_waiting_area:
-            self.log_entry_v0("Sailing to waiting area start", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'],)
+            # if there is still sailing time left to the waiting area then continue sailing and log this process (here the locking module takes over the function of the movable)
+            if sailing_time_to_waiting_area:
+                self.log_entry_v0("Sailing to waiting area start", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'],)
 
-        # the sailing process can be interrupted, as vessel can be subject to changes in its speed, then the remaining sailing time is determined and continued with the changed speed -> when sailing to the waiting area has been completed: log the process
-        while sailing_time_to_waiting_area:
-            start_sailing = self.env.now
-            try:
-                yield self.env.timeout(sailing_time_to_waiting_area)
-                sailing_time_to_waiting_area = 0.
-            except simpy.Interrupt as e:
-                sailing_time_to_waiting_area -= self.env.now - start_sailing
-                remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
-                sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
-            self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),waiting_area.location,)
+            # the sailing process can be interrupted, as vessel can be subject to changes in its speed, then the remaining sailing time is determined and continued with the changed speed -> when sailing to the waiting area has been completed: log the process
+            while sailing_time_to_waiting_area:
+                start_sailing = self.env.now
+                try:
+                    yield self.env.timeout(sailing_time_to_waiting_area)
+                    sailing_time_to_waiting_area = 0.
+                except simpy.Interrupt as e:
+                    sailing_time_to_waiting_area -= self.env.now - start_sailing
+                    remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
+                    sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
+                self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),waiting_area.location,)
 
-        # let vessel wait in the waiting area
-        yield from self.wait_in_waiting_area(waiting_area=waiting_area)
+            # let vessel wait in the waiting area
+            yield from self.wait_in_waiting_area(waiting_area=waiting_area)
 
-        # if done waiting -> release vessel from waiting area and let vessel continue
-        yield waiting_area.waiting_area.release(self.waiting_area_request)
+            # if done waiting -> release vessel from waiting area and let vessel continue
+            yield waiting_area.waiting_area.release(self.waiting_area_request)
 
-        # vessel is now allowed to continue passing the lock -> create vessel specific functions and add those function to the functions that communicate with the move function
-        allow_vessel_to_sail_in_lock = functools.partial(lock.allow_vessel_to_sail_in_lock, vessel=self)
-        initiate_levelling = functools.partial(lock.initiate_levelling, vessel=self)
-        allow_vessel_to_sail_out_of_lock = functools.partial(lock.allow_vessel_to_sail_out_of_lock, vessel=self)
-        self.on_pass_edge_functions.append(allow_vessel_to_sail_in_lock)
-        self.on_pass_edge_functions.append(initiate_levelling)
-        self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
+            # vessel is now allowed to continue passing the lock -> create vessel specific functions and add those function to the functions that communicate with the move function
+            allow_vessel_to_sail_in_lock = functools.partial(lock.allow_vessel_to_sail_in_lock, vessel=self)
+            initiate_levelling = functools.partial(lock.initiate_levelling, vessel=self)
+            allow_vessel_to_sail_out_of_lock = functools.partial(lock.allow_vessel_to_sail_out_of_lock, vessel=self)
+            self.on_pass_edge_functions.append(allow_vessel_to_sail_in_lock)
+            self.on_pass_edge_functions.append(initiate_levelling)
+            self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
 
-        # correct distance left on edge with the already covered distance through this function (to communicate with the move function)
-        self.distance_left_on_edge -= sailing_distance_to_waiting_area
+            # correct distance left on edge with the already covered distance through this function (to communicate with the move function)
+            self.distance_left_on_edge -= sailing_distance_to_waiting_area
 
-        # on continuing sailing to the lock complex, determine the current time and whether the vessel is the first vessel or will arrive after another vessel
-        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
-        first_in_lock = operation_planning.loc[operation_index].vessels[0] == self
-        between_arrivals = False
-        if not first_in_lock:
-            between_arrivals = True
+            # on continuing sailing to the lock complex, determine the current time and whether the vessel is the first vessel or will arrive after another vessel
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            first_in_lock = operation_planning.loc[operation_index].vessels[0] == self
+            between_arrivals = False
+            if not first_in_lock:
+                between_arrivals = True
 
-        # determine if the door is closed, and when the doors are required to be open, and how long this will take (given the lock master's policy)
-        door_is_closed, doors_required_to_be_open, operation_time = lock.determine_if_door_is_closed(self,
-                                                                                                     operation_index,
-                                                                                                     direction,
-                                                                                                     first_in_lock=first_in_lock,
-                                                                                                     between_arrivals=between_arrivals)
-        # if door is open, then the vessel can continue normally
-        if not door_is_closed:
-            return
+            # determine if the door is closed, and when the doors are required to be open, and how long this will take (given the lock master's policy)
+            door_is_closed, doors_required_to_be_open, operation_time = lock.determine_if_door_is_closed(self,
+                                                                                                         operation_index,
+                                                                                                         direction,
+                                                                                                         first_in_lock=first_in_lock,
+                                                                                                         between_arrivals=between_arrivals)
+            # if door is open, then the vessel can continue normally
+            if not door_is_closed:
+                return
 
-        # if not, and if the time that the doors will be open lies ahead of the current time -> create a door open request with a delay so that the doors are open at the right moment (according to the lock master's policy)
-        if (doors_required_to_be_open - operation_time) > current_time:
-            delay = ((doors_required_to_be_open - operation_time) - current_time).total_seconds()
-            self.door_open_request = self.env.process(lock.open_door(to_level=lock_start_node, delay=delay, vessel=self))
-            return
+            # if not, and if the time that the doors will be open lies ahead of the current time -> create a door open request with a delay so that the doors are open at the right moment (according to the lock master's policy)
+            if (doors_required_to_be_open - operation_time) > current_time:
+                delay = ((doors_required_to_be_open - operation_time) - current_time).total_seconds()
+                self.door_open_request = self.env.process(lock.open_door(to_level=lock_start_node, delay=delay, vessel=self))
+                return
 
-        # if it is already too late, the doors should open immediately -> determine the time that the doors are required to be opened again (this can include a new levelling process in case of tidal water levels)
-        levelling_required = False
-        if operation_time > pd.Timedelta(seconds=lock.doors_closing_time):
-            levelling_required = True
+            # if it is already too late, the doors should open immediately -> determine the time that the doors are required to be opened again (this can include a new levelling process in case of tidal water levels)
+            levelling_required = False
+            if operation_time > pd.Timedelta(seconds=lock.doors_closing_time):
+                levelling_required = True
 
-        # log the door open process and the lock levelling process if this is required TODO: this should preferably also be requested from the lock master elsewhere (especially the levelling process)
-        if levelling_required:
-            lock.log_entry_v0("Lock chamber converting start", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - operation_time.total_seconds(), self.output.copy(),lock_start_node, )
-            lock.log_entry_v0("Lock chamber converting stop", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_start_node, )
-        lock.log_entry_v0("Lock doors opening start", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_start_node, )
-        lock.log_entry_v0("Lock doors opening stop",doors_required_to_be_open.round('s').to_pydatetime().timestamp(),self.output.copy(), lock_start_node, )
+            # log the door open process and the lock levelling process if this is required TODO: this should preferably also be requested from the lock master elsewhere (especially the levelling process)
+            if levelling_required:
+                lock.log_entry_v0("Lock chamber converting start", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - operation_time.total_seconds(), self.output.copy(),lock_start_node, )
+                lock.log_entry_v0("Lock chamber converting stop", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_start_node, )
+            lock.log_entry_v0("Lock doors opening start", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_start_node, )
+            lock.log_entry_v0("Lock doors opening stop",doors_required_to_be_open.round('s').to_pydatetime().timestamp(),self.output.copy(), lock_start_node, )
 
-        # set the new side to which the lock has been opened
-        if not direction:
-            lock.node_open = lock.start_node
-        else:
-            lock.node_open = lock.end_node
+            # set the new side to which the lock has been opened
+            if not direction:
+                lock.node_open = lock.start_node
+            else:
+                lock.node_open = lock.end_node
 
-        # set the new water level for the lock if there is hydrodynamic data included in the simulation TODO: also this should preferably be included elsewhere and not here
-        if self.env.vessel_traffic_service.hydrodynamic_information_path:
-            time_index = np.absolute(hydrodynamic_times - np.datetime64(doors_required_to_be_open) - np.timedelta64(int(lock.doors_opening_time), 's')).argmin()
-            station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == lock.node_open)[0]
-            lock.water_level[time_index:] = hydrodynamic_data['Water level'][station_index, time_index:]
+            # set the new water level for the lock if there is hydrodynamic data included in the simulation TODO: also this should preferably be included elsewhere and not here
+            if self.env.vessel_traffic_service.hydrodynamic_information_path:
+                time_index = np.absolute(hydrodynamic_times - np.datetime64(doors_required_to_be_open) - np.timedelta64(int(lock.doors_opening_time), 's')).argmin()
+                station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == lock.node_open)[0]
+                lock.water_level[time_index:] = hydrodynamic_data['Water level'][station_index, time_index:]
 
     def wait_in_waiting_area(self, waiting_area):
         """
@@ -476,7 +509,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # check if vessel has to wait for other vessels (if there is a policy that a minimum number of vessels have go with each lock operation, and this criteria has yet not been matched)
         if len(vessels_in_operation) < lock.min_vessels_in_operation:
             # log the waiting event
-            self.log_entry_v0("Waiting for other vessel start", waiting_start, self.output.copy(), self.logbook[-1]['Geometry'],)
+            self.log_entry_v0("Waiting for other vessel in lock operation start", waiting_start, self.output.copy(), self.logbook[-1]['Geometry'],)
 
             # create a request to wait for another vessel (this is a request for a filter store: only if there are enough vessels the operation will be assigned to the store and all vessels will continue to the lock chamber)
             request = lock.wait_for_other_vessel_to_arrive.get(lambda operation: operation.operation_index == operation_index)
@@ -506,7 +539,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 vessel_planning.loc[vessel_planning_index, 'time_arrival_at_lineup_area'] += pd.Timedelta(seconds=waiting_stop - waiting_start)
 
             # log that the waiting has stopped
-            self.log_entry_v0("Waiting for other vessel stop", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'],)
+            self.log_entry_v0("Waiting for other vessel in lock operation stop", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'],)
 
         # determine the current time (after waiting for another vessel, or not) and the time that the vessel will be at the approach point if it will continue and what was planned before
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(lock.env.now))
@@ -524,7 +557,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # if there is stationary waiting time -> let vessel wait (longer) in the waiting area
         if remaining_static_waiting_time > 0.:
             # log the start of the waiting process
-            self.log_entry_v0("Waiting start", self.env.now, self.output.copy(), self.logbook[-1]['Geometry'], )
+            self.log_entry_v0("Waiting for lock operation start", self.env.now, self.output.copy(), self.logbook[-1]['Geometry'], )
             # waiting in the waiting area, if request is interrupted, the vessel keeps waiting but time that vessel already has waited is subtracted
             while remaining_static_waiting_time > 0.:
                 try:
@@ -537,7 +570,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                     remaining_static_waiting_time -= lock.env.now - waiting_start
 
             # log the stop of the waiting process
-            self.log_entry_v0("Waiting stop", self.env.now, self.output.copy(), self.logbook[-1]['Geometry'], )
+            self.log_entry_v0("Waiting for lock operation stop", self.env.now, self.output.copy(), self.logbook[-1]['Geometry'], )
 
         # if there is waiting time that can be performed while sailing, adjust sailing speed
         if waiting_time_while_sailing:
@@ -639,7 +672,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         # k=0,  # a int which is the identifier of the edge between two nodes in a multidigraph network
         # distance_from_start_node_to_lock_doors_A=0.0,  # a float that is the distance between the start_node of the edge and the lock doors A [m]
         # distance_from_end_node_to_lock_doors_B=0.0,  # a float that is the distance between the end_node of the edge and the lock doors B [m]
-        # detector_nodes=[],  # a list of str with the node names at which the vessels request registration to the lock complex master
+        # registration_nodes=[],  # a list of str with the node names at which the vessels request registration to the lock complex master
         # doors_opening_time=300.0,  # a float which contains the time it takes to open the doors [s]
         # doors_closing_time=300.0,  # a float which contains the time it takes to close the doors [s]
         # disch_coeff=0.0,  # a float which contains the discharge coefficient of filling system
@@ -657,7 +690,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         k=0,                                                                # a int which is the identifier of the edge between two nodes in a multidigraph network
         distance_from_start_node_to_lock_doors_A=0.0,                       # a float that is the distance between the start_node of the edge and the lock doors A [m]
         distance_from_end_node_to_lock_doors_B=0.0,                         # a float that is the distance between the end_node of the edge and the lock doors B [m]
-        detector_nodes=[],                                                  # a list of str with the node names at which the vessels request registration to the lock complex master
+        registration_nodes=[],                                                  # a list of str with the node names at which the vessels request registration to the lock complex master
         doors_opening_time=300.0,                                           # a float which contains the time it takes to open the doors [s]
         doors_closing_time=300.0,                                           # a float which contains the time it takes to close the doors [s]
         disch_coeff=0.4,                                                    # a float which contains the discharge coefficient of filling system
@@ -736,12 +769,12 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         self.conditions = conditions
         self.time_step = time_step
         self.priority_rules = priority_rules
-        self.detector_nodes = detector_nodes
+        self.registration_nodes = registration_nodes
         self.gate_opening_time = gate_opening_time
         self.door_A_open = True
         self.door_B_open = True
-        if not detector_nodes:
-            self.detector_nodes = [start_node,end_node]
+        if not registration_nodes:
+            self.registration_nodes = [start_node,end_node]
         self.distance_from_start_node_to_lock_doors_A = distance_from_start_node_to_lock_doors_A
         self.distance_from_end_node_to_lock_doors_B = distance_from_end_node_to_lock_doors_B
         self.used_as_one_way_traffic_regulation = used_as_one_way_traffic_regulation
@@ -818,19 +851,26 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
             self.door_A_open = False
 
         # Geometry on edge
-        edge = self.multidigraph.edges[start_node, end_node, 0]
-        length_edge = edge['length_m']
+        edge = (start_node, end_node, 0)
+        edge_info = self.multidigraph.edges[edge]
+        length_edge = edge_info['length_m']
         # TODO Checken of de distance bepalen werkt, en misschien automatiseren op basis van geometrie
         # TODO: nodes verwijderen uit graaf als die precies op de sluis liggen. (wellicht als voorbewerking van de graaf)
         # TODO: losse klasse maken van de lock-doors die locatable, hasresource (capacity=1) en identifiable is en eigenschap open/dicht heeft.
-        if distance_from_start_node_to_lock_doors_A == 0 and distance_from_end_node_to_lock_doors_B == 0:
-            self.distance_from_start_node_to_lock_doors_A = self.distance_from_end_node_to_lock_doors_B = length_edge / 2 - lock_length / 2
-            self.location_lock_doors_A = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, self.distance_from_start_node_to_lock_doors_A)
-            self.location_lock_doors_B = self.env.vessel_traffic_service.provide_location_over_edges(end_node, start_node, self.distance_from_end_node_to_lock_doors_B)
-        if distance_from_start_node_to_lock_doors_A != 0:
-            self.distance_from_end_node_to_lock_doors_B = length_edge - (distance_from_start_node_to_lock_doors_A+lock_length)
-            self.location_lock_doors_A = self.env.vessel_traffic_service.provide_location_over_edges(start_node, end_node, self.distance_from_start_node_to_lock_doors_A)
-            self.location_lock_doors_B = self.env.vessel_traffic_service.provide_location_over_edges(end_node, start_node, self.distance_from_end_node_to_lock_doors_B)
+
+        edge_aligned_with_edge_geometry = self.env.vessel_traffic_service.check_if_geometry_is_aligned_with_edge(edge)
+        start_node_geometry = start_node
+        end_node_geometry = end_node
+        distance_from_start_node_geometry_to_lock_doors_A = self.distance_from_start_node_to_lock_doors_A
+        distance_from_start_node_geometry_to_lock_doors_B = self.distance_from_start_node_to_lock_doors_A + lock_length
+        if not edge_aligned_with_edge_geometry:
+            start_node_geometry = end_node
+            end_node_geometry = start_node
+            distance_from_start_node_geometry_to_lock_doors_B = self.distance_from_end_node_to_lock_doors_B
+            distance_from_start_node_geometry_to_lock_doors_A = self.distance_from_end_node_to_lock_doors_B + lock_length
+
+        self.location_lock_doors_A = self.env.vessel_traffic_service.provide_location_over_edges(start_node_geometry, end_node_geometry, distance_from_start_node_geometry_to_lock_doors_A)
+        self.location_lock_doors_B = self.env.vessel_traffic_service.provide_location_over_edges(start_node_geometry, end_node_geometry, distance_from_start_node_geometry_to_lock_doors_B)
 
         self.lock_pos_length = simpy.Container(self.env, capacity=lock_length, init=lock_length)
         self.door_A= simpy.PriorityResource(self.env, capacity = 1)
@@ -862,9 +902,9 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
 
         # TODO: in functie zetten.
         # TODO: In de documentatie zetten dat detecotr nodes op volgorde moeten komen. En ook een assert maken.
-        for detector_node, lock_edge in zip(self.detector_nodes,[(self.start_node,self.end_node,self.k),(self.end_node,self.start_node,self.k)]):
-            if 'Detector' not in self.multidigraph.nodes[detector_node]:
-                self.multidigraph.nodes[detector_node]['Detector'] = lock_edge
+        for registration_node, lock_edge in zip(self.registration_nodes,[(self.start_node,self.end_node,self.k),(self.end_node,self.start_node,self.k)]):
+            if 'Lock_registration_node' not in self.multidigraph.nodes[registration_node]:
+                self.multidigraph.nodes[registration_node]['Lock_registration_node'] = lock_edge
 
         # Add to the graph:
         # TODO: In losse functie (add_lock_to_graph)
@@ -1360,7 +1400,7 @@ class IsLockMaster(SimpyObject):
         # determine the orientation of the vessel to unpack the lock complex infrastructure at the correct side of the lock chamber
         # TODO hier een property van maken?
         # TODO Floor: De direction wordt hier bepaald met
-        #   - vessel.current node == self.lock_complex.detector_nodes[0]. #Comment Floor. Ja, dit lijkt me goed, maar we moeten hiermee oppassen. to_level, waiting_area.name en self.node_open zijn andere zaken. Lock_edge[0] en self.lock_complex.detector_nodes[0] kunnen we gladstrijken.
+        #   - vessel.current node == self.lock_complex.registration_nodes[0]. #Comment Floor. Ja, dit lijkt me goed, maar we moeten hiermee oppassen. to_level, waiting_area.name en self.node_open zijn andere zaken. Lock_edge[0] en self.lock_complex.registration_nodes[0] kunnen we gladstrijken.
         # In andere formules staat
         #   - if current_node == lock.start_node:
         #   - if to_level == self.start_node:
@@ -1369,7 +1409,7 @@ class IsLockMaster(SimpyObject):
         #   - if self.node_open == self.start_node:
         # komen al deze formules op hetzelfde neer? Kan er een algemene formule worden geschreven voor de direction, lock_end_node en waiting area die in alle berekeningen werkt?
         # en zijn deze attributes dan eigenschappen van de lockmaster, van de lockcomplex of van de lockchamber?
-        if vessel.current_node == self.lock_complex.detector_nodes[0]:
+        if vessel.current_node == self.lock_complex.registration_nodes[0]:
             direction = 0
             lock_end_node = self.lock_complex.end_node
             waiting_area = self.waiting_area_A
@@ -1532,7 +1572,7 @@ class IsLockMaster(SimpyObject):
         if vessel_df.empty:
             return pd.DataFrame()
 
-        # determine the sailing time already based on the current edge (if detector is not coupled to node, but instead is somewhere along the edge: not sure if this is already implemented)
+        # determine the sailing time already based on the current edge (if registration node is not coupled to node, but instead is somewhere along the edge: not sure if this is already implemented)
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
         reversed_vessel_df = vessel_df.iloc[::-1]
         for index,message in reversed_vessel_df.iterrows():
@@ -4289,6 +4329,8 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
     def __init__(self,
                  node_A,                                        # a string with the node at which side A of the lock complex is located
                  node_B,                                        # a string with the node at which side B of the lock complex is located
+                 edge_waiting_area_A = None,                    # a tuple with str that is the edge at which waiting area A is located
+                 edge_waiting_area_B = None,                    # a tuple with str that is the edge at which waiting area B is located
                  distance_lock_doors_A_to_waiting_area_A=0.,    # a float that is the distance from lock doors A to waiting area A [m]
                  distance_lock_doors_B_to_waiting_area_B=0.,    # a float that is the distance from lock doors B to waiting area B [m]
                  lineup_area_A_length=None,                     # a float that is the actual length of line-up area A [m]
@@ -4336,14 +4378,16 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         self.distance_waiting_area_B_from_node_waiting_area_B = self.distance_from_end_node_to_lock_doors_B - self.distance_lock_doors_B_to_waiting_area_B
 
         # create the waiting area objects
-        edge_waiting_area_A = (self.start_node,self.end_node,self.k)
+        if edge_waiting_area_A is None:
+            edge_waiting_area_A = (self.start_node,self.end_node,self.k)
         self.waiting_area_A = IsLockWaitingArea(env=self.env,
                                                 name="waiting_area_A",
                                                 lock=self,
                                                 edge=edge_waiting_area_A,
                                                 distance_from_node=self.distance_waiting_area_A_from_node_waiting_area_A)
 
-        edge_waiting_area_B = (self.end_node,self.start_node,self.k)
+        if edge_waiting_area_B is None:
+            edge_waiting_area_B = (self.end_node,self.start_node,self.k)
         self.waiting_area_B = IsLockWaitingArea(env=self.env,
                                                 name="waiting_area_B",
                                                 lock=self,
@@ -4435,9 +4479,8 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                 f"LockComplex {self.name} does not have an edge between node A {self.node_A} and node B {self.node_B}."
             )
 
-    def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None):
-        """Function to verify if nodes A and B are part of the graph, and have an edge between them.
-        #TODO: @Floor, dit lijkt me niet de juiste beschrijving van deze functie
+    def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, epsg_m = "EPSG:8857"):
+        """Create a time-distance plot of vessels passing a lock complex
 
         Parameters
         ----------
@@ -4461,14 +4504,47 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         # TODO @Floor: Wil je een titel en x,y labels toevoegen aan deze plot?
 
         # define reference systems
-        wgs84eqd = pyproj.CRS("4087")
-        wgs84rad = pyproj.CRS("4326")
+        wgs84eqd = pyproj.CRS(epsg_m)
+        wgs84rad = pyproj.CRS("EPSG:4326")
 
         # define transformer functions
         wgs84rad_to_wgs84eqd = pyproj.transformer.Transformer.from_crs(wgs84rad, wgs84eqd, always_xy=True).transform  # radial wgs84 to equidistant wgs84
 
         # create lock edge geometry in [m]
-        lock_edge_geometry = transform(wgs84rad_to_wgs84eqd,self.multidigraph.edges[self.start_node, self.end_node, 0]["geometry"])
+        route_between_nodes_of_registration = nx.dijkstra_path(self.env.graph, self.registration_nodes[0], self.registration_nodes[1])
+        lock_edge_geometry = self.env.vessel_traffic_service.provide_trajectory(route_between_nodes_of_registration[0],route_between_nodes_of_registration[-1])
+        lock_edge_geometry_m = self.env.vessel_traffic_service.transform_geometry(lock_edge_geometry)
+
+        # plot the lock geometry over time
+        location_lock_doors_A_m = self.env.vessel_traffic_service.transform_geometry(self.location_lock_doors_A)
+        location_lock_doors_B_m = self.env.vessel_traffic_service.transform_geometry(self.location_lock_doors_B)
+        x_lock_doorsA = (lock_edge_geometry_m.line_locate_point(location_lock_doors_A_m))
+        x_lock_doorsB = (lock_edge_geometry_m.line_locate_point(location_lock_doors_B_m))
+        x_correction_inbound = x_lock_doorsA + self.lock_length/2
+        x_correction_outbound = x_lock_doorsB + self.lock_length / 2
+
+        # determine the accepted messages for plotting
+        accepted_messages = []
+        for node_start, node_end in zip(route_between_nodes_of_registration[:-1],route_between_nodes_of_registration[1:]):
+            accepted_messages.extend([f"Sailing from node {node_start} to node {node_end} start",
+                                      f"Sailing from node {node_end} to node {node_start} start",
+                                      f"Sailing from node {node_start} to node {node_end} stop",
+                                      f"Sailing from node {node_end} to node {node_start} stop"])
+
+        accepted_messages.extend(["Waiting for other vessel in lock operation start",
+                                  "Waiting for other vessel in lock operation stop",
+                                  "Waiting for lock operation start",
+                                  "Waiting for lock operation stop",
+                                  "Sailing to first lock doors start",
+                                  "Sailing to first lock doors stop",
+                                  "Sailing to position in lock start",
+                                  "Sailing to position in lock stop",
+                                  "Levelling start",
+                                  "Levelling stop",
+                                  "Sailing to second lock doors start",
+                                  "Sailing to second lock doors stop",
+                                  "Sailing to lock complex exit start",
+                                  "Sailing to lock complex exit stop"])
 
         # loop over vessels to extract time and distance from lock passage messages and store them in a list
         all_times = []
@@ -4477,35 +4553,24 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
             times = []
             distances = []
             vessel_df = pd.DataFrame(vessel.logbook)
-            vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: transform(wgs84rad_to_wgs84eqd, x))
+            vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: self.env.vessel_traffic_service.transform_geometry(x))
+            x_correction = 0.0
             for index, message_info in vessel_df.iterrows():
                 time = message_info.Timestamp
-                distance = lock_edge_geometry.line_locate_point(message_info.Geometry) - lock_edge_geometry.length / 2
+                distance = lock_edge_geometry_m.line_locate_point(message_info.Geometry)
                 route = vessel.route
                 if self.start_node not in route or self.end_node not in route:
                     continue
 
-                accepted_messages = [
-                    f"Sailing from node {self.start_node} to node {self.end_node} start",
-                    f"Sailing from node {self.end_node} to node {self.start_node} start",
-                    "Sailing to first lock doors start",
-                    "Sailing to first lock doors stop",
-                    "Sailing to position in lock start",
-                    "Sailing to position in lock stop",
-                    "Levelling start",
-                    "Levelling stop",
-                    "Sailing to second lock doors start",
-                    "Sailing to second lock doors stop",
-                    "Sailing to lock complex exit start",
-                    "Sailing to lock complex exit stop",
-                    f"Sailing from node {self.start_node} to node {self.end_node} stop",
-                    f"Sailing from node {self.end_node} to node {self.start_node} stop",
-                ]
-
                 if message_info.Message in accepted_messages:
+                    if message_info.Message == f"Sailing from node {self.start_node} to node {self.end_node} start":
+                        x_correction = x_correction_inbound
+                    elif message_info.Message == f"Sailing from node {self.end_node} to node {self.start_node} start":
+                        x_correction = x_correction_outbound
                     times.append(time)
                     distances.append(distance)
 
+            distances = np.array(distances) - x_correction
             all_times.append(times)
             all_distances.append(distances)
 
@@ -4520,12 +4585,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         if ylimmax is None:
             ylimmax = ylimits[1]
 
-        # plot the lock geometry over time
-        location_lock_doors_A = transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_A)
-        location_lock_doors_B = transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_B)
-        x_lock_doorsA = (lock_edge_geometry.line_locate_point(location_lock_doors_A) - lock_edge_geometry.length / 2)
-        x_lock_doorsB = (lock_edge_geometry.line_locate_point(location_lock_doors_B) - lock_edge_geometry.length / 2)
-        lock_extend_x = [x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]
+        lock_extend_x = np.array([x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]) - x_correction_inbound
         ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
 
         # plot the lock phases
