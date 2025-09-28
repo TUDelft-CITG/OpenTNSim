@@ -23,6 +23,7 @@ import pandas as pd
 import xarray as xr
 import pickle
 # import netCDF4
+from shapely import reverse
 from shapely.ops import transform
 from opentnsim import core, graph
 from opentnsim import model
@@ -40,6 +41,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def __init__(
         self,
         graph,
+        crs_m = "EPSG:8857",
         hydrodynamic_information_path=None,
         vessel_speed_information_path=None,
         hydrodynamic_information=None,
@@ -48,16 +50,21 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         *args,
         **kwargs,
     ):
+        self.crs_m = crs_m
         self.hydrodynamic_information = hydrodynamic_information
         self.hydrodynamic_information_path = hydrodynamic_information_path
-        super().__init__(*args, **kwargs)
+        self.graph = graph
+
+        for edge in self.graph.edges:
+            edge_geometry = self.graph.edges[edge]["geometry"]
+            edge_geometry_m = self.transform_geometry(edge_geometry)
+            edge_geometry_length = edge_geometry_m.length
+            self.graph.edges[edge]["length_m"] = edge_geometry_length
 
         if isinstance(hydrodynamic_information, xr.Dataset):
             self.hydrodynamic_information_path = False
         if isinstance(vessel_speed_information, xr.Dataset):
             self.vessel_speeds = vessel_speed_information
-
-        self.graph = graph
 
         global vertical_tidal_restrictions_condition_df
         self.vertical_tidal_restrictions_condition_df = pd.DataFrame()
@@ -106,6 +113,8 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         if isinstance(vessel_speed_information_path, str):
             with open(vessel_speed_information_path, "rb") as file:
                 self.restricted_vessel_speeds = pickle.load(file)
+
+        super().__init__(*args, **kwargs)
 
     def get_edges_info(self):
         graph = self.graph
@@ -228,9 +237,6 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         return vessel_speed_over_route
 
     def provide_heading(self, vessel, edge):
-        def reverse_geometry(x, y):
-            return x[::-1], y[::-1]
-
         distance = []
         origin_location = vessel.multidigraph.nodes[edge[0]]["geometry"]
         k = sorted(
@@ -240,7 +246,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         for coord in edge_geometry.coords:
             distance.append(origin_location.distance(Point(coord)))
         if np.argmin(distance):
-            edge_geometry = shapely.ops.transform(reverse_geometry, edge_geometry)
+            edge_geometry = shapely.ops.transform(self.reverse_geometry, edge_geometry)
         heading = np.degrees(
             math.atan2(
                 edge_geometry.coords[0][0] - edge_geometry.coords[-1][0], edge_geometry.coords[0][1] - edge_geometry.coords[-1][1]
@@ -248,16 +254,26 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         )
         return heading
 
+    def reverse_geometry(self, geometry):
+        reversed_geometry = reverse(geometry)
+        return reversed_geometry
+
     def provide_trajectory(self,node_1,node_2):
         geometry = None
         route = nx.dijkstra_path(self.multidigraph, node_1, node_2)
         for node_I, node_II in zip(route[:-1], route[1:]):
             k = sorted(self.multidigraph[node_I][node_II], key=lambda x: self.multidigraph[node_I][node_II][x]['geometry'].length)[0]
-            edge_geometry = self.multidigraph.edges[node_I, node_II, k]['geometry']
+            edge = (node_I, node_II, k)
+            edge_geometry = self.multidigraph.edges[edge]['geometry']
+            aligned = self.check_if_geometry_is_aligned_with_edge(edge)
+            if not aligned:
+                edge_geometry = self.reverse_geometry(edge_geometry)
+
             if geometry:
                 geometry = shapely.ops.linemerge(MultiLineString([geometry, edge_geometry]))
             else:
                 geometry = edge_geometry
+
         return geometry
 
     def provide_distance_over_network_to_location(self,node_1,node_2,location,tolerance=0.0001):
@@ -280,24 +296,41 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             distance_to_go = geod.geometry_length(geometries[1])
         return distance_sailed,distance_to_go
 
-    def provide_location_over_edges(self,node_1,node_2,interpolation_length):
-        geod = pyproj.Geod(ellps="WGS84")
-        geometry = self.provide_trajectory(node_1, node_2)
-        for point_I, point_II in zip(geometry.coords[:-1], geometry.coords[1:]):
-            sub_edge_geometry = LineString([Point(point_I), Point(point_II)])
-            if geod.geometry_length(sub_edge_geometry) < interpolation_length:
-                interpolation_length -= geod.geometry_length(sub_edge_geometry)
-                continue
+    def check_if_geometry_is_aligned_with_edge(self, edge):
+        node_start = edge[0]
+        node_stop = edge[1]
+        edge_geometry = self.multidigraph.edges[edge]["geometry"]
+        first_point = Point(edge_geometry.coords[0])
+        distance_to_edge_nodes = {}
+        for node in [node_start, node_stop]:
+            node_geometry = self.multidigraph.nodes[node]["geometry"]
+            distance_to_edge_nodes[node] = first_point.distance(node_geometry)
+        closest_node = min(distance_to_edge_nodes, key=distance_to_edge_nodes.get)
+        aligned = closest_node == node_start
+        return aligned
 
-            az, _, dist = geod.inv(sub_edge_geometry.xy[0][0],
-                                   sub_edge_geometry.xy[1][0],
-                                   sub_edge_geometry.xy[0][1],
-                                   sub_edge_geometry.xy[1][1])
-            interpolation_point_x, interpolation_point_y, _ = geod.fwd(sub_edge_geometry.coords.xy[0][0],
-                                                                       sub_edge_geometry.coords.xy[1][0],
-                                                                       az, interpolation_length)
-            break
-        return Point(interpolation_point_x, interpolation_point_y)
+    def get_closest_location_on_edge_to_point(self, graph, edge, point):
+        edge_geometry = graph.edges[edge]["geometry"]
+        point_on_edge = edge_geometry.interpolate(edge_geometry.project(point))
+        return point_on_edge
+
+    def transform_geometry(self, geometry, epsg_in="EPSG:4326", epsg_out=None):
+        if epsg_out is None:
+            epsg_out = self.crs_m
+        crs_in = pyproj.CRS(epsg_in)
+        crs_out = pyproj.CRS(epsg_out)
+        crs_in_to_crs_out = pyproj.transformer.Transformer.from_crs(crs_in, crs_out, always_xy=True).transform
+        geometry_transformed = transform(crs_in_to_crs_out, geometry)
+        return geometry_transformed
+
+    def provide_location_over_edges(self,node_1,node_2,interpolation_length):
+        geometry = self.provide_trajectory(node_1, node_2)
+        if geometry is None or geometry.is_empty:
+            return None
+        geometry_m = self.transform_geometry(geometry, epsg_out = self.crs_m)
+        interpolation_point_m = geometry_m.line_interpolate_point(interpolation_length)
+        interpolation_point = self.transform_geometry(interpolation_point_m, epsg_in = self.crs_m, epsg_out = "EPSG:4326")
+        return interpolation_point
 
     def provide_distance_from_location_over_edge(self,edge,location,tolerance=0.0001):
         geod = pyproj.Geod(ellps="WGS84")
