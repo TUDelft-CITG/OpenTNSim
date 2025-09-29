@@ -4453,7 +4453,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                 f"LockComplex {self.name} does not have an edge between node A {self.node_A} and node B {self.node_B}."
             )
 
-    def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, epsg_m = "EPSG:8857"):
+    def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib'):
         """Create a time-distance plot of vessels passing a lock complex
 
         Parameters
@@ -4474,15 +4474,6 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         nothing, but creates a plot
 
         """
-
-        # TODO @Floor: Wil je een titel en x,y labels toevoegen aan deze plot?
-
-        # define reference systems
-        wgs84eqd = pyproj.CRS(epsg_m)
-        wgs84rad = pyproj.CRS("EPSG:4326")
-
-        # define transformer functions
-        wgs84rad_to_wgs84eqd = pyproj.transformer.Transformer.from_crs(wgs84rad, wgs84eqd, always_xy=True).transform  # radial wgs84 to equidistant wgs84
 
         # create lock edge geometry in [m]
         route_between_nodes_of_registration = nx.dijkstra_path(self.env.graph, self.registration_nodes[0], self.registration_nodes[1])
@@ -4523,6 +4514,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         # loop over vessels to extract time and distance from lock passage messages and store them in a list
         all_times = []
         all_distances = []
+        traces = []
         for vessel in vessels:
             times = []
             distances = []
@@ -4548,102 +4540,16 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
             all_times.append(times)
             all_distances.append(distances)
 
-        fig, ax = plt.subplots()
-
-        for distances, times in zip(all_distances, all_times):
-            ax.plot(distances, times)
-
-        ylimits = ax.get_ylim()
-        if ylimmin is None:
-            ylimmin = ylimits[0]
-        if ylimmax is None:
-            ylimmax = ylimits[1]
-
-        lock_extend_x = np.array([x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]) - x_correction_inbound
-        ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
-
-        # plot the lock phases
-        lock_df = pd.DataFrame(self.logbook)
-        for index, message_info in lock_df.iterrows():
-            if message_info.Message == "Lock doors opening stop" and index != 0:
-                time_start = lock_df.loc[index - 1, "Timestamp"]
-                time_stop = message_info.Timestamp
-                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color="darkgrey", zorder=0)
-            if message_info.Message == "Lock doors closing stop" and index != 0:
-                time_start = lock_df.loc[index - 1, "Timestamp"]
-                time_stop = message_info.Timestamp
-                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color="darkgrey", zorder=0)
-            if message_info.Message == "Lock chamber converting stop" and index != 0:
-                time_start = lock_df.loc[index - 1, "Timestamp"]
-                time_stop = message_info.Timestamp
-                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color="grey", zorder=0)
-
-        # plot the approach points
-        sailing_distance_to_crossing_point = self.sailing_distance_to_crossing_point + self.lock_length / 2
-        ax.axvline(-sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
-        ax.axvline(sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
-
-        # set the axis boundaries
-        if xlimmin is None:
-            xlimmin = -2 * sailing_distance_to_crossing_point
-        if xlimmax is None:
-            xlimmax = 2 * sailing_distance_to_crossing_point
-        ax.set_xlim(xlimmin, xlimmax)
-        ax.set_ylim(ylimmin, ylimmax)
-
-    def create_time_distance_plot_plotly(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None):
-        # Define reference systems
-        wgs84eqd = pyproj.CRS("4087")
-        wgs84rad = pyproj.CRS("4326")
-        wgs84rad_to_wgs84eqd = pyproj.transformer.Transformer.from_crs(wgs84rad, wgs84eqd, always_xy=True).transform
-
-        # Create lock edge geometry
-        lock_edge_geometry = transform(wgs84rad_to_wgs84eqd,
-                                       self.multidigraph.edges[self.start_node, self.end_node, 0]["geometry"])
-
-        # Collect vessel traces
-        traces = []
-        all_times = []
-        all_distances = []
-
-        for vessel in vessels:
-            times = []
-            distances = []
-            vessel_df = pd.DataFrame(vessel.logbook)
-            vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: transform(wgs84rad_to_wgs84eqd, x))
-            for index, message_info in vessel_df.iterrows():
-                time = message_info.Timestamp
-                distance = lock_edge_geometry.line_locate_point(message_info.Geometry) - lock_edge_geometry.length / 2
-                route = vessel.route
-                if self.start_node not in route or self.end_node not in route:
-                    continue
-
-                accepted_messages = [
-                    f"Sailing from node {self.start_node} to node {self.end_node} start",
-                    f"Sailing from node {self.end_node} to node {self.start_node} start",
-                    "Sailing to first lock doors start",
-                    "Sailing to first lock doors stop",
-                    "Sailing to position in lock start",
-                    "Sailing to position in lock stop",
-                    "Levelling start",
-                    "Levelling stop",
-                    "Sailing to second lock doors start",
-                    "Sailing to second lock doors stop",
-                    "Sailing to lock complex exit start",
-                    "Sailing to lock complex exit stop",
-                    f"Sailing from node {self.start_node} to node {self.end_node} stop",
-                    f"Sailing from node {self.end_node} to node {self.start_node} stop",
-                ]
-
-                if message_info.Message in accepted_messages:
-                    times.append(time)
-                    distances.append(distance)
-
-            all_times.append(times)
-            all_distances.append(distances)
-
             # Add vessel trace with vessel.name in legend
-            traces.append(go.Scatter(x=distances, y=times, mode='lines', name=vessel.name))
+            if method == 'Plotly':
+                traces.append(go.Scatter(x=distances, y=times, mode='lines', name=vessel.name))
+
+        if method == 'Matplotlib':
+            fig, ax = plt.subplots()
+            for distances, times in zip(all_distances, all_times):
+                ax.plot(distances, times)
+        elif method == 'Plotly':
+            fig = go.Figure(data=traces)
 
         # Determine y-axis limits
         all_y_values = [t for sublist in all_times for t in sublist]
@@ -4660,59 +4566,73 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         if xlimmax is None:
             xlimmax = 2 * sailing_distance_to_crossing_point
 
-        # Create figure
-        fig = go.Figure(data=traces)
+        if method == 'Matplotlib':
+            lock_extend_x = np.array([x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]) - x_correction_inbound
+            ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
+        elif method == 'Plotly':
+            fig.add_shape(type="rect",
+                          x0=x_lock_doorsA - x_correction_inbound, x1=x_lock_doorsB - x_correction_inbound,
+                          y0=ylimmin, y1=ylimmax,
+                          fillcolor="lightgrey", opacity=0.5,
+                          layer="below", line_width=0,
+                          name="Lock Geometry")
 
-        # Lock geometry shading
-        location_lock_doors_A = transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_A)
-        location_lock_doors_B = transform(wgs84rad_to_wgs84eqd, self.location_lock_doors_B)
-        x_lock_doorsA = lock_edge_geometry.line_locate_point(location_lock_doors_A) - lock_edge_geometry.length / 2
-        x_lock_doorsB = lock_edge_geometry.line_locate_point(location_lock_doors_B) - lock_edge_geometry.length / 2
-
-        fig.add_shape(type="rect",
-                      x0=x_lock_doorsA, x1=x_lock_doorsB,
-                      y0=ylimmin, y1=ylimmax,
-                      fillcolor="lightgrey", opacity=0.5,
-                      layer="below", line_width=0,
-                      name="Lock Geometry")
-
-        # Lock phases shading
+        # plot the lock phases
         lock_df = pd.DataFrame(self.logbook)
         for index, message_info in lock_df.iterrows():
-            if index == 0:
-                continue
-            time_start = lock_df.loc[index - 1, "Timestamp"]
-            time_stop = message_info.Timestamp
-            if message_info.Message == "Lock doors opening stop":
+            message_found = False
+            if message_info.Message == "Lock doors opening stop" and index != 0:
+                time_start = lock_df.loc[index - 1, "Timestamp"]
+                time_stop = message_info.Timestamp
                 color = "darkgrey"
                 name = "Lock doors opening"
-            elif message_info.Message == "Lock doors closing stop":
+                message_found = True
+            if message_info.Message == "Lock doors closing stop" and index != 0:
+                time_start = lock_df.loc[index - 1, "Timestamp"]
+                time_stop = message_info.Timestamp
                 color = "darkgrey"
                 name = "Lock doors closing"
-            elif message_info.Message == "Lock chamber converting stop":
+                message_found = True
+            if message_info.Message == "Lock chamber converting stop" and index != 0:
+                time_start = lock_df.loc[index - 1, "Timestamp"]
+                time_stop = message_info.Timestamp
                 color = "grey"
                 name = "Lock chamber converting"
-            else:
-                continue
+                message_found = True
 
-            fig.add_shape(type="rect",
-                          x0=x_lock_doorsA, x1=x_lock_doorsB,
-                          y0=time_start, y1=time_stop,
-                          fillcolor=color, opacity=0.5,
-                          layer="below", line_width=0,
-                          name=name)
+            if method == 'Matplotlib' and message_found:
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color=color, zorder=0)
+            elif method == 'Plotly' and message_found:
+                fig.add_shape(type="rect",
+                              x0=x_lock_doorsA - x_correction_inbound, x1=x_lock_doorsB - x_correction_inbound,
+                              y0=time_start, y1=time_stop,
+                              fillcolor=color, opacity=0.5,
+                              layer="below", line_width=0,
+                              name=name)
 
-        # Approach points
-        fig.add_vline(x=-sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
-        fig.add_vline(x=sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
 
-        # Update layout
-        fig.update_layout(title="Time-Distance Plot of Vessel Movements",
-                          xaxis_title="Distance from Lock Complex [m]",
-                          yaxis_title="Timestamp",
-                          xaxis_range=[xlimmin, xlimmax],
-                          yaxis_range=[ylimmin, ylimmax],
-                          showlegend=True)
+        # plot the approach points
+        sailing_distance_to_crossing_point = self.sailing_distance_to_crossing_point + self.lock_length / 2
+        xlabel = "Distance from Lock Complex [m]"
+        ylabel = "Timestamp"
+        title = "Time-Distance Plot of Vessel Movements"
+        if method == 'Matplotlib':
+            ax.axvline(-sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
+            ax.axvline(sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
+            ax.set_xlim([xlimmin,xlimmax])
+            ax.set_ylim([ylimmin,ylimmax])
+            ax.set_title(title)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
 
-        # Save the plot
+        elif method == 'Plotly':
+            fig.add_vline(x=-sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
+            fig.add_vline(x=sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
+            fig.update_layout(title=title,
+                              xaxis_title=xlabel,
+                              yaxis_title=ylabel,
+                              xaxis_range=[xlimmin, xlimmax],
+                              yaxis_range=[ylimmin, ylimmax],
+                              showlegend=True)
+
         return fig
