@@ -491,7 +491,6 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         """
 
         # obtain dataframe with information of sailing speed, distance and time along route
-        print(route,edges,vessel.name)
         sailing_information_df = self.provide_sailing_time(vessel=vessel, route=route, edges=edges)
 
         # determine indexes of first and last edges
