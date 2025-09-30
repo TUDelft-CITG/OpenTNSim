@@ -860,6 +860,46 @@ class IsLockChamberOperator:
         self.levelling.release(hold_levelling)
         self.door_B.release(hold_door_B)
 
+    def minimum_delay_to_close_doors(self):
+        """
+        Calculates the time delay (in seconds) between when the last vessel has entered the lock and when the lock doors can be closed
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+
+        Returns
+        -------
+        minimum_delay_to_close_doors : pd.Timedelta
+            the minimum time delay that the lock doors can be closed after a vessel has entered the lock
+        """
+        minimum_delay_to_close_doors = pd.Timedelta(seconds=self.sailing_time_before_closing_lock_doors)
+        return minimum_delay_to_close_doors
+
+    def minimum_advance_to_open_doors(self):
+        """
+        Determines the minimum time in advance that a lock door should be opened
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+
+
+        Returns
+        -------
+        minimum_advance_to_open_doors : pd.Timedelta
+            the minimum time in advance that a lock door should be opened [s]
+
+        """
+        minimum_advance_to_open_doors = pd.Timedelta(seconds=self.sailing_time_before_opening_lock_doors)
+        # minimum_advance_to_open_doors += pd.Timedelta(seconds=vessel.L/self.vessel_sailing_in_speed(vessel,direction))
+        # TODO: take into account the vessels' bows and sterns to determine the time before and after which the door should be respectively opened and closed
+        return minimum_advance_to_open_doors
+
 
 class HasLockPlanning:
     """This class keeps track of the lock-planning of a lock-master."""
@@ -1015,7 +1055,7 @@ class HasLockPlanning:
         operation_planning.loc[operation_index, "capacity_B"] = self.lock_complex.lock_width - vessel.B
 
         # determine the minimum time that doors should be opened in advance of a vessel arrival and add this to the vessel planning
-        minimum_advance_to_open_doors = self.minimum_advance_to_open_doors(vessel, direction)
+        minimum_advance_to_open_doors = self.minimum_advance_to_open_doors()
         time_potential_lock_door_opening_stop = time_lock_entry_start - minimum_advance_to_open_doors
         vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_opening_stop"] = time_potential_lock_door_opening_stop
         if not previous_planned_operations.empty:
@@ -1055,8 +1095,7 @@ class HasLockPlanning:
                 operation_planning.loc[operation_index, "capacity_L"] + 0.5 * vessel.L
             )  # determine the longitudinal location coordinate (x) of the vessel to calculate the time that the lock door closing process can start
             vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = (
-                time_lock_entry_start
-                + self.minimum_delay_to_close_doors(vessel, direction, after_lock_entry=True, x_location_lock=x_location_lock)
+                time_lock_entry_start + self.minimum_delay_to_close_doors()
             )
         else:
             vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = time_lock_entry_stop
@@ -1383,11 +1422,11 @@ class HasLockPlanning:
         operation_planning.loc[operation_index, "wlev_A"] = wlev_A
         operation_planning.loc[operation_index, "wlev_B"] = wlev_B
         vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_opening_stop"] = (
-            time_vessel_entry_start - self.minimum_advance_to_open_doors(vessel, direction)
+            time_vessel_entry_start - self.minimum_advance_to_open_doors()
         )
         if self.close_doors_before_vessel_is_laying_still:
             vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = (
-                time_vessel_entry_start + self.minimum_delay_to_close_doors(vessel, direction)
+                time_vessel_entry_start + self.minimum_delay_to_close_doors()
             )
         else:
             vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = time_door_closing_start
@@ -3713,7 +3752,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         """
         first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
         lock_entry_start_time = self.calculate_vessel_entry_start_time(first_vessel, direction)
-        lock_entry_start_time -= self.minimum_advance_to_open_doors(vessel, direction)
+        lock_entry_start_time -= self.minimum_advance_to_open_doors()
         return lock_entry_start_time
 
     def calculate_lock_entry_start_time(self, vessel, operation_index, direction, prognosis=False, overwrite=True):
@@ -3850,7 +3889,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # overwrite the time door closing start if there is a rule that the doors can close before a vessel is laying still and there are vessels in the lock
         if self.close_doors_before_vessel_is_laying_still and vessel is not None:
-            time_door_closing_start = last_entering_time + self.minimum_delay_to_close_doors(vessel, direction, after_lock_entry=True, x_location_lock=x_location_lock)
+            time_door_closing_start = last_entering_time + self.minimum_delay_to_close_doors()
 
         # determine the new closing stop times of the doors and the time that the levelling can hence start
         time_door_closing_stop = time_door_closing_start + pd.Timedelta(seconds=self.lock_complex.doors_closing_time)
@@ -4007,57 +4046,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         time_operation_stop = self.calculate_vessel_passing_stop_time(last_vessel, operation_index, direction, prognosis)
         return time_operation_stop
 
-    def minimum_delay_to_close_doors(self, vessel, direction, after_lock_entry=False, x_location_lock=0.):
-        """
-        Calculates the time delay between when the last vessel has entered the lock and when the lock doors can be closed
-
-        Parameters
-        ----------
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-        direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
-        after_lock_entry : bool
-            .
-        x_location_lock : float
-            longitudinal coordinate at which the vessel is located
-
-        Returns
-        -------
-        minimum_delay_to_close_doors : pd.Timedelta
-            the minimum time delay that the lock doors can be closed after a vessel has entered the lock
-        """
-        minimum_delay_to_close_doors = pd.Timedelta(seconds=self.sailing_time_before_closing_lock_doors)
-        # if not after_lock_entry:
-        #     minimum_delay_to_close_doors += pd.Timedelta(seconds=0.5*vessel.L/self.vessel_sailing_out_speed(vessel,direction))
-        # else:
-        #     minimum_delay_to_close_doors += pd.Timedelta(seconds=0.5*vessel.L/self.vessel_sailing_speed_in_lock(vessel)
-        # TODO: take into account the vessels' bows and sterns to determine the time before and after which the door should be respectively opened and closed
-        return minimum_delay_to_close_doors
-
-    def minimum_advance_to_open_doors(self, vessel, direction):
-        """
-        Determines the minimum time in advance that a lock door should be opened
-
-        Parameters
-        ----------
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-        direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
-
-
-        Returns
-        -------
-        minimum_advance_to_open_doors : pd.Timedelta
-            the minimum time in advance that a lock door should be opened [s]
-
-        """
-        minimum_advance_to_open_doors = pd.Timedelta(seconds=self.sailing_time_before_opening_lock_doors)
-        # minimum_advance_to_open_doors += pd.Timedelta(seconds=vessel.L/self.vessel_sailing_in_speed(vessel,direction))
-        # TODO: take into account the vessels' bows and sterns to determine the time before and after which the door should be respectively opened and closed
-        return minimum_advance_to_open_doors
-
     def calculate_lock_door_closing_time(self, vessel, operation_index, direction, prognosis=False):
         """
         DOCUMENTATION HERE
@@ -4069,7 +4057,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         :return:
         """
         lock_doors_closing_time = self.calculate_lock_departure_stop_time(vessel, operation_index, direction, prognosis)
-        lock_doors_closing_time += self.minimum_delay_to_close_doors(vessel, direction)
+        lock_doors_closing_time += self.minimum_delay_to_close_doors()
         return lock_doors_closing_time
 
     def determine_first_vessel_of_lock_operation(self, vessel, operation_index):
