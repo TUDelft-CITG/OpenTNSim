@@ -29,30 +29,6 @@ from opentnsim.output import HasOutput
 knots_to_ms = knots = 0.514444444
 gravitational_acceleration = 9.81
 
-def subtract_vessels_from_lock_operation(operation_planning, operation_index):
-    """
-    Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
-
-    Parameters
-    ----------
-    operation_index : int
-        index of the lock operation
-
-    Returns
-    -------
-    vessels : list of vessel type objects
-        the vessels that have been assigned to the specified lock operation (a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput)
-
-    """
-    # set default list of vessels (empty)
-    vessels = []
-
-    # determines the vessels in the lock operation
-    selected_operation = operation_planning[operation_planning.index == operation_index]
-    if not selected_operation.empty:
-        vessels = operation_planning.loc[operation_index, "vessels"].copy()
-    return vessels
-
 
 def _get_lock_on_node(multidigraph, registration_node):
     """Get the lock complex object that is associated with a registration node node
@@ -79,6 +55,86 @@ def _get_lock_on_node(multidigraph, registration_node):
     # Return None if no lock exists on the edge
     else:
         return None
+
+
+class HasLockPlanning:
+    """This class keeps track of the lock-planning of a lock-master."""
+
+    def __init__(self, *args, **kwargs):
+        self.vessel_planning = pd.DataFrame(
+            index=pd.Index([]),
+            columns=[
+                "id",
+                "bound",
+                "L",
+                "B",
+                "T",
+                "operation_index",
+                "time_of_registration",
+                "time_of_acceptance",
+                "time_arrival_at_waiting_area",
+                "time_arrival_at_lineup_area",
+                "time_lock_passing_start",
+                "time_lock_entry_start",
+                "time_lock_entry_stop",
+                "time_lock_departure_start",
+                "time_lock_departure_stop",
+                "time_lock_passing_stop",
+            ],
+        )
+        self.operation_planning = pd.DataFrame(
+            index=pd.Index([], name="lock_operation"),
+            columns=[
+                "bound",
+                "vessels",
+                "capacity_L",
+                "capacity_B",
+                "time_potential_lock_door_opening_stop",
+                "time_operation_start",  # See comments below
+                "time_entry_start",  # See comments below
+                "time_entry_stop",
+                "time_door_closing_start",
+                "time_door_closing_stop",
+                "time_levelling_start",
+                "time_levelling_stop",
+                "time_door_opening_start",
+                "time_door_opening_stop",
+                "time_departure_start",
+                "time_departure_stop",  # Note that start and stop times of different operations can overlap, but entry start and departure stop can not
+                "time_operation_stop",  # Operation start and stop times are solely required when leaving and entering vessels need to pass each other at the safe crossing point
+                "time_potential_lock_door_closure_start",
+                "wlev_A",
+                "wlev_B",
+                "maximum_individual_delay",
+                "total_delay",
+                "status",
+            ],
+        )
+
+    def get_vessel_from_planned_operation(self, operation_index):
+        """
+        Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
+
+        Parameters
+        ----------
+        operation_index : int
+            index of the lock operation
+
+        Returns
+        -------
+        vessels : list of vessel type objects
+            the vessels that have been assigned to the specified lock operation (a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput)
+
+        """
+        # set default list of vessels (empty)
+        vessels = []
+
+        # determines the vessels in the lock operation
+        selected_operation = self.lock_complex.operation_planning[self.lock_complex.operation_planning.index == operation_index]
+        if not selected_operation.empty:
+            vessels = selected_operation.loc[operation_index, "vessels"].copy()
+        print(f"output: {vessels}")
+        return vessels
 
 
 class PassesLockComplex(Movable, HasMultiDiGraph):
@@ -667,55 +723,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         self.distance_from_end_node_to_lock_doors_B = distance_from_end_node_to_lock_doors_B
         self.used_as_one_way_traffic_regulation = used_as_one_way_traffic_regulation
         self.converting_chamber = False
-        self.vessel_planning = pd.DataFrame(
-            index=pd.Index([]),
-            columns=[
-                "id",
-                "bound",
-                "L",
-                "B",
-                "T",
-                "operation_index",
-                "time_of_registration",
-                "time_of_acceptance",
-                "time_arrival_at_waiting_area",
-                "time_arrival_at_lineup_area",
-                "time_lock_passing_start",
-                "time_lock_entry_start",
-                "time_lock_entry_stop",
-                "time_lock_departure_start",
-                "time_lock_departure_stop",
-                "time_lock_passing_stop",
-            ],
-        )
-        self.operation_planning = pd.DataFrame(
-            index=pd.Index([], name="lock_operation"),
-            columns=[
-                "bound",
-                "vessels",
-                "capacity_L",
-                "capacity_B",
-                "time_potential_lock_door_opening_stop",
-                "time_operation_start",  # See comments below
-                "time_entry_start",  # See comments below
-                "time_entry_stop",
-                "time_door_closing_start",
-                "time_door_closing_stop",
-                "time_levelling_start",
-                "time_levelling_stop",
-                "time_door_opening_start",
-                "time_door_opening_stop",
-                "time_departure_start",
-                "time_departure_stop",  # Note that start and stop times of different operations can overlap, but entry start and departure stop can not
-                "time_operation_stop",  # Operation start and stop times are solely required when leaving and entering vessels need to pass each other at the safe crossing point
-                "time_potential_lock_door_closure_start",
-                "wlev_A",
-                "wlev_B",
-                "maximum_individual_delay",
-                "total_delay",
-                "status",
-            ],
-        )
+
         # TODO: checken of de seed_nr en de random functie worden gebruikt.
         if seed_nr is not None:
             np.random.seed(seed_nr)
@@ -1097,120 +1105,120 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         return levelling_time, t, z
 
 
-class IsLockMaster(SimpyObject):
+class IsLockMaster(SimpyObject, HasLockPlanning):
     """Mixin class: lock complex has a lock master:
 
-        Creates a lock master that schedules the vessels into lock operations
+    Creates a lock master that schedules the vessels into lock operations
 
-        Parent classes
-        --------------
-        SimpyObject :
-            to be able to pass edges and nodes of the graph
+    Parent classes
+    --------------
+    SimpyObject :
+        to be able to pass edges and nodes of the graph
 
-        Attributes
-        ----------
-        create_operational_hours :
-            creates an DataFrame with the operational hours of the lock complex
-        register_vessel :
-            registers a vessel to the lock operation and vessel planning
-        calculate_sailing_information_on_route_to_lock_complex :
-            calculates the sailing information (i.e., duration, distance, and speed) of the vessel per edge of its route between its current location and the lock doors
-        overrule_vessel_speed :
-            overrules the speed of an vessel based on the additional waiting time
-        initiate_levelling :
+    Attributes
+    ----------
+    create_operational_hours :
+        creates an DataFrame with the operational hours of the lock complex
+    register_vessel :
+        registers a vessel to the lock operation and vessel planning
+    calculate_sailing_information_on_route_to_lock_complex :
+        calculates the sailing information (i.e., duration, distance, and speed) of the vessel per edge of its route between its current location and the lock doors
+    overrule_vessel_speed :
+        overrules the speed of an vessel based on the additional waiting time
+    initiate_levelling :
 
-        allow_vessel_to_sail_out_of_lock :
+    allow_vessel_to_sail_out_of_lock :
 
-        allow_vessel_to_sail_in_lock :
+    allow_vessel_to_sail_in_lock :
 
-        add_vessel_to_vessel_planning :
-            adds vessel to the vessel planning of the lock complex upon request
-        add_empty_lock_operation_to_planning :
-            adds an empty lock operation to the operation planning
-        determine_route_to_waiting_area_from_node :
+    add_vessel_to_vessel_planning :
+        adds vessel to the vessel planning of the lock complex upon request
+    add_empty_lock_operation_to_planning :
+        adds an empty lock operation to the operation planning
+    determine_route_to_waiting_area_from_node :
 
-        calculate_sailing_time_to_waiting_area :
-            calculates the sailing time of a vessel from its location to the waiting area
-        calculate_sailing_time_to_lineup_area :
-            calculates the sailing time of a vessel from its location to the line-up area
-        calculate_sailing_time_to_approach_point :
-            calculates the sailing time of a vessel from its location to the approach point
-        calculate_sailing_time_to_lock_door :
-            calculates the sailing time of a vessel from its location to the first lock doors that it will encounter
-        calculate_sailing_time_in_lock :
-            calculates the time duration that a vessel needs to enter the lock until laying still
-        calculate_sailing_in_time_delay :
-            calculates the minimum required time gap between two entering vessels for safety, resulting in a delay
-        calculate_vessel_entry_start_time :
-            calculates the moment in time that a vessel starts entering the lock
-        calculate_vessel_passing_start_time :
-            calculates the start time that a vessel can start its manoeuvre of entering the lock
-        calculate_lock_operation_start_time :
-            calculates the new earliest possible start time of a lock operation
-        calculate_lock_door_opening_time :
-            .
-        calculate_lock_entry_start_time :
-            .
-        calculate_vessel_entry_stop_time :
-            calculates the moment in time that a vessel finished its lock entry process
-        calculate_lock_entry_stop_time :
-            calculates the moment in time that a lock operation entry process of all the assigned vessels is finished (all vessels are in lock chamber)
-        calculate_lock_operation_times :
-            calculates the moments in time of the start and stop of the operation steps of the lock: (1) door closing, (2) levelling, (3) door opening
-        calculate_vessel_departure_start_time :
-            .
-        calculate_lock_departure_start_time :
-            .
-        calculate_vessel_sailing_time_out_of_lock :
-            .
-        calculate_vessel_departure_stop_time :
-            .
-        calculate_lock_departure_stop_time :
-            .
-        calculate_vessel_passing_stop_time :
-            .
-        calculate_lock_operation_stop_time :
-            .
-        minimum_delay_to_close_doors :
-            calculates the time delay between when the last vessel has entered the lock and when the lock doors can be closed
-        minimum_advance_to_open_doors :
-            determines the minimum time in advance that a lock door should be opened
-        calculate_lock_door_closing_time :
+    calculate_sailing_time_to_waiting_area :
+        calculates the sailing time of a vessel from its location to the waiting area
+    calculate_sailing_time_to_lineup_area :
+        calculates the sailing time of a vessel from its location to the line-up area
+    calculate_sailing_time_to_approach_point :
+        calculates the sailing time of a vessel from its location to the approach point
+    calculate_sailing_time_to_lock_door :
+        calculates the sailing time of a vessel from its location to the first lock doors that it will encounter
+    calculate_sailing_time_in_lock :
+        calculates the time duration that a vessel needs to enter the lock until laying still
+    calculate_sailing_in_time_delay :
+        calculates the minimum required time gap between two entering vessels for safety, resulting in a delay
+    calculate_vessel_entry_start_time :
+        calculates the moment in time that a vessel starts entering the lock
+    calculate_vessel_passing_start_time :
+        calculates the start time that a vessel can start its manoeuvre of entering the lock
+    calculate_lock_operation_start_time :
+        calculates the new earliest possible start time of a lock operation
+    calculate_lock_door_opening_time :
+        .
+    calculate_lock_entry_start_time :
+        .
+    calculate_vessel_entry_stop_time :
+        calculates the moment in time that a vessel finished its lock entry process
+    calculate_lock_entry_stop_time :
+        calculates the moment in time that a lock operation entry process of all the assigned vessels is finished (all vessels are in lock chamber)
+    calculate_lock_operation_times :
+        calculates the moments in time of the start and stop of the operation steps of the lock: (1) door closing, (2) levelling, (3) door opening
+    calculate_vessel_departure_start_time :
+        .
+    calculate_lock_departure_start_time :
+        .
+    calculate_vessel_sailing_time_out_of_lock :
+        .
+    calculate_vessel_departure_stop_time :
+        .
+    calculate_lock_departure_stop_time :
+        .
+    calculate_vessel_passing_stop_time :
+        .
+    calculate_lock_operation_stop_time :
+        .
+    minimum_delay_to_close_doors :
+        calculates the time delay between when the last vessel has entered the lock and when the lock doors can be closed
+    minimum_advance_to_open_doors :
+        determines the minimum time in advance that a lock door should be opened
+    calculate_lock_door_closing_time :
 
-        determine_first_vessel_of_lock_operation :
-            determines the first vessel that was assigned to the lock operation
-        determine_last_vessel_of_lock_operation:
-            determines the last vessel that was assigned to the lock operation
-        calculate_delay_to_open_doors :
-            .
-        determine_if_door_can_be_closed :
-            .
-        determine_if_door_is_closed :
-            .
-        determine_time_to_open_door :
-            .
-        determine_water_levels_before_and_after_levelling :
-            determines the water level at both sides of the lock
-        subtract_vessels_from_lock_operation :
-            gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
-        update_operation_planning :
-            updates the lock master's lock operation planning
-        add_vessel_to_new_lock_operation :
-            adds a vessel to a newly to be planned lock operation
-        add_vessel_to_planned_lock_operation :
-            add vessel to a planned lock operation
-        assign_vessel_to_lock_operation :
-            adds a vessel to the lock operation planning
-        convert_chamber :
-            converts the lock chamber and logs this event
-        close_door :
-            .
-        level_lock :
-            .
-        open_door :
-            .
+    determine_first_vessel_of_lock_operation :
+        determines the first vessel that was assigned to the lock operation
+    determine_last_vessel_of_lock_operation:
+        determines the last vessel that was assigned to the lock operation
+    calculate_delay_to_open_doors :
+        .
+    determine_if_door_can_be_closed :
+        .
+    determine_if_door_is_closed :
+        .
+    determine_time_to_open_door :
+        .
+    determine_water_levels_before_and_after_levelling :
+        determines the water level at both sides of the lock
+    get_vessel_from_planned_operation :
+        gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
+    update_operation_planning :
+        updates the lock master's lock operation planning
+    add_vessel_to_new_lock_operation :
+        adds a vessel to a newly to be planned lock operation
+    add_vessel_to_planned_lock_operation :
+        add vessel to a planned lock operation
+    assign_vessel_to_lock_operation :
+        adds a vessel to the lock operation planning
+    convert_chamber :
+        converts the lock chamber and logs this event
+    close_door :
+        .
+    level_lock :
+        .
+    open_door :
+        .
 
-        """
+    """
 
     def __init__(
         self,
@@ -1844,7 +1852,6 @@ class IsLockMaster(SimpyObject):
             if not direction: ###hereh
                 vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock.start_node,lock.end_node,lock.distance_from_start_node_to_lock_doors_A + vessel.distance_position_from_first_lock_doors)
             elif direction:
-                print(lock.distance_from_end_node_to_lock_doors_B, vessel.distance_position_from_first_lock_doors)
                 vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock.end_node,lock.start_node,lock.distance_from_end_node_to_lock_doors_B + vessel.distance_position_from_first_lock_doors)
 
             vessel_speed = lock.vessel_sailing_speed_in_lock(vessel)
@@ -1902,7 +1909,6 @@ class IsLockMaster(SimpyObject):
         if (not direction and self.has_lineup_area_A) or (direction and self.has_lineup_area_B): #if lock has a lineup area
             self.calculate_sailing_time_to_lineup_area(vessel, direction)
         _ = self.calculate_sailing_time_to_approach_point(vessel, direction)
-        print('ho', vessel.name, direction, vessel.current_node)
         _ = self.calculate_sailing_time_to_lock_door(vessel, direction)
 
     def add_empty_lock_operation_to_planning(self, operation_index, direction):
@@ -2153,7 +2159,6 @@ class IsLockMaster(SimpyObject):
 
         # determine the time of the vessel to its first encountered waiting area and lock_door TODO: in the 'add_vessel_to_planning'-function these functions has already been done, so doing these again can be computational intensive and should be prevented. Can we include tests that before this function is ran, these following functions have already been ran? How can we extract the earlier output?
         # sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, current_node = current_node,overwrite=overwrite)[0]
-        print('hi',vessel.name,direction,current_node)
         sailing_time_to_lock_door = self.calculate_sailing_time_to_lock_door(
             vessel, direction, current_node=current_node, overwrite=overwrite
         )
@@ -2281,8 +2286,7 @@ class IsLockMaster(SimpyObject):
 
         """
         # determine the vessels assigned to the lock operation (that are already in the lock)
-        vessels = subtract_vessels_from_lock_operation(
-            operation_planning=self.lock_complex.operation_planning,
+        vessels = self.get_vessel_from_planned_operation(
             operation_index=operation_index,
         )
 
@@ -2292,6 +2296,7 @@ class IsLockMaster(SimpyObject):
             vessel_index = vessels.index(vessel)
             sailing_distance_from_lock_doors = (self.lock_length - np.sum([vessel.L for vessel in vessels[:vessel_index]])) - 0.5 * vessel.L
         else:
+            print(vessel.name)
             sailing_distance_from_lock_doors = (self.lock_length - np.sum([vessel.L for vessel in vessels]) - 0.5 * vessel.L)
 
         # determine the sailing speed of the vessel in the lock
@@ -2338,8 +2343,7 @@ class IsLockMaster(SimpyObject):
         vessel_planning = self.lock_complex.vessel_planning
 
         # unpack the vessels from the lock operations
-        vessels = subtract_vessels_from_lock_operation(
-            operation_planning=self.lock_complex.operation_planning,
+        vessels = self.get_vessel_from_planned_operation(
             operation_index=operation_index,
         )
 
@@ -2350,7 +2354,6 @@ class IsLockMaster(SimpyObject):
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
 
         # determine the sailing time to the lock door to determine the vessel entry start time (if this changed over the route of the vessel) TODO: is this required or can we extract this from the vessel planning?
-        print('hu', vessel.name, direction, vessel.current_node)
         sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis=prognosis, overwrite=overwrite)
         vessel_entry_start_timestamp = np.max([current_time + sailing_time_to_lock, vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']])
 
@@ -2453,7 +2456,6 @@ class IsLockMaster(SimpyObject):
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
 
         # calculate the sailing time durations to the lock door, the approach point and if there is any form of delay for this
-        print('he', vessel.name, direction, vessel.current_node)
         sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis=prognosis, overwrite=overwrite)
         sailing_time_entry = self.calculate_vessel_entry_start_time(vessel, direction)
         sailing_in_delay = self.calculate_sailing_in_time_delay(
@@ -2689,8 +2691,7 @@ class IsLockMaster(SimpyObject):
         :param prognosis:
         :return:
         """
-        vessels = subtract_vessels_from_lock_operation(
-            operation_planning=self.lock_complex.operation_planning,
+        vessels = self.get_vessel_from_planned_operation(
             operation_index=operation_index,
         )
         if not prognosis:
@@ -2744,8 +2745,7 @@ class IsLockMaster(SimpyObject):
         :param prognosis:
         :return:
         """
-        vessels = subtract_vessels_from_lock_operation(
-            operation_planning=self.lock_complex.operation_planning,
+        vessels = self.get_vessel_from_planned_operation(
             operation_index=operation_index,
         )
         # Time to sail out
@@ -2897,8 +2897,7 @@ class IsLockMaster(SimpyObject):
         first_vessel = vessel
 
         # unpack the vessels of the specified lock operation
-        vessels = subtract_vessels_from_lock_operation(
-            operation_planning=self.lock_complex.operation_planning,
+        vessels = self.get_vessel_from_planned_operation(
             operation_index=operation_index,
         )
 
@@ -2927,8 +2926,7 @@ class IsLockMaster(SimpyObject):
             the last assigned vessel of the lock operation (the one that will enter and leave the lock chamber last)
         """
         # identify the vessels assigned the lock operation
-        vessels = subtract_vessels_from_lock_operation(
-            operation_planning=self.lock_complex.operation_planning,
+        vessels = self.get_vessel_from_planned_operation(
             operation_index=operation_index,
         )
 
@@ -3422,7 +3420,6 @@ class IsLockMaster(SimpyObject):
                 yield self.env.timeout(0.) #required to update the vessel_planning TODO: we may want to try to remove this
 
                 # calculate the required sailing in time delay
-                print('hmm')
                 sailing_in_gap = self.calculate_sailing_in_time_delay(
                     vessel, operation_index, direction, prognosis=False, overwrite=False
                 )
@@ -4430,7 +4427,6 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                               fillcolor=color, opacity=0.5,
                               layer="below", line_width=0,
                               name=name)
-
 
         # plot the approach points
         sailing_distance_to_crossing_point = self.sailing_distance_to_crossing_point + self.lock_length / 2
