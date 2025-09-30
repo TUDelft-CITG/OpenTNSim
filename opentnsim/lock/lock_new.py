@@ -711,13 +711,13 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         sailing_out_time_gap_through_doors=180.0,  # a float that is the time gap after which the next vessel can sail out of the lock through the lock doors (after another vessel has sailed through to leave the lock)[s]
         sailing_in_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail into the lock (after another vessel has berthed) [s]
         sailing_out_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail out of the lock (after another vessel has deberthed) [s]
-        # TODO: @Floor: Het voelt een beetje gek om hier zowel zee als kanaal op te geven. Ik zou denken dat een sluis óf op zee óf in een kanaal is, en dat de andere sailing speed dus niet nodig is. Kunnen deze params worden samengevoegd, of wel echt nodig?
-        sailing_in_speed_sea=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
-        sailing_out_speed_sea=2
+
+        sailing_in_speed_A=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
+        sailing_out_speed_A=2
         * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
-        sailing_in_speed_canal=2
+        sailing_in_speed_B=2
         * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
-        sailing_out_speed_canal=2
+        sailing_out_speed_B=2
         * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
         minimum_manoeuvrability_speed=2
         * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
@@ -743,7 +743,7 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         # TODO: @Floor lock_depth wordt niet gebruikt... Willen we die houden?
         self.lock_depth = lock_depth
         # TODO @Floor, is deze coefficient afhankelijk van de lock, of is dit een standaard coefficient die we ergens anders kunnen opslaan?
-        self.disch_coeff = disch_coeff
+        self.disch_coeff = disch_coeff #0.4
 
         self.opening_area = opening_area
         if opening_depth is None:
@@ -756,10 +756,10 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
         self.minimum_time_between_operations_for_intermediate_door_closure = minimum_time_between_operations_for_intermediate_door_closure
         self.sailing_in_time_gap_after_berthing_previous_vessel = sailing_in_time_gap_after_berthing_previous_vessel
         self.sailing_out_time_gap_after_berthing_previous_vessel = sailing_out_time_gap_after_berthing_previous_vessel
-        self.sailing_in_speed_sea = sailing_in_speed_sea
-        self.sailing_out_speed_sea = sailing_out_speed_sea
-        self.sailing_in_speed_canal = sailing_in_speed_canal
-        self.sailing_out_speed_canal = sailing_out_speed_canal
+        self.sailing_in_speed_A = sailing_in_speed_A
+        self.sailing_out_speed_A = sailing_out_speed_A
+        self.sailing_in_speed_B = sailing_in_speed_B
+        self.sailing_out_speed_B = sailing_out_speed_B
         self.sailing_distance_to_crossing_point = sailing_distance_to_crossing_point
         self.sailing_in_time_gap_through_doors = sailing_in_time_gap_through_doors
         self.sailing_out_time_gap_through_doors = sailing_out_time_gap_through_doors
@@ -942,10 +942,10 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
             the average speed in the lock from the lock doors to the location of berthing
 
         """
-        # TODO: sailing_in_speed_canal zou A of B moeten zijn. Checken of deze eigenschap vaker voorkomt.
-        speed = self.sailing_in_speed_canal
+        # TODO: sailing_in_speed_B zou A of B moeten zijn. Checken of deze eigenschap vaker voorkomt.
+        speed = self.sailing_in_speed_B
         if vessel.bound == 'inbound':
-            speed = self.sailing_in_speed_sea
+            speed = self.sailing_in_speed_A
 
         return speed
 
@@ -968,10 +968,9 @@ class IsLockChamber(HasResource, HasLength, Identifiable, Log, HasOutput, HasMul
             the average speed in the lock from the lock doors to the location of berthing
 
         """
-        # TODO: sailing_in_speed_canal zou A of B moeten zijn. Checken of deze eigenschap vaker voorkomt.
-        speed = self.sailing_out_speed_sea
+        speed = self.sailing_out_speed_A
         if vessel.bound == 'inbound':
-            speed = self.sailing_out_speed_canal
+            speed = self.sailing_out_speed_B
 
         return speed
 
@@ -2021,6 +2020,7 @@ class IsLockMaster(SimpyObject):
         if (not direction and self.has_lineup_area_A) or (direction and self.has_lineup_area_B): #if lock has a lineup area
             self.calculate_sailing_time_to_lineup_area(vessel, direction, pre_planning=pre_planning)
         _ = self.calculate_sailing_time_to_approach_point(vessel, direction, pre_planning=pre_planning)
+        print('ho', vessel.name, direction, vessel.current_node)
         _ = self.calculate_sailing_time_to_lock_door(vessel, direction, pre_planning=pre_planning)
 
     def add_empty_lock_operation_to_planning(self, operation_index, direction):
@@ -2279,6 +2279,7 @@ class IsLockMaster(SimpyObject):
 
         # determine the time of the vessel to its first encountered waiting area and lock_door TODO: in the 'add_vessel_to_planning'-function these functions has already been done, so doing these again can be computational intensive and should be prevented. Can we include tests that before this function is ran, these following functions have already been ran? How can we extract the earlier output?
         # sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, current_node = current_node, pre_planning=pre_planning,overwrite=overwrite)[0]
+        print('hi',vessel.name,direction,current_node)
         sailing_time_to_lock_door = self.calculate_sailing_time_to_lock_door(vessel, direction, current_node = current_node, pre_planning=pre_planning, overwrite=overwrite)
 
         # determine the sailing time to the approach point
@@ -2482,6 +2483,7 @@ class IsLockMaster(SimpyObject):
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
 
         # determine the sailing time to the lock door to determine the vessel entry start time (if this changed over the route of the vessel) TODO: is this required or can we extract this from the vessel planning?
+        print('hu', vessel.name, direction, vessel.current_node)
         sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis=prognosis,pre_planning=pre_planning, overwrite=overwrite)
         vessel_entry_start_timestamp = np.max([current_time + sailing_time_to_lock, vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']])
 
@@ -2588,6 +2590,7 @@ class IsLockMaster(SimpyObject):
             current_time = vessel_planning.loc[vessel_planning_index,'time_of_acceptance']
 
         # calculate the sailing time durations to the lock door, the approach point and if there is any form of delay for this
+        print('he', vessel.name, direction, vessel.current_node)
         sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis=prognosis,pre_planning=pre_planning,overwrite=overwrite)
         sailing_time_entry = self.calculate_vessel_entry_start_time(vessel, direction)
         sailing_in_delay = self.calculate_sailing_in_time_delay(vessel, operation_index, direction, prognosis=prognosis, pre_planning=pre_planning,overwrite=overwrite)
@@ -3585,6 +3588,7 @@ class IsLockMaster(SimpyObject):
                 yield self.env.timeout(0.) #required to update the vessel_planning TODO: we may want to try to remove this
 
                 # calculate the required sailing in time delay
+                print('hmm')
                 sailing_in_gap = self.calculate_sailing_in_time_delay(vessel, operation_index, direction, prognosis=False,pre_planning=self.predictive, overwrite=False)
 
         # calculate the new arrival time at the lock entry
@@ -3652,6 +3656,7 @@ class IsLockMaster(SimpyObject):
                 previous_vessel_planning_index = vessel_planning[vessel_planning.id == previous_vessel.id].iloc[-1].name
 
                 # calculate the sailing in time delay for the previous vessel based on the latter vessel TODO: is this correct? can a vessel be earlier than its own entry start time?
+                print('yo')
                 sailing_in_gap = self.calculate_sailing_in_time_delay(latter_vessel, operation_index, direction, minimum_difference_with_previous_vessel=True, prognosis=False,pre_planning=self.predictive, overwrite=False)
                 sailing_in_delay = (vessel_planning.loc[latter_vessel_planning_index, 'time_lock_entry_start'] - vessel_planning.loc[previous_vessel_planning_index, 'time_lock_entry_start']) - sailing_in_gap
 
@@ -3806,6 +3811,7 @@ class IsLockMaster(SimpyObject):
 
             # update the vessel planning
             next_vessels = next_operation_info.vessels
+            next_direction = next_operation_info.bound
             last_vessel_entering_time = operation_planning.loc[next_operation_index, 'time_entry_start']
             for next_vessel_index,next_vessel in enumerate(next_vessels):
                 next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
@@ -3823,8 +3829,7 @@ class IsLockMaster(SimpyObject):
                     # determine sailing in delay for next vessel (it can be that there is some slack time between two vessel arrivals)
                     sailing_in_delay = pd.Timedelta(seconds=0)
                     if vessel_planning.loc[next_next_vessel_planning_index, 'time_lock_entry_start'] < vessel_planning.loc[next_vessel_planning_index, 'time_lock_entry_start']:
-                        sailing_in_delay = (vessel_planning.loc[next_vessel_planning_index, 'time_lock_entry_start'] - vessel_planning.loc[next_next_vessel_planning_index, 'time_lock_entry_start'])
-                        sailing_in_delay += self.calculate_sailing_in_time_delay(next_next_vessel, next_operation_index, direction, minimum_difference_with_previous_vessel=True, pre_planning=self.predictive, overwrite=False)
+                        sailing_in_delay += self.calculate_sailing_in_time_delay(next_next_vessel, next_operation_index, next_direction, minimum_difference_with_previous_vessel=True, pre_planning=self.predictive, overwrite=False)
 
             # determine the new start and stop times of the lock operation (i.e., door-closing, levelling, door-opening) as it can be that the levelling time is now changed due to the shift of this operation in time (i.e., due to tides)
             time_doors_closing = operation_planning.loc[next_operation_index, 'time_entry_stop']
