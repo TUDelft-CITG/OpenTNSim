@@ -43,6 +43,53 @@ logging.basicConfig(level=logging.INFO)
 wgs84 = pyproj.Geod(ellps="WGS84")
 
 
+def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
+    """get the length of an edge in meters
+
+    Parameters
+    ----------
+    graph: networkx.Graph
+        The graph object.
+    edge : tuple
+        The edge to get the length of. is a tuple of two node-names.
+
+    Returns
+    -------
+    float
+        The length of the edge in meters.
+    """
+
+    edge_info = graph.edges[edge]
+    if "length_m" in edge_info:
+        return edge_info["length_m"]
+    elif "geometry" in edge_info:
+        geometry = graph.nodes[edge[0]]["geometry"]
+        if current_crs != crs_meter:
+            #TODO
+            
+    else:
+        # return the distance as the bird flies
+        orig = nx.get_node_attributes(graph, "geometry")[edge[0]]
+        dest = nx.get_node_attributes(graph, "geometry")[edge[1]]
+        # TODO deze distance berekening aanpassen. De fis graaf bevat deze informatie ook.
+        wgs84 = pyproj.Geod(ellps="WGS84")
+        distance = wgs84.inv(
+            shapely.geometry.shape(orig).x,
+            shapely.geometry.shape(orig).y,
+            shapely.geometry.shape(dest).x,
+            shapely.geometry.shape(dest).y,
+        )[2]
+        graph.edges[edge]["length_m"] = distance
+        return distance
+
+    if not isinstance(edge["geometry"], shapely.geometry.LineString):
+        raise ValueError("Edge 'geometry' attribute must be a shapely LineString.")
+
+    length = wgs84.geometry_length(edge["geometry"])
+
+    return length
+
+
 def find_closest_node(G, point):
     """find the closest node on the graph from a given point"""
 
