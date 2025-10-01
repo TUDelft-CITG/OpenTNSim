@@ -22,6 +22,9 @@ from shapely import Geometry
 import networkx as nx
 import simpy
 
+# time packages
+import datetime
+
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
@@ -252,6 +255,13 @@ class Movable(Locatable, Routable, Log):
         time it takes to travel the distance to the destination.
 
         """
+
+        # Check if vessel has arrival time and let vessel wait to start moving
+        if 'arrival_time' in self.metadata:
+            arrival_time = self.metadata['arrival_time']
+            current_time = datetime.datetime.fromtimestamp(self.env.now)
+            delay = (arrival_time - current_time).total_seconds()
+            yield self.env.timeout(delay)
 
         # Check if vessel is at correct location - if not, move to location
         yield from self._move_to_start()

@@ -42,7 +42,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def __init__(
         self,
         graph,
-        crs_m = "EPSG:8857",
+        crs_m = "EPSG:4087",
         hydrodynamic_information_path=None,
         vessel_speed_information_path=None,
         hydrodynamic_information=None,
@@ -112,16 +112,15 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         super().__init__(*args, **kwargs)
 
     def get_edges_info(self):
-        graph = self.graph
+        graph = self.multidigraph
         edges_info = pd.DataFrame(columns=["Edge", "Distance", "MBL"])
         for edge in graph.edges:
             edge_info = graph.edges[edge]
             index = len(edges_info)
             edges_info.loc[index, "Edge"] = edge
-            if "length" in edge_info.keys():
-                edges_info.loc[index, "Distance"] = edge_info["length"]
+            edges_info.loc[index, "Distance"] = get_length_of_edge(graph, edge)
             if "MBL" in edge_info.keys():
-                edges_info.loc[index, "MBL"] = edge_info["length"]
+                edges_info.loc[index, "MBL"] = edge_info["MBL"]
             else:
                 edges_info.loc[index, "MBL"] = 999.0
         return edges_info.set_index("Edge")

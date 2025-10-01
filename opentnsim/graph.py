@@ -38,9 +38,9 @@ from opentnsim.core import Identifiable, Locatable
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-
 # Determine the wgs84 geoid
 wgs84 = pyproj.Geod(ellps="WGS84")
+
 
 def get_geometry_of_edge(graph, edge):
     """get the geometry of the edge in WGS84
@@ -79,6 +79,7 @@ def get_geometry_of_edge(graph, edge):
         raise ValueError(f"Edge geometry in edge {edge}: attribute is not defined in WGS84.")
 
     return geometry
+
 
 def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
     """get the length of an edge in meters
