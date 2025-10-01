@@ -22,7 +22,7 @@ from IPython.display import display
 from opentnsim import output, graph
 from opentnsim import core
 from opentnsim.core import HasResource, Identifiable, Log, Movable, HasLength, SimpyObject, ExtraMetadata
-from opentnsim.graph import HasMultiDiGraph
+from opentnsim.graph import HasMultiDiGraph, get_length_of_edge
 from opentnsim.output import HasOutput
 
 # Constants
@@ -1801,7 +1801,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # loop over all edges on the route ahead.
         route_to_come = self.route_ahead
         for node_start, node_stop in zip(route_to_come[:-1], route_to_come[1:]):
-            k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
+            k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: get_length_of_edge(self.multidigraph,(node_start, node_stop, x)))[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
             lock_edge = (node_start,node_stop,k)
             if "Lock" not in self.multidigraph.edges[lock_edge].keys():
                 continue
@@ -1863,7 +1863,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # find the lock the vessel has been assigned to TODO: this should be faster, so that if the vessel has not been assigned to a lock, it does not check the entire route
         # TODO: @Floor. Ziet eruit alsof dit de laatste lock is die op de route ligt. Ik den kdat we juist de eerste willen hebben toch?
         # TODO: @Floor: in register_to_lock_master zoeken we gewoon de lock die aan de origin-node grenst. Kunnen we dat hier niet ook doen?
-        # k = sorted(self.multidigraph[node_start][node_stop],key=lambda x: self.multidigraph[node_start][node_stop][x]['geometry'].length)[0] #TODO: k-berekening in een functie zetten (nu bepaald op minste lengte, maar sluismeester moet/kan dit bepalen).
         locks = self._find_upcoming_locks()
 
         # if no lock is found, stop function
@@ -2326,7 +2325,6 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # Geometry on edge
         edge = (start_node, end_node, 0)
         edge_info = self.multidigraph.edges[edge]
-        length_edge = edge_info['length_m']
         # TODO Checken of de distance bepalen werkt, en misschien automatiseren op basis van geometrie
         # TODO: nodes verwijderen uit graaf als die precies op de sluis liggen. (wellicht als voorbewerking van de graaf)
         # TODO: losse klasse maken van de lock-doors die locatable, hasresource (capacity=1) en identifiable is en eigenschap open/dicht heeft.
@@ -2382,8 +2380,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # Add to the graph:
         # TODO: In losse functie (add_lock_to_graph)
         if "graph" in dir(self.env):
-            k = sorted(self.multidigraph[self.start_node][self.end_node],
-                       key=lambda x: self.multidigraph[self.start_node][self.end_node][x]['geometry'].length)[0]
+            k = sorted(self.multidigraph[self.start_node][self.end_node], key=lambda x: get_length_of_edge(self.multidigraph,(self.start_node, self.end_node, x)))[0]
             # Add the lock to the edge or append it to the existing list
             if "Lock" not in self.multidigraph.edges[self.start_node, self.end_node, k].keys():
                 self.multidigraph.edges[self.start_node, self.end_node, k]["Lock"] = [self]
@@ -4413,7 +4410,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                 lock=self,
                                                 edge=edge_waiting_area_A,
                                                 distance_from_edge_start=self.distance_waiting_area_A_from_edge_start_waiting_area_A)
-        self.distance_waiting_area_A_to_end_edge_waiting_area_A = self.env.graph.edges[edge_waiting_area_A]["length_m"]
+        self.distance_waiting_area_A_to_end_edge_waiting_area_A = get_length_of_edge(self.env.graph, edge_waiting_area_A)
         self.distance_waiting_area_A_to_end_edge_waiting_area_A -= self.distance_waiting_area_A_from_edge_start_waiting_area_A
 
         if edge_waiting_area_B is None:
@@ -4430,7 +4427,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                                                 lock=self,
                                                 edge=edge_waiting_area_B,
                                                 distance_from_edge_start=self.distance_waiting_area_B_from_start_edge_waiting_area_B)
-        self.distance_waiting_area_B_to_end_edge_waiting_area_B = self.env.graph.edges[edge_waiting_area_B]["length_m"]
+        self.distance_waiting_area_B_to_end_edge_waiting_area_B = get_length_of_edge(self.env.graph, edge_waiting_area_B)
         self.distance_waiting_area_B_to_end_edge_waiting_area_B -= self.distance_waiting_area_B_from_start_edge_waiting_area_B
 
         # create the line-up area at side A if there is a line-up area at side A (lineup_area_A_length is not None)

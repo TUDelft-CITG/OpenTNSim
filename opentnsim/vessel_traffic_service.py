@@ -27,6 +27,7 @@ from shapely import reverse
 from shapely.ops import transform
 from opentnsim import core, graph
 from opentnsim import model
+from opentnsim.graph import get_length_of_edge, get_geometry_of_edge
 
 # spatial libraries
 import networkx as nx
@@ -54,12 +55,6 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         self.hydrodynamic_information = hydrodynamic_information
         self.hydrodynamic_information_path = hydrodynamic_information_path
         self.graph = graph
-
-        for edge in self.graph.edges:
-            edge_geometry = self.graph.edges[edge]["geometry"]
-            edge_geometry_m = self.transform_geometry(edge_geometry)
-            edge_geometry_length = edge_geometry_m.length
-            self.graph.edges[edge]["length_m"] = edge_geometry_length
 
         if isinstance(hydrodynamic_information, xr.Dataset):
             self.hydrodynamic_information_path = False
@@ -215,7 +210,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         # get edges of route
         if not edges:
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
-                k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
+                k = sorted(self.multidigraph[u][v], key=lambda x: get_length_of_edge(self.multidigraph,(u, v, x)))[0]
                 edges.append((u,v,k))
 
         # construct dataframe of speed information per edge
@@ -239,9 +234,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def provide_heading(self, vessel, edge):
         distance = []
         origin_location = vessel.multidigraph.nodes[edge[0]]["geometry"]
-        k = sorted(
-            vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]["geometry"].length
-        )[0]
+        k = sorted(vessel.multidigraph[edge[0]][edge[1]], key=lambda x: get_length_of_edge(self.multidigraph,(edge[0], edge[1], x)))[0]
         edge_geometry = vessel.multidigraph.edges[edge[0], edge[1], k]["Info"]["geometry"]
         for coord in edge_geometry.coords:
             distance.append(origin_location.distance(Point(coord)))
@@ -262,7 +255,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         geometry = None
         route = nx.dijkstra_path(self.multidigraph, node_1, node_2)
         for node_I, node_II in zip(route[:-1], route[1:]):
-            k = sorted(self.multidigraph[node_I][node_II], key=lambda x: self.multidigraph[node_I][node_II][x]['geometry'].length)[0]
+            k = sorted(self.multidigraph[node_I][node_II], key=lambda x: get_length_of_edge(self.multidigraph,(node_I, node_II, x)))[0]
             edge = (node_I, node_II, k)
             edge_geometry = self.multidigraph.edges[edge]['geometry']
             aligned = self.check_if_geometry_is_aligned_with_edge(edge)
@@ -299,7 +292,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def check_if_geometry_is_aligned_with_edge(self, edge):
         node_start = edge[0]
         node_stop = edge[1]
-        edge_geometry = self.multidigraph.edges[edge]["geometry"]
+        edge_geometry = get_geometry_of_edge(self.multidigraph, edge)
         first_point = Point(edge_geometry.coords[0])
         distance_to_edge_nodes = {}
         for node in [node_start, node_stop]:
@@ -335,8 +328,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def provide_distance_from_location_over_edge(self,edge,location,tolerance=0.0001):
         geod = pyproj.Geod(ellps="WGS84")
         if len(edge) == 2:
-            k = sorted(self.multidigraph[edge[0]][edge[1]],
-                       key=lambda x: self.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
+            k = sorted(self.multidigraph[edge[0]][edge[1]],key=lambda x: get_length_of_edge(self.multidigraph,(edge[0], edge[1], x)))[0]
             edge = (edge[0],edge[1],k)
         geometry = self.multidigraph.edges[(edge[0],edge[1],edge[2])]['geometry']
 
@@ -363,8 +355,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         route = nx.dijkstra_path(self.multidigraph, node_1, node_2)
         total_length = 0
         for node_I, node_II in zip(route[:-1], route[1:]):
-            k = sorted(self.multidigraph[node_I][node_II],
-                       key=lambda x: self.multidigraph[node_I][node_II][x]['geometry'].length)[0]
+            k = sorted(self.multidigraph[node_I][node_II],key=lambda x: get_length_of_edge(self.multidigraph,(node_I,node_II,x)))[0]
             edge_length = self.multidigraph.edges[node_I,node_II,k]['length']
             total_length += edge_length
             if total_length < distance:
@@ -389,7 +380,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
             sailing distance along the edge in [m]
         """
         if k is None:
-            k = sorted(self.env.multidigraph[edge[0]][edge[1]], key=lambda x: self.env.multidigraph[edge[0]][edge[1]][x]['geometry'].length)[0]
+            k = sorted(self.env.multidigraph[edge[0]][edge[1]], key=lambda x: get_length_of_edge(self.multidigraph,(edge[0],edge[1],x)))[0]
 
         sailing_distance = self.env.multidigraph.edges[edge[0], edge[1], k]['length']
 
@@ -419,7 +410,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         if not edges:
             edges = []
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
-                k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
+                k = sorted(self.multidigraph[u][v], key=lambda x: get_length_of_edge(self.multidigraph,(u, v, x)))[0]
                 edges.append((u,v,k))
 
         # calculate sailing distance along route
@@ -451,7 +442,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         if not edges:
             edges = []
             for idx, (u, v) in enumerate(zip(route[:-1], route[1:])):
-                k = sorted(self.multidigraph[u][v], key=lambda x: self.multidigraph[u][v][x]['geometry'].length)[0]
+                k = sorted(self.multidigraph[u][v], key=lambda x: get_length_of_edge(self.multidigraph,(u, v, x)))[0]
                 edges.append((u,v,k))
 
         # calculate sailing distance over route

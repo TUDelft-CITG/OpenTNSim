@@ -27,6 +27,7 @@ import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core.container import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
+from opentnsim.graph import get_length_of_edge
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -416,18 +417,11 @@ class Movable(Locatable, Routable, Log):
         ------
         The time it takes to pass the edge.
         """
-        edge = self.graph.edges[origin, destination]
+        edge = (origin, destination)
+        edge_info = self.graph.edges[edge]
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
-
-        # TODO deze distance berekening aanpassen. De fis graaf bevat deze informatie ook.
-        distance = self.wgs84.inv(
-            shapely.geometry.shape(orig).x,
-            shapely.geometry.shape(orig).y,
-            shapely.geometry.shape(dest).x,
-            shapely.geometry.shape(dest).y,
-        )[2]
-
+        distance = get_length_of_edge(self.graph, edge)
         self.distance_left_on_edge = distance
 
         # calculate velocity based on depth and power, if possible.
@@ -438,7 +432,7 @@ class Movable(Locatable, Routable, Log):
         current = self._get_current(origin, destination)
         # Wait for edge resources to become available
         # TODO: Misschien moeten we Resources ook onder Info hangen?
-        if "Resources" in edge.keys() and self.req is None:
+        if "Resources" in edge_info.keys() and self.req is None:
             arrival = self.env.now  # remember when we arrived at the edge
             yield from self._request_resource(self.graph.edges[origin, destination]["Resources"])
             # we had to wait, log it
@@ -481,7 +475,7 @@ class Movable(Locatable, Routable, Log):
         self.geometry = dest
 
         # release resource if needed
-        if "Resources" in edge.keys():
+        if "Resources" in edge_info.keys():
             # only release if resource is not needed in the next node
             if "Resources" not in self.graph.nodes[destination].keys():
                 self._release_resource()

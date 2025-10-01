@@ -27,7 +27,7 @@ import simpy
 from openclsim.core import Identifiable, Locatable, SimpyObject, Log
 
 import opentnsim.energy
-import opentnsim.graph as graph_module
+from opentnsim.graph as graph_module
 
 
 # additional packages
