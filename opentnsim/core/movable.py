@@ -556,6 +556,12 @@ class Movable(Locatable, Routable, Log):
         destination: str
             the destination node of the edge
         """
+
+        edge = (origin, destination)
+        if hasattr(self,'overruled_speed') and edge in self.overruled_speed.index:
+            overruled_speed = self.overruled_speed.loc[edge]
+            return overruled_speed
+
         # check if we have the energy mixin and ptot_given
         if not isinstance(self, ConsumesEnergy):
             return self.v

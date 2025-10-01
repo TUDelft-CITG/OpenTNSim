@@ -81,6 +81,16 @@ def get_geometry_of_edge(graph, edge):
     return geometry
 
 
+def determine_length_of_edge_geometry(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
+    wgs84 = pyproj.CRS(current_crs)
+    wgs84_m = pyproj.CRS(crs_meter)
+    wgs84_to_wgs84_m = pyproj.transformer.Transformer.from_crs(wgs84, wgs84_m, always_xy=True).transform
+    geometry = get_geometry_of_edge(graph, edge)
+    geometry_m = transform(wgs84_to_wgs84_m, geometry)
+    length_m = geometry_m.length
+    return length_m
+
+
 def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
     """get the length of an edge in meters
 
@@ -101,12 +111,7 @@ def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:408
     if "length_m" in edge_info:
         pass
     else:
-        wgs84 = pyproj.CRS('4326')
-        wgs84_m = pyproj.CRS('4087')
-        wgs84_to_wgs84_m = pyproj.transformer.Transformer.from_crs(wgs84, wgs84_m, always_xy=True).transform
-        geometry = get_geometry_of_edge(graph,edge)
-        geometry_m = transform(wgs84_to_wgs84_m,geometry)
-        length_m = geometry_m.length
+        length_m = determine_length_of_edge_geometry(graph, edge, current_crs, crs_meter)
         graph.edges[edge]["length_m"] = length_m
 
     return edge_info["length_m"]

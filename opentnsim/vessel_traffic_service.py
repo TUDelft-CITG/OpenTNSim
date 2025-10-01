@@ -27,7 +27,7 @@ from shapely import reverse
 from shapely.ops import transform
 from opentnsim import core, graph
 from opentnsim import model
-from opentnsim.graph import get_length_of_edge, get_geometry_of_edge
+from opentnsim.graph import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
 
 # spatial libraries
 import networkx as nx
@@ -72,6 +72,10 @@ class VesselTrafficService(graph.HasMultiDiGraph):
 
         global edges_info
         self.edges_info = self.get_edges_info()
+
+        for edge in self.graph.edges:
+            length = determine_length_of_edge_geometry(graph, edge, crs_meter = self.crs_m)
+            self.graph.edges[edge]["length_m"] = length
 
         for node in graph.nodes:
             node_info = graph.nodes[node]
