@@ -1654,7 +1654,9 @@ class HasLockPlanning:
         if self.min_vessels_in_operation:
             mask_min_vessels = operation_planning.vessels.apply(len) < self.min_vessels_in_operation
         else:
-            mask_min_vessels = operation_planning.vessels.apply(len) > self.min_vessels_in_operation
+            mask_min_vessels = operation_planning.vessels.apply(len) >= self.min_vessels_in_operation
+
+        mask_empty_available_lock = mask_empty_lock & mask_future_operations
 
         # select available operations TODO: this part of the code should be improved in clarity and readability
         available_operations = operation_planning[
@@ -1663,7 +1665,7 @@ class HasLockPlanning:
             & mask_min_vessels
             & mask_max_vessels
             & mask_capacity_L
-            & (mask_future_operations | mask_max_waiting_time)
+            & (mask_future_operations | mask_max_waiting_time | mask_empty_available_lock)
         ].copy()
         # TODO: include mask_capacity_B for 2D implementation
         # TODO: create a selection method that can pick the lock operation based on minimizing expected delay or freshwater loss/saltwater intrusion
