@@ -11,11 +11,13 @@ from shapely.ops import transform
 import pyproj
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+import math
 
 # spatial libraries
 from collections import namedtuple
 import simpy
 import xarray as xr
+
 # from netCDF4 import Dataset
 from IPython.display import display
 
@@ -29,6 +31,21 @@ from opentnsim.output import HasOutput
 knots_to_ms = knots = 0.514444444
 gravitational_acceleration = 9.81
 
+
+def _get_lock_operation_direction(lock, to_node):
+    direction = 0
+    if to_node == lock.start_node:
+        direction = 1
+
+    return direction
+
+def _get_lock_operation_to_and_from_node(lock, direction):
+    node_of_approach = lock.end_node
+    to_node = lock.start_node
+    if not direction:
+        node_of_approach = lock.start_node
+        to_node = lock.end_node
+    return node_of_approach, to_node
 
 def _get_lock_on_node(multidigraph, registration_node):
     """Get the lock complex object that is associated with a registration node node
@@ -55,7 +72,75 @@ def _get_lock_on_node(multidigraph, registration_node):
     # Return None if no lock exists on the edge
     else:
         return None
+    
+def _update_lock_operation_planning(lock, operation_index, operation_information):
+    for key, value in operation_information.items():
+        lock.operation_planning.loc[int(operation_index),key] = value
+    
+def _update_lock_vessel_planning(lock, vessel_index, passage_information):
+    for key, value in passage_information.items():
+        lock.vessel_planning.loc[vessel_index, key] = value
 
+def _get_time_index_of_hydrodynamic_data(env, time):
+    time_index = 0
+    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+        return time_index
+
+    # determine the time_index
+    if isinstance(hydrodynamic_data, xr.Dataset):
+        time_index = (np.absolute(hydrodynamic_times - time).argmin().values)
+    else:
+        time_index = np.absolute(hydrodynamic_times - time).argmin()
+
+    return time_index
+
+def _get_station_index_of_hydrodynamic_data(env, node):
+    station_index = 0
+    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+        return station_index
+
+    # determine the station_index
+    if isinstance(hydrodynamic_data, xr.Dataset):
+        station_index = np.where(np.array(list((hydrodynamic_data["STATION"].values))) == node)[0][0]
+    else:
+        station_index = np.where(np.array(list((hydrodynamic_data["STATION"]))) == node)[0]
+
+    return station_index
+
+def _get_hydrodynamic_data_value(env, time, node, hydrodynamic_property):
+    value = np.nan
+    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+        return value
+
+    # determine the time_index and station_inex
+    time_index = _get_time_index_of_hydrodynamic_data(env, time)
+    station_index = _get_station_index_of_hydrodynamic_data(env, node)
+
+    # determine the property
+    if isinstance(hydrodynamic_data, xr.Dataset):
+        value = hydrodynamic_data[hydrodynamic_property][station_index][time_index].values.copy()
+    else:
+        value = hydrodynamic_data[hydrodynamic_property][station_index][time_index].copy()
+
+    return value
+
+
+def _get_hydrodynamic_data_series(env, time, node, hydrodynamic_property):
+    series = [np.nan]
+    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+        return series
+
+    # determine the time_index and station_inex
+    time_index = _get_time_index_of_hydrodynamic_data(env, time)
+    station_index = _get_station_index_of_hydrodynamic_data(env, node)
+
+    # determine the property
+    if isinstance(hydrodynamic_data, xr.Dataset):
+        series = hydrodynamic_data[hydrodynamic_property][station_index][time_index:].values.copy()
+    else:
+        series = hydrodynamic_data[hydrodynamic_property][station_index][time_index:].copy()
+
+    return series
 
 class IsLockChamberOperator:
     """The lock chamber operator operates one chamber of the lock."""
@@ -131,7 +216,7 @@ class IsLockChamberOperator:
                 close_doors = False
 
             lock.operation_planning.loc[operation_index, 'status'] = 'unavailable'
-            yield from lock.convert_chamber(next_node, vessel, close_doors, direction=direction)
+            yield from lock.convert_chamber(next_node, direction, operation_index=operation_index, vessel=vessel, close_doors=close_doors)
 
             # Liberate waiting vessels in lock chamber
             for other_vessel in vessels[:-1]:
@@ -206,7 +291,7 @@ class IsLockChamberOperator:
             operation_planning = lock.lock_complex.operation_planning
 
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-            direction = vessel_planning.loc[vessel_planning_index, "bound"]
+            direction = vessel_planning.loc[vessel_planning_index, "direction"]
             vessel_operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
             distance_in_lock_from_position = lock.lock_length - vessel.distance_position_from_first_lock_doors
 
@@ -293,9 +378,7 @@ class IsLockChamberOperator:
                 if next_lockage_is_empty:
                     next_operation = next_operations.iloc[0]
                     door_closing_start = next_operation.time_door_closing_start
-                    closing_delay = np.max(
-                        [self.sailing_time_before_closing_lock_doors, (door_closing_start - current_time).total_seconds()]
-                    )
+                    closing_delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start - current_time).total_seconds()])
                     if lock.closing_doors_in_between_operations:
                         next_next_operation = next_operations.iloc[1]
                         door_opening_start = next_next_operation.time_potential_lock_door_opening_stop
@@ -304,7 +387,6 @@ class IsLockChamberOperator:
                             direction=1 - direction,
                             last_time_doors_closed=door_closing_start,
                             doors_required_to_be_open=door_opening_start,
-                            same_direction=False,
                         )
                         opening_delay = (
                             np.max([0, (door_opening_start - current_time).total_seconds()]) - operation_time.total_seconds()
@@ -313,6 +395,7 @@ class IsLockChamberOperator:
                             vessel.env.process(lock.close_door(delay=closing_delay))
                             vessel.env.process(
                                 lock.convert_chamber(
+                                    operation_index = vessel_operation_index + 1,
                                     new_level=next_level_in_case_of_following_empty_lockage,
                                     vessel=None,
                                     close_doors=False,
@@ -323,6 +406,7 @@ class IsLockChamberOperator:
                         else:
                             vessel.env.process(
                                 lock.convert_chamber(
+                                    operation_index=vessel_operation_index + 1,
                                     new_level=next_level_in_case_of_following_empty_lockage,
                                     vessel=None,
                                     close_doors=True,
@@ -333,6 +417,7 @@ class IsLockChamberOperator:
                     else:
                         vessel.env.process(
                             lock.convert_chamber(
+                                operation_index=vessel_operation_index + 1,
                                 new_level=next_level_in_case_of_following_empty_lockage,
                                 vessel=None,
                                 close_doors=True,
@@ -372,6 +457,7 @@ class IsLockChamberOperator:
             )
             vessel.distance_left_on_edge = 0
 
+
     def allow_vessel_to_sail_in_lock(self, origin, destination, vessel=None, k=0):
         """
         DOCUMENTATION HERE
@@ -391,7 +477,7 @@ class IsLockChamberOperator:
             operation_planning = lock.lock_complex.operation_planning
 
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-            direction = vessel_planning.loc[vessel_planning_index, "bound"]
+            direction = vessel_planning.loc[vessel_planning_index, "direction"]
 
             # Sail to lock
             if not direction:
@@ -522,7 +608,7 @@ class IsLockChamberOperator:
             ):
                 vessel.env.process(lock.close_door())
 
-    def convert_chamber(self, new_level, vessel=None, close_doors=True, delay=0.0, direction=None):
+    def convert_chamber(self, new_level, direction, operation_index=None, vessel=None, close_doors=True, delay=0.0):
         """
         Converts the lock chamber and logs this event. TODO: attribute for lock operator
 
@@ -538,7 +624,7 @@ class IsLockChamberOperator:
             a delay before lock conversion [s]
 
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
         Yields
         ------
@@ -569,7 +655,7 @@ class IsLockChamberOperator:
             self.door_B.release(hold_door_B)
 
         # level lock and open the doors afterwards
-        yield from self.level_lock(new_level, vessel=vessel, direction=direction)
+        yield from self.level_lock(new_level, direction, operation_index=operation_index, vessel=vessel)
         yield from self.open_door()
 
     def close_door(self, delay=0.0):
@@ -615,28 +701,14 @@ class IsLockChamberOperator:
                 remaining_doors_closing_time -= self.env.now - start_time_closing
 
         # set water level to the side at which the door has been closed
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            if isinstance(hydrodynamic_data, xr.Dataset):
-                time_index = (
-                    np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin().values
-                )
-            else:
-                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
-
-            if self.node_open == self.start_node:
-                if isinstance(hydrodynamic_data, xr.Dataset):
-                    station_index = np.where(np.array(list((hydrodynamic_data["STATION"].values))) == self.start_node)[0][0]
-                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].values.copy()
-                else:
-                    station_index = np.where(np.array(list((hydrodynamic_data["STATION"]))) == self.start_node)[0]
-                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].copy()
-            else:
-                if isinstance(hydrodynamic_data, xr.Dataset):
-                    station_index = np.where(np.array(list((hydrodynamic_data["STATION"].values))) == self.end_node)[0][0]
-                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].values.copy()
-                else:
-                    station_index = np.where(np.array(list((hydrodynamic_data["STATION"]))) == self.end_node)[0]
-                    self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index][time_index].copy()
+        time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
+        if self.node_open == self.start_node:
+            node = self.start_node
+        else:
+            node = self.end_node
+        time_index = _get_time_index_of_hydrodynamic_data(self.env, time)
+        new_water_level = _get_hydrodynamic_data_value(self.env, time, node, 'Water level')
+        self.water_level[time_index:] = new_water_level
 
         # log the end of the event
         self.log_entry_v0("Lock doors closing stop", self.env.now, self.output.copy(), self.node_open)
@@ -650,7 +722,7 @@ class IsLockChamberOperator:
         self.levelling.release(hold_levelling)
         self.door_B.release(hold_door_B)
 
-    def level_lock(self, new_level, vessel=None, direction=None, same_direction=False):
+    def level_lock(self, new_level, direction, operation_index=None, vessel=None):
         """
         Lock operator levels the water level of the lock chamber to the harbour side of the direction of the lock operation TODO: attribute for lock operator
 
@@ -659,7 +731,7 @@ class IsLockChamberOperator:
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         same_direction : bool
 
 
@@ -676,9 +748,7 @@ class IsLockChamberOperator:
         yield hold_door_B
 
         # determine the levelling time
-        levelling_time, _, _ = self.determine_levelling_time(
-            t_start=self.env.now, direction=direction, same_direction=same_direction
-        )
+        levelling_time, _, _ = self.determine_levelling_time(t_start=self.env.now, direction=direction, operation_index=operation_index)
 
         # log the start of the event
         if vessel is not None:
@@ -763,33 +833,16 @@ class IsLockChamberOperator:
             delattr(vessel, "door_open_request")
 
         # determine the water level in the lock chamber
-        wlev_chamber = 0.0
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            if isinstance(hydrodynamic_data, xr.Dataset):
-                time_index = (
-                    np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin().values
-                )
-            else:
-                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
-            wlev_chamber = self.water_level[time_index]
+        time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
+        time_index = _get_time_index_of_hydrodynamic_data(self.env,time)
+        wlev_chamber = self.water_level[time_index]
 
         # determine to_level
         if to_level is None:
             to_level = self.node_open
 
         # determine the water level in the harbour
-        wlev_harbour = 0.0
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            if isinstance(hydrodynamic_data, xr.Dataset):
-                time_index = (
-                    np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin().values
-                )
-            else:
-                time_index = np.absolute(hydrodynamic_times - np.datetime64(datetime.datetime.fromtimestamp(self.env.now))).argmin()
-            if to_level == self.start_node:
-                wlev_harbour = hydrodynamic_data["Water level"][0][time_index]
-            else:
-                wlev_harbour = hydrodynamic_data["Water level"][1][time_index]
+        wlev_harbour = _get_hydrodynamic_data_value(self.env, time, to_level, "Water level")
 
         # determine the direction to which the vessels are sailing out
         if to_level == self.start_node:
@@ -797,29 +850,16 @@ class IsLockChamberOperator:
         else:
             direction = 0
 
-        # ?
-        same_direction = False
-        if to_level == self.node_open:
-            same_direction = True
-
         # if the water levels in the chamber and harbour are not aligned -> level lock again
-        if np.abs(wlev_chamber - wlev_harbour) >= 0.1:
-            if same_direction:
-                direction = 1 - direction
-            yield from self.level_lock(to_level, direction=direction, same_direction=same_direction)
+        if not math.isnan(wlev_chamber) and not math.isnan(wlev_harbour) and np.abs(wlev_chamber - wlev_harbour) >= 0.1:
+            yield from self.level_lock(to_level, direction=direction)
         else:
             self.node_open = to_level
 
-        # adjust water level of the lock chamber to the harbour side
-        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            if isinstance(hydrodynamic_data, xr.Dataset):
-                time_index = np.absolute(hydrodynamic_times - np.datetime64(current_time)).argmin().values + 1
-                station_index = np.where(np.array(list((hydrodynamic_data["STATION"].values))) == self.node_open)[0][0]
-            else:
-                time_index = np.absolute(hydrodynamic_times - np.datetime64(current_time)).argmin() + 1
-                station_index = np.where(np.array(list((hydrodynamic_data["STATION"]))) == self.node_open)[0]
-            self.water_level[time_index:] = hydrodynamic_data["Water level"][station_index, time_index:].copy()
+        time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
+        time_index = _get_time_index_of_hydrodynamic_data(self.env,time)
+        wlev_series_node_door_open = _get_hydrodynamic_data_series(self.env,time,self.node_open,"Water level")
+        self.water_level[time_index:] = wlev_series_node_door_open
 
         # make sure that all lock elements are requested, so only one process is occurring
         hold_door_A = self.door_A.request()
@@ -887,7 +927,7 @@ class IsLockChamberOperator:
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
 
         Returns
@@ -910,7 +950,9 @@ class HasLockPlanning:
             index=pd.Index([]),
             columns=[
                 "id",
-                "bound",
+                "node_from",
+                "node_to",
+                "lock_chamber",
                 "L",
                 "B",
                 "T",
@@ -930,7 +972,10 @@ class HasLockPlanning:
         self.operation_planning = pd.DataFrame(
             index=pd.Index([], name="lock_operation"),
             columns=[
-                "bound",
+                "node_from",
+                "node_to",
+                "direction",
+                "lock_chamber",
                 "vessels",
                 "capacity_L",
                 "capacity_B",
@@ -982,6 +1027,77 @@ class HasLockPlanning:
             vessels = selected_operation.loc[operation_index, "vessels"].copy()
         return vessels
 
+
+    def _correct_lock_operation_start_time_if_outside_of_operational_hours(self, time_lock_operation_start):
+        operational_hours = self.operational_hours
+        within_operation_hours = operational_hours[(time_lock_operation_start >= operational_hours.start_time) & (time_lock_operation_start <= operational_hours.stop_time)]
+        if within_operation_hours.empty:
+            first_available_hour = operational_hours[operational_hours.start_time >= time_lock_operation_start].iloc[0]
+            time_lock_operation_start = first_available_hour.start_time
+        return time_lock_operation_start
+
+    def _plan_or_execute_empty_lock_operation_if_required(self, operation_index, direction):
+        node_of_approach, to_node = _get_lock_operation_to_and_from_node(self, direction)
+        previous_planned_operations = self.operation_planning[self.operation_planning.index < operation_index]
+        if not previous_planned_operations.empty:
+            previous_planned_operation = previous_planned_operations.iloc[-1]
+            if previous_planned_operation.direction == direction:
+                self.add_empty_lock_operation_to_planning(operation_index, 1 - direction)
+                operation_index += 1  # the new operation index lies now one ahead
+        elif self.node_open != node_of_approach:
+            self.add_empty_lock_operation_to_planning(operation_index, 1 - direction)
+            self.env.process(self.convert_chamber(new_level = node_of_approach, direction = 1 - direction)) #TODO: check if this can be done differently with Fedor
+            operation_index += 1  # the new operation index lies now one ahead
+        return operation_index
+
+
+    def _determine_lock_operation_start_information(self, vessel, operation_index, direction):
+        # determine the index of the vessel in the lock master's vessel planning
+        vessel_planning_index = self.vessel_planning[self.vessel_planning.id == vessel.id].iloc[-1].name
+
+        # determine the earlier possible arrival time of the vessel (vessel perspective)
+        earliest_possible_time_lock_entry_start = self.vessel_planning.loc[vessel_planning_index, "time_lock_entry_start"]
+
+        # determine the time that the lock operation can start (operation perspective)
+        time_lock_operation_start = self.calculate_lock_operation_start_time(vessel, operation_index, direction, prognosis=True)
+
+        # correct the start time of the lock operation if it will fall outside of the operation hours of the lock complex
+        time_lock_operation_start = self._correct_lock_operation_start_time_if_outside_of_operational_hours(time_lock_operation_start)
+
+        # determine the time that vessel can start entering the lock
+        time_lock_entry_start = (self.calculate_lock_entry_start_time(vessel, operation_index, direction,prognosis=True) + time_lock_operation_start)
+
+        # determine the minimum time that doors should be opened in advance of a vessel arrival and add this to the vessel planning
+        minimum_advance_to_open_doors = self.minimum_advance_to_open_doors()
+        time_potential_lock_door_opening_stop = time_lock_entry_start - minimum_advance_to_open_doors
+
+        previous_planned_operations = self.operation_planning[self.operation_planning.index < operation_index]
+        if not previous_planned_operations.empty:
+            previous_operation = previous_planned_operations.iloc[-1]
+            if not len(previous_operation.vessels):
+                if time_potential_lock_door_opening_stop < previous_operation.time_operation_stop:
+                    operation_delay = previous_operation.time_operation_stop - time_potential_lock_door_opening_stop
+                    time_lock_operation_start += operation_delay
+                    time_lock_entry_start += operation_delay
+                    time_potential_lock_door_opening_stop += operation_delay
+
+        # determine the lock entry stop and door opening stop time
+        time_lock_entry_stop = (self.calculate_lock_entry_stop_time(vessel, operation_index, direction,
+                                                                    prognosis=True) + time_lock_operation_start)
+        time_lock_door_opening_stop = (self.calculate_lock_door_opening_time(vessel, operation_index, direction,
+                                                                             prognosis=True) + time_lock_operation_start)
+
+        # determine the delay time for the vessel to enter the lock
+        vessel_entry_delay = time_lock_entry_start - earliest_possible_time_lock_entry_start
+
+        return (time_lock_operation_start,
+                time_lock_entry_start,
+                minimum_advance_to_open_doors,
+                time_potential_lock_door_opening_stop,
+                time_lock_entry_stop,
+                time_lock_door_opening_stop,
+                vessel_entry_delay)
+
     def add_vessel_to_new_lock_operation(self, vessel, operation_index, direction):
         """
         Adds a vessel to a newly to be planned lock operation
@@ -993,7 +1109,7 @@ class HasLockPlanning:
         operation_index : int
             index of the lock operation
         direction : int
-            the direction of the lock operation: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
         Yields
         -------
@@ -1003,174 +1119,249 @@ class HasLockPlanning:
         # unpack the lock master's vessel and lock operation plannings
         vessel_planning = self.lock_complex.vessel_planning
         operation_planning = self.lock_complex.operation_planning
-
-        node_of_approach = self.end_node
-        to_node = self.start_node
-        if not direction:
-            node_of_approach = self.start_node
-            to_node = self.end_node
+        node_of_approach, to_node = _get_lock_operation_to_and_from_node(self,direction)
 
         # determine if the new lock operation should follow a empty lock operation (when the new lock operation has the same direction as the previous lock operation)
-        # TODO: We willen dit loskoppelen in losse functies. De lock-master checkt of er een extra lege operatie moet worden toegevoegd en uitgevoerd, en roept de self.env.process aan.
-        previous_planned_operations = operation_planning[operation_planning.index <= operation_index]
-        if not previous_planned_operations.empty:
-            previous_planned_operation = previous_planned_operations.iloc[-1]
-            if previous_planned_operation.bound == direction:
-                self.add_empty_lock_operation_to_planning(operation_index, 1 - direction)
-                operation_index += 1  # the new operation index lies now one ahead
-        elif self.node_open != node_of_approach:
-            self.add_empty_lock_operation_to_planning(operation_index, 1 - direction)
-            self.env.process(self.convert_chamber(new_level=to_node))
-            operation_index += 1  # the new operation index lies now one ahead
-
-        # get the new previous planned operations (including the empty one)
-        previous_planned_operations = operation_planning[operation_planning.index <= operation_index]
+        operation_index = self._plan_or_execute_empty_lock_operation_if_required(operation_index, direction)
 
         # determine the index of the vessel in the lock master's vessel planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
 
-        # determine the earlier possible arrival time of the vessel (vessel perspective)
-        earliest_possible_time_lock_entry_start = vessel_planning.loc[vessel_planning_index, "time_lock_entry_start"]
-
-        # determine the time that the lock operation can start (operation perspective)
-        time_lock_operation_start = self.calculate_lock_operation_start_time(vessel, operation_index, direction, prognosis=True)
-
-        # correct the start time of the lock operation if it will fall outside of the operation hours of the lock complex
-        operational_hours = self.operational_hours
-        within_operation_hours = operational_hours[
-            (time_lock_operation_start >= operational_hours.start_time) & (time_lock_operation_start <= operational_hours.stop_time)
-        ]
-        if within_operation_hours.empty:
-            first_available_hour = operational_hours[operational_hours.start_time >= time_lock_operation_start].iloc[0]
-            time_lock_operation_start = first_available_hour.start_time
-
-        # determine the time that vessel can start entering the lock
-        time_lock_entry_start = (
-            self.calculate_lock_entry_start_time(vessel, operation_index, direction, prognosis=True) + time_lock_operation_start
-        )
-
         # add operation to the planning with information
-        operation_planning.loc[operation_index, "bound"] = direction
-        operation_planning.loc[operation_index, "vessels"] = []  # leave vessels empty for now
-        operation_planning.loc[operation_index, "capacity_L"] = self.lock_complex.lock_length - vessel.L
-        operation_planning.loc[operation_index, "capacity_B"] = self.lock_complex.lock_width - vessel.B
+        vessel_passage_information = {"operation_index":operation_index}
+        _update_lock_vessel_planning(self, vessel_planning_index, vessel_passage_information)
 
-        # determine the minimum time that doors should be opened in advance of a vessel arrival and add this to the vessel planning
-        minimum_advance_to_open_doors = self.minimum_advance_to_open_doors()
-        time_potential_lock_door_opening_stop = time_lock_entry_start - minimum_advance_to_open_doors
-        vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_opening_stop"] = time_potential_lock_door_opening_stop
-        if not previous_planned_operations.empty:
-            previous_operation = previous_planned_operations.iloc[-1]
-            if not len(previous_operation.vessels):
-                if time_potential_lock_door_opening_stop < previous_operation.time_operation_stop:
-                    operation_delay = previous_operation.time_operation_stop - time_potential_lock_door_opening_stop
-                    time_lock_operation_start += operation_delay
-                    time_lock_entry_start += operation_delay
-                    vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_opening_stop"] += operation_delay
+        lock_operation_information = {"node_from":node_of_approach,
+                                      "node_to":to_node,
+                                      "direction":direction,
+                                      "lock_chamber":self.lock_complex.name,
+                                      "vessels":[],  # leave vessels empty for now
+                                      "capacity_L":self.lock_complex.lock_length - vessel.L,
+                                      "capacity_B":self.lock_complex.lock_width - vessel.B,}
+        _update_lock_operation_planning(self, operation_index, lock_operation_information)
 
-        # determine the lock entry stop and door opening stop time
-        time_lock_entry_stop = (
-            self.calculate_lock_entry_stop_time(vessel, operation_index, direction, prognosis=True) + time_lock_operation_start
-        )
-        time_lock_door_opening_stop = (
-            self.calculate_lock_door_opening_time(vessel, operation_index, direction, prognosis=True) + time_lock_operation_start
-        )
-
-        # update the vessel and operation plannings with the above information
-        vessel_planning.loc[vessel_planning_index, "operation_index"] = operation_index
-        vessel_planning.loc[vessel_planning_index, "time_lock_passing_start"] = time_lock_operation_start
-        vessel_planning.loc[vessel_planning_index, "time_lock_entry_start"] = time_lock_entry_start
-        vessel_planning.loc[vessel_planning_index, "time_lock_entry_stop"] = time_lock_entry_stop
-
-        operation_planning.loc[operation_index, "time_operation_start"] = time_lock_operation_start
-        operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] = time_lock_door_opening_stop
-        operation_planning.loc[operation_index, "time_entry_start"] = time_lock_entry_start
-        operation_planning.loc[operation_index, "time_entry_stop"] = time_lock_entry_stop
-
-        # determine the delay time for the vessel to enter the lock
-        vessel_entry_delay = time_lock_entry_start - earliest_possible_time_lock_entry_start
-        # determine the time that the doors can start closing after the vessel has entered the lock (depending on whether the doors can close before the vessel has berthed), and add this to vessel planning
-        if self.close_doors_before_vessel_is_laying_still:
-            x_location_lock = (
-                operation_planning.loc[operation_index, "capacity_L"] + 0.5 * vessel.L
-            )  # determine the longitudinal location coordinate (x) of the vessel to calculate the time that the lock door closing process can start
-            vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = (
-                time_lock_entry_start + self.minimum_delay_to_close_doors()
-            )
-        else:
-            vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = time_lock_entry_stop
+        (time_lock_operation_start,
+         time_lock_entry_start,
+         minimum_advance_to_open_doors,
+         time_potential_lock_door_opening_stop,
+         time_lock_entry_stop,
+         time_lock_door_opening_stop,
+         vessel_entry_delay) = self._determine_lock_operation_start_information(vessel, operation_index, direction)
 
         # determine the moments in time of the lock operation process steps starts and stops
-        (
-            time_door_closing_start,
-            time_door_closing_stop,
-            time_levelling_start,
-            time_levelling_stop,
-            time_door_opening_start,
-            time_door_opening_stop,
-        ) = self.calculate_lock_operation_times(
-            operation_index=operation_index,
-            last_entering_time=time_lock_entry_start,
-            start_time=time_lock_entry_stop,
-            vessel=vessel,
-            direction=direction,
-        )
-        # determine the moments in time of the vessel's departure from the lock (steps starts and stops) and the time the operation has stopped and the doors can close again
-        time_lock_departure_start = (
-            self.calculate_lock_departure_start_time(vessel, operation_index, direction, prognosis=True) + time_door_opening_stop
-        )
-        time_lock_departure_stop = (
-            self.calculate_lock_departure_stop_time(vessel, operation_index, direction, prognosis=True) + time_door_opening_stop
-        )
-        time_lock_operation_stop = (
-            self.calculate_lock_operation_stop_time(vessel, operation_index, direction, prognosis=True) + time_door_opening_stop
-        )
-        time_lock_door_closing_start = (
-            self.calculate_lock_door_closing_time(vessel, operation_index, direction, prognosis=True) + time_door_opening_stop
-        )
+        levelling_information = self.calculate_lock_operation_times(operation_index=operation_index,
+                                                                    last_entering_time=time_lock_entry_start,
+                                                                    start_time=time_lock_entry_stop,
+                                                                    vessel=vessel,
+                                                                    direction=direction)
 
         # determine the water levels and set the list of vessels
-        wlev_A, wlev_B = self.determine_water_levels_before_and_after_levelling(
-            time_levelling_start, time_levelling_stop, direction
-        )
+        wlev_A, wlev_B = levelling_information["wlev_A"], levelling_information["wlev_B"]
+
+        # determine the moments in time of the vessel's departure from the lock (steps starts and stops) and the time the operation has stopped and the doors can close again
+        time_lock_departure_start = (self.calculate_lock_departure_start_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
+        time_lock_departure_stop = (self.calculate_lock_departure_stop_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
+        time_lock_operation_stop = (self.calculate_lock_operation_stop_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
+        time_lock_door_closing_start = (self.calculate_lock_door_closing_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
+
+
         vessels = [vessel]
 
-        # add above information to the operation and vessel plannings
-        operation_planning.loc[operation_index, "vessels"] = vessels
-        operation_planning.loc[operation_index, "time_door_closing_start"] = time_door_closing_start
-        operation_planning.loc[operation_index, "time_door_closing_stop"] = time_door_closing_stop
-        operation_planning.loc[operation_index, "time_levelling_start"] = time_levelling_start
-        operation_planning.loc[operation_index, "time_levelling_stop"] = time_levelling_stop
-        operation_planning.loc[operation_index, "time_door_opening_start"] = time_door_opening_start
-        operation_planning.loc[operation_index, "time_door_opening_stop"] = time_door_opening_stop
-        operation_planning.loc[operation_index, "time_departure_start"] = time_lock_departure_start
-        operation_planning.loc[operation_index, "time_departure_stop"] = time_lock_departure_stop
-        operation_planning.loc[operation_index, "time_operation_stop"] = time_lock_operation_stop
-        operation_planning.loc[operation_index, "time_potential_lock_door_closure_start"] = time_lock_door_closing_start
-        operation_planning.loc[operation_index, "wlev_A"] = wlev_A
-        operation_planning.loc[operation_index, "wlev_B"] = wlev_B
-        vessel_planning.loc[vessel_planning_index, "time_lock_departure_start"] = time_lock_departure_start
-        vessel_planning.loc[vessel_planning_index, "time_lock_departure_stop"] = time_lock_departure_stop
-        vessel_planning.loc[vessel_planning_index, "time_lock_passing_stop"] = time_lock_operation_stop
-        vessel_planning.loc[vessel_planning_index, "delay"] += vessel_entry_delay
-        operation_planning.loc[operation_index, "status"] = "available"
-
         # include the update of the lock operation, if there is a rule of a required minumum number of vessels, then wait, otherwise the lock operation is ready
+        status = "available"
         if len(vessels) == self.max_vessels_in_operation:
-            operation_planning.loc[operation_index, "status"] = "unavailable"
+            status = "unavailable"
+
+        # determine the time that the doors can start closing after the vessel has entered the lock (depending on whether the doors can close before the vessel has berthed), and add this to vessel planning
+        if self.close_doors_before_vessel_is_laying_still:
+            time_potential_lock_door_closure_start = time_lock_entry_start + self.minimum_delay_to_close_doors()
+        else:
+            time_potential_lock_door_closure_start = time_lock_entry_stop
+
+        # determine the new vessel delay
+        delay = vessel_planning.loc[vessel_planning_index, "delay"]
+        delay += vessel_entry_delay
+        
+        # store above information in dictionaries
+        vessel_passage_information = {"time_potential_lock_door_opening_stop":time_potential_lock_door_opening_stop,
+                                      "time_lock_passing_start":time_lock_operation_start,
+                                      "time_lock_entry_start":time_lock_entry_start,
+                                      "time_lock_entry_stop":time_lock_entry_stop,
+                                      "time_potential_lock_door_closure_start":time_potential_lock_door_closure_start,
+                                      "time_lock_departure_start":time_lock_departure_start,
+                                      "time_lock_departure_stop":time_lock_departure_stop,
+                                      "time_lock_passing_stop":time_lock_operation_stop,
+                                      "delay":delay}
+        _update_lock_vessel_planning(self, vessel_planning_index, vessel_passage_information)
+
+        lock_operation_information = {"time_operation_start":time_lock_operation_start,
+                                      "time_potential_lock_door_opening_stop":time_lock_door_opening_stop,
+                                      "time_entry_start":time_lock_entry_start,
+                                      "time_entry_stop":time_lock_entry_stop,
+                                      "vessels":vessels,
+                                      "time_door_closing_start":levelling_information["time_door_closing_start"],
+                                      "time_door_closing_stop":levelling_information["time_door_closing_stop"],
+                                      "time_levelling_start": levelling_information["time_levelling_start"],
+                                      "time_levelling_stop": levelling_information["time_levelling_stop"],
+                                      "time_door_opening_start": levelling_information["time_door_opening_start"],
+                                      "time_door_opening_stop": levelling_information["time_door_opening_stop"],
+                                      "time_departure_start": time_lock_departure_start,
+                                      "time_departure_stop": time_lock_departure_stop,
+                                      "time_operation_stop": time_lock_operation_stop,
+                                      "time_potential_lock_door_closure_start": time_lock_door_closing_start,
+                                      "wlev_A": wlev_A,
+                                      "wlev_B": wlev_B,
+                                      "status": status}
+        _update_lock_operation_planning(self, operation_index, lock_operation_information)
 
         # if there is another lock operation is planned after this newly planned operation, check if an additional empty lock operation is required (not if there is a policy that both lock doors are closed in between operations)
         later_planned_operations = operation_planning[operation_planning.index > operation_index]
         if not later_planned_operations.empty and not self.closing_doors_in_between_operations:
             next_operation = later_planned_operations.iloc[0]
-            if direction == next_operation["bound"]:
+            if node_from == next_operation["node_from"]:
                 self.add_empty_lock_operation_to_planning(operation_index, 1 - direction)
 
         yield from []
 
-    def add_vessel_to_planned_lock_operation(
-        self, vessel, operation_index, direction, prognosis=True, vessel_planning=None, operation_planning=None
-    ):
+
+    def _process_delay_in_vessel_planning(self, operation_start_delay, other_vessels_in_operation):
+        vessel_planning = self.vessel_planning
+        if operation_start_delay == pd.Timedelta(seconds = 0):
+            return
+
+        for vessel_index, other_vessel in enumerate(other_vessels_in_operation):
+            other_vessel_planning_index = vessel_planning[vessel_planning.id == other_vessel.id].iloc[-1].name
+            vessel_planning.loc[other_vessel_planning_index, "time_potential_lock_door_opening_stop"] += operation_start_delay
+            vessel_planning.loc[other_vessel_planning_index, "time_potential_lock_door_closure_start"] += operation_start_delay
+            vessel_planning.loc[other_vessel_planning_index, "time_arrival_at_waiting_area"] += operation_start_delay
+            vessel_planning.loc[other_vessel_planning_index, "time_arrival_at_lineup_area"] += operation_start_delay
+            vessel_planning.loc[other_vessel_planning_index, "time_lock_passing_start"] += operation_start_delay
+            vessel_planning.loc[other_vessel_planning_index, "time_lock_entry_start"] += operation_start_delay
+            vessel_planning.loc[other_vessel_planning_index, "time_lock_entry_stop"] += operation_start_delay
+            vessel_planning.loc[other_vessel_planning_index, "delay"] += operation_start_delay
+            if vessel_index < len(other_vessels_in_operation) - 1:
+                next_vessel = other_vessels_in_operation[vessel_index + 1]
+                next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
+
+                # if there is slack in planning, plan two subsequent entering vessels closer to each other by adjusting the 'operation start' delay
+                operation_start_delay = (vessel_planning.loc[other_vessel_planning_index, "time_lock_entry_start"] -
+                                         vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"])
+
+
+    def _determine_lock_departure_information(self, vessel, operation_index, direction, levelling_information):
+        time_lock_departure_start = (self.calculate_lock_departure_start_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+        time_vessel_departure_start = (self.calculate_vessel_departure_start_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+        time_lock_departure_stop = (self.calculate_lock_departure_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+        time_vessel_departure_stop = (self.calculate_vessel_departure_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+        time_lock_operation_stop = (self.calculate_lock_operation_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+        time_vessel_passing_stop = (self.calculate_vessel_passing_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+        time_lock_door_closing_start = (self.calculate_lock_door_closing_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+
+        departure_information = {"time_lock_departure_start":time_lock_departure_start,
+                                 "time_vessel_departure_start":time_vessel_departure_start,
+                                 "time_lock_departure_stop":time_lock_departure_stop,
+                                 "time_vessel_departure_stop":time_vessel_departure_stop,
+                                 "time_lock_operation_stop":time_lock_operation_stop,
+                                 "time_vessel_passing_stop":time_vessel_passing_stop,
+                                 "time_lock_door_closing_start":time_lock_door_closing_start}
+
+        return departure_information
+
+
+    def _update_future_lock_operations_by_lock_delay_previous_operation(self, operation_index, lock_departure_information):
+        operation_planning = self.operation_planning
+        vessel_planning = self.vessel_planning
+
+        # update the next lock operations if the previous lock operation caused a delay
+        next_planned_operations = operation_planning[operation_planning.index > operation_index]
+        for next_operation_index, next_operation_info in next_planned_operations.iterrows():
+
+            # determine time delay of the process of sailing into the lock if the next operation in the planning confict with the delayed operation
+            sailing_in_delay = pd.Timedelta(seconds=0)
+            if not len(next_operation_info) and lock_departure_information["time_lock_door_closing_start"] > next_operation_info.time_potential_lock_door_opening_stop:
+                sailing_in_delay = lock_departure_information["time_lock_door_closing_start"] - next_operation_info.time_potential_lock_door_opening_stop
+            elif len(next_operation_info) and lock_departure_information["time_lock_operation_stop"] > next_operation_info.time_operation_start:
+                sailing_in_delay = lock_departure_information["time_lock_operation_stop"] - next_operation_info.time_operation_start
+
+            # determine the new start time of the next operation (dependening on whether it will fall withing the operation hours)
+            new_operation_start = operation_planning.loc[next_operation_index, "time_operation_start"] + sailing_in_delay
+            # within_operation_hours = operational_hours[(new_operation_start >= operational_hours.start_time) & (new_operation_start <= operational_hours.stop_time)]
+            # if within_operation_hours.empty:
+            #     first_available_hour = operational_hours[operational_hours.start_time >= new_operation_start].iloc[0]
+            #     sailing_in_delay += first_available_hour.start_time - new_operation_start
+
+            # break loop if there is no delay (next operations will then also not experience a delay)
+            if not sailing_in_delay.total_seconds() > 0:
+                break
+
+            # update the operation planning if there is a delay
+            operation_planning.loc[next_operation_index, "time_potential_lock_door_opening_stop"] += sailing_in_delay
+            operation_planning.loc[next_operation_index, "time_operation_start"] += sailing_in_delay
+            operation_planning.loc[next_operation_index, "time_entry_start"] += sailing_in_delay
+            operation_planning.loc[next_operation_index, "time_entry_stop"] += sailing_in_delay
+
+            # update the vessel planning
+            next_vessels = next_operation_info.vessels
+            next_direction = next_operation_info.direction
+            last_vessel_entering_time = operation_planning.loc[next_operation_index, "time_entry_start"]
+            for next_vessel_index, next_vessel in enumerate(next_vessels):
+                next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
+                vessel_planning.loc[next_vessel_planning_index, "time_potential_lock_door_opening_stop"] += sailing_in_delay
+                vessel_planning.loc[next_vessel_planning_index, "time_potential_lock_door_closure_start"] += sailing_in_delay
+                vessel_planning.loc[next_vessel_planning_index, "time_arrival_at_lineup_area"] += sailing_in_delay
+                vessel_planning.loc[next_vessel_planning_index, "time_lock_passing_start"] += sailing_in_delay
+                vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"] += sailing_in_delay
+                vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_stop"] += sailing_in_delay
+                last_vessel_entering_time = vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"]
+                if next_vessel_index != len(next_vessels) - 1:
+                    next_next_vessel = next_vessels[next_vessel_index + 1]
+                    next_next_vessel_planning_index = vessel_planning[vessel_planning.id == next_next_vessel.id].iloc[-1].name
+
+                    # determine sailing in delay for next vessel (it can be that there is some slack time between two vessel arrivals)
+                    sailing_in_delay = pd.Timedelta(seconds=0)
+                    entry_start_previous_vessel = vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"]
+                    entry_start_next_vessel = vessel_planning.loc[next_next_vessel_planning_index, "time_lock_entry_start"]
+                    if entry_start_next_vessel < entry_start_previous_vessel:
+                        sailing_in_delay = entry_start_previous_vessel - entry_start_next_vessel
+                        extra_delay = self.calculate_sailing_in_time_delay(next_next_vessel, next_operation_index,
+                                                                           next_direction,
+                                                                           minimum_difference_with_previous_vessel=True,
+                                                                           overwrite=False)
+                        sailing_in_delay += extra_delay
+
+            # determine the new start and stop times of the lock operation (i.e., door-closing, levelling, door-opening) as it can be that the levelling time is now changed due to the shift of this operation in time (i.e., due to tides)
+            time_doors_closing = operation_planning.loc[next_operation_index, "time_entry_stop"]
+            levelling_information = self.calculate_lock_operation_times(operation_index=next_operation_index,
+                                                                        last_entering_time=last_vessel_entering_time,
+                                                                        start_time=time_doors_closing,
+                                                                        vessel=next_vessel,
+                                                                        direction=next_direction,)
+            # update the operation planning accordingly
+            operation_planning.loc[next_operation_index, "time_door_closing_start"] = levelling_information["time_door_closing_start"]
+            operation_planning.loc[next_operation_index, "time_door_closing_stop"] = levelling_information["time_door_closing_stop"]
+            operation_planning.loc[next_operation_index, "time_levelling_start"] = levelling_information["time_levelling_start"]
+            delay_after_levelling = levelling_information["time_levelling_stop"] - operation_planning.loc[next_operation_index, "time_levelling_stop"]
+            operation_planning.loc[next_operation_index, "time_levelling_stop"] = levelling_information["time_levelling_stop"]
+            operation_planning.loc[next_operation_index, "time_door_opening_start"] = levelling_information["time_door_opening_start"]
+            operation_planning.loc[next_operation_index, "time_door_opening_stop"] = levelling_information["time_door_opening_stop"]
+            if delay_after_levelling > pd.Timedelta(seconds=0):
+                operation_planning.loc[next_operation_index, "time_departure_start"] += delay_after_levelling
+                operation_planning.loc[next_operation_index, "time_departure_stop"] += delay_after_levelling
+                operation_planning.loc[next_operation_index, "time_operation_stop"] += delay_after_levelling
+                operation_planning.loc[next_operation_index, "time_potential_lock_door_closure_start"] += delay_after_levelling
+                operation_planning.loc[next_operation_index, "total_delay"] += delay_after_levelling * len(next_vessels)
+                operation_planning.loc[next_operation_index, "maximum_individual_delay"] += delay_after_levelling
+
+            # update also the departure information of the affected vessels
+            for vessel_index, next_vessel in enumerate(next_vessels):
+                next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
+                vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_start"] += delay_after_levelling
+                vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_stop"] += delay_after_levelling
+                vessel_planning.loc[next_vessel_planning_index, "time_lock_passing_stop"] += delay_after_levelling
+                vessel_planning.loc[next_vessel_planning_index, "delay"] += delay_after_levelling
+
+
+    def add_vessel_to_planned_lock_operation(self, vessel, operation_index, direction):
         """
         Add vessel to a planned lock operation
 
@@ -1181,13 +1372,7 @@ class HasLockPlanning:
         operation_index : int
             the index of the already planned lock operation to which the vessel is added to
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
-        prognosis : bool
-            .
-        vessel_planning : pd.DataFrame [default = none]
-            the vessel planning of the lock complex master
-        operation_planning : pd.DataFrame [default = none]
-            the operation planning of the lock complex master
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
         Returns
         -------
@@ -1195,16 +1380,9 @@ class HasLockPlanning:
             the lock complex master's new planning of lock operations
 
         """
-        # TODO: this is a very long and a bit of a chaotic function where a lot is going, we need to split this function up
-        if operation_planning is None and vessel_planning is None:
-            prognosis = False
-
-        # unpack the lock complex' vessel and operations planning
-        if vessel_planning is None:
-            vessel_planning = self.lock_complex.vessel_planning
-
-        if operation_planning is None:
-            operation_planning = self.lock_complex.operation_planning
+        # unpack the lock master's vessel and lock operation plannings
+        vessel_planning = self.lock_complex.vessel_planning
+        operation_planning = self.lock_complex.operation_planning
 
         # determine the vessel index in the lock complex master's vessel planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -1215,27 +1393,21 @@ class HasLockPlanning:
 
         # determine the number of vessels that are already assigned to the lock operation to which the vessels is/will be added
         vessels_in_operation = operation_planning.loc[operation_index, "vessels"]
+
         # add vessel to the operation if it is not yet part of it
         if vessel not in vessels_in_operation:
             vessels_in_operation.append(vessel)
-            operation_planning.loc[operation_index, "vessels"] = (
-                vessels_in_operation  # TODO: is they redundant? or do we need to overwrite the information in the operation planning dataframe again
-            )
-            self.calculate_sailing_time_to_approach_point(
-                vessel, direction, operation_index=operation_index
-            )  # TODO: can this be removed?
+            operation_planning.loc[operation_index, "vessels"] = (vessels_in_operation)  # TODO: is they redundant? or do we need to overwrite the information in the operation planning dataframe again
+            self.calculate_sailing_time_to_approach_point(vessel, direction, operation_index=operation_index)  # TODO: can this be removed?
 
             # if there is a rule that prescribes a minimum amount of vessels in the lock operation and this condition is satisfied, put an operation-object in the FilterStore to communicate that the earlier waiting vessels do not have to wait any longer
-            if self.min_vessels_in_operation and len(vessels_in_operation) == self.min_vessels_in_operation and not prognosis:
+            if self.min_vessels_in_operation and len(vessels_in_operation) == self.min_vessels_in_operation:
                 Operation = namedtuple("Operation", "operation_index")
                 operation = Operation(operation_index)
                 yield self.wait_for_other_vessel_to_arrive.put(operation)
-                yield self.env.timeout(0.0)  # required to update the vessel_planning TODO: we may want to try to remove this
 
                 # calculate the required sailing in time delay
-                sailing_in_gap = self.calculate_sailing_in_time_delay(
-                    vessel, operation_index, direction, prognosis=False, overwrite=False
-                )
+                sailing_in_gap = self.calculate_sailing_in_time_delay(vessel, operation_index, direction, prognosis=False, overwrite=False)
 
         # calculate the new arrival time at the lock entry
         time_arrival_time_at_lock_entry = vessel_planning.loc[vessel_planning_index, "time_lock_passing_start"] + sailing_in_gap
@@ -1253,34 +1425,16 @@ class HasLockPlanning:
         time_lock_operation_start = operation_planning.loc[operation_index, "time_operation_start"]
         potential_lock_door_opening_stop = operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"]
 
-        # determine if the arrival time is now outside of the lock's operational hours, determine the additional delay TODO: does this overcomplicate things? never will a newly arriving vessel delay the whole lock planning because it will fall outside the operational hours, probably the
-        operational_hours = self.operational_hours
-        within_operation_hours = operational_hours[
-            (time_arrival_time_at_lock_entry >= operational_hours.start_time)
-            & (time_arrival_time_at_lock_entry <= operational_hours.stop_time)
-        ]
-        if within_operation_hours.empty:
-            first_available_hour = operational_hours[
-                operational_hours.start_time >= (time_arrival_time_at_lock_entry + vessel_entry_delay)
-            ].iloc[0]
-            vessel_entry_delay += first_available_hour.start_time - (time_arrival_time_at_lock_entry + vessel_entry_delay)
-            if time_lock_operation_start < first_available_hour.start_time:
-                time_lock_operation_start = first_available_hour.start_time
-
         # determine the time that the vessel has to be at the approach point
         time_first_vessel_required_to_be_at_lock_approach = time_arrival_time_at_lock_entry + vessel_entry_delay
 
         # correct start time of lock operation if there are no other vessels scheduled in the lock and the approach start time lies behond than the earlier estimated operation start time
-        if time_first_vessel_required_to_be_at_lock_approach > operation_planning.loc[
-            operation_index, "time_operation_start"
-        ] and not len(other_vessels_in_operation):
+        if time_first_vessel_required_to_be_at_lock_approach > operation_planning.loc[operation_index, "time_operation_start"] and not len(other_vessels_in_operation):
             time_lock_operation_start = time_first_vessel_required_to_be_at_lock_approach
 
         # add to vessel entry delay if the time of starting the approach lies ahead of the operation start time
         elif time_first_vessel_required_to_be_at_lock_approach < operation_planning.loc[operation_index, "time_operation_start"]:
-            vessel_entry_delay += (
-                operation_planning.loc[operation_index, "time_operation_start"] - time_first_vessel_required_to_be_at_lock_approach
-            )
+            vessel_entry_delay += (operation_planning.loc[operation_index, "time_operation_start"] - time_first_vessel_required_to_be_at_lock_approach)
 
         # add the delay to the expected time of lock entry to the vessel
         if vessel_entry_delay > pd.Timedelta(seconds=0):
@@ -1288,11 +1442,10 @@ class HasLockPlanning:
 
         # update the vessel planning based on the above delays
         time_vessel_entry_start = self.calculate_vessel_entry_start_time(vessel, direction) + time_arrival_time_at_lock_entry
-        time_lock_entry_stop = (
-            self.calculate_lock_entry_stop_time(vessel, operation_index, direction) + time_arrival_time_at_lock_entry
-        )
+        time_lock_entry_stop = (self.calculate_lock_entry_stop_time(vessel, operation_index, direction) + time_arrival_time_at_lock_entry)
 
         vessel_planning.loc[vessel_planning_index, "operation_index"] = operation_index
+        vessel_planning.loc[vessel_planning_index, "lock_chamber"] = self.lock_complex.name
         vessel_planning.loc[vessel_planning_index, "time_lock_passing_start"] = time_arrival_time_at_lock_entry
         vessel_planning.loc[vessel_planning_index, "time_lock_entry_start"] = time_vessel_entry_start
         vessel_planning.loc[vessel_planning_index, "time_lock_entry_stop"] = time_lock_entry_stop
@@ -1300,60 +1453,36 @@ class HasLockPlanning:
         # determine the operation start delay
         operation_start_delay = time_lock_operation_start - operation_planning.loc[operation_index, "time_operation_start"]
 
-        # determine the times of door closing, levelling and door opening: if lock entry stop time or extract them when the new lock entry stop time is ahead of the door closing start time TODO: check if this is correct
-        if time_lock_entry_stop < operation_planning.loc[operation_index, "time_door_closing_start"]:
-            time_door_closing_start = operation_planning.loc[operation_index, "time_door_closing_start"]
-            time_door_closing_stop = operation_planning.loc[operation_index, "time_door_closing_stop"]
-            time_levelling_start = operation_planning.loc[operation_index, "time_levelling_start"]
-            time_levelling_stop = operation_planning.loc[operation_index, "time_levelling_stop"]
-            time_door_opening_start = operation_planning.loc[operation_index, "time_door_opening_start"]
-            time_door_opening_stop = operation_planning.loc[operation_index, "time_door_opening_stop"]
-        else:
-            (
-                time_door_closing_start,
-                time_door_closing_stop,
-                time_levelling_start,
-                time_levelling_stop,
-                time_door_opening_start,
-                time_door_opening_stop,
-            ) = self.calculate_lock_operation_times(
-                operation_index=operation_index,
-                last_entering_time=time_vessel_entry_start,
-                start_time=time_lock_entry_stop,
-                vessel=vessel,
-                direction=direction,
-            )
-
         # update the lock master's vessel and lock operation planning by adding the operation start and vessel entry delay
         operation_planning.loc[operation_index, "time_operation_start"] += operation_start_delay
         if vessel_entry_delay > pd.Timedelta(seconds=0):
             vessel_planning.loc[vessel_planning_index, "delay"] += vessel_entry_delay
         operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] += operation_start_delay
 
-        # if there is a delay in the start op the operation: update the vessel planning of the previous arriving vessels of this operation
-        if operation_start_delay > pd.Timedelta(seconds=0):
-            for vessel_index, other_vessel in enumerate(other_vessels_in_operation):
-                other_vessel_planning_index = vessel_planning[vessel_planning.id == other_vessel.id].iloc[-1].name
-                vessel_planning.loc[other_vessel_planning_index, "time_potential_lock_door_opening_stop"] += operation_start_delay
-                vessel_planning.loc[other_vessel_planning_index, "time_potential_lock_door_closure_start"] += operation_start_delay
-                vessel_planning.loc[other_vessel_planning_index, "time_arrival_at_waiting_area"] += operation_start_delay
-                vessel_planning.loc[other_vessel_planning_index, "time_arrival_at_lineup_area"] += operation_start_delay
-                vessel_planning.loc[other_vessel_planning_index, "time_lock_passing_start"] += operation_start_delay
-                vessel_planning.loc[other_vessel_planning_index, "time_lock_entry_start"] += operation_start_delay
-                vessel_planning.loc[other_vessel_planning_index, "time_lock_entry_stop"] += operation_start_delay
-                vessel_planning.loc[other_vessel_planning_index, "delay"] += operation_start_delay
-                if vessel_index < len(other_vessels_in_operation) - 1:
-                    next_vessel = other_vessels_in_operation[vessel_index + 1]
-                    next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
+        # update the values of the entry start, and (if there are no other vessels) overwrite the operation start
+        if not len(other_vessels_in_operation):
+            time_entry_start = time_vessel_entry_start
+        else:
+            time_entry_start = operation_planning.loc[operation_index, "time_entry_start"]
+            potential_lock_door_opening_stop = operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"]
+            time_lock_operation_start = operation_planning.loc[operation_index, "time_operation_start"]
+            time_entry_start += operation_start_delay
 
-                    # if there is slack in planning, plan two subsequent entering vessels closer to each other by adjusting the 'operation start' delay
-                    operation_start_delay = (
-                        vessel_planning.loc[other_vessel_planning_index, "time_lock_entry_start"]
-                        - vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"]
-                    )
+        # if there is a delay in the start op the operation: update the vessel planning of the previous arriving vessels of this operation
+        self._process_delay_in_vessel_planning(operation_start_delay, other_vessels_in_operation)
+
+        # determine the times of door closing, levelling and door opening: if lock entry stop time or extract them when the new lock entry stop time is ahead of the door closing start time TODO: check if this is correct
+        levelling_information = self.calculate_lock_operation_times(operation_index=operation_index,
+                                                                    last_entering_time=time_vessel_entry_start,
+                                                                    start_time=time_lock_entry_stop,
+                                                                    vessel=vessel,
+                                                                    direction=direction,)
+
+        # determine water levels to be included in the planning
+        wlev_A, wlev_B = levelling_information["wlev_A"], levelling_information["wlev_B"]
 
         # if there is a delay in the departure of the vessels, also include that in the planning
-        additional_sailing_out_delay = time_door_opening_stop - operation_planning.loc[operation_index, "time_door_opening_stop"]
+        additional_sailing_out_delay = levelling_information["time_door_opening_stop"] - operation_planning.loc[operation_index, "time_door_opening_stop"]
         if additional_sailing_out_delay > pd.Timedelta(seconds=0):
             for other_vessel in other_vessels_in_operation:
                 other_vessel_planning_index = vessel_planning[vessel_planning.id == other_vessel.id].iloc[-1].name
@@ -1362,186 +1491,46 @@ class HasLockPlanning:
                 vessel_planning.loc[other_vessel_planning_index, "time_lock_passing_stop"] += additional_sailing_out_delay
                 vessel_planning.loc[other_vessel_planning_index, "delay"] += additional_sailing_out_delay
 
-        # determine water levels to be included in the planning
-        wlev_A, wlev_B = self.determine_water_levels_before_and_after_levelling(
-            time_levelling_start, time_levelling_stop, direction
-        )
-
-        # update the values of the entry start, and (if there are no other vessels) overwrite the operation start
-        if not len(other_vessels_in_operation):
-            operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] = potential_lock_door_opening_stop
-            operation_planning.loc[operation_index, "time_operation_start"] = time_lock_operation_start
-            operation_planning.loc[operation_index, "time_entry_start"] = time_vessel_entry_start
-        else:
-            operation_planning.loc[operation_index, "time_entry_start"] += operation_start_delay
-
         # update the operation planning with the above information
+        operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] = potential_lock_door_opening_stop
+        operation_planning.loc[operation_index, "time_operation_start"] = time_lock_operation_start
+        operation_planning.loc[operation_index, "time_entry_start"] = time_entry_start
         operation_planning.loc[operation_index, "time_entry_stop"] = time_lock_entry_stop
-        operation_planning.loc[operation_index, "time_door_closing_start"] = time_door_closing_start
-        operation_planning.loc[operation_index, "time_door_closing_stop"] = time_door_closing_stop
-        operation_planning.loc[operation_index, "time_levelling_start"] = time_levelling_start
-        operation_planning.loc[operation_index, "time_levelling_stop"] = time_levelling_stop
-        operation_planning.loc[operation_index, "time_door_opening_start"] = time_door_opening_start
-        operation_planning.loc[operation_index, "time_door_opening_stop"] = time_door_opening_stop
-        operation_planning.loc[operation_index, "maximum_individual_delay"] = np.max(
-            vessel_planning[vessel_planning.operation_index == operation_index].delay
-        )
-        operation_planning.loc[operation_index, "total_delay"] = np.sum(
-            vessel_planning[vessel_planning.operation_index == operation_index].delay
-        )
+        operation_planning.loc[operation_index, "time_door_closing_start"] = levelling_information["time_door_closing_start"]
+        operation_planning.loc[operation_index, "time_door_closing_stop"] = levelling_information["time_door_closing_stop"]
+        operation_planning.loc[operation_index, "time_levelling_start"] = levelling_information["time_levelling_start"]
+        operation_planning.loc[operation_index, "time_levelling_stop"] = levelling_information["time_levelling_stop"]
+        operation_planning.loc[operation_index, "time_door_opening_start"] = levelling_information["time_door_opening_start"]
+        operation_planning.loc[operation_index, "time_door_opening_stop"] = levelling_information["time_door_opening_stop"]
+        operation_planning.loc[operation_index, "maximum_individual_delay"] = np.max(vessel_planning[vessel_planning.operation_index == operation_index].delay)
+        operation_planning.loc[operation_index, "total_delay"] = np.sum(vessel_planning[vessel_planning.operation_index == operation_index].delay)
 
         # determine the new departure and operation start and stop times
-        time_lock_departure_start = (
-            self.calculate_lock_departure_start_time(vessel, operation_index, direction) + time_door_opening_stop
-        )
-        time_vessel_departure_start = (
-            self.calculate_vessel_departure_start_time(vessel, operation_index, direction) + time_door_opening_stop
-        )
-        time_lock_departure_stop = (
-            self.calculate_lock_departure_stop_time(vessel, operation_index, direction) + time_door_opening_stop
-        )
-        time_vessel_departure_stop = (
-            self.calculate_vessel_departure_stop_time(vessel, operation_index, direction) + time_door_opening_stop
-        )
-        time_lock_operation_stop = (
-            self.calculate_lock_operation_stop_time(vessel, operation_index, direction) + time_door_opening_stop
-        )
-        time_vessel_passing_stop = (
-            self.calculate_vessel_passing_stop_time(vessel, operation_index, direction) + time_door_opening_stop
-        )
-        time_lock_door_closing_start = (
-            self.calculate_lock_door_closing_time(vessel, operation_index, direction) + time_door_opening_stop
-        )
+        lock_departure_information = self._determine_lock_departure_information(vessel, operation_index, direction, levelling_information)
+        if self.close_doors_before_vessel_is_laying_still:
+            time_potential_lock_door_closure_start = (time_vessel_entry_start + self.minimum_delay_to_close_doors())
+        else:
+            time_potential_lock_door_closure_start = levelling_information["time_door_closing_start"]
 
         # update vessel and operation plannings accordingly
-        operation_planning.loc[operation_index, "time_departure_start"] = time_lock_departure_start
-        operation_planning.loc[operation_index, "time_departure_stop"] = time_lock_departure_stop
-        operation_planning.loc[operation_index, "time_operation_stop"] = time_lock_operation_stop
-        operation_planning.loc[operation_index, "time_potential_lock_door_closure_start"] = time_lock_door_closing_start
-        operation_planning.loc[operation_index, "wlev_A"] = wlev_A
-        operation_planning.loc[operation_index, "wlev_B"] = wlev_B
-        vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_opening_stop"] = (
-            time_vessel_entry_start - self.minimum_advance_to_open_doors()
-        )
-        if self.close_doors_before_vessel_is_laying_still:
-            vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = (
-                time_vessel_entry_start + self.minimum_delay_to_close_doors()
-            )
-        else:
-            vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] = time_door_closing_start
+        lock_operation_information = {"time_departure_start":lock_departure_information["time_lock_departure_start"],
+                                      "time_departure_start":lock_departure_information["time_lock_departure_start"],
+                                      "time_departure_stop":lock_departure_information["time_lock_departure_stop"],
+                                      "time_operation_stop":lock_departure_information["time_lock_operation_stop"],
+                                      "time_potential_lock_door_closure_start":lock_departure_information["time_lock_door_closing_start"],
+                                      "wlev_A":wlev_A,
+                                      "wlev_B":wlev_B}
+        _update_lock_operation_planning(self,operation_index,lock_operation_information)
 
-        vessel_planning.loc[vessel_planning_index, "time_lock_departure_start"] = time_vessel_departure_start
-        vessel_planning.loc[vessel_planning_index, "time_lock_departure_stop"] = time_vessel_departure_stop
-        vessel_planning.loc[vessel_planning_index, "time_lock_passing_stop"] = time_vessel_passing_stop
-
-        # update previous lock operations TODO: provide posibility to move lockages ahead of earlier delayed ones, if they can start earlier than these lockages
-        previous_planned_operations = operation_planning[operation_planning.index < operation_index]
-        if not previous_planned_operations.empty:
-            if (
-                previous_planned_operations.iloc[-1].time_potential_lock_door_closure_start
-                < operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"]
-            ):
-                pass
+        vessel_passage_information = {"time_potential_lock_door_closure_start":time_potential_lock_door_closure_start,
+                                      "time_potential_lock_door_opening_stop":(time_vessel_entry_start - self.minimum_advance_to_open_doors()),
+                                      "time_lock_departure_start":lock_departure_information["time_vessel_departure_start"],
+                                      "time_lock_departure_stop":lock_departure_information["time_vessel_departure_stop"],
+                                      "time_lock_passing_stop":lock_departure_information["time_vessel_passing_stop"]}
+        _update_lock_vessel_planning(self,vessel_planning_index,vessel_passage_information)
 
         # update the next lock operations if the previous lock operation caused a delay
-        next_planned_operations = operation_planning[operation_planning.index > operation_index]
-        for next_operation_index, next_operation_info in next_planned_operations.iterrows():
-
-            # determine time delay of the process of sailing into the lock if the next operation in the planning confict with the delayed operation
-            sailing_in_delay = pd.Timedelta(seconds=0)
-            if (
-                not len(next_operation_info)
-                and time_lock_door_closing_start > next_operation_info.time_potential_lock_door_opening_stop
-            ):
-                sailing_in_delay = time_lock_door_closing_start - next_operation_info.time_potential_lock_door_opening_stop
-            elif len(next_operation_info) and time_lock_operation_stop > next_operation_info.time_operation_start:
-                sailing_in_delay = time_lock_operation_stop - next_operation_info.time_operation_start
-
-            # determine the new start time of the next operation (dependening on whether it will fall withing the operation hours)
-            new_operation_start = operation_planning.loc[next_operation_index, "time_operation_start"] + sailing_in_delay
-            within_operation_hours = operational_hours[
-                (new_operation_start >= operational_hours.start_time) & (new_operation_start <= operational_hours.stop_time)
-            ]
-            if within_operation_hours.empty:
-                first_available_hour = operational_hours[operational_hours.start_time >= new_operation_start].iloc[0]
-                sailing_in_delay += first_available_hour.start_time - new_operation_start
-
-            # break loop if there is no delay (next operations will then also not experience a delay)
-            if not sailing_in_delay.total_seconds() > 0:
-                break
-
-            # update the operation planning if there is a delay
-            operation_planning.loc[next_operation_index, "time_potential_lock_door_opening_stop"] += sailing_in_delay
-            operation_planning.loc[next_operation_index, "time_operation_start"] += sailing_in_delay
-            operation_planning.loc[next_operation_index, "time_entry_start"] += sailing_in_delay
-            operation_planning.loc[next_operation_index, "time_entry_stop"] += sailing_in_delay
-
-            # update the vessel planning
-            next_vessels = next_operation_info.vessels
-            next_direction = next_operation_info.bound
-            last_vessel_entering_time = operation_planning.loc[next_operation_index, "time_entry_start"]
-            for next_vessel_index, next_vessel in enumerate(next_vessels):
-                next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
-                vessel_planning.loc[next_vessel_planning_index, "time_potential_lock_door_opening_stop"] += sailing_in_delay
-                vessel_planning.loc[next_vessel_planning_index, "time_potential_lock_door_closure_start"] += sailing_in_delay
-                vessel_planning.loc[next_vessel_planning_index, "time_arrival_at_lineup_area"] += sailing_in_delay
-                vessel_planning.loc[next_vessel_planning_index, "time_lock_passing_start"] += sailing_in_delay
-                vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"] += sailing_in_delay
-                vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_stop"] += sailing_in_delay
-                last_vessel_entering_time = vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"]
-                if next_vessel_index != len(next_vessels) - 1:
-                    next_next_vessel = next_vessels[next_vessel_index + 1]
-                    next_next_vessel_planning_index = vessel_planning[vessel_planning.id == next_next_vessel.id].iloc[-1].name
-
-                    # determine sailing in delay for next vessel (it can be that there is some slack time between two vessel arrivals)
-                    sailing_in_delay = pd.Timedelta(seconds=0)
-                    if vessel_planning.loc[next_next_vessel_planning_index, "time_lock_entry_start"] < vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"]:
-                        sailing_in_delay = vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"] - vessel_planning.loc[next_next_vessel_planning_index, "time_lock_entry_start"]
-                        extra_delay = self.calculate_sailing_in_time_delay(next_next_vessel,next_operation_index,next_direction,minimum_difference_with_previous_vessel=True,overwrite=False)
-                        sailing_in_delay += extra_delay
-
-            # determine the new start and stop times of the lock operation (i.e., door-closing, levelling, door-opening) as it can be that the levelling time is now changed due to the shift of this operation in time (i.e., due to tides)
-            time_doors_closing = operation_planning.loc[next_operation_index, "time_entry_stop"]
-            (
-                time_door_closing_start,
-                time_door_closing_stop,
-                time_levelling_start,
-                time_levelling_stop,
-                time_door_opening_start,
-                time_door_opening_stop,
-            ) = self.calculate_lock_operation_times(
-                operation_index=next_operation_index,
-                last_entering_time=last_vessel_entering_time,
-                start_time=time_doors_closing,
-                vessel=next_vessel,
-                direction=direction,
-            )
-            # update the operation planning accordingly
-            operation_planning.loc[next_operation_index, "time_door_closing_start"] = time_door_closing_start
-            operation_planning.loc[next_operation_index, "time_door_closing_stop"] = time_door_closing_stop
-            operation_planning.loc[next_operation_index, "time_levelling_start"] = time_levelling_start
-            delay_after_levelling = time_levelling_stop - operation_planning.loc[next_operation_index, "time_levelling_stop"]
-            operation_planning.loc[next_operation_index, "time_levelling_stop"] = time_levelling_stop
-            operation_planning.loc[next_operation_index, "time_door_opening_start"] = time_door_opening_start
-            operation_planning.loc[next_operation_index, "time_door_opening_stop"] = time_door_opening_stop
-            if delay_after_levelling > pd.Timedelta(seconds=0):
-                operation_planning.loc[next_operation_index, "time_departure_start"] += delay_after_levelling
-                operation_planning.loc[next_operation_index, "time_departure_stop"] += delay_after_levelling
-                operation_planning.loc[next_operation_index, "time_operation_stop"] += delay_after_levelling
-                operation_planning.loc[next_operation_index, "time_potential_lock_door_closure_start"] += delay_after_levelling
-                operation_planning.loc[next_operation_index, "total_delay"] += delay_after_levelling * len(next_vessels)
-                operation_planning.loc[next_operation_index, "maximum_individual_delay"] += delay_after_levelling
-
-            # update also the departure information of the affected vessels
-            for vessel_index, next_vessel in enumerate(next_vessels):
-                next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
-                vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_start"] += delay_after_levelling
-                vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_stop"] += delay_after_levelling
-                vessel_planning.loc[next_vessel_planning_index, "time_lock_passing_stop"] += delay_after_levelling
-                vessel_planning.loc[next_vessel_planning_index, "delay"] += delay_after_levelling
-            time_lock_operation_stop = operation_planning.loc[next_operation_index, "time_operation_stop"]
-            time_lock_door_closing_start = operation_planning.loc[next_operation_index, "time_potential_lock_door_closure_start"]
-
+        self._update_future_lock_operations_by_lock_delay_previous_operation(operation_index, lock_departure_information)
         return operation_planning
 
     def update_operation_planning(self, vessel, direction, operation_index, add_operation):
@@ -1553,7 +1542,7 @@ class HasLockPlanning:
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the lock operation: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         operation_index : int
             index of the lock operation
         add_operation : bool
@@ -1576,12 +1565,9 @@ class HasLockPlanning:
 
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
-        operation_planning.loc[operation_index, "maximum_individual_delay"] = np.max(
-            vessel_planning[vessel_planning.operation_index == operation_index].delay
-        )
-        operation_planning.loc[operation_index, "total_delay"] = np.sum(
-            vessel_planning[vessel_planning.operation_index == operation_index].delay
-        )
+        operation_planning.loc[operation_index, "maximum_individual_delay"] = np.max(vessel_planning[vessel_planning.operation_index == operation_index].delay)
+
+        operation_planning.loc[operation_index, "total_delay"] = np.sum(vessel_planning[vessel_planning.operation_index == operation_index].delay)
 
     def assign_vessel_to_lock_operation(self, vessel, direction):
         """
@@ -1592,7 +1578,7 @@ class HasLockPlanning:
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
         Returns
         -------
@@ -1634,7 +1620,7 @@ class HasLockPlanning:
         maximum_individual_delay = operation_planning.maximum_individual_delay + (time_lock_entry_start - operation_planning.time_entry_stop)
 
         # filter the planned lock operations based on the following criteria to select available operations to which the vessel can be assigned
-        mask_bound = operation_planning.bound == direction  # lock operations in the same direction as the vessel
+        mask_direction = operation_planning.direction == direction  # lock operations in the same direction as the vessel
         mask_available = operation_planning.status == "available"  # lock operations that are not unavailable
         mask_capacity_L = (operation_planning.capacity_L >= vessel.L)  # lock operations that have a capacity in which the vessel fits longitudinally (based on the vessel's length)
         mask_capacity_B = (operation_planning.capacity_B >= vessel.B)  # lock operations that have a capacity in which the vessel fits laterally (based on the vessel's beam) TODO: implement this later
@@ -1661,7 +1647,7 @@ class HasLockPlanning:
         # select available operations TODO: this part of the code should be improved in clarity and readability
         available_operations = operation_planning[
             mask_available
-            & mask_bound
+            & mask_direction
             & mask_min_vessels
             & mask_max_vessels
             & mask_capacity_L
@@ -1943,9 +1929,9 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             # log the door open process and the lock levelling process if this is required TODO: this should preferably also be requested from the lock master elsewhere (especially the levelling process)
             if levelling_required:
                 lock.log_entry_v0("Lock chamber converting start", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - operation_time.total_seconds(), self.output.copy(),lock_start_node, )
-                lock.log_entry_v0("Lock chamber converting stop", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_start_node, )
-            lock.log_entry_v0("Lock doors opening start", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_start_node, )
-            lock.log_entry_v0("Lock doors opening stop",doors_required_to_be_open.round('s').to_pydatetime().timestamp(),self.output.copy(), lock_start_node, )
+                lock.log_entry_v0("Lock chamber converting stop", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_end_node, )
+            lock.log_entry_v0("Lock doors opening start", doors_required_to_be_open.round('s').to_pydatetime().timestamp() - lock.doors_opening_time, self.output.copy(),lock_end_node, )
+            lock.log_entry_v0("Lock doors opening stop",doors_required_to_be_open.round('s').to_pydatetime().timestamp(),self.output.copy(), lock_end_node, )
 
             # set the new side to which the lock has been opened
             if not direction:
@@ -2154,24 +2140,6 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
     def __init__(
         self,
-        # start_node,  # a string which indicates the location of the first pair of lock doors
-        # end_node,  # a string which indicates the location of the second pair of lock doors
-        # lock_length,  # a float which contains the length of the lock chamber
-        # lock_width,  # a float which contains the width of the lock chamber
-        # lock_depth,  # a float which contains the depth of the lock chamber
-        # k=0,  # a int which is the identifier of the edge between two nodes in a multidigraph network
-        # distance_from_start_node_to_lock_doors_A=0.0,  # a float that is the distance between the start_node of the edge and the lock doors A [m]
-        # distance_from_end_node_to_lock_doors_B=0.0,  # a float that is the distance between the end_node of the edge and the lock doors B [m]
-        # registration_nodes=[],  # a list of str with the node names at which the vessels request registration to the lock complex master
-        # doors_opening_time=300.0,  # a float which contains the time it takes to open the doors [s]
-        # doors_closing_time=300.0,  # a float which contains the time it takes to close the doors [s]
-        # disch_coeff=0.0,  # a float which contains the discharge coefficient of filling system
-        # opening_area=0.0,  # a float which contains the cross-sectional area of filling system [m^2]
-        # opening_depth=0.0,  # a float which contains the depth at which filling system is located [m^2]
-        # speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
-        # start_sailing_out_time_after_doors_have_been_opened=0.0,  # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
-        # sailing_time_before_opening_lock_doors=600.0,  # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
-        # sailing_time_before_closing_lock_doors=120.0,  # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
         start_node,                                                         # a string which indicates the location of the first pair of lock doors
         end_node,                                                           # a string which indicates the location of the second pair of lock doors
         lock_length,                                                        # a float which contains the length of the lock chamber
@@ -2180,7 +2148,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         k=0,                                                                # a int which is the identifier of the edge between two nodes in a multidigraph network
         distance_from_start_node_to_lock_doors_A=0.0,                       # a float that is the distance between the start_node of the edge and the lock doors A [m]
         distance_from_end_node_to_lock_doors_B=0.0,                         # a float that is the distance between the end_node of the edge and the lock doors B [m]
-        registration_nodes=[],                                                  # a list of str with the node names at which the vessels request registration to the lock complex master
+        registration_nodes=[],                                              # a list of str with the node names at which the vessels request registration to the lock complex master
         doors_opening_time=300.0,                                           # a float which contains the time it takes to open the doors [s]
         doors_closing_time=300.0,                                           # a float which contains the time it takes to close the doors [s]
         disch_coeff=0.4,                                                    # a float which contains the discharge coefficient of filling system
@@ -2339,15 +2307,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # Water level
         assert start_node != end_node
 
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            if isinstance(hydrodynamic_data,xr.Dataset):
-                station_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.node_open)[0][0]
-                water_level = hydrodynamic_data['Water level'][station_index][0].values
-                self.water_level = np.ones(len(hydrodynamic_data['Water level'][station_index].values)) * water_level
-            else:
-                station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.node_open)[0]
-                water_level = hydrodynamic_data['Water level'][station_index][0][0]
-                self.water_level = np.ones(len(hydrodynamic_data['Water level'][station_index,:][0]))*water_level
+        time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
+        wlev_series = _get_hydrodynamic_data_series(self.env, time, self.node_open, 'Water level')
+        self.water_level = wlev_series
 
         # TODO: in functie zetten.
         # TODO: In de documentatie zetten dat detecotr nodes op volgorde moeten komen. En ook een assert maken.
@@ -2461,7 +2423,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         P_used : float
             the breaking power used by the vessel to gradually decelerate [kW]
         until_crossing_point : bool
@@ -2489,7 +2451,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
         return speed
 
-    def determine_levelling_time(self, t_start, direction=None, wlev_init=None, same_direction=False, prediction=False):
+    def determine_levelling_time(self, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
         """
         Calculates the levelling time of a lock operation
 
@@ -2498,7 +2460,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         t_start :
             the start time of the levelling process
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         wlev_init : float
             initial water level in the lock chamber
         same_direction : bool
@@ -2537,37 +2499,28 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         elif isinstance(t_start,pd.Timestamp):
             t_start = np.array([t_start], dtype=np.datetime64)[0]
 
-        # if there is hydrodynamic data, unpack the water levels at the nodes of the lock complex
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            if isinstance(hydrodynamic_data, xr.Dataset):
-                stationA_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.start_node)[0][0]
-                stationB_index = np.where(np.array(list((hydrodynamic_data['STATION'].values))) == self.end_node)[0][0]
-                H_A = hydrodynamic_data["Water level"][stationA_index].values.copy()
-                H_B = hydrodynamic_data["Water level"][stationB_index].values.copy()
-            else:
-                stationA_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0][0]
-                stationB_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0][0]
-                H_A = hydrodynamic_data["Water level"][stationA_index].copy()
-                H_B = hydrodynamic_data["Water level"][stationB_index].copy()
-
-        # determine the direction
-        if direction is None:
-            if self.node_open == self.start_node:
-                direction = 0
-            else:
-                direction = 1
-
-        # if the lock operation is in the same direction (?), swap the direction
-        if same_direction:
-            direction = 1 - direction
-
         # determine the actual water levels
-        time_index = np.absolute(hydrodynamic_times - t_start).argmin()
+        time_index = _get_time_index_of_hydrodynamic_data(self.env,t_start)
+        t_simulation_start = np.datetime64(self.env.epoch)
+        H_A = _get_hydrodynamic_data_series(self.env, t_simulation_start, self.start_node, "Water level")
+        H_B = _get_hydrodynamic_data_series(self.env, t_simulation_start, self.end_node, "Water level")
         H_A_init = H_A[time_index]
         H_B_init = H_B[time_index]
 
         if wlev_init is None:
-            wlev_init = self.water_level[time_index]
+            last_operations = self.operation_planning[self.operation_planning.index < operation_index]
+            if not last_operations.empty:
+                last_operation = last_operations.iloc[-1]
+                last_operation_direction = last_operation.direction
+                if not last_operation_direction:
+                    wlev_init = H_B_init
+                else:
+                    wlev_init = H_A_init
+
+            elif self.node_open == self.start_node:
+                wlev_init = H_A_init
+            else:
+                wlev_init = H_B_init
 
         if not direction:
             z[0] = H_B_init - wlev_init
@@ -2630,10 +2583,8 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber
         if not prediction:
             # TODO: de self.water_level wordt niet gebruikt, maar is wel leuk om als logging terug te zien na een berekening. Nadenken of we dat zo willen laten, of anders willen bijhouden.
-            if isinstance(hydrodynamic_data, xr.Dataset):
-                t_index_final = np.absolute(hydrodynamic_times - (t_start + np.timedelta64(int(levelling_time), 's'))).argmin().values
-            else:
-                t_index_final = np.absolute(hydrodynamic_times - (t_start+np.timedelta64(int(levelling_time),'s'))).argmin()
+            t_final = t_start + np.timedelta64(int(levelling_time))
+            t_index_final = _get_time_index_of_hydrodynamic_data(self.env, t_final)
             if not direction:
                 self.water_level[t_index_final:] = H_B[t_index_final:].copy()
             else:
@@ -3061,7 +3012,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         time_of_registration : pd.Timestamp
             the time that the vessel registers to the lock master
 
@@ -3070,6 +3021,8 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         nothing
 
         """
+
+        node_from, node_to = _get_lock_operation_to_and_from_node(self, direction)
 
         # determining current time
         if time_of_registration is None:
@@ -3083,7 +3036,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel_planning.loc[vessel_planning_index, 'id'] = vessel.id
         vessel_planning.loc[vessel_planning_index, 'time_of_registration'] = time_of_registration
         vessel_planning.loc[vessel_planning_index, 'time_of_acceptance'] = time_of_registration
-        vessel_planning.loc[vessel_planning_index, 'bound'] = direction
+        vessel_planning.loc[vessel_planning_index, 'node_from'] = node_from
+        vessel_planning.loc[vessel_planning_index, 'node_to'] = node_to
+        vessel_planning.loc[vessel_planning_index, 'direction'] = direction
         vessel_planning.loc[vessel_planning_index, 'L'] = vessel.L
         vessel_planning.loc[vessel_planning_index, 'B'] = vessel.B
         vessel_planning.loc[vessel_planning_index, 'T'] = vessel.T
@@ -3104,7 +3059,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             index of the lock operation to which the vessel can be added (can either be an existing or a new lock operation)
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
         Returns
         -------
@@ -3112,6 +3067,8 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         """
         # unpack the lock master's lock operation planning
         operation_planning = self.lock_complex.operation_planning
+
+        node_from, node_to = _get_lock_operation_to_and_from_node(self, direction)
 
         # determine the start time of this empty lock operation
         preceding_operations = operation_planning[operation_planning.index < operation_index]
@@ -3122,29 +3079,35 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             first_empty_lock_operation_start = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
 
         # add empty lock operation to operation planning of the lock master, including deriving the lock operation information (i.e., start and stop times of individual events, water levels, and status)
-        operation_planning.loc[operation_index, 'bound'] = direction
+        operation_planning.loc[operation_index, 'node_from'] = node_from
+        operation_planning.loc[operation_index, 'node_to'] = node_to
+        operation_planning.loc[operation_index, 'direction'] = direction
+        operation_planning.loc[operation_index, "lock_chamber"] = self.lock_complex.name
         operation_planning.loc[operation_index, 'vessels'] = []
         operation_planning.loc[operation_index, 'capacity_L'] = self.lock_complex.lock_length
         operation_planning.loc[operation_index, 'capacity_B'] = self.lock_complex.lock_width
-        time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop = self.calculate_lock_operation_times(operation_index=operation_index,
-                                                                                                                                                                                          last_entering_time=first_empty_lock_operation_start,
-                                                                                                                                                                                          start_time=first_empty_lock_operation_start,
-                                                                                                                                                                                          direction=direction)
-        wlev_A, wlev_B = self.determine_water_levels_before_and_after_levelling(time_levelling_start,time_levelling_stop, direction)
+
+        levelling_information = self.calculate_lock_operation_times(operation_index=operation_index,
+                                                                    last_entering_time=first_empty_lock_operation_start,
+                                                                    start_time=first_empty_lock_operation_start,
+                                                                    direction=direction)
+
+        wlev_A, wlev_B = levelling_information["wlev_A"], levelling_information["wlev_B"]
+
         operation_planning.loc[operation_index, 'time_operation_start'] = first_empty_lock_operation_start
         operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop'] = first_empty_lock_operation_start
         operation_planning.loc[operation_index, 'time_entry_start'] = first_empty_lock_operation_start
         operation_planning.loc[operation_index, 'time_entry_stop'] = first_empty_lock_operation_start
-        operation_planning.loc[operation_index, 'time_door_closing_start'] = time_door_closing_start
-        operation_planning.loc[operation_index, 'time_door_closing_stop'] = time_door_closing_stop
-        operation_planning.loc[operation_index, 'time_levelling_start'] = time_levelling_start
-        operation_planning.loc[operation_index, 'time_levelling_stop'] = time_levelling_stop
-        operation_planning.loc[operation_index, 'time_door_opening_start'] = time_levelling_stop
-        operation_planning.loc[operation_index, 'time_door_opening_stop'] = time_door_opening_stop
-        operation_planning.loc[operation_index, 'time_departure_start'] = time_door_opening_stop
-        operation_planning.loc[operation_index, 'time_departure_stop'] = time_door_opening_stop
-        operation_planning.loc[operation_index, 'time_potential_lock_door_closure_start'] = time_door_opening_stop
-        operation_planning.loc[operation_index, 'time_operation_stop'] = time_door_opening_stop
+        operation_planning.loc[operation_index, 'time_door_closing_start'] = levelling_information["time_door_closing_start"]
+        operation_planning.loc[operation_index, 'time_door_closing_stop'] = levelling_information["time_door_closing_stop"]
+        operation_planning.loc[operation_index, 'time_levelling_start'] = levelling_information["time_levelling_start"]
+        operation_planning.loc[operation_index, 'time_levelling_stop'] = levelling_information["time_levelling_stop"]
+        operation_planning.loc[operation_index, 'time_door_opening_start'] = levelling_information["time_levelling_stop"]
+        operation_planning.loc[operation_index, 'time_door_opening_stop'] = levelling_information["time_door_opening_stop"]
+        operation_planning.loc[operation_index, 'time_departure_start'] = levelling_information["time_door_opening_stop"]
+        operation_planning.loc[operation_index, 'time_departure_stop'] = levelling_information["time_door_opening_stop"]
+        operation_planning.loc[operation_index, 'time_potential_lock_door_closure_start'] = levelling_information["time_door_opening_stop"]
+        operation_planning.loc[operation_index, 'time_operation_stop'] = levelling_information["time_door_opening_stop"]
         operation_planning.loc[operation_index, 'wlev_A'] = wlev_A
         operation_planning.loc[operation_index, 'wlev_B'] = wlev_B
         operation_planning.loc[operation_index, 'maximum_individual_delay'] = pd.Timedelta(seconds=0)
@@ -3179,7 +3142,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         current_node : str
             the node name (which has to be in the graph) at which the vessel is currently sailing
         prognosis: bool
@@ -3247,7 +3210,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         current_node : str
             the node name (which has to be in the graph) at which the vessel is currently sailing
         prognosis :
@@ -3304,7 +3267,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         """
         Calculates the sailing time of a vessel from its location to the approach point
 
-        The approach point is the closest location in front of the lock doors where the outbound vessel(s) can pass the inbound vessel waiting to enter the lock.
+        The approach point is the closest location in front of the lock doors where the outdirection vessel(s) can pass the indirection vessel waiting to enter the lock.
         The point is located in between the line-up area and the lock doors.
 
         Parameters
@@ -3312,7 +3275,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         current_node : str
             the node name (which has to be in the graph) at which the vessel is currently sailing
         prognosis :
@@ -3367,7 +3330,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         current_node : str
             the node name (which has to be in the graph) at which the vessel is currently sailing
         prognosis :
@@ -3417,7 +3380,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         Parameters
         ----------
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         """
         if not direction:
             return self.lock_complex.end_node
@@ -3430,7 +3393,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         Parameters
         ----------
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         """
         if not direction:
             return self.distance_from_start_node_to_lock_doors_A
@@ -3448,7 +3411,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             index of the lock operation
         direction : int
-            the direction of the lock operation: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         prognosis : bool
             .
 
@@ -3492,7 +3455,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             the index of the lock operation in the operation planning dataframe
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         minimum_difference_with_previous_vessel : bool
             .
         prognosis : bool
@@ -3578,7 +3541,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type [optional]
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
         Returns
         -------
@@ -3608,7 +3571,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             the index of the lock operation in the operation planning of the lock complex master
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         prognosis :
             .
         overwrite :
@@ -3644,7 +3607,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             the index of the lock operation in the operation planning of the lock complex master
         direction : int
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         prognosis :
             .
         overwrite :
@@ -3715,7 +3678,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             index of the lock operation
         direction : int
-            the direction of the lock operation: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         prognosis : bool
             .
         overwrite : bool
@@ -3750,7 +3713,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             index of the lock operation
         direction : int
-            the direction of the lock operation: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         prognosis : bool
             .
         overwrite : bool
@@ -3770,7 +3733,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         return lock_entry_stop_time
 
-    def calculate_lock_operation_times(self, operation_index, last_entering_time, start_time, vessel = None, direction=None, same_direction = False):
+    def calculate_lock_operation_times(self, operation_index, last_entering_time, start_time, vessel = None, direction=None):
         """
         Calculates the moments in time of the start and stop of the operation steps of the lock: (1) door closing, (2) levelling, (3) door opening
 
@@ -3785,7 +3748,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type [optional]
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int [optional]
-            the direction of the vessel: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         same_direction : bool
             .
 
@@ -3805,45 +3768,62 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             the time that the lock doors are planned to stop opening
 
         """
-
         # unpack the lock complex master's vessel and operation plannings
-        operation_planning = self.lock_complex.operation_planning
         vessel_planning = self.lock_complex.vessel_planning
+        operation_planning = self.lock_complex.operation_planning
 
-        # determine the longitudinal location (x) of the last vessel that will/has enter(ed)
-        x_location_lock = 0.
-        if vessel is not None:
-            vessels_in_lock = operation_planning.loc[operation_index].vessels
-            if vessels_in_lock == []:
-                vessels_in_lock = [vessel]
-            x_location_lock = np.sum([v.L for v in vessels_in_lock[:-1]])+0.5*vessel.L
+        try:
+            vessel_goes_with_previous_operation = start_time < operation_planning.loc[operation_index, "time_door_closing_start"]
+        except:
+            vessel_goes_with_previous_operation = False
 
-        # set default time door closing start as start time
-        time_door_closing_start = start_time
+        if vessel_goes_with_previous_operation:
+            time_door_closing_start = operation_planning.loc[operation_index, "time_door_closing_start"]
+            time_door_closing_stop = operation_planning.loc[operation_index, "time_door_closing_stop"]
+            time_levelling_start = operation_planning.loc[operation_index, "time_levelling_start"]
+            time_levelling_stop = operation_planning.loc[operation_index, "time_levelling_stop"]
+            time_door_opening_start = operation_planning.loc[operation_index, "time_door_opening_start"]
+            time_door_opening_stop = operation_planning.loc[operation_index, "time_door_opening_stop"]
 
-        # overwrite the time door closing start if there is a rule that the doors can close before a vessel is laying still and there are vessels in the lock
-        if self.close_doors_before_vessel_is_laying_still and vessel is not None:
-            time_door_closing_start = last_entering_time + self.minimum_delay_to_close_doors()
+        else:
+            # set default time door closing start as start time
+            time_door_closing_start = start_time
 
-        # determine the new closing stop times of the doors and the time that the levelling can hence start
-        time_door_closing_stop = time_door_closing_start + pd.Timedelta(seconds=self.lock_complex.doors_closing_time)
-        time_levelling_start = time_door_closing_stop
+            # overwrite the time door closing start if there is a rule that the doors can close before a vessel is laying still and there are vessels in the lock
+            if self.close_doors_before_vessel_is_laying_still and vessel is not None:
+                time_door_closing_start = last_entering_time + self.minimum_delay_to_close_doors()
 
-        # overwrite the time of levelling start if there is a rule that the doors can close before a vessel is laying still and there are vessels in the lock (the vessel always has to lay still before levelling can start)
-        if self.close_doors_before_vessel_is_laying_still and vessel is not None:
-            vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-            if not isinstance(vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'],float):
-                time_levelling_start = np.max([vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'],time_levelling_start])
-            else:
-                time_levelling_start = time_levelling_start
+            # determine the new closing stop times of the doors and the time that the levelling can hence start
+            time_door_closing_stop = time_door_closing_start + pd.Timedelta(seconds=self.lock_complex.doors_closing_time)
+            time_levelling_start = time_door_closing_stop
 
-        # determine levelling stop time and door opening start and stop times
-        time_levelling_stop,_,_ = self.lock_complex.determine_levelling_time(t_start=time_levelling_start, direction=direction, prediction=True, same_direction = same_direction)
-        time_levelling_stop = time_levelling_start + pd.Timedelta(seconds=time_levelling_stop)
-        time_door_opening_start = time_levelling_stop
-        time_door_opening_stop = time_levelling_stop + pd.Timedelta(seconds=self.lock_complex.doors_opening_time)
+            # overwrite the time of levelling start if there is a rule that the doors can close before a vessel is laying still and there are vessels in the lock (the vessel always has to lay still before levelling can start)
+            if self.close_doors_before_vessel_is_laying_still and vessel is not None:
+                vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+                if not isinstance(vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'],float):
+                    time_levelling_start = np.max([vessel_planning.loc[vessel_planning_index,'time_lock_entry_stop'],time_levelling_start])
+                else:
+                    time_levelling_start = time_levelling_start
 
-        return time_door_closing_start, time_door_closing_stop, time_levelling_start, time_levelling_stop, time_door_opening_start, time_door_opening_stop
+            # determine levelling stop time and door opening start and stop times
+            time_levelling_stop,_,_ = self.lock_complex.determine_levelling_time(t_start=time_levelling_start, operation_index=operation_index, direction=direction, prediction=True)
+            time_levelling_stop = time_levelling_start + pd.Timedelta(seconds=time_levelling_stop)
+            time_door_opening_start = time_levelling_stop
+            time_door_opening_stop = time_levelling_stop + pd.Timedelta(seconds=self.lock_complex.doors_opening_time)
+
+        wlev_A, wlev_B = self.determine_water_levels_before_and_after_levelling(time_levelling_start,
+                                                                                time_levelling_stop,
+                                                                                direction)
+
+        levelling_information = {"time_door_closing_start":time_door_closing_start,
+                                 "time_door_closing_stop":time_door_closing_stop,
+                                 "time_levelling_start":time_levelling_start,
+                                 "time_levelling_stop":time_levelling_stop,
+                                 "time_door_opening_start":time_door_opening_start,
+                                 "time_door_opening_stop":time_door_opening_stop,
+                                 "wlev_A":wlev_A,
+                                 "wlev_B":wlev_B}
+        return levelling_information
 
     def calculate_vessel_departure_start_time(self, vessel, operation_index, direction, prognosis=False):
         """
@@ -4061,8 +4041,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel_planning = self.lock_complex.vessel_planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         arrival_time_at_lock = vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']
+        direction = vessel_planning.loc[vessel_planning_index, 'direction']
         time_index = np.absolute(hydrodynamic_times - np.datetime64(arrival_time_at_lock) - np.timedelta64(int(self.doors_opening_time),'s')).argmin()
-        expected_levelling_time,_,_ = self.determine_levelling_time(t_start=hydrodynamic_times[time_index - 1], same_direction=True, prediction=True)
+        expected_levelling_time,_,_ = self.determine_levelling_time(t_start=hydrodynamic_times[time_index - 1], direction=direction, prediction=True)
         delay = self.sailing_time_before_opening_lock_doors + expected_levelling_time + self.doors_opening_time
         return delay
 
@@ -4110,13 +4091,14 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
                 next_operation = next_operations.iloc[1]
                 operation_step += 1
             doors_required_to_be_open = next_operation.time_potential_lock_door_opening_stop
-            same_direction = direction != next_operation.bound
+            same_direction = direction != next_operation.direction
         else:
             return doors_can_be_closed
 
         if same_direction:
             direction = 1 - direction
-        door_opening_time = self.determine_time_to_open_door(operation_index+operation_step, direction, last_time_doors_closed,doors_required_to_be_open, same_direction)
+
+        door_opening_time = self.determine_time_to_open_door(operation_index+operation_step, direction, last_time_doors_closed,doors_required_to_be_open)
 
         if doors_required_to_be_open-door_opening_time < last_time_doors_closed or doors_required_to_be_open-last_time_doors_closed < self.minimum_time_between_operations_for_intermediate_door_closure:
             doors_can_be_closed = False
@@ -4158,18 +4140,13 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         else:
             last_time_doors_closed = operation_planning.loc[operation_index - 1].time_potential_lock_door_closure_start + pd.Timedelta(seconds=self.doors_closing_time)
 
-        same_direction = False
         if first_in_lock:
             doors_required_to_be_open = operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop']
         else:
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
             doors_required_to_be_open = vessel_planning.loc[vessel_planning_index, 'time_potential_lock_door_opening_stop']
-            same_direction = True
 
-        if (not direction and self.node_open == self.start_node) or (direction and self.node_open == self.end_node):
-            same_direction = True
-
-        operation_time = self.determine_time_to_open_door(operation_index, direction, last_time_doors_closed, doors_required_to_be_open, same_direction)
+        operation_time = self.determine_time_to_open_door(operation_index, direction, last_time_doors_closed, doors_required_to_be_open)
         doors_is_closed = False
 
         if doors_required_to_be_open - operation_time > last_time_doors_closed and doors_required_to_be_open-last_time_doors_closed > self.minimum_time_between_operations_for_intermediate_door_closure:
@@ -4177,7 +4154,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         return doors_is_closed, doors_required_to_be_open, operation_time
 
-    def determine_time_to_open_door(self, operation_index, direction, last_time_doors_closed, doors_required_to_be_open, same_direction):
+    def determine_time_to_open_door(self, operation_index, direction, last_time_doors_closed, doors_required_to_be_open):
         """
         DOCUMENTATION HERE
 
@@ -4188,16 +4165,13 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         :param same_direction:
         :return:
         """
-        _, _, time_levelling_start, time_levelling_stop, _, _ = self.calculate_lock_operation_times(operation_index=operation_index,
-                                                                                                    last_entering_time=doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time),
-                                                                                                    start_time=doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time),
-                                                                                                    direction=direction,
-                                                                                                    same_direction=same_direction)
-        levelling_time = time_levelling_stop - time_levelling_start
-        wlev_before, wlev_after = self.determine_water_levels_before_and_after_levelling(last_time_doors_closed + pd.Timedelta(seconds=self.doors_closing_time),
-                                                                                         doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time) - levelling_time,
-                                                                                         direction,
-                                                                                         same_direction=same_direction)
+        levelling_information = self.calculate_lock_operation_times(operation_index=operation_index,
+                                                                    last_entering_time=doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time),
+                                                                    start_time=doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time),
+                                                                    direction=direction)
+
+        levelling_time = levelling_information["time_levelling_stop"] - levelling_information["time_levelling_start"]
+        wlev_before, wlev_after = levelling_information["wlev_A"], levelling_information["wlev_B"]
 
         levelling_required = True
         if abs(wlev_after - wlev_before) < 0.1:
@@ -4209,18 +4183,20 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_time = levelling_time + pd.Timedelta(seconds=self.doors_opening_time)
         return operation_time
 
-    def determine_water_levels_before_and_after_levelling(self,levelling_start,levelling_stop,direction,same_direction=False):
+    def determine_water_levels_before_and_after_levelling(self, levelling_start, levelling_stop, direction):
         """
         Determines the water level at both sides of the lock
 
         Parameters
         ----------
+        operation_index : int
+            .
         levelling_start : pd.Timestamp
             the start time of the levelling process
         levelling_stop : pd.Timestamp
             the stop time of the levelling process
         direction : int
-            the direction of the lock operation: 0 (bound from node_A to node_B) or 1 (bound from node_B to node_A)
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         same_direction : bool
             .
 
@@ -4232,35 +4208,14 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             the actual water level at side B [m] before or after the levelling process (depending on the direction of the operation)
 
         """
-        # set default output
-        wlev_A = np.nan
-        wlev_B = np.nan
-
-        # return function if there is no hydrodynamic data
-        if not self.env.vessel_traffic_service.hydrodynamic_information_path:
-            return wlev_A, wlev_B
-
-        # determine the station indexes of the start node and end node in the hydrodynamic data
-        station_index_start_node = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.start_node)[0]
-        station_index_end_node = np.where(np.array(list((hydrodynamic_data['STATION']))) == self.end_node)[0]
-
-        # determine the start and stop time indexes of the levelling process
-        time_index_start = np.absolute(hydrodynamic_times - np.datetime64(levelling_start)).argmin()
-        time_index_stop = np.absolute(hydrodynamic_times - np.datetime64(levelling_stop)).argmin()
-
-        # determine the water levels before and after the levelling processes based on the direction of the lock operation
+        t_start = np.datetime64(levelling_start)
+        t_stop = np.datetime64(levelling_stop)
         if not direction:
-            wlev_A = hydrodynamic_data["Water level"][station_index_start_node][time_index_stop]
-            wlev_B = self.water_level[time_index_start] # take the value from the lock chamber
-            if same_direction:
-                wlev_A = self.water_level[time_index_start] # take the value from the lock chamber
-                wlev_B = hydrodynamic_data["Water level"][station_index_start_node][time_index_stop]
-        elif direction:
-            wlev_B = self.water_level[time_index_start] # take the value from the lock chamber
-            wlev_A = hydrodynamic_data["Water level"][station_index_start_node][time_index_stop]
-            if same_direction:
-                wlev_A = self.water_level[time_index_start] # take the value from the lock chamber
-                wlev_B = hydrodynamic_data["Water level"][station_index_end_node][time_index_stop]
+            wlev_A = _get_hydrodynamic_data_value(self.env, t_start, self.start_node, 'Water level')
+            wlev_B = _get_hydrodynamic_data_value(self.env, t_stop, self.end_node, 'Water level')
+        else:
+            wlev_A = _get_hydrodynamic_data_value(self.env, t_stop, self.start_node, 'Water level')
+            wlev_B = _get_hydrodynamic_data_value(self.env, t_start, self.end_node, 'Water level')
 
         return wlev_A, wlev_B
 
@@ -4485,8 +4440,8 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
         location_lock_doors_B_m = self.env.vessel_traffic_service.transform_geometry(self.location_lock_doors_B)
         x_lock_doorsA = (lock_edge_geometry_m.line_locate_point(location_lock_doors_A_m))
         x_lock_doorsB = (lock_edge_geometry_m.line_locate_point(location_lock_doors_B_m))
-        x_correction_inbound = x_lock_doorsA + self.lock_length/2
-        x_correction_outbound = x_lock_doorsB - self.lock_length / 2
+        x_correction_indirection = x_lock_doorsA + self.lock_length/2
+        x_correction_outdirection = x_lock_doorsB - self.lock_length / 2
 
         # determine the accepted messages for plotting
         accepted_messages = []
@@ -4530,9 +4485,9 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
 
                 if message_info.Message in accepted_messages:
                     if message_info.Message == f"Sailing from node {self.start_node} to node {self.end_node} start":
-                        x_correction = x_correction_inbound
+                        x_correction = x_correction_indirection
                     elif message_info.Message == f"Sailing from node {self.end_node} to node {self.start_node} start":
-                        x_correction = x_correction_outbound
+                        x_correction = x_correction_outdirection
                     times.append(time)
                     distances.append(distance)
 
@@ -4567,11 +4522,11 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
             xlimmax = 2 * sailing_distance_to_crossing_point
 
         if method == 'Matplotlib':
-            lock_extend_x = np.array([x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]) - x_correction_inbound
+            lock_extend_x = np.array([x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]) - x_correction_indirection
             ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
         elif method == 'Plotly':
             fig.add_shape(type="rect",
-                          x0=x_lock_doorsA - x_correction_inbound, x1=x_lock_doorsB - x_correction_inbound,
+                          x0=x_lock_doorsA - x_correction_indirection, x1=x_lock_doorsB - x_correction_indirection,
                           y0=ylimmin, y1=ylimmax,
                           fillcolor="lightgrey", opacity=0.5,
                           layer="below", line_width=0,
@@ -4604,7 +4559,7 @@ class IsLockComplex(IsLockChamber,IsLockMaster):
                 ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color=color, zorder=0)
             elif method == 'Plotly' and message_found:
                 fig.add_shape(type="rect",
-                              x0=x_lock_doorsA - x_correction_inbound, x1=x_lock_doorsB - x_correction_inbound,
+                              x0=x_lock_doorsA - x_correction_indirection, x1=x_lock_doorsB - x_correction_indirection,
                               y0=time_start, y1=time_stop,
                               fillcolor=color, opacity=0.5,
                               layer="below", line_width=0,
