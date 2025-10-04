@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import math
 
+import warnings
+
 # spatial libraries
 from collections import namedtuple
 import simpy
@@ -33,6 +35,23 @@ gravitational_acceleration = 9.81
 
 
 def _get_lock_operation_direction(lock, to_node):
+    """Get the direction of the lock based on the node to which the lock operation is directed
+
+    Convention: direction = 0 (when A -> B), direction = 1 (when B -> A)
+        with A = lock.start_node and B = lock.end_node
+
+    Parameters
+    ----------
+    lock : object
+        the lock object generated with IsLockComplex
+    to_node : str
+        the name of the node to which the lock operation is directed
+
+    Returns
+    -------
+    direction: int
+        the direction of the lock operation: 0 or 1 (see above convention)
+    """
     direction = 0
     if to_node == lock.start_node:
         direction = 1
@@ -40,6 +59,25 @@ def _get_lock_operation_direction(lock, to_node):
     return direction
 
 def _get_lock_operation_to_and_from_node(lock, direction):
+    """Get the nodes from and to which the lock operation is directed based on the direction convention
+
+    Convention: direction = 0 (when A -> B), direction = 1 (when B -> A)
+        with A = lock.start_node and B = lock.end_node
+
+    Parameters
+    ----------
+    lock : object
+        the lock object generated with IsLockComplex
+    direction : int
+        the direction of the lock operation: 0 or 1 (see above convention)
+
+    Returns
+    -------
+    node_of_approach : str
+        the name of the node from which the lock operation is directed
+    to_node : str
+        the name of the node to which the lock operation is directed
+    """
     node_of_approach = lock.end_node
     to_node = lock.start_node
     if not direction:
@@ -47,11 +85,13 @@ def _get_lock_operation_to_and_from_node(lock, direction):
         to_node = lock.end_node
     return node_of_approach, to_node
 
-def _get_lock_on_node(multidigraph, registration_node):
+def _get_lock_object_on_registration_node(multidigraph, registration_node):
     """Get the lock complex object that is associated with a registration node node
 
     Parameters
     ----------
+    multidigraph : nx.MultiDiGraph
+        the graph of the simulation as MultiDiGraph-version (to allow for parallel locks between the same node pair)
     registration_node : str
         node name (that has to be in the graph) on which the vessel is currently starting to navigate an edge
 
@@ -74,14 +114,56 @@ def _get_lock_on_node(multidigraph, registration_node):
         return None
     
 def _update_lock_operation_planning(lock, operation_index, operation_information):
+    """Updates the lock operation planning
+
+    Parameters
+    ----------
+    lock : object
+        the lock object generated with IsLockComplex
+    operation_index : int
+            index of the lock operation
+    operation_information : dict
+        information to be added to the dataframe with keys as column names and values
+    """
     for key, value in operation_information.items():
+        if key not in lock.operation_planning.columns:
+            warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
+            continue
         lock.operation_planning.loc[int(operation_index),key] = value
     
 def _update_lock_vessel_planning(lock, vessel_index, passage_information):
+    """Updates the lock vessel planning
+
+    Parameters
+    ----------
+    lock : object
+        the lock object generated with IsLockComplex
+    operation_index : int
+            index of the lock operation
+    passage_information : dict
+        information to be added to the dataframe with keys as column names and values
+    """
     for key, value in passage_information.items():
+        if key not in lock.vessel_planning.columns:
+            warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
+            continue
         lock.vessel_planning.loc[vessel_index, key] = value
 
 def _get_time_index_of_hydrodynamic_data(env, time):
+    """Gets the time index in the hydrodynamic data closest to a time
+
+    Parameters
+    ----------
+    env : Simpy.Environment
+        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
+    time : np.datetime64
+        the time
+
+    Returns
+    -------
+    time_index : int
+        the time index of the hydrodynamic data closest to the time
+    """
     time_index = 0
     if env.vessel_traffic_service.hydrodynamic_information_path is None:
         return time_index
@@ -95,11 +177,25 @@ def _get_time_index_of_hydrodynamic_data(env, time):
     return time_index
 
 def _get_station_index_of_hydrodynamic_data(env, node):
+    """Gets the node's station index in the hydrodynamic data
+
+    Parameters
+    ----------
+    env : Simpy.Environment
+        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
+    node : str
+        the node name in the graph
+
+    Returns
+    -------
+    station_index : str
+        the time index of the hydrodynamic data closest to the time
+    """
+
     station_index = 0
     if env.vessel_traffic_service.hydrodynamic_information_path is None:
         return station_index
 
-    # determine the station_index
     if isinstance(hydrodynamic_data, xr.Dataset):
         station_index = np.where(np.array(list((hydrodynamic_data["STATION"].values))) == node)[0][0]
     else:
@@ -108,6 +204,24 @@ def _get_station_index_of_hydrodynamic_data(env, node):
     return station_index
 
 def _get_hydrodynamic_data_value(env, time, node, hydrodynamic_property):
+    """Gets the value of a hydrodynamic property at a certain time and node
+
+    Parameters
+    ----------
+    env : Simpy.Environment
+        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
+    time : np.datetime64
+        the time
+    node : str
+        the node name in the graph
+    hydrodynamic_property : str
+        the hydrodynamic property: "Water level", "Current velocity", "Salinity" (if included in the hydrodynamic data)
+
+    Returns
+    -------
+    value : float
+        the value of a hydrodynamic property at the specified time and node
+    """
     value = np.nan
     if env.vessel_traffic_service.hydrodynamic_information_path is None:
         return value
@@ -126,6 +240,24 @@ def _get_hydrodynamic_data_value(env, time, node, hydrodynamic_property):
 
 
 def _get_hydrodynamic_data_series(env, time, node, hydrodynamic_property):
+    """Gets the time series of a hydrodynamic property at a certain node from a certain time onwards
+
+    Parameters
+    ----------
+    env : Simpy.Environment
+        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
+    time : np.datetime64
+        the time
+    node : str
+        the node name in the graph
+    hydrodynamic_property : str
+        the hydrodynamic property: "Water level", "Current velocity", "Salinity" (if included in the hydrodynamic data)
+
+    Returns
+    -------
+    series : float
+        the time series of a hydrodynamic property at the specified node from the specified time onwards
+    """
     series = [np.nan]
     if env.vessel_traffic_service.hydrodynamic_information_path is None:
         return series
@@ -145,7 +277,7 @@ def _get_hydrodynamic_data_series(env, time, node, hydrodynamic_property):
 class IsLockChamberOperator:
     """The lock chamber operator operates one chamber of the lock."""
 
-    def initiate_levelling(self, origin, destination, vessel=None, k=0, *args, **kwargs):
+    def initiate_levelling(self, origin, destination, vessel=None, k=0):
         """
         Initiates levelling process as function that can be added to a vessel TODO: preferably you don't want to add this process to the vessel but let the lock master / operator handle this
 
@@ -263,7 +395,7 @@ class IsLockChamberOperator:
                 vessel.position_in_lock,
             )
 
-        # Determine and yield sailing out delay
+        # determine and yield sailing out delay
         sailing_out_delay = lock.calculate_vessel_departure_start_time(vessel, operation_index, direction).total_seconds()
         delay_start = vessel.env.now
         while sailing_out_delay:
@@ -273,340 +405,311 @@ class IsLockChamberOperator:
             except simpy.Interrupt as e:
                 sailing_out_delay -= vessel.env.now - delay_start
 
-    def allow_vessel_to_sail_out_of_lock(self, origin, destination, vessel=None, k=0, *args, **kwargs):
+
+    def prepare_next_lock_operation(self, lock, operation_index, direction, vessel):
+        """Lock operator checks and (if required) initiates an empty lock operation or closes the doors if there is sufficient time with respect to the next operation's start time
+
+        Parameters
+        ----------
+        lock : object
+            the lock chamber object generated with IsLockChamber
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (A -> B) or 1 (B -> A)
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         """
-        DOCUMENTATION HERE
+        # get variables of the last lock operation: do nothing if it is not the last vessel that is sailing out of the lock
+        operation_planning = self.operation_planning
+        last_operation = operation_planning.loc[operation_index]
+        vessels_in_last_operation = last_operation.vessels
+        is_last_vessel_sailing_out = vessels_in_last_operation[-1] == vessel
+        if not is_last_vessel_sailing_out:
+            return
 
-        :param origin:
-        :param destination:
-        :param vessel:
-        :param k:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        if "Lock" in vessel.multidigraph.edges[origin, destination, k].keys():
-            lock = vessel.multidigraph.edges[origin, destination, k]["Lock"][0]
-            vessel_planning = lock.lock_complex.vessel_planning
-            operation_planning = lock.lock_complex.operation_planning
+        # get the current time, and the information of the next operation
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+        _, to_node = _get_lock_operation_to_and_from_node(self, 1 - direction)
+        next_operations = operation_planning[operation_planning.index > operation_index]
 
-            vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-            direction = vessel_planning.loc[vessel_planning_index, "direction"]
-            vessel_operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
-            distance_in_lock_from_position = lock.lock_length - vessel.distance_position_from_first_lock_doors
+        # determine if the doors can be closed after the considered vessel has sailed out of the lock
+        doors_can_be_closed = lock.determine_if_door_can_be_closed(vessel, direction, operation_index)
 
-            # Sail to lock
-            if not direction:
-                second_lock_doors_position = lock.location_lock_doors_B
-                distance_from_lock_position = distance_in_lock_from_position
-                remaining_distance = lock.distance_from_end_node_to_lock_doors_B
-                exit_geom = vessel.env.graph.nodes[lock.end_node]["geometry"]
-                next_level_in_case_of_following_empty_lockage = lock.start_node
+        # determine if the next operation is empty
+        next_lockage_is_empty = False
+        if not next_operations.empty:
+            next_operation = next_operations.iloc[0]
+            if not len(next_operation.vessels):
+                next_lockage_is_empty = True
+
+        # an action should be done if the doors can be closed in between operations, or if the next lock operation is empty
+        if doors_can_be_closed and lock.closing_doors_in_between_operations:
+            door_closing_start_time = last_operation.time_potential_lock_door_closure_start
+            delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start_time - current_time).total_seconds()])
+
+            # close the doors with the correct delay
+            vessel.env.process(lock.close_door(delay=delay))
+
+        elif next_lockage_is_empty:
+            door_closing_start_time = next_operation.time_door_closing_start
+            closing_delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start_time - current_time).total_seconds()])
+
+            # if there is an empty lock operation and no policy that doors are closed in between operations is active -> close doors and convert chamber afterwards
+            if not lock.closing_doors_in_between_operations:
+                convert_chamber_delay = closing_delay
+                closing_doors = True
+            # if there is an empty lock operation but the policy that doors are closed in between operations is active -> close doors and convert chamber later, or convert chamber immediately if there is insufficient time
             else:
-                second_lock_doors_position = lock.location_lock_doors_A
-                distance_from_lock_position = distance_in_lock_from_position
-                remaining_distance = lock.distance_from_start_node_to_lock_doors_A
-                exit_geom = vessel.env.graph.nodes[lock.start_node]["geometry"]
-                next_level_in_case_of_following_empty_lockage = lock.end_node
+                next_operation = next_operations.iloc[1]
+                door_opening_start_time = next_operation.time_potential_lock_door_opening_stop
+                lock_operation_duration = self.determine_time_to_open_door(operation_index = vessel_operation_index + 1,
+                                                                           direction =1 - direction,
+                                                                           last_time_doors_closed = door_closing_start_time,
+                                                                           doors_required_to_be_open = door_opening_start_time)
+                opening_delay = (np.max([0, (door_opening_start_time - current_time).total_seconds()]) - lock_operation_duration.total_seconds())
+                if opening_delay > (closing_delay + self.lock_complex.doors_closing_time):
+                    convert_chamber_delay = opening_delay
+                    closing_doors = False
+                    vessel.env.process(lock.close_door(delay=closing_delay))
+                else:
+                    convert_chamber_delay = closing_delay
+                    closing_doors = True
 
-            release_lock_access = False
-            while not release_lock_access:
-                try:
-                    yield lock.length.put(vessel.L)
-                    release_lock_access = True
-                except simpy.Interrupt as e:
-                    release_lock_access = True
+            # convert the lock chamber with the correct delay and if the doors should first be closed
+            vessel.env.process(lock.convert_chamber(operation_index = operation_index + 1,
+                                                    new_level = to_node,
+                                                    vessel = None,
+                                                    close_doors = closing_doors,
+                                                    delay = convert_chamber_delay,
+                                                    direction = 1 - direction))
 
-            waiting_to_sail_out_time = (
-                vessel_planning.loc[vessel_planning_index, "time_lock_departure_start"]
-                - pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
-            ).total_seconds()
-            waiting_to_sail_out_time_start = vessel.env.now
-            while waiting_to_sail_out_time > 0:
-                try:
-                    yield vessel.env.timeout(waiting_to_sail_out_time)
-                    waiting_to_sail_out_time = 0
-                except simpy.Interrupt as e:
-                    waiting_to_sail_out_time -= vessel.env.now - waiting_to_sail_out_time_start
 
-            vessel.log_entry_v0(
-                "Sailing to second lock doors start",
-                vessel.env.now,
-                vessel.output.copy(),
-                vessel.position_in_lock,
-            )
-            vessel_speed = lock.vessel_sailing_speed_out_lock(vessel)
-            sailing_out_time = distance_from_lock_position / vessel_speed
-            sailing_out_start = vessel.env.now
-            while sailing_out_time:
-                try:
-                    yield vessel.env.timeout(sailing_out_time)
-                    sailing_out_time = 0
-                except simpy.Interrupt as e:
-                    sailing_out_time -= vessel.env.now - sailing_out_start
-            vessel.log_entry_v0(
-                "Sailing to second lock doors stop",
-                vessel.env.now,
-                vessel.output.copy(),
-                second_lock_doors_position,
-            )
+    def allow_vessel_to_sail_out_of_lock(self, origin, destination, vessel=None, k=0):
+        """Allows the vessel to sail out of the lock chamber
 
-            # remove functions specific to this lock from vessel.
-            remove_functions = [lock.allow_vessel_to_sail_in_lock, lock.initiate_levelling, lock.allow_vessel_to_sail_out_of_lock]
-            for function in vessel.on_pass_edge_functions:
-                if isinstance(function, functools.partial):
-                    if function.func in remove_functions:
-                        vessel.on_pass_edge_functions.remove(function)
-                elif function in remove_functions:
+        Parameters
+        ----------
+        origin : str
+            node name (that has to be in the graph) on which the vessel is currently sailing, to navigate an edge should form an edge with the origin)
+        destination : str
+            node name (that has to be in the graph) on which the vessel is currently sailing to, to navigate an edge (should form an edge with the origin)
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        k : int
+            identifier of the edge between two nodes in a multidigraph network
+
+        Yields
+        ------
+        Vessel to sail to the end of the edge at which the lock chamber is located, and initiates new processes: i.e. closing doors or empty lock operation
+        """
+        # checks if lock is present on the edge
+        if "Lock" not in vessel.multidigraph.edges[origin, destination, k].keys():
+            return
+
+        # unpacks the lock and vessel and operation planning
+        lock = vessel.multidigraph.edges[origin, destination, k]["Lock"][0]
+        vessel_planning = lock.lock_complex.vessel_planning
+
+        # determines information of the lock operation
+        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+        operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
+        direction = vessel_planning.loc[vessel_planning_index, "direction"]
+
+        # determines the distance from the vessel to the lock doors that have to be passed
+        distance_in_lock_from_position = lock.lock_length - vessel.distance_position_from_first_lock_doors
+
+        # determines the geometry objects of the lock based on the direction of the vessel TODO: function?
+        if not direction:
+            second_lock_doors_position = lock.location_lock_doors_B
+            remaining_distance = lock.distance_from_end_node_to_lock_doors_B
+            exit_geom = vessel.env.graph.nodes[lock.end_node]["geometry"]
+        else:
+            second_lock_doors_position = lock.location_lock_doors_A
+            remaining_distance = lock.distance_from_start_node_to_lock_doors_A
+            exit_geom = vessel.env.graph.nodes[lock.start_node]["geometry"]
+
+        # releasing the length of the lock TODO: only the yield statement should be kept: now it is prevented that vessels need to wait to put back their length, but in principle this should not occur although it sometimes occurs due to bugs
+        release_lock_access = False
+        while not release_lock_access:
+            try:
+                yield lock.length.put(vessel.L)
+                release_lock_access = True
+            except simpy.Interrupt as e:
+                release_lock_access = True
+
+        # determine the waiting time to sail out of the lock TODO: have another algorithm to determine this time: now the vessel planning is used, but this should be prevented -> the lock planning might be off by a few seconds/minutes due to uncertainties/errors in predictions and unforeseen circumstances
+        waiting_to_sail_out_time = (vessel_planning.loc[vessel_planning_index, "time_lock_departure_start"] -
+                                    pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))).total_seconds()
+
+        # let the vessel wait to sail out of the lock (vessels may have to give other vessels priority to sail out to later sail out of the lock in a safe manner with sufficient distance to the vessel ahead -> i.e., if they sailed into the lock ahead of the considered vessel blocking the sailing out path)
+        waiting_to_sail_out_time_start = vessel.env.now
+        while waiting_to_sail_out_time > 0:
+            try:
+                yield vessel.env.timeout(waiting_to_sail_out_time)
+                waiting_to_sail_out_time = 0
+            except simpy.Interrupt as e:
+                waiting_to_sail_out_time -= vessel.env.now - waiting_to_sail_out_time_start
+
+        # log that the vessel can start sailing out of the lock (up to the lock doors)
+        vessel.log_entry_v0("Sailing to second lock doors start", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+
+        # determine the process of sailing to the lock doors that have to be passed (distance to these doors divided by the sailing out speed of the vessel)
+        vessel_speed = lock.vessel_sailing_speed_out_lock(vessel)
+        sailing_out_time = distance_in_lock_from_position / vessel_speed
+        sailing_out_start = vessel.env.now
+        while sailing_out_time:
+            try:
+                yield vessel.env.timeout(sailing_out_time)
+                sailing_out_time = 0
+            except simpy.Interrupt as e:
+                sailing_out_time -= vessel.env.now - sailing_out_start
+
+        # log that the vessel can stops sailing out of the lock (up to the lock doors)
+        vessel.log_entry_v0("Sailing to second lock doors stop", vessel.env.now, vessel.output.copy(), second_lock_doors_position,)
+
+        # remove functions specific to passing the lock chamber
+        remove_functions = [lock.allow_vessel_to_sail_into_lock, lock.initiate_levelling, lock.allow_vessel_to_sail_out_of_lock]
+        for function in vessel.on_pass_edge_functions:
+            if isinstance(function, functools.partial):
+                if function.func in remove_functions:
                     vessel.on_pass_edge_functions.remove(function)
+            elif function in remove_functions:
+                vessel.on_pass_edge_functions.remove(function)
 
-            made_operation = operation_planning.loc[vessel_operation_index]
-            vessels = made_operation.vessels
-            is_last_vessel_sailing_out = vessels[-1] == vessel
+        # determine if the lock has to be levelled
+        self.prepare_next_lock_operation(lock, operation_index, direction, vessel)
 
-            doors_can_be_closed = lock.determine_if_door_can_be_closed(vessel, direction, vessel_operation_index)
+        # log that sailing out of the lock complex is starting
+        vessel.log_entry_v0("Sailing to lock complex exit start", vessel.env.now, vessel.output.copy(), second_lock_doors_position)
 
-            next_operations = operation_planning[operation_planning.index >= vessel_operation_index + 1]
-            next_lockage_is_empty = False
-            if not next_operations.empty:
-                next_operation = next_operations.iloc[0]
-                if not len(next_operation.vessels):
-                    next_lockage_is_empty = True
+        # let the vessel sail to the end of the lock complex
+        vessel_speed = lock.vessel_sailing_out_speed(vessel, direction)
+        sailing_out_time = remaining_distance / vessel_speed
+        sailing_out_start = vessel.env.now
+        while sailing_out_time:
+            try:
+                yield vessel.env.timeout(sailing_out_time)
+                sailing_out_time = 0
+            except simpy.Interrupt as e:
+                sailing_out_time -= vessel.env.now - sailing_out_start
+                remaining_sailing_distance = vessel_speed * sailing_out_time
+                sailing_out_time = remaining_sailing_distance / vessel.current_speed
 
-            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
-            if is_last_vessel_sailing_out:
-                if next_lockage_is_empty:
-                    next_operation = next_operations.iloc[0]
-                    door_closing_start = next_operation.time_door_closing_start
-                    closing_delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start - current_time).total_seconds()])
-                    if lock.closing_doors_in_between_operations:
-                        next_next_operation = next_operations.iloc[1]
-                        door_opening_start = next_next_operation.time_potential_lock_door_opening_stop
-                        operation_time = self.determine_time_to_open_door(
-                            operation_index=vessel_operation_index + 1,
-                            direction=1 - direction,
-                            last_time_doors_closed=door_closing_start,
-                            doors_required_to_be_open=door_opening_start,
-                        )
-                        opening_delay = (
-                            np.max([0, (door_opening_start - current_time).total_seconds()]) - operation_time.total_seconds()
-                        )
-                        if opening_delay > (closing_delay + self.lock_complex.doors_closing_time):
-                            vessel.env.process(lock.close_door(delay=closing_delay))
-                            vessel.env.process(
-                                lock.convert_chamber(
-                                    operation_index = vessel_operation_index + 1,
-                                    new_level=next_level_in_case_of_following_empty_lockage,
-                                    vessel=None,
-                                    close_doors=False,
-                                    delay=opening_delay,
-                                    direction=1 - direction,
-                                )
-                            )
-                        else:
-                            vessel.env.process(
-                                lock.convert_chamber(
-                                    operation_index=vessel_operation_index + 1,
-                                    new_level=next_level_in_case_of_following_empty_lockage,
-                                    vessel=None,
-                                    close_doors=True,
-                                    delay=closing_delay,
-                                    direction=1 - direction,
-                                )
-                            )
-                    else:
-                        vessel.env.process(
-                            lock.convert_chamber(
-                                operation_index=vessel_operation_index + 1,
-                                new_level=next_level_in_case_of_following_empty_lockage,
-                                vessel=None,
-                                close_doors=True,
-                                delay=closing_delay,
-                                direction=1 - direction,
-                            )
-                        )
-                elif doors_can_be_closed and lock.closing_doors_in_between_operations:
-                    door_closing_time = made_operation.time_potential_lock_door_closure_start
-                    delay = np.max(
-                        [self.sailing_time_before_closing_lock_doors, (door_closing_time - current_time).total_seconds()]
-                    )
-                    vessel.env.process(lock.close_door(delay=delay))
-
-            vessel.log_entry_v0(
-                "Sailing to lock complex exit start",
-                vessel.env.now,
-                vessel.output.copy(),
-                second_lock_doors_position,
-            )
-            vessel_speed = lock.vessel_sailing_out_speed(vessel, direction)
-            sailing_out_time = remaining_distance / vessel_speed
-            sailing_out_start = vessel.env.now
-            while sailing_out_time:
-                try:
-                    yield vessel.env.timeout(sailing_out_time)
-                    sailing_out_time = 0
-                except simpy.Interrupt as e:
-                    sailing_out_time -= vessel.env.now - sailing_out_start
-                    remaining_sailing_distance = vessel_speed * sailing_out_time
-                    sailing_out_time = remaining_sailing_distance / vessel.current_speed
-            vessel.log_entry_v0(
-                "Sailing to lock complex exit stop",
-                vessel.env.now,
-                vessel.output.copy(),
-                exit_geom,
-            )
-            vessel.distance_left_on_edge = 0
+        # log that sailing out of the lock complex is stopping and set that no distance has to be sailed along the edge (vessel is at end of lock complex)
+        vessel.log_entry_v0("Sailing to lock complex exit stop", vessel.env.now, vessel.output.copy(), exit_geom,)
+        vessel.distance_left_on_edge = 0
 
 
-    def allow_vessel_to_sail_in_lock(self, origin, destination, vessel=None, k=0):
-        """
-        DOCUMENTATION HERE
+    def allow_vessel_to_sail_into_lock(self, origin, destination, vessel=None, k=0):
+        """Allows the vessel to sail into the lock chamber
 
-        :param origin:
-        :param destination:
-        :param vessel:
-        :param k:
-        :param args:
-        :param kwargs:
-        :return:
+        Parameters
+        ----------
+        origin : str
+            node name (that has to be in the graph) on which the vessel is currently sailing, to navigate an edge should form an edge with the origin)
+        destination : str
+            node name (that has to be in the graph) on which the vessel is currently sailing to, to navigate an edge (should form an edge with the origin)
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        k : int
+            identifier of the edge between two nodes in a multidigraph network
         """
 
-        if "Lock" in vessel.multidigraph.edges[origin, destination, k].keys():
-            lock = vessel.multidigraph.edges[origin, destination, k]["Lock"][0]
-            vessel_planning = lock.lock_complex.vessel_planning
-            operation_planning = lock.lock_complex.operation_planning
+        # checks if lock is present on the edge
+        if "Lock" not in vessel.multidigraph.edges[origin, destination, k].keys():
+            return
 
-            vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-            direction = vessel_planning.loc[vessel_planning_index, "direction"]
+        # unpacks the lock and vessel and operation planning
+        lock = vessel.multidigraph.edges[origin, destination, k]["Lock"][0]
+        vessel_planning = lock.vessel_planning
 
-            # Sail to lock
-            if not direction:
-                lock_start_node = lock.start_node
-                lock_end_node = lock.end_node
-                waiting_area = lock.waiting_area_A
-                distance_to_lock_position = lock.distance_from_start_node_to_lock_doors_A
-                first_lock_door_position = lock.location_lock_doors_A
-            else:
-                lock_start_node = lock.end_node
-                lock_end_node = lock.start_node
-                waiting_area = lock.waiting_area_B
-                distance_to_lock_position = lock.distance_from_end_node_to_lock_doors_B
-                first_lock_door_position = lock.location_lock_doors_B
-            if (lock_start_node, lock_end_node) == waiting_area.edge:
-                distance_to_lock_position -= waiting_area.distance_from_edge_start
+        # determines information of the lock operation
+        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+        operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
+        direction = vessel_planning.loc[vessel_planning_index, "direction"]
+        current_time = vessel.env.now
 
-            vessel.log_entry_v0(
-                "Sailing to first lock doors start",
-                vessel.env.now,
-                vessel.output.copy(),
-                vessel.logbook[-1]["Geometry"],
-            )
-            start_sailing = vessel.env.now
-            vessel_speed = lock.vessel_sailing_in_speed(vessel, direction)
+        # determines the geometry objects of the lock based on the direction of the vessel TODO: function?
+        if not direction:
+            waiting_area = lock.waiting_area_A
+            distance_to_lock = lock.distance_from_start_node_to_lock_doors_A
+            first_lock_door_position = lock.location_lock_doors_A
+        else:
+            waiting_area = lock.waiting_area_B
+            distance_to_lock = lock.distance_from_end_node_to_lock_doors_B
+            first_lock_door_position = lock.location_lock_doors_B
 
-            remaining_sailing_time = distance_to_lock_position / vessel_speed
-            while remaining_sailing_time > 0:
-                try:
-                    yield vessel.env.timeout(remaining_sailing_time)
-                    remaining_sailing_time = 0
-                except simpy.Interrupt as e:
-                    remaining_sailing_time -= vessel.env.now - start_sailing
-                    remaining_sailing_distance = vessel_speed * remaining_sailing_time
-                    remaining_sailing_time = remaining_sailing_distance / vessel.current_speed
-                    if vessel_speed != vessel.current_speed:
-                        distance = distance_to_lock_position - remaining_sailing_distance + waiting_area.distance_from_edge_start
-                        geometry = vessel.env.vessel_traffic_service.provide_location_over_edges(
-                            lock_start_node, lock_end_node, distance
-                        )
-                        vessel.log_entry_v0(
-                            "Sailing speed changed",
-                            vessel.env.now,
-                            vessel.output.copy(),
-                            geometry,
-                        )
-                    # TODO for later research: the speed changes should be checked if they are realistic by combining it with a smoothly decreasing velocity (P_used)
+        # correct the distance to the lock doors if the vessel is in the waiting area, located at the same edge of the lock
+        lock_start_node, lock_end_node = _get_lock_operation_to_and_from_node(self, direction)
+        if (lock_start_node, lock_end_node) == waiting_area.edge:
+            distance_to_lock -= waiting_area.distance_from_edge_start
 
-            remaining_lock_length = lock.length.level
-            vessel.overruled_speed = vessel.overruled_speed.iloc[0:0]
+        # log the start of sailing to the lock doors
+        last_position_vessel = vessel.logbook[-1]["Geometry"]
+        vessel.log_entry_v0("Sailing to first lock doors start", vessel.env.now, vessel.output.copy(), last_position_vessel,)
 
-            yield lock.length.get(vessel.L)
+        # let vessel sail to the lock doors
+        vessel_speed = lock.vessel_sailing_in_speed(vessel, direction)
+        remaining_sailing_time = distance_to_lock / vessel_speed
+        while remaining_sailing_time > 0:
+            try:
+                yield vessel.env.timeout(remaining_sailing_time)
+                remaining_sailing_time = 0
+            except simpy.Interrupt as e:
+                remaining_sailing_time -= vessel.env.now - current_time
+                remaining_sailing_distance = vessel_speed * remaining_sailing_time
+                remaining_sailing_time = remaining_sailing_distance / vessel.current_speed
 
-            vessel.log_entry_v0(
-                "Sailing to first lock doors stop",
-                vessel.env.now,
-                vessel.output.copy(),
-                first_lock_door_position,
-            )
+        # vessel entering now the lock -> delete the overruled speeds imposed on the vessel
+        vessel.overruled_speed = vessel.overruled_speed.iloc[0:0]
 
-            # Checks if door should be closed intermediately
-            vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-            operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
-            this_operation = operation_planning.loc[operation_index]
-            vessels = this_operation.vessels
-            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
-            delay_to_close_doors = (
-                vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] - current_time
-            )
+        # claim the lock length (this should not lead to waiting time)
+        yield lock.length.get(vessel.L)
 
-            last_vessel_to_enter_lock = vessels[-1] == vessel
-            doors_can_be_closed_between_vessel_arrivals = lock.determine_if_door_can_be_closed(
-                vessel, direction, operation_index, between_arrivals=True
-            )
-            if lock.close_doors_before_vessel_is_laying_still and (
-                (lock.closing_doors_in_between_arrivals and doors_can_be_closed_between_vessel_arrivals)
-                or (
-                    last_vessel_to_enter_lock
-                    and this_operation.time_door_closing_start < vessel_planning.loc[vessel_planning_index, "time_lock_entry_stop"]
-                )
-            ):
-                vessel.env.process(lock.close_door(delay=delay_to_close_doors.total_seconds()))
+        # log the stop of sailing to the lock doors
+        vessel.log_entry_v0("Sailing to first lock doors stop", vessel.env.now, vessel.output.copy(), first_lock_door_position,)
 
-            vessel.log_entry_v0(
-                "Sailing to position in lock start",
-                vessel.env.now,
-                vessel.output.copy(),
-                first_lock_door_position,
-            )
-            vessel.distance_position_from_first_lock_doors = remaining_lock_length - 0.5 * vessel.L
+        # Checks if door should be closed intermediately
+        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
 
-            if not direction:  ###hereh
-                vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(
-                    lock.start_node,
-                    lock.end_node,
-                    lock.distance_from_start_node_to_lock_doors_A + vessel.distance_position_from_first_lock_doors,
-                )
-            elif direction:
-                vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(
-                    lock.end_node,
-                    lock.start_node,
-                    lock.distance_from_end_node_to_lock_doors_B + vessel.distance_position_from_first_lock_doors,
-                )
+        # calculate delay to close doors
+        current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+        delay_to_close_doors = vessel_planning.loc[vessel_planning_index, "time_potential_lock_door_closure_start"] - current_time
 
-            vessel_speed = lock.vessel_sailing_speed_in_lock(vessel)
-            remaining_sailing_time = vessel.distance_position_from_first_lock_doors / vessel_speed
-            while remaining_sailing_time > 0:
-                try:
-                    yield vessel.env.timeout(remaining_sailing_time)
-                    remaining_sailing_time = 0
-                except simpy.Interrupt as e:
-                    remaining_sailing_time -= vessel.env.now - start_sailing
-            vessel.log_entry_v0(
-                "Sailing to position in lock stop",
-                vessel.env.now,
-                vessel.output.copy(),
-                vessel.position_in_lock,
-            )
+        # close doors if doors can be closed in between vessel arrivals or if vessel is last vessel to enter the lock
+        doors_can_be_closed_between_vessel_arrivals = lock.determine_if_door_can_be_closed(vessel, direction, operation_index, between_arrivals=True)
+        if lock.close_doors_before_vessel_is_laying_still and doors_can_be_closed_between_vessel_arrivals:
+            vessel.env.process(lock.close_door(delay=delay_to_close_doors.total_seconds()))
 
-            doors_can_be_closed_between_vessel_arrivals = lock.determine_if_door_can_be_closed(
-                vessel, direction, operation_index, between_arrivals=True
-            )
-            if (
-                not lock.close_doors_before_vessel_is_laying_still
-                and not last_vessel_to_enter_lock
-                and lock.closing_doors_in_between_arrivals
-                and doors_can_be_closed_between_vessel_arrivals
-            ):
-                vessel.env.process(lock.close_door())
+        # log the start of sailing to the position within the lock chamber
+        vessel.log_entry_v0("Sailing to position in lock start", vessel.env.now, vessel.output.copy(), first_lock_door_position, )
+
+        # determine position in the lock chamber and distance to sail to this location
+        vessel.distance_position_from_first_lock_doors = lock.length.level + 0.5 * vessel.L
+        if not direction:
+            distance_to_position_in_lock = lock.distance_from_start_node_to_lock_doors_A + vessel.distance_position_from_first_lock_doors
+        else:
+            distance_to_position_in_lock = lock.distance_from_end_node_to_lock_doors_B + vessel.distance_position_from_first_lock_doors
+        vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock_start_node, lock_end_node, distance_to_position_in_lock)
+
+        # let vessel sail to the assigned location in the lock chamber
+        vessel_speed = lock.vessel_sailing_speed_in_lock(vessel)
+        remaining_sailing_time = vessel.distance_position_from_first_lock_doors / vessel_speed
+        while remaining_sailing_time > 0:
+            try:
+                yield vessel.env.timeout(remaining_sailing_time)
+                remaining_sailing_time = 0
+            except simpy.Interrupt as e:
+                remaining_sailing_time -= vessel.env.now - start_sailing
+
+        # log the stop of the sailing event to the assigned locaiton in the lock chamber
+        vessel.log_entry_v0("Sailing to position in lock stop", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+
+        # close doors if doors can be closed between vessel arrivals and doors have not already been closed before
+        doors_can_be_closed_between_vessel_arrivals = lock.determine_if_door_can_be_closed(vessel, direction, operation_index, between_arrivals=True)
+        if not lock.close_doors_before_vessel_is_laying_still and doors_can_be_closed_between_vessel_arrivals:
+            vessel.env.process(lock.close_door())
 
     def convert_chamber(self, new_level, direction, operation_index=None, vessel=None, close_doors=True, delay=0.0):
         """
@@ -630,6 +733,8 @@ class IsLockChamberOperator:
         ------
         The conversion of the lock chamber
         """
+        if operation_index is not None:
+            self.operation_planning.loc[operation_index, 'status'] = 'unavailable'
 
         # if there is a delay -> yield time out
         start_delay = self.env.now
@@ -959,6 +1064,7 @@ class HasLockPlanning:
                 "operation_index",
                 "time_of_registration",
                 "time_of_acceptance",
+                "time_potential_lock_door_opening_stop",
                 "time_arrival_at_waiting_area",
                 "time_arrival_at_lineup_area",
                 "time_lock_passing_start",
@@ -967,6 +1073,7 @@ class HasLockPlanning:
                 "time_lock_departure_start",
                 "time_lock_departure_stop",
                 "time_lock_passing_stop",
+                "time_potential_lock_door_closure_start",
             ],
         )
         self.operation_planning = pd.DataFrame(
@@ -1804,7 +1911,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         """
 
         # find the lock complex object that is associated with the registration node
-        lock = _get_lock_on_node(self.multidigraph, origin)
+        lock = _get_lock_object_on_registration_node(self.multidigraph, origin)
         # if a lock complex object is found, request registration to the lock master of the lock complex
         if lock:
             yield from lock.register_vessel(self)
@@ -1888,10 +1995,10 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             yield waiting_area.resource.release(self.waiting_area_request)
 
             # vessel is now allowed to continue passing the lock -> create vessel specific functions and add those function to the functions that communicate with the move function
-            allow_vessel_to_sail_in_lock = functools.partial(lock.allow_vessel_to_sail_in_lock, vessel=self)
+            allow_vessel_to_sail_into_lock = functools.partial(lock.allow_vessel_to_sail_into_lock, vessel=self)
             initiate_levelling = functools.partial(lock.initiate_levelling, vessel=self)
             allow_vessel_to_sail_out_of_lock = functools.partial(lock.allow_vessel_to_sail_out_of_lock, vessel=self)
-            self.on_pass_edge_functions.append(allow_vessel_to_sail_in_lock)
+            self.on_pass_edge_functions.append(allow_vessel_to_sail_into_lock)
             self.on_pass_edge_functions.append(initiate_levelling)
             self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
 
@@ -2617,7 +2724,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
     allow_vessel_to_sail_out_of_lock :
 
-    allow_vessel_to_sail_in_lock :
+    allow_vessel_to_sail_into_lock :
 
     add_vessel_to_vessel_planning :
         adds vessel to the vessel planning of the lock complex upon request
@@ -4057,10 +4164,16 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         :param between_arrivals:
         :return:
         """
+
+        operation_planning = self.operation_planning
+        this_operation = operation_planning.loc[operation_index]
+        vessels_in_operation = this_operation.vessels
+        last_vessel_to_enter_lock = vessels_in_operation[-1] == vessel
+
         doors_can_be_closed = False
         if not between_arrivals and not self.closing_doors_in_between_operations:
             return doors_can_be_closed
-        if between_arrivals and not self.closing_doors_in_between_arrivals:
+        if between_arrivals and (not self.closing_doors_in_between_arrivals or not last_vessel_to_enter_lock):
             return doors_can_be_closed
         doors_can_be_closed = True
 
@@ -4075,7 +4188,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             last_time_doors_closed = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)) + pd.Timedelta(seconds=self.doors_closing_time)
 
         next_operations = operation_planning[operation_planning.index > operation_index]
-
         vessel_index = operation_planning.loc[operation_index, 'vessels'].index(vessel)
         vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
 
