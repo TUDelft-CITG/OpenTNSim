@@ -258,7 +258,7 @@ def _get_hydrodynamic_data_series(env, time, node, hydrodynamic_property):
     series : float
         the time series of a hydrodynamic property at the specified node from the specified time onwards
     """
-    series = [np.nan]
+    series = np.array([np.nan])
     if env.vessel_traffic_service.hydrodynamic_information_path is None:
         return series
 
@@ -396,7 +396,7 @@ class IsLockChamberOperator:
             )
 
         # determine and yield sailing out delay
-        sailing_out_delay = lock.calculate_vessel_departure_start_time(vessel, operation_index, direction).total_seconds()
+        sailing_out_delay = lock.calculate_vessel_departure_start_delay(vessel, operation_index, direction).total_seconds()
         delay_start = vessel.env.now
         while sailing_out_delay:
             try:
@@ -465,7 +465,6 @@ class IsLockChamberOperator:
                 door_opening_start_time = next_operation.time_potential_lock_door_opening_stop
                 lock_operation_duration = self.determine_time_to_open_door(operation_index = vessel_operation_index + 1,
                                                                            direction =1 - direction,
-                                                                           last_time_doors_closed = door_closing_start_time,
                                                                            doors_required_to_be_open = door_opening_start_time)
                 opening_delay = (np.max([0, (door_opening_start_time - current_time).total_seconds()]) - lock_operation_duration.total_seconds())
                 if opening_delay > (closing_delay + self.lock_complex.doors_closing_time):
@@ -1136,6 +1135,18 @@ class HasLockPlanning:
 
 
     def _correct_lock_operation_start_time_if_outside_of_operational_hours(self, time_lock_operation_start):
+        """Corrects the start time of the lock operation if it falls outside of the operational hours of the lock complex
+
+        Parameters
+        ----------
+        time_lock_operation_start : pd.Timestamp
+            the time when the operation is planned to start
+
+        Returns
+        -------
+        time_lock_operation_start : pd.Timestamp
+            the time when the operation will start
+        """
         operational_hours = self.operational_hours
         within_operation_hours = operational_hours[(time_lock_operation_start >= operational_hours.start_time) & (time_lock_operation_start <= operational_hours.stop_time)]
         if within_operation_hours.empty:
@@ -1144,6 +1155,20 @@ class HasLockPlanning:
         return time_lock_operation_start
 
     def _plan_or_execute_empty_lock_operation_if_required(self, operation_index, direction):
+        """Plans an empty lock operation if this is required and executes it if it is the first lock operation
+
+        Parameters
+        ----------
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+
+        Returns
+        -------
+        operation_index : int
+            index of the lock operation (+1 if an empty lock operation was required)
+        """
         node_of_approach, to_node = _get_lock_operation_to_and_from_node(self, direction)
         previous_planned_operations = self.operation_planning[self.operation_planning.index < operation_index]
         if not previous_planned_operations.empty:
@@ -1159,6 +1184,18 @@ class HasLockPlanning:
 
 
     def _determine_lock_operation_start_information(self, vessel, operation_index, direction):
+        """Determines the
+
+        Parameters
+        ----------
+        vessel :
+
+        operation_index :
+
+        direction :
+
+        :return:
+        """
         # determine the index of the vessel in the lock master's vessel planning
         vessel_planning_index = self.vessel_planning[self.vessel_planning.id == vessel.id].iloc[-1].name
 
@@ -1172,7 +1209,7 @@ class HasLockPlanning:
         time_lock_operation_start = self._correct_lock_operation_start_time_if_outside_of_operational_hours(time_lock_operation_start)
 
         # determine the time that vessel can start entering the lock
-        time_lock_entry_start = (self.calculate_lock_entry_start_time(vessel, operation_index, direction,prognosis=True) + time_lock_operation_start)
+        time_lock_entry_start = self.calculate_lock_entry_start_time(vessel, operation_index, direction, time_lock_operation_start)
 
         # determine the minimum time that doors should be opened in advance of a vessel arrival and add this to the vessel planning
         minimum_advance_to_open_doors = self.minimum_advance_to_open_doors()
@@ -1189,10 +1226,8 @@ class HasLockPlanning:
                     time_potential_lock_door_opening_stop += operation_delay
 
         # determine the lock entry stop and door opening stop time
-        time_lock_entry_stop = (self.calculate_lock_entry_stop_time(vessel, operation_index, direction,
-                                                                    prognosis=True) + time_lock_operation_start)
-        time_lock_door_opening_stop = (self.calculate_lock_door_opening_time(vessel, operation_index, direction,
-                                                                             prognosis=True) + time_lock_operation_start)
+        time_lock_entry_stop = self.calculate_lock_entry_stop_time(vessel, operation_index, direction, time_lock_operation_start, prognosis=True)
+        time_lock_door_opening_stop = self.calculate_lock_door_opening_time(vessel, operation_index, direction, time_lock_operation_start)
 
         # determine the delay time for the vessel to enter the lock
         vessel_entry_delay = time_lock_entry_start - earliest_possible_time_lock_entry_start
@@ -1217,11 +1252,6 @@ class HasLockPlanning:
             index of the lock operation
         direction : int
             the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-
-        Yields
-        -------
-        nothing
-
         """
         # unpack the lock master's vessel and lock operation plannings
         vessel_planning = self.lock_complex.vessel_planning
@@ -1266,11 +1296,10 @@ class HasLockPlanning:
         wlev_A, wlev_B = levelling_information["wlev_A"], levelling_information["wlev_B"]
 
         # determine the moments in time of the vessel's departure from the lock (steps starts and stops) and the time the operation has stopped and the doors can close again
-        time_lock_departure_start = (self.calculate_lock_departure_start_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
-        time_lock_departure_stop = (self.calculate_lock_departure_stop_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
-        time_lock_operation_stop = (self.calculate_lock_operation_stop_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
-        time_lock_door_closing_start = (self.calculate_lock_door_closing_time(vessel, operation_index, direction,prognosis=True) + levelling_information["time_door_opening_stop"])
-
+        time_lock_departure_start = self.calculate_lock_departure_start_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"], prognosis=True)
+        time_lock_departure_stop = self.calculate_lock_departure_stop_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"], prognosis=True)
+        time_lock_operation_stop = self.calculate_lock_operation_stop_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"], prognosis=True)
+        time_lock_door_closing_start = self.calculate_lock_door_closing_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"], prognosis=True)
 
         vessels = [vessel]
 
@@ -1356,13 +1385,13 @@ class HasLockPlanning:
 
 
     def _determine_lock_departure_information(self, vessel, operation_index, direction, levelling_information):
-        time_lock_departure_start = (self.calculate_lock_departure_start_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
-        time_vessel_departure_start = (self.calculate_vessel_departure_start_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
-        time_lock_departure_stop = (self.calculate_lock_departure_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
-        time_vessel_departure_stop = (self.calculate_vessel_departure_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
-        time_lock_operation_stop = (self.calculate_lock_operation_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
-        time_vessel_passing_stop = (self.calculate_vessel_passing_stop_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
-        time_lock_door_closing_start = (self.calculate_lock_door_closing_time(vessel, operation_index, direction) + levelling_information["time_door_opening_stop"])
+        time_lock_departure_start = self.calculate_lock_departure_start_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"])
+        time_vessel_departure_start = self.calculate_vessel_departure_start_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"])
+        time_lock_departure_stop = self.calculate_lock_departure_stop_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"])
+        time_vessel_departure_stop = self.calculate_vessel_departure_stop_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"])
+        time_lock_operation_stop = self.calculate_lock_operation_stop_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"])
+        time_vessel_passing_stop = self.calculate_vessel_passing_stop_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"])
+        time_lock_door_closing_start = self.calculate_lock_door_closing_time(vessel, operation_index, direction, levelling_information["time_door_opening_stop"])
 
         departure_information = {"time_lock_departure_start":time_lock_departure_start,
                                  "time_vessel_departure_start":time_vessel_departure_start,
@@ -1376,6 +1405,16 @@ class HasLockPlanning:
 
 
     def _update_future_lock_operations_by_lock_delay_previous_operation(self, operation_index, lock_departure_information):
+        """Updates the lock operation and vessel plannings based on a delay in a previous planned operation
+
+        Parameters
+        ----------
+        operation_index : int
+            index of the lock operation
+        lock_departure_information : dict
+            information with start and stop times of events that make up the departure of vessels from the lock operation
+            required keys: "time_lock_door_closing_start", "time_lock_operation_stop"
+        """
         operation_planning = self.operation_planning
         vessel_planning = self.vessel_planning
 
@@ -1408,6 +1447,7 @@ class HasLockPlanning:
             operation_planning.loc[next_operation_index, "time_entry_stop"] += sailing_in_delay
 
             # update the vessel planning
+            next_vessel = None
             next_vessels = next_operation_info.vessels
             next_direction = next_operation_info.direction
             last_vessel_entering_time = operation_planning.loc[next_operation_index, "time_entry_start"]
@@ -1548,9 +1588,8 @@ class HasLockPlanning:
             time_arrival_time_at_lock_entry += vessel_entry_delay
 
         # update the vessel planning based on the above delays
-        time_vessel_entry_start = self.calculate_vessel_entry_start_time(vessel, direction) + time_arrival_time_at_lock_entry
-        time_lock_entry_stop = (self.calculate_lock_entry_stop_time(vessel, operation_index, direction) + time_arrival_time_at_lock_entry)
-
+        time_vessel_entry_start = self.calculate_vessel_entry_duration(vessel, direction) + time_arrival_time_at_lock_entry
+        time_lock_entry_stop = self.calculate_lock_entry_stop_time(vessel, operation_index, direction, time_arrival_time_at_lock_entry)
         vessel_planning.loc[vessel_planning_index, "operation_index"] = operation_index
         vessel_planning.loc[vessel_planning_index, "lock_chamber"] = self.lock_complex.name
         vessel_planning.loc[vessel_planning_index, "time_lock_passing_start"] = time_arrival_time_at_lock_entry
@@ -1599,6 +1638,7 @@ class HasLockPlanning:
                 vessel_planning.loc[other_vessel_planning_index, "delay"] += additional_sailing_out_delay
 
         # update the operation planning with the above information
+        print('3',potential_lock_door_opening_stop)
         operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] = potential_lock_door_opening_stop
         operation_planning.loc[operation_index, "time_operation_start"] = time_lock_operation_start
         operation_planning.loc[operation_index, "time_entry_start"] = time_entry_start
@@ -1621,14 +1661,13 @@ class HasLockPlanning:
 
         # update vessel and operation plannings accordingly
         lock_operation_information = {"time_departure_start":lock_departure_information["time_lock_departure_start"],
-                                      "time_departure_start":lock_departure_information["time_lock_departure_start"],
                                       "time_departure_stop":lock_departure_information["time_lock_departure_stop"],
                                       "time_operation_stop":lock_departure_information["time_lock_operation_stop"],
                                       "time_potential_lock_door_closure_start":lock_departure_information["time_lock_door_closing_start"],
                                       "wlev_A":wlev_A,
                                       "wlev_B":wlev_B}
         _update_lock_operation_planning(self,operation_index,lock_operation_information)
-
+        print('2',time_vessel_entry_start)
         vessel_passage_information = {"time_potential_lock_door_closure_start":time_potential_lock_door_closure_start,
                                       "time_potential_lock_door_opening_stop":(time_vessel_entry_start - self.minimum_advance_to_open_doors()),
                                       "time_lock_departure_start":lock_departure_information["time_vessel_departure_start"],
@@ -1817,6 +1856,18 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
 
     def _find_route_to_lock(self, lock):
+        """Determines the route of a vessel to the lock
+
+        Parameters
+        ----------
+        lock : object
+            the lock chamber object generated with IsLockChamber
+
+        Returns
+        -------
+        route_to_lock : list or str
+            list of the node names that make up the route to the lock
+        """
         route_to_come = self.route_ahead
         index = 0
         for index, edge in enumerate(zip(route_to_come[:-1], route_to_come[1:])):
@@ -1906,8 +1957,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         Yields
         ------
         Request to the lock complex master to register the vessel
-
-        TODO: origin hoeft geen input te zijn. Kan ook met self.current_node (comment: dit nagaan, want deze generator wordt toegevoegd aan lijst 'on_pass_node_functions', welke in de movable met input = origin wordt gevoed)
         """
 
         # find the lock complex object that is associated with the registration node
@@ -1988,7 +2037,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                     sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
                 self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),waiting_area.location,)
 
-            # let vessel wait in the waiting area
+            # let vessel wait in the waiting area TODO: can we decouple this?
             yield from self.wait_in_waiting_area(waiting_area=waiting_area)
 
             # if done waiting -> release vessel from waiting area and let vessel continue
@@ -2070,7 +2119,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         lock = waiting_area.lock
 
         # determine the direction of the vessel with respect to the lock complex: coming from node A (direction = 0), or from node B (direction = 1)
-        start_node = waiting_area.edge[0]
         if waiting_area.name == 'waiting_area_A':
             direction = 0
             distance_left_on_edge = lock.distance_waiting_area_A_to_end_edge_waiting_area_A
@@ -2744,7 +2792,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         calculates the time duration that a vessel needs to enter the lock until laying still
     calculate_sailing_in_time_delay :
         calculates the minimum required time gap between two entering vessels for safety, resulting in a delay
-    calculate_vessel_entry_start_time :
+    calculate_vessel_entry_duration :
         calculates the moment in time that a vessel starts entering the lock
     calculate_vessel_passing_start_time :
         calculates the start time that a vessel can start its manoeuvre of entering the lock
@@ -2883,11 +2931,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         ----------
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-
-        Yields
-        ------
-        nothing
-
         """
 
         # TODO: van vessel_planning en operation_planning properties  maken? #Antwoord Floor: ja, lijkt me een goed plan
@@ -2990,8 +3033,8 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         ----------
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-        lock_end_node :
-
+        lock_end_node : str
+            the node name that forms the end node of the lock complex given the direction of the vessel
 
         Returns
         -------
@@ -3055,14 +3098,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         lock_end_node : str
-
+            the node name that forms the end node of the lock complex given the direction of the vessel
         waiting_time : float
-
-
-        Returns
-        -------
-        nothing
-
+            waiting duration in seconds
         """
 
         # determines the sailing information of the vessel (i.e., speed, distance, time) over the edges from its current location to its first encountered lock doors
@@ -3122,11 +3160,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         time_of_registration : pd.Timestamp
             the time that the vessel registers to the lock master
-
-        Returns
-        -------
-        nothing
-
         """
 
         node_from, node_to = _get_lock_operation_to_and_from_node(self, direction)
@@ -3167,10 +3200,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             index of the lock operation to which the vessel can be added (can either be an existing or a new lock operation)
         direction : int
             the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-
-        Returns
-        -------
-        nothing
         """
         # unpack the lock master's lock operation planning
         operation_planning = self.lock_complex.operation_planning
@@ -3200,7 +3229,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
                                                                     direction=direction)
 
         wlev_A, wlev_B = levelling_information["wlev_A"], levelling_information["wlev_B"]
-
+        print('a',first_empty_lock_operation_start)
         operation_planning.loc[operation_index, 'time_operation_start'] = first_empty_lock_operation_start
         operation_planning.loc[operation_index, 'time_potential_lock_door_opening_stop'] = first_empty_lock_operation_start
         operation_planning.loc[operation_index, 'time_entry_start'] = first_empty_lock_operation_start
@@ -3223,13 +3252,22 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
     def determine_route_to_waiting_area_from_node(self, node, vessel):
         """
-        DOCUMENTATION HERE
+        Finds the route to the waiting area from another node
 
-        :param node:
-        :param vessel:
-        :return:
+        Parameters
+        ----------
+        node : str
+            name of a node in the graph
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+
+        Returns
+        -------
+        route_to_waiting_area : list of str
+            list of node names that form the route to the waiting area from another node
         """
         remaining_route = nx.dijkstra_path(self.env.graph, node, vessel.route[-1])
+        waiting_area_node = None
         for origin in remaining_route:
             if origin == self.lock_complex.waiting_area_A.edge[0]:
                 waiting_area_node = self.lock_complex.waiting_area_A.edge[1]
@@ -3237,7 +3275,12 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             elif origin == self.lock_complex.waiting_area_B.edge[0]:
                 waiting_area_node = self.lock_complex.waiting_area_B.edge[1]
                 break
-        route_to_waiting_area = nx.dijkstra_path(self.env.graph, vessel.current_node, waiting_area_node)
+
+        if waiting_area_node is not None:
+            route_to_waiting_area = nx.dijkstra_path(self.env.graph, vessel.current_node, waiting_area_node)
+        else:
+            route_to_waiting_area = []
+            warnings.warn(f"No route found to waiting area")
         return route_to_waiting_area
 
     def calculate_sailing_time_to_waiting_area(self, vessel, direction, current_node=None, prognosis=False, overwrite=True):
@@ -3639,9 +3682,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         return sailing_in_time_delay
 
-    def calculate_vessel_entry_start_time(self, vessel, direction):
+    def calculate_vessel_entry_duration(self, vessel, direction):
         """
-        Calculates the moment in time that a vessel starts entering the lock
+        Calculates the time duration required for a vessel starts entering the lock (from approach point to first encountered lock doors)
 
         Parameters
         ----------
@@ -3653,7 +3696,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         Returns
         -------
         sailing_time_entry : pd.Timedelta
-            the time duration of the process of a vessel entering the lock [s]
+            the time duration required for a vessel starts entering the lock [s]
 
         """
         # determine the distance from the lock doors to the approach point
@@ -3679,10 +3722,10 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             the index of the lock operation in the operation planning of the lock complex master
         direction : int
             the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        prognosis :
-            .
-        overwrite :
-            .
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+        overwrite : bool
+            overwrites the vessel planning: True (yes) or False (no)
 
         Returns
         -------
@@ -3695,7 +3738,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # calculate the sailing time durations to the lock door, the approach point and if there is any form of delay for this
         sailing_time_to_lock = self.calculate_sailing_time_to_lock_door(vessel, direction, prognosis=prognosis, overwrite=overwrite)
-        sailing_time_entry = self.calculate_vessel_entry_start_time(vessel, direction)
+        sailing_time_entry = self.calculate_vessel_entry_duration(vessel, direction)
         sailing_in_delay = self.calculate_sailing_in_time_delay(vessel, operation_index, direction, prognosis=prognosis, overwrite=overwrite)
 
         # calculate time that the vessel can start passing the lock
@@ -3715,10 +3758,10 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             the index of the lock operation in the operation planning of the lock complex master
         direction : int
             the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        prognosis :
-            .
-        overwrite :
-            .
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+        overwrite : bool
+            overwrites the vessel planning: True (yes) or False (no)
 
         Returns
         -------
@@ -3743,38 +3786,54 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         return lock_operation_start_time
 
-    def calculate_lock_door_opening_time(self, vessel, operation_index, direction, prognosis=False, overwrite=True):
+    def calculate_lock_door_opening_time(self, vessel, operation_index, direction, operation_start_time):
         """
-        DOCUMENTATION HERE
+        Calculates the time at which the lock doors can open before an vessel arrival
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :param overwrite:
-        :return:
-        """
-        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
-        lock_entry_start_time = self.calculate_vessel_entry_start_time(first_vessel, direction)
-        lock_entry_start_time -= self.minimum_advance_to_open_doors()
-        return lock_entry_start_time
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            the index of the lock operation in the operation planning of the lock complex master
+        direction : int
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
-    def calculate_lock_entry_start_time(self, vessel, operation_index, direction, prognosis=False, overwrite=True):
-        """
-        DOCUMENTATION HERE
-
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :param overwrite:
-        :return:
+        Returns
+        -------
+        lock_entry_start_time : pd.Timestamp
+            the time at which the lock doors can open before an vessel arrival
         """
         first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
-        lock_entry_start_time = self.calculate_vessel_entry_start_time(first_vessel, direction)
+        lock_entry_start_duration = self.calculate_vessel_entry_duration(first_vessel, direction)
+        lock_entry_start_duration -= self.minimum_advance_to_open_doors()
+        lock_entry_start_time = lock_entry_start_duration + operation_start_time
         return lock_entry_start_time
 
-    def calculate_vessel_entry_stop_time(self, vessel, operation_index, direction, prognosis=False, overwrite=True):
+    def calculate_lock_entry_start_time(self, vessel, operation_index, direction, operation_start_time):
+        """
+        Calculates the time at which the vessel can start sailing into to lock
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            the index of the lock operation in the operation planning of the lock complex master
+        direction : int
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+
+        Returns
+        -------
+        lock_entry_start_time : pd.Timestamp
+            the time at which the vessel can start sailing into to lock
+        """
+        first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
+        lock_entry_start_duration = self.calculate_vessel_entry_duration(first_vessel, direction)
+        lock_entry_start_time = lock_entry_start_duration + operation_start_time
+        return lock_entry_start_time
+
+    def calculate_vessel_entry_stop_time(self, vessel, operation_index, direction, prognosis=False):
         """
         Calculates the moment in time that a vessel finished its lock entry process
 
@@ -3787,19 +3846,16 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         direction : int
             the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         prognosis : bool
-            .
-        overwrite : bool
-            .
+            is for planning purposes or for actual events: True (yes) or False (no)
 
         Returns
         -------
         vessel_entry_stop_time : pd.Timestamp
              the moment in time that the vessel stops entering the lock
-
         """
 
         # determine the moment in time that the vessel starts to enter the lock
-        vessel_entry_start_time = self.calculate_vessel_entry_start_time(vessel, direction)
+        vessel_entry_start_time = self.calculate_vessel_entry_duration(vessel, direction)
 
         # determine the time duration of the vessel in the lock
         sailing_time_in_lock = self.calculate_sailing_time_in_lock(vessel, operation_index, prognosis)
@@ -3809,9 +3865,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         return vessel_entry_stop_time
 
-    def calculate_lock_entry_stop_time(self, vessel, operation_index, direction, prognosis=False, overwrite=True):
+    def calculate_lock_entry_stop_time(self, vessel, operation_index, direction, lock_entry_start_time, prognosis=False):
         """
-        Calculates the moment in time that a lock operation entry process of all the assigned vessels is finished (all vessels are in lock chamber)
+        Calculates the moment in time that a lock operation entry process of a lock operation is finished (all vessels are in lock chamber)
 
         Parameters
         ----------
@@ -3822,22 +3878,18 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         direction : int
             the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
         prognosis : bool
-            .
-        overwrite : bool
-            .
+            is for planning purposes or for actual events: True (yes) or False (no)
 
         Returns
         -------
         lock_entry_stop_time : pd.Timestamp
-            .
+            the time that a lock operation entry process is finished
         """
 
         # determine the last assigned vessel of the lock operation to determine the lock entry stop time
         last_vessel = self.determine_last_vessel_of_lock_operation(vessel, operation_index, prognosis)
-        lock_entry_stop_time = self.calculate_vessel_entry_stop_time(
-            last_vessel, operation_index, direction, prognosis, overwrite=overwrite
-        )
-
+        lock_entry_stop_duration = self.calculate_vessel_entry_stop_time(last_vessel, operation_index, direction, prognosis)
+        lock_entry_stop_time = lock_entry_stop_duration + lock_entry_start_time
         return lock_entry_stop_time
 
     def calculate_lock_operation_times(self, operation_index, last_entering_time, start_time, vessel = None, direction=None):
@@ -3849,31 +3901,30 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             the index of the lock operation in the operation planning of the lock complex master
         last_entering_time : pd.Timestamp
-            .
+            the time that the last vessel entered the lock
         start_time : pd.Timestamp
-            .
+            the start time of the lock operation (i.e., for the doors to close)
         vessel : type [optional]
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int [optional]
             the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        same_direction : bool
-            .
 
         Returns
         -------
-        time_door_closing_start : pd.Timestamp
-            the time that the lock doors are planned to start closing
-        time_door_closing_stop : pd.Timestamp
-            the time that the lock doors are planned to stop closing
-        time_levelling_start : pd.Timestamp
-            the time that the lock chamber is planned to start levelling
-        time_levelling_stop : pd.Timestamp
-            the time that the lock chamber is planned to stop levelling
-        time_door_opening_start : pd.Timestamp
-            the time that the lock doors are planned to start opening
-        time_door_opening_stop : pd.Timestamp
-            the time that the lock doors are planned to stop opening
-
+        levelling_information : dict
+            including:
+                time_door_closing_start : pd.Timestamp
+                    the time that the lock doors are planned to start closing
+                time_door_closing_stop : pd.Timestamp
+                    the time that the lock doors are planned to stop closing
+                time_levelling_start : pd.Timestamp
+                    the time that the lock chamber is planned to start levelling
+                time_levelling_stop : pd.Timestamp
+                    the time that the lock chamber is planned to stop levelling
+                time_door_opening_start : pd.Timestamp
+                    the time that the lock doors are planned to start opening
+                time_door_opening_stop : pd.Timestamp
+                    the time that the lock doors are planned to stop opening
         """
         # unpack the lock complex master's vessel and operation plannings
         vessel_planning = self.lock_complex.vessel_planning
@@ -3932,19 +3983,29 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
                                  "wlev_B":wlev_B}
         return levelling_information
 
-    def calculate_vessel_departure_start_time(self, vessel, operation_index, direction, prognosis=False):
-        """
-        DOCUMENTATION HERE
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :return:
+    def calculate_vessel_departure_start_delay(self, vessel, operation_index, direction, prognosis=False):
         """
-        vessels = self.get_vessel_from_planned_operation(
-            operation_index=operation_index,
-        )
+        Calculates the delay for a vessel to start leaving the lock
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        delay_to_departure : pd.Timestamp
+            the delay of a vessel to start its departure process out of the lock
+        """
+        vessels = self.get_vessel_from_planned_operation(operation_index=operation_index)
+
         if not prognosis:
             vessel_index = vessels.index(vessel)
             number_of_previous_vessels = vessel_index
@@ -3952,132 +4013,237 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             vessel_index = -1
             number_of_previous_vessels = len(vessels)
 
-        delay = pd.Timedelta(seconds=0)
+        delay_to_departure = pd.Timedelta(seconds=0)
         if number_of_previous_vessels:
-            previous_vessel = vessels[vessel_index-1]
-            vessel_sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(
-                vessel, operation_index, direction, prognosis=prognosis
-            )
-            previous_vessel_sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(
-                previous_vessel, operation_index, direction, prognosis=prognosis
-            )
+            previous_vessel = vessels[vessel_index - 1]
+            vessel_sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(vessel,
+                                                                                     operation_index,
+                                                                                     prognosis=prognosis)
+            previous_vessel_sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(previous_vessel,
+                                                                                              operation_index,
+                                                                                              prognosis=prognosis)
             sailing_out_time_gap_through_doors = (vessel_sailing_out_time - previous_vessel_sailing_out_time)
             if sailing_out_time_gap_through_doors < pd.Timedelta(seconds=self.sailing_out_time_gap_through_doors):
-                delay += number_of_previous_vessels*pd.Timedelta(seconds=self.sailing_out_time_gap_through_doors)-sailing_out_time_gap_through_doors
+                delay_to_departure += number_of_previous_vessels * \
+                                      pd.Timedelta(seconds=self.sailing_out_time_gap_through_doors) - \
+                                      sailing_out_time_gap_through_doors
 
-            if self.sailing_out_time_gap_after_berthing_previous_vessel is not None and delay < pd.Timedelta(seconds=self.sailing_out_time_gap_after_berthing_previous_vessel)*number_of_previous_vessels:
-                delay = pd.Timedelta(seconds=self.sailing_out_time_gap_after_berthing_previous_vessel)*number_of_previous_vessels
+            if self.sailing_out_time_gap_after_berthing_previous_vessel is not None and delay_to_departure < pd.Timedelta(seconds=self.sailing_out_time_gap_after_berthing_previous_vessel) * number_of_previous_vessels:
+                delay_to_departure = pd.Timedelta(seconds=self.sailing_out_time_gap_after_berthing_previous_vessel) * number_of_previous_vessels
 
-        delay += pd.Timedelta(seconds=self.start_sailing_out_time_after_doors_have_been_opened)
-        return delay
+        delay_to_departure += pd.Timedelta(seconds=self.start_sailing_out_time_after_doors_have_been_opened)
+        return delay_to_departure
 
-    def calculate_lock_departure_start_time(self, vessel, operation_index, direction, prognosis=False, first_vessel=False):
+    def calculate_vessel_departure_start_time(self, vessel, operation_index, direction, operation_stop_time, prognosis=False):
         """
-        DOCUMENTATION HERE
+        Calculates the moment in time that a vessel can start leaving the lock
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :param first_vessel:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        operation_stop_time : pd.Timestamp
+            the time that the lock operation has stopped (i.e., doors have been opened again)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        departure_start_time : pd.Timestamp
+            the time that a vessel's departure process out of the lock can start
+        """
+        delay_to_departure = self.calculate_vessel_departure_start_delay(vessel, operation_index, direction, prognosis)
+        departure_start_time = operation_stop_time + delay_to_departure
+        return departure_start_time
+
+    def calculate_lock_departure_start_time(self, vessel, operation_index, direction, operation_stop_time, prognosis=False):
+        """
+        Calculates the moment in time the departure can start of a lock operation
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        operation_stop_time : pd.Timestamp
+            the time that the lock operation has stopped (i.e., doors have been opened again)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        departure_start_time : pd.Timestamp
+            the time that a lock operation's departure process can start
         """
         first_vessel = self.determine_first_vessel_of_lock_operation(vessel, operation_index)
-        time_departure_start = self.calculate_vessel_departure_start_time(first_vessel, operation_index, direction, prognosis)
+        time_departure_start = self.calculate_vessel_departure_start_time(first_vessel, operation_index, direction, operation_stop_time, prognosis)
         return time_departure_start
 
-    def calculate_vessel_sailing_time_out_of_lock(self, vessel, operation_index, direction, prognosis=False):
+    def calculate_vessel_sailing_time_out_of_lock(self, vessel, operation_index, prognosis=False):
         """
-        DOCUMENTATION HERE
+        Calculates the sailing time for a vessel to sail from its position in the lock to the lock doors that have to be passed to sail out of the lock
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        departure_start_time : pd.Timestamp
+            the time that a lock operation's departure process can start
         """
-        vessels = self.get_vessel_from_planned_operation(
-            operation_index=operation_index,
-        )
-        # Time to sail out
+        vessels = self.get_vessel_from_planned_operation(operation_index=operation_index,)
         if not prognosis:
             vessel_index = vessels.index(vessel)
             distance_to_lock = np.sum([vessel.L for vessel in vessels[:vessel_index]]) + 0.5 * vessel.L
         else:
             distance_to_lock = np.sum([vessel.L for vessel in vessels]) + 0.5 * vessel.L
+
         vessel_speed = self.vessel_sailing_speed_out_lock(vessel)
         sailing_out_time = pd.Timedelta(seconds=distance_to_lock / vessel_speed)
         return sailing_out_time
 
-    def calculate_vessel_departure_stop_time(self, vessel, operation_index, direction, prognosis=False):
+    def calculate_vessel_departure_stop_time(self, vessel, operation_index, direction, operation_stop_time, prognosis=False):
         """
-        DOCUMENTATION HERE
+        Calculates the moment in time the departure process of a vessel stops
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        operation_stop_time : pd.Timestamp
+            the time that the lock operation has stopped (i.e., doors have been opened again)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        time_departure_stop : pd.Timestamp
+            the moment in time that a vessel's departure process stops
         """
-        time_departure_start = self.calculate_vessel_departure_start_time(vessel, operation_index, direction, prognosis)
-        sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(vessel, operation_index, direction, prognosis)
+        time_departure_start = self.calculate_vessel_departure_start_time(vessel, operation_index, direction, operation_stop_time, prognosis)
+        sailing_out_time = self.calculate_vessel_sailing_time_out_of_lock(vessel, operation_index, prognosis)
         time_departure_stop = time_departure_start + sailing_out_time
         return time_departure_stop
 
-    def calculate_lock_departure_stop_time(self, vessel, operation_index, direction, prognosis=False):
+    def calculate_lock_departure_stop_time(self, vessel, operation_index, direction, operation_stop_time, prognosis=False):
         """
-        DOCUMENTATION HERE
+        Calculates the moment in time the departure process of a lock operation stops
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        operation_stop_time : pd.Timestamp
+            the time that the lock operation has stopped (i.e., doors have been opened again)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        time_departure_stop : pd.Timestamp
+            the moment in time that a lock operation's departure process stops
         """
         last_vessel = self.determine_last_vessel_of_lock_operation(vessel, operation_index, prognosis)
-        time_departure_stop = self.calculate_vessel_departure_stop_time(last_vessel, operation_index, direction, prognosis)
+        time_departure_stop = self.calculate_vessel_departure_stop_time(last_vessel, operation_index, direction, operation_stop_time, prognosis)
         return time_departure_stop
 
-    def calculate_vessel_passing_stop_time(self, vessel, operation_index, direction, prognosis=False):
+    def calculate_vessel_passing_stop_time(self, vessel, operation_index, direction, operation_stop_time, prognosis=False):
         """
-        DOCUMENTATION HERE
+        Calculates the moment in time the vessel has reached the approach point at the other side of the lock (while sailing away from the lock)
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        operation_stop_time : pd.Timestamp
+            the time that the lock operation has stopped (i.e., doors have been opened again)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        time_departure_stop : pd.Timestamp
+            the moment in time the vessel has reached the approach point at the other side of the lock
         """
-        time_departure_stop = self.calculate_vessel_departure_stop_time(vessel, operation_index, direction, prognosis)
+        time_departure_stop = self.calculate_vessel_departure_stop_time(vessel, operation_index, direction, operation_stop_time, prognosis)
         vessel_speed = self.vessel_sailing_out_speed(vessel, direction, until_crossing_point=True)
         time_departure_stop += pd.Timedelta(seconds = self.sailing_distance_to_crossing_point/vessel_speed)
         return time_departure_stop
 
-    def calculate_lock_operation_stop_time(self, vessel, operation_index, direction, prognosis=False):
+    def calculate_lock_operation_stop_time(self, vessel, operation_index, direction, operation_stop_time, prognosis=False):
         """
-        DOCUMENTATION HERE
+        Calculates the moment in time a new lock operation can start
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        operation_stop_time : pd.Timestamp
+            the time that the lock operation has stopped (i.e., doors have been opened again)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        time_operation_stop : pd.Timestamp
+            the moment in time a new lock operation can start
         """
         last_vessel = self.determine_last_vessel_of_lock_operation(vessel, operation_index, prognosis)
-        time_operation_stop = self.calculate_vessel_passing_stop_time(last_vessel, operation_index, direction, prognosis)
+        time_operation_stop = self.calculate_vessel_passing_stop_time(last_vessel, operation_index, direction, operation_stop_time, prognosis)
         return time_operation_stop
 
-    def calculate_lock_door_closing_time(self, vessel, operation_index, direction, prognosis=False):
+    def calculate_lock_door_closing_time(self, vessel, operation_index, direction, operation_stop_time, prognosis=False):
         """
-        DOCUMENTATION HERE
+        Calculates the moment in time a new lock operation can start
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param prognosis:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        operation_stop_time : pd.Timestamp
+            the time that the lock operation has stopped (i.e., doors have been opened again)
+        prognosis : bool
+            is for planning purposes or for actual events: True (yes) or False (no)
+
+        Returns
+        -------
+        time_operation_stop : pd.Timestamp
+            the moment in time a new lock operation can start
         """
-        lock_doors_closing_time = self.calculate_lock_departure_stop_time(vessel, operation_index, direction, prognosis)
+        lock_doors_closing_time = self.calculate_lock_departure_stop_time(vessel, operation_index, direction, operation_stop_time, prognosis)
         lock_doors_closing_time += self.minimum_delay_to_close_doors()
         return lock_doors_closing_time
 
@@ -4097,9 +4263,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         first_vessel = vessel
 
         # unpack the vessels of the specified lock operation
-        vessels = self.get_vessel_from_planned_operation(
-            operation_index=operation_index,
-        )
+        vessels = self.get_vessel_from_planned_operation(operation_index=operation_index,)
 
         # determine the first vessel if vessels are already assigned to the lock operation
         if len(vessels):
@@ -4118,7 +4282,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_index : int
             index of the lock operation
         prognosis : bool
-            .
+            is for planning purposes or for actual events: True (yes) or False (no)
 
         Returns
         -------
@@ -4126,11 +4290,8 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             the last assigned vessel of the lock operation (the one that will enter and leave the lock chamber last)
         """
         # identify the vessels assigned the lock operation
-        vessels = self.get_vessel_from_planned_operation(
-            operation_index=operation_index,
-        )
+        vessels = self.get_vessel_from_planned_operation(operation_index=operation_index,)
 
-        # TODO @Floor: moeten we hier vessel opgeven als input? of kan die ook worden bepaald uit de berekende vessels als prognosis=True?
         # determine the last vessel
         last_vessel = vessel
         if not prognosis:
@@ -4138,33 +4299,26 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         return last_vessel
 
-    def calculate_delay_to_open_doors(self, vessel):
-        """
-        DOCUMENTATION HERE
-
-        :param vessel:
-        :return:
-        """
-        vessel_planning = self.lock_complex.vessel_planning
-        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-        arrival_time_at_lock = vessel_planning.loc[vessel_planning_index, 'time_lock_entry_start']
-        direction = vessel_planning.loc[vessel_planning_index, 'direction']
-        time_index = np.absolute(hydrodynamic_times - np.datetime64(arrival_time_at_lock) - np.timedelta64(int(self.doors_opening_time),'s')).argmin()
-        expected_levelling_time,_,_ = self.determine_levelling_time(t_start=hydrodynamic_times[time_index - 1], direction=direction, prediction=True)
-        delay = self.sailing_time_before_opening_lock_doors + expected_levelling_time + self.doors_opening_time
-        return delay
-
     def determine_if_door_can_be_closed(self, vessel, direction, operation_index, between_arrivals=False):
         """
-        DOCUMENTATION HERE
+        Determines if the doors can be closed in between operations or vessel arrivals
 
-        :param vessel:
-        :param direction:
-        :param operation_index:
-        :param between_arrivals:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        between_arrivals : bool
+            if the function is run to determine if the doors can be closed in between vessel arrivals (True) or not (False)
+
+        Returns
+        -------
+        doors_can_be_closed : bool
+            doors can be closed (True) or not (False)
         """
-
         operation_planning = self.operation_planning
         this_operation = operation_planning.loc[operation_index]
         vessels_in_operation = this_operation.vessels
@@ -4181,11 +4335,10 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel_planning = self.lock_complex.vessel_planning
 
         if not between_arrivals:
-            last_time_doors_closed = operation_planning.loc[
-                operation_index, "time_potential_lock_door_closure_start"
-            ] + pd.Timedelta(seconds=self.doors_closing_time)
+            last_time_doors_closed = operation_planning.loc[operation_index, "time_potential_lock_door_closure_start"]
         else:
-            last_time_doors_closed = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now)) + pd.Timedelta(seconds=self.doors_closing_time)
+            last_time_doors_closed = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+        last_time_doors_closed += pd.Timedelta(seconds=self.doors_closing_time)
 
         next_operations = operation_planning[operation_planning.index > operation_index]
         vessel_index = operation_planning.loc[operation_index, 'vessels'].index(vessel)
@@ -4210,7 +4363,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         if same_direction:
             direction = 1 - direction
 
-        door_opening_time = self.determine_time_to_open_door(operation_index+operation_step, direction, last_time_doors_closed,doors_required_to_be_open)
+        door_opening_time = self.determine_time_to_open_door(operation_index+operation_step, direction, doors_required_to_be_open)
 
         if doors_required_to_be_open-door_opening_time < last_time_doors_closed or doors_required_to_be_open-last_time_doors_closed < self.minimum_time_between_operations_for_intermediate_door_closure:
             doors_can_be_closed = False
@@ -4218,14 +4371,29 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
     def determine_if_door_is_closed(self, vessel, operation_index, direction, first_in_lock=False, between_arrivals=False):
         """
-        DOCUMENTATION HERE
+        Determines if the doors are closed
 
-        :param vessel:
-        :param operation_index:
-        :param direction:
-        :param first_in_lock:
-        :param between_arrivals:
-        :return:
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        first_in_lock : bool
+            if the function is run for the first vessel assigned to the lock operation (True) or not (False)
+        between_arrivals : bool
+            if the function is run to determine if the doors can be closed in between vessel arrivals (True) or not (False)
+
+        Returns
+        -------
+        doors_are_closed : bool
+            doors are closed (True) or not (False)
+        doors_required_to_be_open : pd.Timestamp
+            moment in time when the doors need to be opened
+        operation_time : pd.Timedelta
+            the time duration required to perform the lock operation
         """
         operation_planning = self.lock_complex.operation_planning
         vessel_planning = self.lock_complex.vessel_planning
@@ -4258,28 +4426,37 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
             doors_required_to_be_open = vessel_planning.loc[vessel_planning_index, 'time_potential_lock_door_opening_stop']
 
-        operation_time = self.determine_time_to_open_door(operation_index, direction, last_time_doors_closed, doors_required_to_be_open)
-        doors_is_closed = False
+        operation_time = self.determine_time_to_open_door(operation_index, direction, doors_required_to_be_open)
+        doors_are_closed = False
 
         if doors_required_to_be_open - operation_time > last_time_doors_closed and doors_required_to_be_open-last_time_doors_closed > self.minimum_time_between_operations_for_intermediate_door_closure:
-            doors_is_closed = True
+            doors_are_closed = True
 
-        return doors_is_closed, doors_required_to_be_open, operation_time
+        return doors_are_closed, doors_required_to_be_open, operation_time
 
-    def determine_time_to_open_door(self, operation_index, direction, last_time_doors_closed, doors_required_to_be_open):
+    def determine_time_to_open_door(self, operation_index, direction, doors_required_to_be_open):
         """
-        DOCUMENTATION HERE
+        Determines the time to finish the levelling process and the door opening process
 
-        :param operation_index:
-        :param direction:
-        :param last_time_doors_closed:
-        :param doors_required_to_be_open:
-        :param same_direction:
-        :return:
+        Parameters
+        ----------
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        doors_required_to_be_open : pd.Timestamp
+            the moment in time that the doors are required to be opened
+
+        Returns
+        -------
+        operation_time : pd.Timedelta
+            the time to finish the levelling process and the door opening process
         """
+        last_entering_time = doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time)
+        operation_start_time = doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time)
         levelling_information = self.calculate_lock_operation_times(operation_index=operation_index,
-                                                                    last_entering_time=doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time),
-                                                                    start_time=doors_required_to_be_open - pd.Timedelta(seconds=self.doors_opening_time),
+                                                                    last_entering_time=last_entering_time,
+                                                                    start_time=operation_start_time,
                                                                     direction=direction)
 
         levelling_time = levelling_information["time_levelling_stop"] - levelling_information["time_levelling_start"]
@@ -4301,16 +4478,12 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         Parameters
         ----------
-        operation_index : int
-            .
         levelling_start : pd.Timestamp
             the start time of the levelling process
         levelling_stop : pd.Timestamp
             the stop time of the levelling process
         direction : int
             the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        same_direction : bool
-            .
 
         Returns
         ------
