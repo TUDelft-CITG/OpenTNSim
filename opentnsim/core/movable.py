@@ -373,17 +373,30 @@ class Movable(Locatable, Routable, Log):
         The time it takes to pass the edge.
         """
         edge = self.graph.edges[origin, destination]
-        orig = nx.get_node_attributes(self.graph, "geometry")[origin]
-        dest = nx.get_node_attributes(self.graph, "geometry")[destination]
+        node_origin = self.graph.nodes[origin]
+        node_destination = self.graph.nodes[destination]
 
-        distance = self.wgs84.inv(
-            shapely.geometry.shape(orig).x,
-            shapely.geometry.shape(orig).y,
-            shapely.geometry.shape(dest).x,
-            shapely.geometry.shape(dest).y,
-        )[2]
+        # Distance can be computed in three ways:
+        if "length_m" in edge:
+            # based on 'length_m' attribute on edge
+            distance = edge["length_m"]
+        elif "geometry" in edge:
+            # based on 'geometry' attribute on edge, using pyproj spherical distance
+            edge_geometry = edge["geometry"]
+            distance = self.wgs84.geometry_length(edge_geometry)
+        elif "geometry" in node_origin and "geometry" in node_destination:
+            orig = node_origin["geometry"]
+            dest = node_destination["geometry"]
+            assert isinstance(orig, shapely.Point), "node geometry must be a shapely Point"
+            assert isinstance(dest, shapely.Point), "node geometry must be a shapely Point"
+            distance = self.wgs84.inv(
+                orig.x,
+                orig.y,
+                dest.x,
+                dest.y,
+            )[2]
 
-        # calculate velocity based on depth and power, if possible.
+            # calculate velocity based on depth and power, if possible.
         self.v = self._compute_velocity_on_edge(origin, destination)
 
         # Check if the edge has current info
