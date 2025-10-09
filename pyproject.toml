@@ -108,4 +108,5 @@ dev = [
     "black[jupyter]>=25.9.0",
     "ipykernel>=6.30.1",
     "ipython>=9.6.0",
+    "nbformat>=5.10.4",
 ]
