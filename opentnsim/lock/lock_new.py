@@ -34,6 +34,33 @@ knots_to_ms = knots = 0.514444444
 gravitational_acceleration = 9.81
 
 
+def determine_route_to_closest_waiting_area(vessel, waiting_area_A, waiting_area_B):
+    """
+    DOCUMENTATION HERE
+
+    :param node:
+    :param vessel:
+    :return:
+    """
+
+    remaining_route = vessel.route_ahead
+    waiting_area_node = None
+    for origin in remaining_route:
+        if origin == waiting_area_A.edge[0]:
+            waiting_area_node = waiting_area_A.edge[1]
+            break
+        elif origin == waiting_area_B.edge[0]:
+            waiting_area_node = waiting_area_B.edge[1]
+            break
+
+    if waiting_area_node is not None:
+        route_to_waiting_area = vessel.determine_route_to_target_node(target_node=waiting_area_node)
+    else:
+        route_to_waiting_area = []
+        warnings.warn(f"No route found to waiting area")
+    return route_to_waiting_area
+
+
 def _get_lock_operation_direction(lock, to_node):
     """Get the direction of the lock based on the node to which the lock operation is directed
 
@@ -112,7 +139,7 @@ def _get_lock_object_on_registration_node(multidigraph, registration_node):
     # Return None if no lock exists on the edge
     else:
         return None
-    
+
 def _update_lock_operation_planning(lock, operation_index, operation_information):
     """Updates the lock operation planning
 
@@ -130,7 +157,7 @@ def _update_lock_operation_planning(lock, operation_index, operation_information
             warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
             continue
         lock.operation_planning.loc[int(operation_index),key] = value
-    
+
 def _update_lock_vessel_planning(lock, vessel_index, passage_information):
     """Updates the lock vessel planning
 
@@ -3251,39 +3278,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_planning.loc[operation_index, 'total_delay'] = pd.Timedelta(seconds=0)
         operation_planning.loc[operation_index, 'status'] = 'available'
 
-    def determine_route_to_waiting_area_from_node(self, node, vessel):
-        """
-        Finds the route to the waiting area from another node
-
-        Parameters
-        ----------
-        node : str
-            name of a node in the graph
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-
-        Returns
-        -------
-        route_to_waiting_area : list of str
-            list of node names that form the route to the waiting area from another node
-        """
-        remaining_route = nx.dijkstra_path(self.env.graph, node, vessel.route[-1])
-        waiting_area_node = None
-        for origin in remaining_route:
-            if origin == self.lock_complex.waiting_area_A.edge[0]:
-                waiting_area_node = self.lock_complex.waiting_area_A.edge[1]
-                break
-            elif origin == self.lock_complex.waiting_area_B.edge[0]:
-                waiting_area_node = self.lock_complex.waiting_area_B.edge[1]
-                break
-
-        if waiting_area_node is not None:
-            route_to_waiting_area = nx.dijkstra_path(self.env.graph, vessel.current_node, waiting_area_node)
-        else:
-            route_to_waiting_area = []
-            warnings.warn(f"No route found to waiting area")
-        return route_to_waiting_area
-
     def calculate_sailing_time_to_waiting_area(self, vessel, direction, current_node=None, prognosis=False, overwrite=True):
         """TODO: note that this function looks a lot like other 'calculate_sailing_time_to'-functions below, so maybe we can investigate to combine the functions
         Calculates the sailing time of a vessel from its location to the waiting area
@@ -3312,12 +3306,10 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         """
 
-        # determine the current node of the vessel
-        if current_node is None:
-            current_node = vessel.current_node
-
         # determine route to the start node of the edge at which the waiting area is located
-        route_to_waiting_area = self.determine_route_to_waiting_area_from_node(node=current_node, vessel=vessel)
+        route_to_waiting_area = determine_route_to_closest_waiting_area(
+            vessel=vessel, waiting_area_A=self.lock_complex.waiting_area_A, waiting_area_B=self.lock_complex.waiting_area_B
+        )
 
         # unpack vessel planning
         vessel_planning = self.lock_complex.vessel_planning
@@ -3983,7 +3975,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
                                  "wlev_A":wlev_A,
                                  "wlev_B":wlev_B}
         return levelling_information
-
 
     def calculate_vessel_departure_start_delay(self, vessel, operation_index, direction, prognosis=False):
         """

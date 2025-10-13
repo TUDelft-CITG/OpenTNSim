@@ -232,6 +232,31 @@ class Movable(Locatable, Routable, Log):
         else:
             return []
 
+    def determine_route_to_target_node(self, target_node: str):
+        """Determine the route to the target node.
+        Parameters
+        ----------
+        target_node: str
+            The target node to determine the route to.
+        Returns
+        -------
+        list
+            The route to the target node.
+        """
+        if target_node not in self.route_ahead:
+            raise ValueError("Target node must be in the remaining route ahead.")
+        # get index of first occurrence of target_node in route_ahead
+        try:
+            idx = self.route_ahead.index(target_node)
+        except ValueError:
+            warnings.warn(f"No route found to waiting area")
+            return []
+
+        # get route to target node
+        route = self.route_ahead[: idx + 1]
+
+        return route
+
     def update_position(self, position_on_route: int):
         """Update the position on the route.
 
