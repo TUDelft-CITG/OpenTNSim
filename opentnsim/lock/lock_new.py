@@ -2626,9 +2626,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
     def _directional_edge(self, direction):
         """get the edge of the lock chamber in the correct direction"""
         if not direction:
-            return (self.start_node, self.end_node, self.k)
+            return (self.start_node, self.end_node)
         else:
-            return (self.end_node, self.start_node, self.k)
+            return (self.end_node, self.start_node)
 
     def determine_levelling_time(self, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
         """
