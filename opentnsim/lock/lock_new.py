@@ -657,13 +657,11 @@ class IsLockChamberOperator:
         current_time = vessel.env.now
 
         # determines the geometry objects of the lock based on the direction of the vessel TODO: function?
+        waiting_area = lock._get_appropriate_waiting_area(direction)
+        distance_to_lock = lock._distance_to_lock(direction)
         if not direction:
-            waiting_area = lock.waiting_area_A
-            distance_to_lock = lock.distance_from_start_node_to_lock_doors_A
             first_lock_door_position = lock.location_lock_doors_A
         else:
-            waiting_area = lock.waiting_area_B
-            distance_to_lock = lock.distance_from_end_node_to_lock_doors_B
             first_lock_door_position = lock.location_lock_doors_B
 
         # correct the distance to the lock doors if the vessel is in the waiting area, located at the same edge of the lock
@@ -2119,10 +2117,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             lock.log_entry_v0("Lock doors opening stop",doors_required_to_be_open.round('s').to_pydatetime().timestamp(),self.output.copy(), lock_end_node, )
 
             # set the new side to which the lock has been opened
-            if not direction:
-                lock.node_open = lock.start_node
-            else:
-                lock.node_open = lock.end_node
+            lock.node_open = lock._directional_edge(direction)[0]
 
             # set the new water level for the lock if there is hydrodynamic data included in the simulation TODO: also this should preferably be included elsewhere and not here
             if self.env.vessel_traffic_service.hydrodynamic_information_path:
@@ -2584,10 +2579,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
         """
         # determine the edge on which the vessel is sailing and the distance to the lock doors
-        if not direction:
-            edge = (self.start_node,self.end_node)
-        elif direction:
-            edge = (self.end_node,self.start_node)
+        edge = self._directional_edge(direction)
 
         # determine the speed of the vessel over the edge
         speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
@@ -2620,11 +2612,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
         """
         # determine the edge on which the vessel is sailing and the distance to the lock doors
-        edge = None
-        if not direction:
-            edge = (self.start_node, self.end_node)
-        elif direction:
-            edge = (self.end_node, self.start_node)
+        edge = self._directional_edge(direction)
 
         # determine the speed of the vessel over the edge
         speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
@@ -2634,6 +2622,13 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             speed = vessel.overruled_speed.loc[edge, 'Speed']
 
         return speed
+
+    def _directional_edge(self, direction):
+        """get the edge of the lock chamber in the correct direction"""
+        if not direction:
+            return (self.start_node, self.end_node, self.k)
+        else:
+            return (self.end_node, self.start_node, self.k)
 
     def determine_levelling_time(self, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
         """
@@ -3315,10 +3310,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         vessel_planning = self.lock_complex.vessel_planning
 
         # unpack first encountered waiting area
-        if not direction:
-            waiting_area_approach = self.lock_complex.waiting_area_A
-        else:
-            waiting_area_approach = self.lock_complex.waiting_area_B
+        waiting_area_approach = self._get_appropriate_waiting_area(direction)
 
         # unpack the function that calculates sailing time from distance on edge to distance on another edge
         calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
@@ -3343,6 +3335,48 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             vessel_planning.loc[vessel_planning_index, 'time_arrival_at_waiting_area'] = current_time + sailing_to_waiting_area_time
 
         return sailing_to_waiting_area_time, sailing_distance, average_sailing_speed
+
+    def _get_appropriate_waiting_area(self, direction):
+        """
+        Returns the appropriate waiting area based on the direction of the vessel
+
+        Parameters
+        ----------
+        direction : int
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+
+        Returns
+        -------
+        waiting_area : WaitingArea
+            the appropriate waiting area object based on the direction of the vessel
+        """
+        if not direction:
+            waiting_area = self.lock_complex.waiting_area_A
+        else:
+            waiting_area = self.lock_complex.waiting_area_B
+
+        return waiting_area
+
+    def _get_appropriate_lineup_area(self, direction):
+        """
+        Returns the appropriate line-up area based on the direction of the vessel
+
+        Parameters
+        ----------
+        direction : int
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+
+        Returns
+        -------
+        lineup_area : LineupArea
+            the appropriate line-up area object based on the direction of the vessel
+        """
+        if not direction:
+            lineup_area = self.lock_complex.lineup_area_A
+        else:
+            lineup_area = self.lock_complex.lineup_area_B
+
+        return lineup_area
 
     def calculate_sailing_time_to_lineup_area(self, vessel, direction, current_node=None, prognosis=False, overwrite=True):
         """
@@ -3372,10 +3406,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             current_node = vessel.current_node
 
         # unpack first encountered line-up area
-        if not direction:
-            lineup_area_approach = self.lock_complex.lineup_area_A
-        else:
-            lineup_area_approach = self.lock_complex.lineup_area_B
+        lineup_area_approach = self._get_appropriate_lineup_area(direction)
 
         # determine the route of the vessel to the line-up area edge
         route_to_lineup_area = nx.dijkstra_path(self.env.graph, current_node, lineup_area_approach.end_node)
@@ -3517,18 +3548,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         return sailing_to_lock_chamber_time
 
-    def _lock_end_node(self, direction):
-        """get the end node of the lock from the perspective of the vessel
-
-        Parameters
-        ----------
-        direction : int
-            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        """
-        if not direction:
-            return self.lock_complex.end_node
-        else:
-            return self.lock_complex.start_node
 
     def _distance_to_lock(self, direction):
         """get the distance from the start node of the lock to the lock doors from the perspective of the vessel
