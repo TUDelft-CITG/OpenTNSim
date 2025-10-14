@@ -1,5 +1,16 @@
 .. highlight:: shell
 
+..
+   CHECKLIST THIS FILE
+   -------------------
+   - [ ] description of how to contribute, and how your work ends up in the main branch
+   - [ ] description of the review process and the pool of reviewers
+   - [ ] description of the definition of done
+   - [ ] description of the coding style (black)
+   - [ ] description of how to run tests (pytest)
+   - [ ] how to add something to the backlog
+   - [ ] what issue template to use for the backlog, and what labels to use
+
 ============
 Contributing
 ============
