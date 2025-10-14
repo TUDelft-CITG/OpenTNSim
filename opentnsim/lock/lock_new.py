@@ -34,6 +34,158 @@ knots_to_ms = knots = 0.514444444
 gravitational_acceleration = 9.81
 
 
+def calculate_z(
+    t,
+    t_start,
+    direction,
+    wlev_init,
+    operation_index,
+    operation_planning,
+    hydrodynamic_information_path,
+    start_node,
+    end_node,
+    node_open,
+    epoch,
+):
+    # set default time and water level difference series
+    z = np.zeros_like(t)
+
+    # convert given t_start into np.datetime64 (this is required to communicate with the hydrodynamic data via the NetCDF package)
+    if isinstance(t_start, float):
+        t_start = np.datetime64(datetime.datetime.fromtimestamp(t_start))
+    elif isinstance(t_start, datetime.datetime):
+        t_start = np.datetime64(t_start)
+    elif isinstance(t_start, pd.Timestamp):
+        t_start = np.array([t_start], dtype=np.datetime64)[0]
+
+    # determine the actual water levels
+    time_index = _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, t_start)
+    t_simulation_start = np.datetime64(epoch)
+    H_A = _get_hydrodynamic_data_series(hydrodynamic_information_path, t_simulation_start, start_node, "Water level")
+    H_B = _get_hydrodynamic_data_series(hydrodynamic_information_path, t_simulation_start, end_node, "Water level")
+    H_A_init = H_A[time_index]
+    H_B_init = H_B[time_index]
+
+    if wlev_init is None:
+        last_operations = operation_planning[operation_planning.index < operation_index]
+        if not last_operations.empty:
+            last_operation = last_operations.iloc[-1]
+            last_operation_direction = last_operation.direction
+            if not last_operation_direction:
+                wlev_init = H_B_init
+            else:
+                wlev_init = H_A_init
+
+        elif node_open == start_node:
+            wlev_init = H_A_init
+        else:
+            wlev_init = H_B_init
+
+    if not direction:
+        z[0] = H_B_init - wlev_init
+
+    else:
+        z[0] = H_A_init - wlev_init
+
+    return z, H_A, H_B
+
+
+def levelling_time_equation(
+    t,
+    z,
+    lock_length,
+    lock_width,
+    disch_coeff,
+    gate_opening_time,
+    opening_area,
+    t_start,
+    dt,
+    direction,
+    water_level_difference_limit_to_open_doors,
+    prediction,
+    H_A,
+    H_B,
+):
+    """Calculates the levelling time of a lock operation based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
+    This function is called by determine_levelling_time()
+    Returns
+    -------
+    levelling_time : float
+        the time duration of the levelling process
+    t : list of float
+        the time series of the levelling process
+    z : list of float
+        the water level difference series over the time of the levelling process
+    """
+    A_ch = lock_length * lock_width  # surface area of the lock chamber [m^2] (constant over time)
+    m = disch_coeff  # discharge coefficient [-] (constant over time)
+    g = gravitational_acceleration  # gravitational acceleration [m/(s^2)] (constant over time)
+    T1 = gate_opening_time  # time to open the gate [s] (constant over time)
+    A_s = np.linspace(0, opening_area, int(T1 / float(dt)))  # sluice opening area over time when opening [m^2] (time-dependent)
+    A_s = np.append(A_s, [opening_area] * (len(z) - len(A_s)))  # sluice opening over full levelling process [m^2] (time-dependent)
+    H_time = hydrodynamic_times.astype(float)  # time series of the hydrodynamic data [s]
+
+    # time-integration by (self-coded) Euler's method TODO Checken of we een standaard solver kunnen gebruiken. En of we dit algoritme los kunnen maken van de klasse.
+    for i in range(len(t) - 1):
+        H_Ai = np.interp(
+            (np.timedelta64(int(i * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01")) / np.timedelta64(1, "us"),
+            H_time,
+            H_A,
+        )  # water level at side A at time = i
+        H_Aii = np.interp(
+            (np.timedelta64(int((i + 1) * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01"))
+            / np.timedelta64(1, "us"),
+            H_time,
+            H_A,
+        )  # water level at side A at time = i + 1
+        H_Bi = np.interp(
+            (np.timedelta64(int(i * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01")) / np.timedelta64(1, "us"),
+            H_time,
+            H_B,
+        )  # water level at side B at time = i
+        H_Bii = np.interp(
+            (np.timedelta64(int((i + 1) * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01"))
+            / np.timedelta64(1, "us"),
+            H_time,
+            H_B,
+        )  # water level at side B at time = i + 1
+        deltaH_A = H_Aii - H_Ai  # water level difference at side A between time = i and time = i + 1
+        deltaH_B = H_Bii - H_Bi  # water level difference at side B between time = i and time = i + 1
+
+        # determine the contribution to the change in water level difference outside of the lock (i.e., due to tides) in the water level difference at time = i + 1
+        if not direction:
+            to_wlev_change = -deltaH_B
+        else:
+            to_wlev_change = -deltaH_A
+
+        # calculate change in water level difference between time = i and time = i + 1
+        z_i = abs(z[i])  # absolute water level difference at time = i
+
+        dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch  # change in water level difference over time [m/s]
+        if z[i] < 0:  # correct if water level difference is negative
+            dz_dt = -dz_dt
+        dz = dz_dt * float(dt) + to_wlev_change
+
+        # calculate the new water level difference at time = i + 1
+        z[i + 1] = z[i] + dz
+        if np.sign(z[i + 1]) != np.sign(z[i]):  # prevents overshooting of the water level difference
+            z[i + 1] = 0
+
+        if (
+            np.abs(z[i + 1]) <= water_level_difference_limit_to_open_doors
+        ):  # breaks the integration if the water level difference is smaller than a default 5 cm (the last 5 cm of water level difference takes long to overcome, so lock master opens doors)
+            z[(i + 1) :] = np.nan  # set all next values of the water level series to nan
+            break
+
+    # determining levelling time based on the first nan of the series TODO: Class-functie maken _determine_levelling_time()
+    if len(np.argwhere(np.isnan(z))):
+        levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
+    else:
+        levelling_time = t[-1]
+
+    return levelling_time, t, z
+
+
 def determine_route_to_closest_waiting_area(vessel, waiting_area_A, waiting_area_B):
     """
     DOCUMENTATION HERE
@@ -176,7 +328,8 @@ def _update_lock_vessel_planning(lock, vessel_index, passage_information):
             continue
         lock.vessel_planning.loc[vessel_index, key] = value
 
-def _get_time_index_of_hydrodynamic_data(env, time):
+
+def _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time):
     """Gets the time index in the hydrodynamic data closest to a time
 
     Parameters
@@ -192,7 +345,7 @@ def _get_time_index_of_hydrodynamic_data(env, time):
         the time index of the hydrodynamic data closest to the time
     """
     time_index = 0
-    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+    if hydrodynamic_information_path is None:
         return time_index
 
     # determine the time_index
@@ -203,7 +356,8 @@ def _get_time_index_of_hydrodynamic_data(env, time):
 
     return time_index
 
-def _get_station_index_of_hydrodynamic_data(env, node):
+
+def _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node):
     """Gets the node's station index in the hydrodynamic data
 
     Parameters
@@ -220,7 +374,7 @@ def _get_station_index_of_hydrodynamic_data(env, node):
     """
 
     station_index = 0
-    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+    if hydrodynamic_information_path is None:
         return station_index
 
     if isinstance(hydrodynamic_data, xr.Dataset):
@@ -230,7 +384,8 @@ def _get_station_index_of_hydrodynamic_data(env, node):
 
     return station_index
 
-def _get_hydrodynamic_data_value(env, time, node, hydrodynamic_property):
+
+def _get_hydrodynamic_data_value(hydrodynamic_information_path, time, node, hydrodynamic_property):
     """Gets the value of a hydrodynamic property at a certain time and node
 
     Parameters
@@ -250,12 +405,12 @@ def _get_hydrodynamic_data_value(env, time, node, hydrodynamic_property):
         the value of a hydrodynamic property at the specified time and node
     """
     value = np.nan
-    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+    if hydrodynamic_information_path is None:
         return value
 
     # determine the time_index and station_inex
-    time_index = _get_time_index_of_hydrodynamic_data(env, time)
-    station_index = _get_station_index_of_hydrodynamic_data(env, node)
+    time_index = _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time)
+    station_index = _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node)
 
     # determine the property
     if isinstance(hydrodynamic_data, xr.Dataset):
@@ -266,7 +421,7 @@ def _get_hydrodynamic_data_value(env, time, node, hydrodynamic_property):
     return value
 
 
-def _get_hydrodynamic_data_series(env, time, node, hydrodynamic_property):
+def _get_hydrodynamic_data_series(hydrodynamic_information_path, time, node, hydrodynamic_property):
     """Gets the time series of a hydrodynamic property at a certain node from a certain time onwards
 
     Parameters
@@ -286,12 +441,12 @@ def _get_hydrodynamic_data_series(env, time, node, hydrodynamic_property):
         the time series of a hydrodynamic property at the specified node from the specified time onwards
     """
     series = np.array([np.nan])
-    if env.vessel_traffic_service.hydrodynamic_information_path is None:
+    if hydrodynamic_information_path is None:
         return series
 
     # determine the time_index and station_inex
-    time_index = _get_time_index_of_hydrodynamic_data(env, time)
-    station_index = _get_station_index_of_hydrodynamic_data(env, node)
+    time_index = _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time)
+    station_index = _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node)
 
     # determine the property
     if isinstance(hydrodynamic_data, xr.Dataset):
@@ -300,6 +455,7 @@ def _get_hydrodynamic_data_series(env, time, node, hydrodynamic_property):
         series = hydrodynamic_data[hydrodynamic_property][station_index][time_index:].copy()
 
     return series
+
 
 class IsLockChamberOperator:
     """The lock chamber operator operates one chamber of the lock."""
@@ -832,8 +988,10 @@ class IsLockChamberOperator:
             node = self.start_node
         else:
             node = self.end_node
-        time_index = _get_time_index_of_hydrodynamic_data(self.env, time)
-        new_water_level = _get_hydrodynamic_data_value(self.env, time, node, 'Water level')
+        time_index = _get_time_index_of_hydrodynamic_data(self.env.vessel_traffic_service.hydrodynamic_information_path, time)
+        new_water_level = _get_hydrodynamic_data_value(
+            self.env.vessel_traffic_service.hydrodynamic_information_path, time, node, "Water level"
+        )
         self.water_level[time_index:] = new_water_level
 
         # log the end of the event
@@ -960,7 +1118,7 @@ class IsLockChamberOperator:
 
         # determine the water level in the lock chamber
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        time_index = _get_time_index_of_hydrodynamic_data(self.env,time)
+        time_index = _get_time_index_of_hydrodynamic_data(self.env.vessel_traffic_service.hydrodynamic_information_path, time)
         wlev_chamber = self.water_level[time_index]
 
         # determine to_level
@@ -968,7 +1126,9 @@ class IsLockChamberOperator:
             to_level = self.node_open
 
         # determine the water level in the harbour
-        wlev_harbour = _get_hydrodynamic_data_value(self.env, time, to_level, "Water level")
+        wlev_harbour = _get_hydrodynamic_data_value(
+            self.env.vessel_traffic_service.hydrodynamic_information_path, time, to_level, "Water level"
+        )
 
         # determine the direction to which the vessels are sailing out
         if to_level == self.start_node:
@@ -983,8 +1143,10 @@ class IsLockChamberOperator:
             self.node_open = to_level
 
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        time_index = _get_time_index_of_hydrodynamic_data(self.env,time)
-        wlev_series_node_door_open = _get_hydrodynamic_data_series(self.env,time,self.node_open,"Water level")
+        time_index = _get_time_index_of_hydrodynamic_data(self.env.vessel_traffic_service.hydrodynamic_information_path, time)
+        wlev_series_node_door_open = _get_hydrodynamic_data_series(
+            self.env.vessel_traffic_service.hydrodynamic_information_path, time, self.node_open, "Water level"
+        )
         self.water_level[time_index:] = wlev_series_node_door_open
 
         # make sure that all lock elements are requested, so only one process is occurring
@@ -1282,13 +1444,111 @@ class IsLockChamberOperator:
         t_start = np.datetime64(levelling_start)
         t_stop = np.datetime64(levelling_stop)
         if not direction:
-            wlev_A = _get_hydrodynamic_data_value(self.env, t_start, self.start_node, "Water level")
-            wlev_B = _get_hydrodynamic_data_value(self.env, t_stop, self.end_node, "Water level")
+            wlev_A = _get_hydrodynamic_data_value(
+                self.env.vessel_traffic_service.hydrodynamic_information_path, t_start, self.start_node, "Water level"
+            )
+            wlev_B = _get_hydrodynamic_data_value(
+                self.env.vessel_traffic_service.hydrodynamic_information_path, t_stop, self.end_node, "Water level"
+            )
         else:
-            wlev_A = _get_hydrodynamic_data_value(self.env, t_stop, self.start_node, "Water level")
-            wlev_B = _get_hydrodynamic_data_value(self.env, t_start, self.end_node, "Water level")
+            wlev_A = _get_hydrodynamic_data_value(
+                self.env.vessel_traffic_service.hydrodynamic_information_path, t_stop, self.start_node, "Water level"
+            )
+            wlev_B = _get_hydrodynamic_data_value(
+                self.env.vessel_traffic_service.hydrodynamic_information_path, t_start, self.end_node, "Water level"
+            )
 
         return wlev_A, wlev_B
+
+    def determine_levelling_time(self, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
+        """
+        Calculates the levelling time of a lock operation
+
+        Parameters
+        ----------
+        t_start :
+            the start time of the levelling process
+        direction : int
+            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        wlev_init : float
+            initial water level in the lock chamber
+        same_direction : bool
+            states if the levelling process is predicted in the same direction as the last lock operation (True) or not (False)
+        prediction : bool
+            states if the levelling process is only predicted (True) or executed (False)
+
+        Returns
+        -------
+        levelling_time : float
+            the time duration of the levelling process
+        t : list of float
+            the time series of the levelling process
+        z : list of float
+            the water level difference series over the time of the levelling process
+        """
+        # TODO: functie maken om tstart om te zetten (met _to_array)
+        # TODO: Bij andere klasses altijd checken of iets een datetime.datetime is. En als dit niet zo is een error inbouwen of hem gelijk omzetten.
+        dt = self.time_step
+        t_final = 3600  # maximum levelling time has been set to an hour
+        t = np.arange(0, t_final + float(dt), float(dt))
+
+        # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
+        # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
+        if self.env.vessel_traffic_service.hydrodynamic_information_path is None:
+            levelling_time = self.levelling_time
+            z = np.zeros(len(t))
+            return levelling_time, t, z
+
+        z, H_A, H_B = calculate_z(
+            t=t,
+            t_start=t_start,
+            direction=direction,
+            wlev_init=wlev_init,
+            operation_index=operation_index,
+            operation_planning=self.operation_planning,
+            hydrodynamic_information_path=self.env.vessel_traffic_service.hydrodynamic_information_path,
+            start_node=self.start_node,
+            end_node=self.end_node,
+            node_open=self.node_open,
+            epoch=self.env.epoch,
+        )
+
+        # if a function has been included to predict the levelling time based on the water level difference: calculate the levelling time based on the initial water level difference
+        if callable(self.levelling_time):
+            levelling_time = self.levelling_time(z[0])
+            return levelling_time, t, z
+
+        # if no function has been included: compute the levelling time based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
+        levelling_time, t, z = levelling_time_equation(
+            t=t,
+            z=z,
+            lock_length=self.length,
+            lock_width=self.width,
+            disch_coeff=self.disch_coeff,
+            gate_opening_time=self.gate_opening_time,
+            opening_area=self.opening_area,
+            t_start=t_start,
+            dt=dt,
+            direction=direction,
+            water_level_difference_limit_to_open_doors=self.water_level_difference_limit_to_open_doors,
+            prediction=prediction,
+            H_A=H_A,
+            H_B=H_B,
+        )
+
+        # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber
+        if not prediction:
+            # TODO: de self.water_level wordt niet gebruikt, maar is wel leuk om als logging terug te zien na een berekening. Nadenken of we dat zo willen laten, of anders willen bijhouden.
+            t_final = t_start + np.timedelta64(int(levelling_time))
+            t_index_final = _get_time_index_of_hydrodynamic_data(
+                self.env.vessel_traffic_service.hydrodynamic_information_path, t_final
+            )
+            if not direction:
+                self.water_level[t_index_final:] = H_B[t_index_final:].copy()
+            else:
+                self.water_level[t_index_final:] = H_A[t_index_final:].copy()
+
+        return levelling_time, t, z
 
 
 class HasLockPlanning:
@@ -2707,7 +2967,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         assert start_node != end_node
 
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        wlev_series = _get_hydrodynamic_data_series(self.env, time, self.node_open, 'Water level')
+        wlev_series = _get_hydrodynamic_data_series(
+            self.env.vessel_traffic_service.hydrodynamic_information_path, time, self.node_open, "Water level"
+        )
         self.water_level = wlev_series
 
         # TODO: in functie zetten.
@@ -2849,147 +3111,6 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             return (self.start_node, self.end_node)
         else:
             return (self.end_node, self.start_node)
-
-    def determine_levelling_time(self, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
-        """
-        Calculates the levelling time of a lock operation
-
-        Parameters
-        ----------
-        t_start :
-            the start time of the levelling process
-        direction : int
-            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        wlev_init : float
-            initial water level in the lock chamber
-        same_direction : bool
-            states if the levelling process is predicted in the same direction as the last lock operation (True) or not (False)
-        prediction : bool
-            states if the levelling process is only predicted (True) or executed (False)
-
-        Returns
-        -------
-        levelling_time : float
-            the time duration of the levelling process
-        t : list of float
-            the time series of the levelling process
-        z : list of float
-            the water level difference series over the time of the levelling process
-        """
-        # TODO: functie maken om tstart om te zetten (met _to_array)
-        # TODO: Bij andere klasses altijd checken of iets een datetime.datetime is. En als dit niet zo is een error inbouwen of hem gelijk omzetten.
-
-        # set default time and water level difference series
-        dt = self.time_step
-        t_final = 3600 # maximum levelling time has been set to an hour
-        t = np.arange(0, t_final + float(dt), float(dt))
-        z = np.zeros_like(t)
-
-        # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is None:
-            levelling_time = self.levelling_time
-            return levelling_time, t, z
-
-        # convert given t_start into np.datetime64 (this is required to communicate with the hydrodynamic data via the NetCDF package)
-        if isinstance(t_start,float):
-            t_start = np.datetime64(datetime.datetime.fromtimestamp(t_start))
-        elif isinstance(t_start,datetime.datetime):
-            t_start = np.datetime64(t_start)
-        elif isinstance(t_start,pd.Timestamp):
-            t_start = np.array([t_start], dtype=np.datetime64)[0]
-
-        # determine the actual water levels
-        time_index = _get_time_index_of_hydrodynamic_data(self.env,t_start)
-        t_simulation_start = np.datetime64(self.env.epoch)
-        H_A = _get_hydrodynamic_data_series(self.env, t_simulation_start, self.start_node, "Water level")
-        H_B = _get_hydrodynamic_data_series(self.env, t_simulation_start, self.end_node, "Water level")
-        H_A_init = H_A[time_index]
-        H_B_init = H_B[time_index]
-
-        if wlev_init is None:
-            last_operations = self.operation_planning[self.operation_planning.index < operation_index]
-            if not last_operations.empty:
-                last_operation = last_operations.iloc[-1]
-                last_operation_direction = last_operation.direction
-                if not last_operation_direction:
-                    wlev_init = H_B_init
-                else:
-                    wlev_init = H_A_init
-
-            elif self.node_open == self.start_node:
-                wlev_init = H_A_init
-            else:
-                wlev_init = H_B_init
-
-        if not direction:
-            z[0] = H_B_init - wlev_init
-
-        else:
-            z[0] = H_A_init - wlev_init
-
-        # if a function has been included to predict the levelling time based on the water level difference: calculate the levelling time based on the initial water level difference
-        if callable(self.levelling_time):
-            levelling_time = self.levelling_time(z[0])
-            return levelling_time, t, z
-
-        # if no function has been included: compute the levelling time based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
-        A_ch = self.lock_length * self.lock_width # surface area of the lock chamber [m^2] (constant over time)
-        m = self.disch_coeff # discharge coefficient [-] (constant over time)
-        g = gravitational_acceleration # gravitational acceleration [m/(s^2)] (constant over time)
-        T1 = self.gate_opening_time # time to open the gate [s] (constant over time)
-        A_s = np.linspace(0, self.opening_area, int(T1 / float(dt))) # sluice opening area over time when opening [m^2] (time-dependent)
-        A_s = np.append(A_s, [self.opening_area] * (len(z) - len(A_s))) # sluice opening over full levelling process [m^2] (time-dependent)
-        H_time = hydrodynamic_times.astype(float) # time series of the hydrodynamic data [s]
-
-        # time-integration by (self-coded) Euler's method TODO Checken of we een standaard solver kunnen gebruiken. En of we dit algoritme los kunnen maken van de klasse.
-        for i in range(len(t) - 1):
-            H_Ai = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A) # water level at side A at time = i
-            H_Aii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_A) # water level at side A at time = i + 1
-            H_Bi = np.interp((np.timedelta64(int(i * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B) # water level at side B at time = i
-            H_Bii = np.interp((np.timedelta64(int((i + 1) * float(dt) * 10 ** 6), 'us') + t_start - np.datetime64('1970-01-01')) / np.timedelta64(1, 'us'), H_time, H_B) # water level at side B at time = i + 1
-            deltaH_A = H_Aii - H_Ai # water level difference at side A between time = i and time = i + 1
-            deltaH_B = H_Bii - H_Bi # water level difference at side B between time = i and time = i + 1
-
-            # determine the contribution to the change in water level difference outside of the lock (i.e., due to tides) in the water level difference at time = i + 1
-            if not direction:
-                to_wlev_change = - deltaH_B
-            else:
-                to_wlev_change = - deltaH_A
-
-            # calculate change in water level difference between time = i and time = i + 1
-            z_i = abs(z[i])  # absolute water level difference at time = i
-
-            dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch # change in water level difference over time [m/s]
-            if z[i] < 0: # correct if water level difference is negative
-                dz_dt = -dz_dt
-            dz = dz_dt * float(dt) + to_wlev_change
-
-            # calculate the new water level difference at time = i + 1
-            z[i + 1] = z[i] + dz
-            if np.sign(z[i + 1]) != np.sign(z[i]): # prevents overshooting of the water level difference
-                z[i + 1] = 0
-
-            if np.abs(z[i + 1]) <= self.water_level_difference_limit_to_open_doors: # breaks the integration if the water level difference is smaller than a default 5 cm (the last 5 cm of water level difference takes long to overcome, so lock master opens doors)
-                z[(i + 1):] = np.nan # set all next values of the water level series to nan
-                break
-
-        # determining levelling time based on the first nan of the series TODO: Class-functie maken _determine_levelling_time()
-        if len(np.argwhere(np.isnan(z))):
-            levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
-        else:
-            levelling_time = t[-1]
-
-        # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber
-        if not prediction:
-            # TODO: de self.water_level wordt niet gebruikt, maar is wel leuk om als logging terug te zien na een berekening. Nadenken of we dat zo willen laten, of anders willen bijhouden.
-            t_final = t_start + np.timedelta64(int(levelling_time))
-            t_index_final = _get_time_index_of_hydrodynamic_data(self.env, t_final)
-            if not direction:
-                self.water_level[t_index_final:] = H_B[t_index_final:].copy()
-            else:
-                self.water_level[t_index_final:] = H_A[t_index_final:].copy()
-
-        return levelling_time, t, z
 
 
 class IsLockMaster(SimpyObject, HasLockPlanning):
