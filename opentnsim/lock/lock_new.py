@@ -204,7 +204,6 @@ def determine_route_to_closest_waiting_area(vessel, waiting_area_A, waiting_area
         elif origin == waiting_area_B.edge[0]:
             waiting_area_node = waiting_area_B.edge[1]
             break
-
     if waiting_area_node is not None:
         route_to_waiting_area = vessel.determine_route_to_target_node(target_node=waiting_area_node)
     else:
@@ -750,12 +749,15 @@ class IsLockChamberOperator:
 
         # remove functions specific to passing the lock chamber
         remove_functions = [lock.allow_vessel_to_sail_into_lock, lock.initiate_levelling, lock.allow_vessel_to_sail_out_of_lock]
-        for function in vessel.on_pass_edge_functions:
+        remove_on_pass_edge_functions = []
+        for index, function in enumerate(vessel.on_pass_edge_functions):
             if isinstance(function, functools.partial):
                 if function.func in remove_functions:
-                    vessel.on_pass_edge_functions.remove(function)
+                    remove_on_pass_edge_functions.append(function)
             elif function in remove_functions:
-                vessel.on_pass_edge_functions.remove(function)
+                remove_on_pass_edge_functions.append(function)
+        for function in remove_on_pass_edge_functions:
+            vessel.on_pass_edge_functions.remove(function)
 
         # determine if the lock has to be levelled
         self.prepare_next_lock_operation(lock, operation_index, direction, vessel)
@@ -2468,9 +2470,15 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
         # find the lock complex object that is associated with the registration node
         lock = _get_lock_object_on_registration_node(self.multidigraph, origin)
-        # if a lock complex object is found, request registration to the lock master of the lock complex
-        if lock:
-            yield from lock.register_vessel(self)
+        if not lock:
+            return
+
+        upcoming_locks = self._find_upcoming_locks()
+        for _,upcoming_lock in upcoming_locks.items():
+            if lock == upcoming_lock:
+                # if a lock complex object is found, request registration to the lock master of the lock complex
+                yield from lock.register_vessel(self)
+                break
 
     def sail_to_waiting_area(self, origin, destination):
         """
