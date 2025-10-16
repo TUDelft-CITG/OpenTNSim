@@ -28,6 +28,7 @@ from shapely.ops import transform
 from opentnsim import core, graph
 from opentnsim import model
 from opentnsim.graph import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
+from opentnsim.lock.hdyrodanamic_data_manager import HydrodynamicDataManager
 
 # spatial libraries
 import networkx as nx
@@ -96,18 +97,20 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         self.vertical_tidal_restrictions_condition_df = self.vertical_tidal_restrictions_condition_df.reset_index(drop=True)
 
         if self.hydrodynamic_information_path is not None:
-            global hydrodynamic_data
+            hydro_manager = HydrodynamicDataManager()
             if isinstance(hydrodynamic_information_path,str):
-                hydrodynamic_data = netCDF4.Dataset(self.hydrodynamic_information_path)
+                hydro_manager.hydrodynamic_data = netCDF4.Dataset(self.hydrodynamic_information_path)
             else:
-                hydrodynamic_data = hydrodynamic_information
+                hydro_manager.hydrodynamic_data = hydrodynamic_information
 
             global hydrodynamic_times
             self.hydrodynamic_start_time = hydrodynamic_start_time
             if isinstance(hydrodynamic_information_path, str):
-                self.hydrodynamic_times = hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + hydrodynamic_start_time
+                self.hydrodynamic_times = hydrodynamic_times = (
+                    hydro_manager.hydrodynamic_data["TIME"][:].data.astype("timedelta64[m]") + hydrodynamic_start_time
+                )
             else:
-                self.hydrodynamic_times = hydrodynamic_data['TIME'][:]
+                self.hydrodynamic_times = hydro_manager.hydrodynamic_data["TIME"][:]
 
         if isinstance(vessel_speed_information_path, str):
             with open(vessel_speed_information_path, "rb") as file:
@@ -514,8 +517,8 @@ class VesselTrafficService(graph.HasMultiDiGraph):
                 anchorage_reachable = True
                 route_to_anchorage = nx.dijkstra_path(vessel.multidigraph, node, node_anchorage)
                 for node_on_route in route_to_anchorage:
-                    station_index = list(hydrodynamic_data['STATION'][:]).index(node_on_route)
-                    min_water_level = np.min(hydrodynamic_data['Water level'][:,station_index].data)
+                    station_index = list(HydrodynamicDataManager().hydrodynamic_data["STATION"][:]).index(node_on_route)
+                    min_water_level = np.min(HydrodynamicDataManager().hydrodynamic_data["Water level"][:, station_index].data)
                     _, _, _, required_water_depth, _, MBL = self.provide_ukc_clearance(vessel,node)
                     if min_water_level - MBL < required_water_depth:
                         anchorage_reachable = False
@@ -554,20 +557,27 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         return node_anchorage
 
     def provide_governing_current_velocity(self,vessel,node,time_start_index,time_end_index):
-        station_index = list(hydrodynamic_data['STATION'][:]).index(node)
+        station_index = list(HydrodynamicDataManager().hydrodynamic_data["STATION"][:]).index(node)
         times = hydrodynamic_times[time_start_index:time_end_index]
         start_time = times[0]
         end_time = times[-1]
         time_step = times[1]-times[0]
-        relative_layer_height = hydrodynamic_data['LAYER'][:].data
-        current_velocity = hydrodynamic_data["Primary current velocity"][time_start_index:time_end_index, station_index].data
+        relative_layer_height = HydrodynamicDataManager().hydrodynamic_data["LAYER"][:].data
+        current_velocity = (
+            HydrodynamicDataManager()
+            .hydrodynamic_data["Primary current velocity"][time_start_index:time_end_index, station_index]
+            .data
+        )
 
         def depth_averaged_current_velocity(interpolation_depth, times, relative_layer_height, current_velocity, station_index):
             layer_boundaries = []
             average_current_velocity = []
             number_of_layers = len(relative_layer_height)
-            water_depth = (-1*hydrodynamic_data['MBL'][:,station_index].data + hydrodynamic_data['Water level'][:,station_index].data)
-            relative_water_depth = np.outer(water_depth,relative_layer_height)
+            water_depth = (
+                -1 * HydrodynamicDataManager().hydrodynamic_data["MBL"][:, station_index].data
+                + HydrodynamicDataManager().hydrodynamic_data["Water level"][:, station_index].data
+            )
+            relative_water_depth = np.outer(water_depth, relative_layer_height)
             cumulative_water_depth = np.cumsum(relative_water_depth, axis=1)
 
             for ti in range(len(times)):
@@ -592,7 +602,7 @@ class VesselTrafficService(graph.HasMultiDiGraph):
 
             return average_current_velocity
 
-        if "LAYER" in list(hydrodynamic_data["Current velocity"].dimensions):
+        if "LAYER" in list(HydrodynamicDataManager().hydrodynamic_data["Current velocity"].dimensions):
             if vessel._T <= 5:
                 current_velocity = depth_averaged_current_velocity(5, times, relative_layer_height, current_velocity, station_index)
             elif vessel._T <= 15:
@@ -678,10 +688,10 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         return restriction, no_tidal_window
 
     def provide_water_depth(self,vessel,node,delay=0):
-        node_index = list(hydrodynamic_data['STATION'][:]).index(node)
+        node_index = list(HydrodynamicDataManager().hydrodynamic_data["STATION"][:]).index(node)
         time_index = np.absolute(hydrodynamic_times - pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + delay)).to_datetime64()).argmin()
-        water_level = hydrodynamic_data['Water level'][time_index,node_index].data
-        MBL = hydrodynamic_data['MBL'][time_index,node_index].data
+        water_level = HydrodynamicDataManager().hydrodynamic_data["Water level"][time_index, node_index].data
+        MBL = HydrodynamicDataManager().hydrodynamic_data["MBL"][time_index, node_index].data
         available_water_depth = water_level - MBL
         return MBL,water_level,available_water_depth
 
@@ -760,11 +770,13 @@ class VesselTrafficService(graph.HasMultiDiGraph):
 
         # Start of calculation by looping over the nodes of the route
         for route_index, node_name in enumerate(nodes_of_interest):
-            station_index = list(hydrodynamic_data['STATION'][:]).index(node_name)
+            station_index = list(HydrodynamicDataManager().hydrodynamic_data["STATION"][:]).index(node_name)
             sailing_time_to_next_node = vessel.env.vessel_traffic_service.provide_sailing_time(vessel,route[:(route_index+1)])
             time_correction_index = int(np.round(sailing_time_to_next_node['Time'].sum() / (t_step/np.timedelta64(1, 's'))))
-            water_level = hydrodynamic_data['Water level'][time_start_index:time_end_index,station_index].data
-            MBL = hydrodynamic_data['MBL'][time_start_index:time_end_index,station_index].data
+            water_level = (
+                HydrodynamicDataManager().hydrodynamic_data["Water level"][time_start_index:time_end_index, station_index].data
+            )
+            MBL = HydrodynamicDataManager().hydrodynamic_data["MBL"][time_start_index:time_end_index, station_index].data
             _, _, _, required_water_depth, _, _ = self.provide_ukc_clearance(vessel,node_name,delay)
             water_depth = water_level - MBL
             net_ukc = pd.concat(
@@ -803,8 +815,10 @@ class VesselTrafficService(graph.HasMultiDiGraph):
         net_ukcs = self.provide_minimum_available_water_depth_along_route(vessel, route, time_start, time_end, delay)
         new_net_ukcs = pd.DataFrame()
         for station in list(dict.fromkeys(net_ukcs['station'])):
-            station_index = list(hydrodynamic_data['STATION'][:]).index(station)
-            tidal_periods = self.read_tidal_periods(hydrodynamic_data,'Vertical tidal periods',station_index)
+            station_index = list(HydrodynamicDataManager().hydrodynamic_data["STATION"][:]).index(station)
+            tidal_periods = self.read_tidal_periods(
+                HydrodynamicDataManager().hydrodynamic_data, "Vertical tidal periods", station_index
+            )
             if tidal_periods == None:
                 tidal_periods = [[hydrodynamic_times[0],'Flood start'],
                                  [hydrodynamic_times[-1],'Flood stop']]
@@ -909,12 +923,14 @@ class VesselTrafficService(graph.HasMultiDiGraph):
     def provide_horizontal_tidal_windows(self, vessel, route, time_start, time_end, delay=0, plot=False):
 
         def calculate_horizontal_tidal_window(vessel, time_start_index, time_end_index, current_velocity_station, critical_limits, restriction_type, flood=True, ebb=True,decreasing=False):
-            station_index = list(hydrodynamic_data['STATION'][:]).index(current_velocity_station)
+            station_index = list(HydrodynamicDataManager().hydrodynamic_data["STATION"][:]).index(current_velocity_station)
             time_step = hydrodynamic_times[1]-hydrodynamic_times[0]
             time_start_index = np.max([0,time_start_index-int(np.timedelta64(12,'h')/time_step)])
             currents_time = hydrodynamic_times[time_start_index:time_end_index]
             currents_data,_ = self.provide_governing_current_velocity(vessel,current_velocity_station,time_start_index,time_end_index)
-            tidal_periods = self.read_tidal_periods(hydrodynamic_data,'Horizontal tidal periods',station_index)
+            tidal_periods = self.read_tidal_periods(
+                HydrodynamicDataManager().hydrodynamic_data, "Horizontal tidal periods", station_index
+            )
             tidal_periods = [condition for condition in tidal_periods if condition[0] <= currents_time[-1] and condition[0] >= currents_time[0]]
             currents = pd.DataFrame({'Current velocity': currents_data}, index=currents_time)
             currents = abs(currents)

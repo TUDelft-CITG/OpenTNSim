@@ -28,6 +28,7 @@ from opentnsim import core
 from opentnsim.core import HasResource, Identifiable, Log, Movable, HasLength, SimpyObject, ExtraMetadata
 from opentnsim.graph import HasMultiDiGraph, get_length_of_edge
 from opentnsim.output import HasOutput
+from opentnsim.lock.hdyrodanamic_data_manager import HydrodynamicDataManager
 
 # Constants
 knots_to_ms = knots = 0.514444444
@@ -348,7 +349,7 @@ def _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time):
         return time_index
 
     # determine the time_index
-    if isinstance(hydrodynamic_data, xr.Dataset):
+    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
         time_index = (np.absolute(hydrodynamic_times - time).argmin().values)
     else:
         time_index = np.absolute(hydrodynamic_times - time).argmin()
@@ -376,10 +377,10 @@ def _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node)
     if hydrodynamic_information_path is None:
         return station_index
 
-    if isinstance(hydrodynamic_data, xr.Dataset):
-        station_index = np.where(np.array(list((hydrodynamic_data["STATION"].values))) == node)[0][0]
+    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
+        station_index = np.where(np.array(list((HydrodynamicDataManager().hydrodynamic_data["STATION"].values))) == node)[0][0]
     else:
-        station_index = np.where(np.array(list((hydrodynamic_data["STATION"]))) == node)[0]
+        station_index = np.where(np.array(list((HydrodynamicDataManager().hydrodynamic_data["STATION"]))) == node)[0]
 
     return station_index
 
@@ -412,10 +413,10 @@ def _get_hydrodynamic_data_value(hydrodynamic_information_path, time, node, hydr
     station_index = _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node)
 
     # determine the property
-    if isinstance(hydrodynamic_data, xr.Dataset):
-        value = hydrodynamic_data[hydrodynamic_property][station_index][time_index].values.copy()
+    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
+        value = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index].values.copy()
     else:
-        value = hydrodynamic_data[hydrodynamic_property][station_index][time_index].copy()
+        value = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index].copy()
 
     return value
 
@@ -448,10 +449,10 @@ def _get_hydrodynamic_data_series(hydrodynamic_information_path, time, node, hyd
     station_index = _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node)
 
     # determine the property
-    if isinstance(hydrodynamic_data, xr.Dataset):
-        series = hydrodynamic_data[hydrodynamic_property][station_index][time_index:].values.copy()
+    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
+        series = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index:].values.copy()
     else:
-        series = hydrodynamic_data[hydrodynamic_property][station_index][time_index:].copy()
+        series = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index:].copy()
 
     return series
 
@@ -2363,7 +2364,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             data=[], columns=["Speed"], index=pd.MultiIndex.from_arrays([[], []], names=("node_start", "node_stop"))
         )
 
-
     def _find_route_to_lock(self, lock):
         """Determines the route of a vessel to the lock
 
@@ -2385,7 +2385,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 break
         route_to_lock = route_to_come[:(index+1)]
         return route_to_lock
-
 
     def _find_upcoming_lock_registration_nodes(self):
         """
@@ -2610,8 +2609,12 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             # set the new water level for the lock if there is hydrodynamic data included in the simulation TODO: also this should preferably be included elsewhere and not here
             if self.env.vessel_traffic_service.hydrodynamic_information_path:
                 time_index = np.absolute(hydrodynamic_times - np.datetime64(doors_required_to_be_open) - np.timedelta64(int(lock.doors_opening_time), 's')).argmin()
-                station_index = np.where(np.array(list((hydrodynamic_data['STATION']))) == lock.node_open)[0]
-                lock.water_level[time_index:] = hydrodynamic_data['Water level'][station_index, time_index:]
+                station_index = np.where(
+                    np.array(list((HydrodynamicDataManager().hydrodynamic_data["STATION"]))) == lock.node_open
+                )[0]
+                lock.water_level[time_index:] = HydrodynamicDataManager().hydrodynamic_data["Water level"][
+                    station_index, time_index:
+                ]
 
     def wait_in_waiting_area(self, waiting_area):
         """
@@ -2913,16 +2916,19 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # TODO: capaciteit = 100. checken of deze info overbodig is doordat er al een lock_length is. En anders kijken of de capaciteit op oneindig kan.
         super().__init__(lock_complex=self, capacity=100, length=lock_length, remaining_length=lock_length, *args, **kwargs)
         if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            global hydrodynamic_data
+            hydro_manager = HydrodynamicDataManager()
             if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path,str):
-                hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
+                hydro_manager.hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
             else:
-                hydrodynamic_data = self.env.vessel_traffic_service.hydrodynamic_information
+                hydro_manager.hydrodynamic_data = self.env.vessel_traffic_service.hydrodynamic_information
             global hydrodynamic_times
             if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path, str):
-                hydrodynamic_times = hydrodynamic_data['TIME'][:].data.astype("timedelta64[m]") + self.env.vessel_traffic_service.hydrodynamic_start_time
+                hydrodynamic_times = (
+                    hydro_manager.hydrodynamic_data["TIME"][:].data.astype("timedelta64[m]")
+                    + self.env.vessel_traffic_service.hydrodynamic_start_time
+                )
             else:
-                hydrodynamic_times = hydrodynamic_data['TIME'][:]
+                hydrodynamic_times = hydro_manager.hydrodynamic_data["TIME"][:]
 
         if self.node_open is None:
             self.node_open = np.random.choice([start_node, end_node])
