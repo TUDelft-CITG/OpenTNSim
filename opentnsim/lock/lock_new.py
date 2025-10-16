@@ -1522,8 +1522,8 @@ class IsLockChamberOperator:
         levelling_time, t, z = levelling_time_equation(
             t=t,
             z=z,
-            lock_length=self.length,
-            lock_width=self.width,
+            lock_length=self.lock_length,
+            lock_width=self.lock_width,
             disch_coeff=self.disch_coeff,
             gate_opening_time=self.gate_opening_time,
             opening_area=self.opening_area,
