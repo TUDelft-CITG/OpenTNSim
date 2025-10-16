@@ -122,7 +122,7 @@ Attribution
 This Code of Conduct is adapted from `AutoEmulate
 <https://github.com/alan-turing-institute/autoemulate/tree/v1.1.1>`__, version v1.1.1.
 
-This `AutoEmulate` Code of Conduct itself is an adaptation from the `Contributor Covenant
+The `AutoEmulate` Code of Conduct itself is an adaptation from the `Contributor Covenant
 <https://www.contributor-covenant.org/version/2/0/code_of_conduct.html>`__, version 2.0. Its
 Community Impact Guidelines were inspired by `Mozilla's code of conduct enforcement ladder
 <https://github.com/mozilla/diversity>`__.
