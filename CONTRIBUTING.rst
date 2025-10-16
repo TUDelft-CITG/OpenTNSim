@@ -10,6 +10,13 @@
    - [ ] description of how to run tests (pytest)
    - [ ] how to add something to the backlog
    - [ ] what issue template to use for the backlog, and what labels to use
+   - [ ] add issue templates for (1) bugs, (2) features, (3) docs, (4) help wanted
+   - [ ] from the develop, create a feature branch for your work; once finished create a pull request to be reviewed
+
+   - matplotlib: https://matplotlib.org/devdocs/devel/contribute.html
+   - numpy: https://numpy.org/devdocs/dev/index.html
+   - autoemulate: https://github.com/alan-turing-institute/autoemulate/blob/main/CONTRIBUTING.md
+
 
 ============
 Contributing
