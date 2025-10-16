@@ -35,6 +35,16 @@ knots_to_ms = knots = 0.514444444
 gravitational_acceleration = 9.81
 
 
+def time_to_numpy(t_start):
+    if isinstance(t_start, float):
+        t_start = np.datetime64(datetime.datetime.fromtimestamp(t_start))
+    elif isinstance(t_start, datetime.datetime):
+        t_start = np.datetime64(t_start)
+    elif isinstance(t_start, pd.Timestamp):
+        t_start = np.array([t_start], dtype=np.datetime64)[0]
+    return t_start
+
+
 def calculate_z(
     t,
     t_start,
@@ -52,12 +62,7 @@ def calculate_z(
     z = np.zeros_like(t)
 
     # convert given t_start into np.datetime64 (this is required to communicate with the hydrodynamic data via the NetCDF package)
-    if isinstance(t_start, float):
-        t_start = np.datetime64(datetime.datetime.fromtimestamp(t_start))
-    elif isinstance(t_start, datetime.datetime):
-        t_start = np.datetime64(t_start)
-    elif isinstance(t_start, pd.Timestamp):
-        t_start = np.array([t_start], dtype=np.datetime64)[0]
+    t_start = time_to_numpy(t_start)
 
     # determine the actual water levels
     time_index = _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, t_start)
@@ -118,6 +123,7 @@ def levelling_time_equation(
     z : list of float
         the water level difference series over the time of the levelling process
     """
+    t_start = time_to_numpy(t_start)
     A_ch = lock_length * lock_width  # surface area of the lock chamber [m^2] (constant over time)
     m = disch_coeff  # discharge coefficient [-] (constant over time)
     g = gravitational_acceleration  # gravitational acceleration [m/(s^2)] (constant over time)
@@ -128,6 +134,8 @@ def levelling_time_equation(
 
     # time-integration by (self-coded) Euler's method TODO Checken of we een standaard solver kunnen gebruiken. En of we dit algoritme los kunnen maken van de klasse.
     for i in range(len(t) - 1):
+        if i == 37:
+            print(i)
         H_Ai = np.interp(
             (np.timedelta64(int(i * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01")) / np.timedelta64(1, "us"),
             H_time,
@@ -1494,7 +1502,7 @@ class IsLockChamberOperator:
         dt = self.time_step
         t_final = 3600  # maximum levelling time has been set to an hour
         t = np.arange(0, t_final + float(dt), float(dt))
-
+        t_start = time_to_numpy(t_start)
         # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
         # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
         if self.env.vessel_traffic_service.hydrodynamic_information_path is None:
