@@ -130,12 +130,10 @@ def levelling_time_equation(
     T1 = gate_opening_time  # time to open the gate [s] (constant over time)
     A_s = np.linspace(0, opening_area, int(T1 / float(dt)))  # sluice opening area over time when opening [m^2] (time-dependent)
     A_s = np.append(A_s, [opening_area] * (len(z) - len(A_s)))  # sluice opening over full levelling process [m^2] (time-dependent)
-    H_time = hydrodynamic_times.astype(float)  # time series of the hydrodynamic data [s]
+    H_time = HydrodynamicDataManager().hydrodynamic_times.astype(float)  # time series of the hydrodynamic data [s]
 
     # time-integration by (self-coded) Euler's method TODO Checken of we een standaard solver kunnen gebruiken. En of we dit algoritme los kunnen maken van de klasse.
     for i in range(len(t) - 1):
-        if i == 37:
-            print(i)
         H_Ai = np.interp(
             (np.timedelta64(int(i * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01")) / np.timedelta64(1, "us"),
             H_time,
@@ -357,10 +355,11 @@ def _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time):
         return time_index
 
     # determine the time_index
-    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
-        time_index = (np.absolute(hydrodynamic_times - time).argmin().values)
+    hydromanager = HydrodynamicDataManager()
+    if isinstance(hydromanager.hydrodynamic_data, xr.Dataset):
+        time_index = np.absolute(hydromanager.hydrodynamic_times - time).argmin().values
     else:
-        time_index = np.absolute(hydrodynamic_times - time).argmin()
+        time_index = np.absolute(hydromanager.hydrodynamic_times - time).argmin()
 
     return time_index
 
@@ -2616,13 +2615,14 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
             # set the new water level for the lock if there is hydrodynamic data included in the simulation TODO: also this should preferably be included elsewhere and not here
             if self.env.vessel_traffic_service.hydrodynamic_information_path:
-                time_index = np.absolute(hydrodynamic_times - np.datetime64(doors_required_to_be_open) - np.timedelta64(int(lock.doors_opening_time), 's')).argmin()
-                station_index = np.where(
-                    np.array(list((HydrodynamicDataManager().hydrodynamic_data["STATION"]))) == lock.node_open
-                )[0]
-                lock.water_level[time_index:] = HydrodynamicDataManager().hydrodynamic_data["Water level"][
-                    station_index, time_index:
-                ]
+                hydromanager = HydrodynamicDataManager()
+                time_index = np.absolute(
+                    hydromanager.hydrodynamic_times
+                    - np.datetime64(doors_required_to_be_open)
+                    - np.timedelta64(int(lock.doors_opening_time), "s")
+                ).argmin()
+                station_index = np.where(np.array(list((hydromanager.hydrodynamic_data["STATION"]))) == lock.node_open)[0]
+                lock.water_level[time_index:] = hydromanager.hydrodynamic_data["Water level"][station_index, time_index:]
 
     def wait_in_waiting_area(self, waiting_area):
         """
@@ -2929,14 +2929,13 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
                 hydro_manager.hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
             else:
                 hydro_manager.hydrodynamic_data = self.env.vessel_traffic_service.hydrodynamic_information
-            global hydrodynamic_times
             if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path, str):
-                hydrodynamic_times = (
+                hydro_manager.hydrodynamic_times = (
                     hydro_manager.hydrodynamic_data["TIME"][:].data.astype("timedelta64[m]")
                     + self.env.vessel_traffic_service.hydrodynamic_start_time
                 )
             else:
-                hydrodynamic_times = hydro_manager.hydrodynamic_data["TIME"][:]
+                hydro_manager.hydrodynamic_times = hydro_manager.hydrodynamic_data["TIME"][:]
 
         if self.node_open is None:
             self.node_open = np.random.choice([start_node, end_node])

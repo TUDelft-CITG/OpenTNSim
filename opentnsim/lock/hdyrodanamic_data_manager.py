@@ -6,15 +6,6 @@ class HydrodynamicDataManager:
         if cls._instance is None:
             cls._instance = super(HydrodynamicDataManager, cls).__new__(cls)
             cls._instance.hydrodynamic_data = None
+            cls._instance.hydrodynamic_times = None
+
         return cls._instance
-
-
-
-# main.py
-
-manager1 = HydrodynamicDataManager()
-manager2 = HydrodynamicDataManager()
-
-print(manager1.hydrodynamic_data)  # Output: None
-manager2.hydrodynamic_data = "Some data"
-print(manager1.hydrodynamic_data)  # Output: "Some data" (Same instance)
