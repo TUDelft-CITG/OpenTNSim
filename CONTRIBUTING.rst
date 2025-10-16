@@ -12,6 +12,7 @@
    - [ ] what issue template to use for the backlog, and what labels to use
    - [ ] add issue templates for (1) bugs, (2) features, (3) docs, (4) help wanted
    - [ ] from the develop, create a feature branch for your work; once finished create a pull request to be reviewed
+   - [ ] determine a definition of done, and add it into the review process/requirements for a contribution to be accepted
 
    - matplotlib: https://matplotlib.org/devdocs/devel/contribute.html
    - numpy: https://numpy.org/devdocs/dev/index.html
