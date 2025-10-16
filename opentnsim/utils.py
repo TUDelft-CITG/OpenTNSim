@@ -22,6 +22,13 @@ import warnings
 import networkx as nx
 import shapely
 
+# time libraries
+import datetime
+
+# data libraries
+import numpy as np
+import pandas as pd
+
 # OpenTNSim
 import opentnsim
 
@@ -433,6 +440,27 @@ def info(G, n=None):
     info += "Neighbors: "
     info += " ".join(str(nbr) for nbr in G.neighbors(n))
     return info
+
+
+def time_to_numpy(t_start):
+    """Convert time to np.datetime64
+
+    Parameters
+    ----------
+    t_start : float, datetime.datetime, pd.Timestamp
+        the time to be converted
+    Returns
+    -------
+    t_start : np.datetime64
+        the converted time
+    """
+    if isinstance(t_start, float):
+        t_start = np.datetime64(datetime.datetime.fromtimestamp(t_start))
+    elif isinstance(t_start, datetime.datetime):
+        t_start = np.datetime64(t_start)
+    elif isinstance(t_start, pd.Timestamp):
+        t_start = np.array([t_start], dtype=np.datetime64)[0]
+    return t_start
 
 
 # // END-NOSCAN
