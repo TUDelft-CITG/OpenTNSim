@@ -18,7 +18,6 @@ import warnings
 # spatial libraries
 from collections import namedtuple
 import simpy
-import xarray as xr
 
 # from netCDF4 import Dataset
 from IPython.display import display
@@ -65,10 +64,14 @@ def calculate_z(
     t_start = time_to_numpy(t_start)
 
     # determine the actual water levels
-    time_index = _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, t_start)
+    time_index = HydrodynamicDataManager()._get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, t_start)
     t_simulation_start = np.datetime64(epoch)
-    H_A = _get_hydrodynamic_data_series(hydrodynamic_information_path, t_simulation_start, start_node, "Water level")
-    H_B = _get_hydrodynamic_data_series(hydrodynamic_information_path, t_simulation_start, end_node, "Water level")
+    H_A = HydrodynamicDataManager()._get_hydrodynamic_data_series(
+        hydrodynamic_information_path, t_simulation_start, start_node, "Water level"
+    )
+    H_B = HydrodynamicDataManager()._get_hydrodynamic_data_series(
+        hydrodynamic_information_path, t_simulation_start, end_node, "Water level"
+    )
     H_A_init = H_A[time_index]
     H_B_init = H_B[time_index]
 
@@ -333,135 +336,6 @@ def _update_lock_vessel_planning(lock, vessel_index, passage_information):
             warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
             continue
         lock.vessel_planning.loc[vessel_index, key] = value
-
-
-def _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time):
-    """Gets the time index in the hydrodynamic data closest to a time
-
-    Parameters
-    ----------
-    env : Simpy.Environment
-        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
-    time : np.datetime64
-        the time
-
-    Returns
-    -------
-    time_index : int
-        the time index of the hydrodynamic data closest to the time
-    """
-    time_index = 0
-    if hydrodynamic_information_path is None:
-        return time_index
-
-    # determine the time_index
-    hydromanager = HydrodynamicDataManager()
-    if isinstance(hydromanager.hydrodynamic_data, xr.Dataset):
-        time_index = np.absolute(hydromanager.hydrodynamic_times - time).argmin().values
-    else:
-        time_index = np.absolute(hydromanager.hydrodynamic_times - time).argmin()
-
-    return time_index
-
-
-def _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node):
-    """Gets the node's station index in the hydrodynamic data
-
-    Parameters
-    ----------
-    env : Simpy.Environment
-        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
-    node : str
-        the node name in the graph
-
-    Returns
-    -------
-    station_index : str
-        the time index of the hydrodynamic data closest to the time
-    """
-
-    station_index = 0
-    if hydrodynamic_information_path is None:
-        return station_index
-
-    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
-        station_index = np.where(np.array(list((HydrodynamicDataManager().hydrodynamic_data["STATION"].values))) == node)[0][0]
-    else:
-        station_index = np.where(np.array(list((HydrodynamicDataManager().hydrodynamic_data["STATION"]))) == node)[0]
-
-    return station_index
-
-
-def _get_hydrodynamic_data_value(hydrodynamic_information_path, time, node, hydrodynamic_property):
-    """Gets the value of a hydrodynamic property at a certain time and node
-
-    Parameters
-    ----------
-    env : Simpy.Environment
-        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
-    time : np.datetime64
-        the time
-    node : str
-        the node name in the graph
-    hydrodynamic_property : str
-        the hydrodynamic property: "Water level", "Current velocity", "Salinity" (if included in the hydrodynamic data)
-
-    Returns
-    -------
-    value : float
-        the value of a hydrodynamic property at the specified time and node
-    """
-    value = np.nan
-    if hydrodynamic_information_path is None:
-        return value
-
-    # determine the time_index and station_inex
-    time_index = _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time)
-    station_index = _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node)
-
-    # determine the property
-    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
-        value = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index].values.copy()
-    else:
-        value = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index].copy()
-
-    return value
-
-
-def _get_hydrodynamic_data_series(hydrodynamic_information_path, time, node, hydrodynamic_property):
-    """Gets the time series of a hydrodynamic property at a certain node from a certain time onwards
-
-    Parameters
-    ----------
-    env : Simpy.Environment
-        the simulation environment (to access the hydrodynamic data) TODO: hydrodynamic_data is a global value as hydrodynamic data can be quite big and you cannot open the data with every look up or add the data to the graph (this makes the simulation fail or very slow). Is this the way we want this or are the other methods?
-    time : np.datetime64
-        the time
-    node : str
-        the node name in the graph
-    hydrodynamic_property : str
-        the hydrodynamic property: "Water level", "Current velocity", "Salinity" (if included in the hydrodynamic data)
-
-    Returns
-    -------
-    series : float
-        the time series of a hydrodynamic property at the specified node from the specified time onwards
-    """
-    series = np.array([np.nan])
-    if hydrodynamic_information_path is None:
-        return series
-
-    # determine the time_index and station_inex
-    time_index = _get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, time)
-    station_index = _get_station_index_of_hydrodynamic_data(hydrodynamic_information_path, node)
-
-    # determine the property
-    if isinstance(HydrodynamicDataManager().hydrodynamic_data, xr.Dataset):
-        series = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index:].values.copy()
-    else:
-        series = HydrodynamicDataManager().hydrodynamic_data[hydrodynamic_property][station_index][time_index:].copy()
-
-    return series
 
 
 class IsLockChamberOperator:
@@ -998,8 +872,10 @@ class IsLockChamberOperator:
             node = self.start_node
         else:
             node = self.end_node
-        time_index = _get_time_index_of_hydrodynamic_data(self.env.vessel_traffic_service.hydrodynamic_information_path, time)
-        new_water_level = _get_hydrodynamic_data_value(
+        time_index = HydrodynamicDataManager()._get_time_index_of_hydrodynamic_data(
+            self.env.vessel_traffic_service.hydrodynamic_information_path, time
+        )
+        new_water_level = HydrodynamicDataManager()._get_hydrodynamic_data_value(
             self.env.vessel_traffic_service.hydrodynamic_information_path, time, node, "Water level"
         )
         self.water_level[time_index:] = new_water_level
@@ -1128,7 +1004,9 @@ class IsLockChamberOperator:
 
         # determine the water level in the lock chamber
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        time_index = _get_time_index_of_hydrodynamic_data(self.env.vessel_traffic_service.hydrodynamic_information_path, time)
+        time_index = HydrodynamicDataManager()._get_time_index_of_hydrodynamic_data(
+            self.env.vessel_traffic_service.hydrodynamic_information_path, time
+        )
         wlev_chamber = self.water_level[time_index]
 
         # determine to_level
@@ -1136,7 +1014,7 @@ class IsLockChamberOperator:
             to_level = self.node_open
 
         # determine the water level in the harbour
-        wlev_harbour = _get_hydrodynamic_data_value(
+        wlev_harbour = HydrodynamicDataManager()._get_hydrodynamic_data_value(
             self.env.vessel_traffic_service.hydrodynamic_information_path, time, to_level, "Water level"
         )
 
@@ -1153,8 +1031,10 @@ class IsLockChamberOperator:
             self.node_open = to_level
 
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        time_index = _get_time_index_of_hydrodynamic_data(self.env.vessel_traffic_service.hydrodynamic_information_path, time)
-        wlev_series_node_door_open = _get_hydrodynamic_data_series(
+        time_index = HydrodynamicDataManager()._get_time_index_of_hydrodynamic_data(
+            self.env.vessel_traffic_service.hydrodynamic_information_path, time
+        )
+        wlev_series_node_door_open = HydrodynamicDataManager()._get_hydrodynamic_data_series(
             self.env.vessel_traffic_service.hydrodynamic_information_path, time, self.node_open, "Water level"
         )
         self.water_level[time_index:] = wlev_series_node_door_open
@@ -1451,20 +1331,21 @@ class IsLockChamberOperator:
             the actual water level at side B [m] before or after the levelling process (depending on the direction of the operation)
 
         """
+        hydromanager = HydrodynamicDataManager()
         t_start = np.datetime64(levelling_start)
         t_stop = np.datetime64(levelling_stop)
         if not direction:
-            wlev_A = _get_hydrodynamic_data_value(
+            wlev_A = hydromanager._get_hydrodynamic_data_value(
                 self.env.vessel_traffic_service.hydrodynamic_information_path, t_start, self.start_node, "Water level"
             )
-            wlev_B = _get_hydrodynamic_data_value(
+            wlev_B = hydromanager._get_hydrodynamic_data_value(
                 self.env.vessel_traffic_service.hydrodynamic_information_path, t_stop, self.end_node, "Water level"
             )
         else:
-            wlev_A = _get_hydrodynamic_data_value(
+            wlev_A = hydromanager._get_hydrodynamic_data_value(
                 self.env.vessel_traffic_service.hydrodynamic_information_path, t_stop, self.start_node, "Water level"
             )
-            wlev_B = _get_hydrodynamic_data_value(
+            wlev_B = hydromanager._get_hydrodynamic_data_value(
                 self.env.vessel_traffic_service.hydrodynamic_information_path, t_start, self.end_node, "Water level"
             )
 
@@ -1550,7 +1431,7 @@ class IsLockChamberOperator:
         if not prediction:
             # TODO: de self.water_level wordt niet gebruikt, maar is wel leuk om als logging terug te zien na een berekening. Nadenken of we dat zo willen laten, of anders willen bijhouden.
             t_final = t_start + np.timedelta64(int(levelling_time))
-            t_index_final = _get_time_index_of_hydrodynamic_data(
+            t_index_final = HydrodynamicDataManager()._get_time_index_of_hydrodynamic_data(
                 self.env.vessel_traffic_service.hydrodynamic_information_path, t_final
             )
             if not direction:
@@ -2988,7 +2869,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         assert start_node != end_node
 
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        wlev_series = _get_hydrodynamic_data_series(
+        wlev_series = HydrodynamicDataManager()._get_hydrodynamic_data_series(
             self.env.vessel_traffic_service.hydrodynamic_information_path, time, self.node_open, "Water level"
         )
         self.water_level = wlev_series
