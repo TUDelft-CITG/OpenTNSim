@@ -16,9 +16,116 @@ from opentnsim.graph import HasMultiDiGraph, get_length_of_edge
 from opentnsim.constants import knots
 
 
-
 class IsLockChamberOperator:
-    """The lock chamber operator operates one chamber of the lock."""
+    """The lock chamber operator operates one chamber of the lock.
+
+    The operator communicates with the lock master through a mediator (LockComplex)
+    to coordinate vessel operations and lock state changes.
+    """
+
+    def __init__(self, lock_master, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lock_master = lock_master
+
+    def set_lock_master(self, lock_master):
+        """Set the lock master for communication with lock chamber."""
+        self.lock_master = lock_master
+
+    def _get_appropriate_waiting_area(self, direction):
+        """Get appropriate waiting area through lock master."""
+        if self.lock_master:
+            return self.lock_master._get_appropriate_waiting_area(direction)
+        else:
+            raise AttributeError("No lock master set for accessing waiting areas")
+
+    @property
+    def closing_doors_in_between_arrivals(self):
+        """Get policy on closing doors in between arrivals through lock master."""
+        if self.lock_master:
+            return self.lock_master.closing_doors_in_between_arrivals
+        else:
+            raise AttributeError("No lock master set for accessing door closing policy")
+
+    def close_doors_before_vessel_is_laying_still(self, operation_index):
+        """Get policy on closing doors before vessel is laying still through lock master."""
+        if self.lock_master:
+            return self.lock_master.close_doors_before_vessel_is_laying_still(operation_index)
+        else:
+            raise AttributeError("No lock master set for accessing door closing before vessel laying still policy")
+
+    @property
+    def _distance_to_lock(self):
+        """Get distance to lock through lock master."""
+        if self.lock_master:
+            return self.lock_master._distance_to_lock
+        else:
+            raise AttributeError("No lock master set for accessing distance to lock")
+
+    @property
+    def vessel_planning(self):
+        """Get vessel planning through lock master."""
+        if self.lock_master:
+            return self.lock_master.vessel_planning
+        else:
+            raise AttributeError("No lock master set for accessing vessel planning")
+
+    @property
+    def operation_planning(self):
+        """Get operation planning through lock master."""
+        if self.lock_master:
+            return self.lock_master.operation_planning
+        else:
+            raise AttributeError("No lock master set for accessing operation planning")
+
+    @property
+    def waiting_area_B(self):
+        """Get waiting area B through lock master."""
+        if self.lock_master:
+            return self.lock_master.waiting_area_B
+        else:
+            raise AttributeError("No lock master set for accessing waiting area B")
+
+    @property
+    def waiting_area_A(self):
+        """Get waiting area A through lock master."""
+        if self.lock_master:
+            return self.lock_master.waiting_area_A
+        else:
+            raise AttributeError("No lock master set for accessing waiting area A")
+
+    def _get_operation_planning(self):
+        """Get operation planning through lock master."""
+        if self.lock_master:
+            return self.lock_master.get_operation_planning()
+        else:
+            raise AttributeError("No lock master set for accessing operation planning")
+
+    def _notify_levelling_started(self, vessel, operation_index):
+        """Notify lock master that levelling has started."""
+        if self.lock_master:
+            self.lock_master.on_levelling_started(vessel, operation_index)
+
+    def _notify_vessel_entered_chamber(self, vessel, operation_index):
+        """Notify lock master that vessel has entered the chamber."""
+        if self.lock_master:
+            self.lock_master.on_vessel_entered_chamber(vessel, operation_index)
+
+    def _notify_vessel_exited_chamber(self, vessel, operation_index):
+        """Notify lock master that vessel has exited the chamber."""
+        if self.lock_master:
+            self.lock_master.on_vessel_exited_chamber(vessel, operation_index)
+
+    def register_vessel(self, vessel):
+        if self.lock_master:
+            yield from self.lock_master.register_vessel(vessel)
+
+    def calculate_sailing_time_to_waiting_area(self, vessel, direction, current_node=None, prognosis=False, overwrite=True):
+        if self.lock_master:
+            return self.lock_master.calculate_sailing_time_to_waiting_area(vessel, direction, current_node, prognosis, overwrite)
+
+    def calculate_vessel_departure_start_delay(self, vessel, operation_index, direction, prognosis=False):
+        if self.lock_master:
+            return self.lock_master.calculate_vessel_departure_start_delay(vessel, operation_index, direction, prognosis)
 
     def initiate_levelling(self, origin, destination, vessel=None, k=0):
         """
@@ -163,7 +270,7 @@ class IsLockChamberOperator:
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         """
         # get variables of the last lock operation: do nothing if it is not the last vessel that is sailing out of the lock
-        operation_planning = self.operation_planning
+        operation_planning = self.lock_master.operation_planning
         last_operation = operation_planning.loc[operation_index]
         vessels_in_last_operation = last_operation.vessels
         is_last_vessel_sailing_out = vessels_in_last_operation[-1] == vessel
@@ -186,7 +293,7 @@ class IsLockChamberOperator:
                 next_lockage_is_empty = True
 
         # an action should be done if the doors can be closed in between operations, or if the next lock operation is empty
-        if doors_can_be_closed and lock.closing_doors_in_between_operations:
+        if doors_can_be_closed and lock.lock_master.closing_doors_in_between_operations:
             door_closing_start_time = last_operation.time_potential_lock_door_closure_start
             delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start_time - current_time).total_seconds()])
 
@@ -198,7 +305,7 @@ class IsLockChamberOperator:
             closing_delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start_time - current_time).total_seconds()])
 
             # if there is an empty lock operation and no policy that doors are closed in between operations is active -> close doors and convert chamber afterwards
-            if not lock.closing_doors_in_between_operations:
+            if not lock.lock_master.closing_doors_in_between_operations:
                 convert_chamber_delay = closing_delay
                 closing_doors = True
             # if there is an empty lock operation but the policy that doors are closed in between operations is active -> close doors and convert chamber later, or convert chamber immediately if there is insufficient time
@@ -209,7 +316,7 @@ class IsLockChamberOperator:
                                                                            direction =1 - direction,
                                                                            doors_required_to_be_open = door_opening_start_time)
                 opening_delay = (np.max([0, (door_opening_start_time - current_time).total_seconds()]) - lock_operation_duration.total_seconds())
-                if opening_delay > (closing_delay + self.lock_complex.doors_closing_time):
+                if opening_delay > (closing_delay + self.lock_master.doors_closing_time):
                     convert_chamber_delay = opening_delay
                     closing_doors = False
                     vessel.env.process(lock.close_door(delay=closing_delay))
@@ -249,7 +356,7 @@ class IsLockChamberOperator:
 
         # unpacks the lock and vessel and operation planning
         lock = vessel.multidigraph.edges[origin, destination, k]["Lock"][0]
-        vessel_planning = lock.lock_complex.vessel_planning
+        vessel_planning = lock.vessel_planning
 
         # determines information of the lock operation
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -474,7 +581,7 @@ class IsLockChamberOperator:
         The conversion of the lock chamber
         """
         if operation_index is not None:
-            self.operation_planning.loc[operation_index, 'status'] = 'unavailable'
+            self.lock_master.operation_planning.loc[operation_index, "status"] = "unavailable"
 
         # if there is a delay -> yield time out
         start_delay = self.env.now
@@ -820,20 +927,20 @@ class IsLockChamberOperator:
         doors_can_be_closed : bool
             doors can be closed (True) or not (False)
         """
-        operation_planning = self.operation_planning
+        operation_planning = self.lock_master.operation_planning
         this_operation = operation_planning.loc[operation_index]
         vessels_in_operation = this_operation.vessels
         last_vessel_to_enter_lock = vessels_in_operation[-1] == vessel
 
         doors_can_be_closed = False
-        if not between_arrivals and not self.closing_doors_in_between_operations:
+        if not between_arrivals and not self.lock_master.closing_doors_in_between_operations:
             return doors_can_be_closed
         if between_arrivals and (not self.closing_doors_in_between_arrivals or not last_vessel_to_enter_lock):
             return doors_can_be_closed
         doors_can_be_closed = True
 
-        operation_planning = self.lock_complex.operation_planning
-        vessel_planning = self.lock_complex.vessel_planning
+        operation_planning = self.lock_master.operation_planning
+        vessel_planning = self.lock_master.vessel_planning
 
         if not between_arrivals:
             last_time_doors_closed = operation_planning.loc[operation_index, "time_potential_lock_door_closure_start"]
@@ -900,15 +1007,15 @@ class IsLockChamberOperator:
         operation_time : pd.Timedelta
             the time duration required to perform the lock operation
         """
-        operation_planning = self.lock_complex.operation_planning
-        vessel_planning = self.lock_complex.vessel_planning
+        operation_planning = self.lock_master.operation_planning
+        vessel_planning = self.lock_master.vessel_planning
         vessels = operation_planning.loc[operation_index, "vessels"]
         vessel_index = vessels.index(vessel)
 
         if between_arrivals and not self.closing_doors_in_between_arrivals:
             return False, None, None
 
-        if not between_arrivals and not self.closing_doors_in_between_operations:
+        if not between_arrivals and not self.lock_master.closing_doors_in_between_operations:
             return False, None, None
 
         last_lockage_was_empty = False
@@ -1077,7 +1184,7 @@ class IsLockChamberOperator:
             direction=direction,
             wlev_init=wlev_init,
             operation_index=operation_index,
-            operation_planning=self.operation_planning,
+            operation_planning=self.lock_master.operation_planning,
             hydrodynamic_information_path=self.env.vessel_traffic_service.hydrodynamic_information_path,
             start_node=self.start_node,
             end_node=self.end_node,
@@ -1102,7 +1209,7 @@ class IsLockChamberOperator:
             t_start=t_start,
             dt=dt,
             direction=direction,
-            water_level_difference_limit_to_open_doors=self.water_level_difference_limit_to_open_doors,
+            water_level_difference_limit_to_open_doors=self.lock_master.water_level_difference_limit_to_open_doors,
             prediction=prediction,
             H_A=H_A,
             H_B=H_B,
@@ -1121,9 +1228,8 @@ class IsLockChamberOperator:
                 self.water_level[t_index_final:] = H_A[t_index_final:].copy()
 
         return levelling_time, t, z
-    
 
-    
+
 class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph, ExtraMetadata):
     """Mixin class: lock complex has a lock chamber:
 
@@ -1164,24 +1270,25 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
     def __init__(
         self,
-        start_node,                                                         # a string which indicates the location of the first pair of lock doors
-        end_node,                                                           # a string which indicates the location of the second pair of lock doors
-        lock_length,                                                        # a float which contains the length of the lock chamber
-        lock_width,                                                         # a float which contains the width of the lock chamber
-        lock_depth,                                                         # a float which contains the depth of the lock chamber
-        k=0,                                                                # a int which is the identifier of the edge between two nodes in a multidigraph network
-        distance_from_start_node_to_lock_doors_A=0.0,                       # a float that is the distance between the start_node of the edge and the lock doors A [m]
-        distance_from_end_node_to_lock_doors_B=0.0,                         # a float that is the distance between the end_node of the edge and the lock doors B [m]
-        registration_nodes=[],                                              # a list of str with the node names at which the vessels request registration to the lock complex master
-        doors_opening_time=300.0,                                           # a float which contains the time it takes to open the doors [s]
-        doors_closing_time=300.0,                                           # a float which contains the time it takes to close the doors [s]
-        disch_coeff=0.4,                                                    # a float which contains the discharge coefficient of filling system
-        opening_area=12.0,                                                  # a float which contains the cross-sectional area of filling system [m^2]
-        opening_depth=None,                                                 # a float which contains the depth at which filling system is located [m^2]
-        speed_reduction_factor_lock_chamber=0.3,                            # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
-        start_sailing_out_time_after_doors_have_been_opened=0.0,            # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
-        sailing_time_before_opening_lock_doors=600.,                        # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
-        sailing_time_before_closing_lock_doors=120.,                        # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
+        start_node,  # a string which indicates the location of the first pair of lock doors
+        end_node,  # a string which indicates the location of the second pair of lock doors
+        lock_length,  # a float which contains the length of the lock chamber
+        lock_width,  # a float which contains the width of the lock chamber
+        lock_depth,  # a float which contains the depth of the lock chamber
+        lock_master=None,
+        k=0,  # a int which is the identifier of the edge between two nodes in a multidigraph network
+        distance_from_start_node_to_lock_doors_A=0.0,  # a float that is the distance between the start_node of the edge and the lock doors A [m]
+        distance_from_end_node_to_lock_doors_B=0.0,  # a float that is the distance between the end_node of the edge and the lock doors B [m]
+        registration_nodes=[],  # a list of str with the node names at which the vessels request registration to the lock complex master
+        doors_opening_time=300.0,  # a float which contains the time it takes to open the doors [s]
+        doors_closing_time=300.0,  # a float which contains the time it takes to close the doors [s]
+        disch_coeff=0.4,  # a float which contains the discharge coefficient of filling system
+        opening_area=12.0,  # a float which contains the cross-sectional area of filling system [m^2]
+        opening_depth=None,  # a float which contains the depth at which filling system is located [m^2]
+        speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
+        start_sailing_out_time_after_doors_have_been_opened=0.0,  # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
+        sailing_time_before_opening_lock_doors=600.0,  # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
+        sailing_time_before_closing_lock_doors=120.0,  # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
         minimum_time_between_operations_for_intermediate_door_closure=0.0,  # a float that is the minimum required time between lock operations that the lock doors can be both closed (to reduce salt intrusion) [s]
         sailing_distance_to_crossing_point=500.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
         passage_time_door=300.0,  # a float [s] ?
@@ -1189,12 +1296,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         sailing_out_time_gap_through_doors=180.0,  # a float that is the time gap after which the next vessel can sail out of the lock through the lock doors (after another vessel has sailed through to leave the lock)[s]
         sailing_in_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail into the lock (after another vessel has berthed) [s]
         sailing_out_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail out of the lock (after another vessel has deberthed) [s]
-
         sailing_in_speed_A=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
-        sailing_out_speed_A=2
-        * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
-        sailing_in_speed_B=2
-        * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
+        sailing_out_speed_A=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
+        sailing_in_speed_B=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
         sailing_out_speed_B=2
         * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
         minimum_manoeuvrability_speed=2
@@ -1268,7 +1372,15 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
         # TODO: als lockmaster een parent klasse is, zou lock_complex=self weg moeten kunnen.
         # TODO: capaciteit = 100. checken of deze info overbodig is doordat er al een lock_length is. En anders kijken of de capaciteit op oneindig kan.
-        super().__init__(lock_complex=self, capacity=100, length=lock_length, remaining_length=lock_length, *args, **kwargs)
+        super().__init__(
+            lock_master=lock_master,
+            capacity=100,
+            length=lock_length,
+            remaining_length=lock_length,
+            *args,
+            **kwargs,
+        )
+
         if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
             hydro_manager = HydrodynamicDataManager()
             if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path,str):
@@ -1286,7 +1398,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         if self.node_open is None:
             self.node_open = np.random.choice([start_node, end_node])
 
-        if self.closing_doors_in_between_operations:
+        if self.lock_master.closing_doors_in_between_operations:
             self.door_A_open = False
             self.door_B_open = False
         elif self.node_open == self.start_node:
@@ -1478,5 +1590,3 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             return (self.start_node, self.end_node)
         else:
             return (self.end_node, self.start_node)
-        
-        
