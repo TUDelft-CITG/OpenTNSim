@@ -20,6 +20,7 @@ from opentnsim import vessel_traffic_service as vessel_traffic_service_module
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import xarray as xr
 
 import pytest
 
@@ -239,6 +240,37 @@ def three_node_graph(two_node_graph, wgs84eqd_to_wgs84rad):
     three_node_graph.add_edge('+1','1', weight=1)
     return three_node_graph
 
+
+@pytest.fixture
+def five_node_graph(wgs84eqd_to_wgs84rad):
+    graph = nx.DiGraph()
+
+    # add nodes
+    graph.add_node("-2", geometry=transform(wgs84eqd_to_wgs84rad, Point(-350600, 0)))
+    graph.add_node("-1", geometry=transform(wgs84eqd_to_wgs84rad, Point(-15000, 0)))
+    graph.add_node("0", geometry=transform(wgs84eqd_to_wgs84rad, Point(-5000, 0)))
+    graph.add_node("1", geometry=transform(wgs84eqd_to_wgs84rad, Point(5000, 0)))
+    graph.add_node("+1", geometry=transform(wgs84eqd_to_wgs84rad, Point(15000, 0)))
+    graph.add_node("+2", geometry=transform(wgs84eqd_to_wgs84rad, Point(350600, 0)))
+
+    # add edges
+    graph.add_edge("-2", "-1", weight=1)
+    graph.add_edge("-1", "-2", weight=1)
+
+    graph.add_edge("-1", "0", weight=1)
+    graph.add_edge("0", "-1", weight=1)
+
+    graph.add_edge("0", "1", weight=1)
+    graph.add_edge("1", "0", weight=1)
+
+    graph.add_edge("1", "+1", weight=1)
+    graph.add_edge("+1", "1", weight=1)
+
+    graph.add_edge("+2", "+1", weight=1)
+    graph.add_edge("+1", "+2", weight=1)
+    return graph
+
+
 def mission(env, vessel):
     """
     Method that defines the mission of the vessel.
@@ -276,6 +308,22 @@ def three_node_env(three_node_graph):# start simpy environment
     env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=three_node_graph, crs_m="4087")
     return env
 
+
+@pytest.fixture
+def five_node_env(five_node_graph):  # start simpy environment
+    # start simpy environment
+    simulation_start = datetime.datetime(2025, 1, 1, 0, 0, 0)
+    env = simpy.Environment(initial_time=simulation_start.timestamp())
+    env.epoch = simulation_start
+
+    # add graph to environment
+    env.graph = five_node_graph
+
+    # add components important for locking to the environment
+    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=five_node_graph)
+    return env
+
+
 @pytest.fixture
 def vessel_1(two_node_env, Vessel):
     data_vessel_1 = {
@@ -310,6 +358,46 @@ def vessel_2(two_node_env, Vessel):
     }  
     vessel_2 = Vessel(**data_vessel_2)
     vessel_2.name = 'Vessel 2'
+    return vessel_2
+
+
+@pytest.fixture
+def vessel_3(five_node_env, Vessel):
+    # create vessels from dict
+    data_vessel_1 = {
+        "env": five_node_env,  # needed for simpy simulation
+        "name": "Vessel 1",  # required by Identifiable
+        "geometry": five_node_env.graph.nodes["-2"]["geometry"],  # required by Locatable
+        "route": nx.dijkstra_path(five_node_env.graph, "-2", "+2"),  # required by Routeable
+        "v": 4,  # required by Movable, 4 m/s to check if the distance is covered in the expected time
+        "L": 100,  # required by VesselProperties, interacts with the lock capacity
+        "B": 20,  # required by VesselProperties
+        "T": 10,  # required by VesselProperties
+        "type": "tanker",  # required by VesselProperties
+        "arrival_time": pd.Timestamp("2025-01-01 00:00:00"),  # required by PassesLockComplex
+    }
+    vessel_1 = Vessel(**data_vessel_1)
+    vessel_1.name = "Vessel 1"
+    return vessel_1
+
+
+@pytest.fixture
+def vessel_4(five_node_env, Vessel):
+
+    data_vessel_2 = {
+        "env": five_node_env,  # needed for simpy simulation
+        "name": "Vessel 2",  # required by Identifiable
+        "geometry": five_node_env.graph.nodes["+2"]["geometry"],  # required by Locatable
+        "route": nx.dijkstra_path(five_node_env.graph, "+2", "-2"),  # required by Routeable
+        "v": 4,  # required by Movable, 4 m/s to check if the distance is covered in the expected time
+        "L": 100,  # required by VesselProperties, interacts with the lock capacity
+        "B": 20,  # required by VesselProperties
+        "T": 10,  # required by VesselProperties
+        "type": "tanker",  # required by VesselProperties
+        "arrival_time": pd.Timestamp("2025-01-01 00:05:00"),  # required by PassesLockComplex
+    }
+    vessel_2 = Vessel(**data_vessel_2)
+    vessel_2.name = "Vessel 2"
     return vessel_2
 
 
@@ -373,6 +461,71 @@ def three_node_lock(three_node_env):
         registration_nodes = ['-1','+1'],
     )
     return three_node_lock
+
+
+@pytest.fixture
+def five_node_lock_1(five_node_env):
+    lock_1 = lock_module.IsLockComplex(
+        env=five_node_env,
+        name="Lock_1",
+        node_open="-1",
+        node_A="-1",
+        node_B="0",
+        distance_lock_doors_A_to_waiting_area_A=4800,
+        distance_lock_doors_B_to_waiting_area_B=4800,
+        distance_from_start_node_to_lock_doors_A=4800,
+        distance_from_end_node_to_lock_doors_B=4800,
+        lock_length=400,
+        lock_width=50,
+        lock_depth=15,
+        levelling_time=300,
+        sailing_distance_to_crossing_point=1800,
+        doors_opening_time=300,
+        doors_closing_time=300,
+        speed_reduction_factor_lock_chamber=0.5,
+        sailing_in_time_gap_through_doors=300,
+        sailing_in_speed_sea=1.5,
+        sailing_in_speed_canal=1.5,
+        sailing_out_time_gap_through_doors=120,
+        sailing_time_before_opening_lock_doors=600,
+        sailing_time_before_closing_lock_doors=120,
+        registration_nodes=["-2", "1"],
+        predictive=False,
+    )
+    return lock_1
+
+
+@pytest.fixture
+def five_node_lock_2(five_node_env):
+    lock_2 = lock_module.IsLockComplex(
+        env=five_node_env,
+        name="Lock_2",
+        node_open="1",
+        node_A="1",
+        node_B="+1",
+        distance_lock_doors_A_to_waiting_area_A=4800,
+        distance_lock_doors_B_to_waiting_area_B=4800,
+        distance_from_start_node_to_lock_doors_A=4800,
+        distance_from_end_node_to_lock_doors_B=4800,
+        lock_length=400,
+        lock_width=50,
+        lock_depth=15,
+        levelling_time=300,
+        sailing_distance_to_crossing_point=1800,
+        doors_opening_time=300,
+        doors_closing_time=300,
+        speed_reduction_factor_lock_chamber=0.5,
+        sailing_in_time_gap_through_doors=300,
+        sailing_in_speed_sea=1.5,
+        sailing_in_speed_canal=1.5,
+        sailing_out_time_gap_through_doors=120,
+        sailing_time_before_opening_lock_doors=600,
+        sailing_time_before_closing_lock_doors=120,
+        registration_nodes=["0", "+2"],
+        predictive=False,
+    )
+    return lock_2
+
 
 def test_notebook_0201(vessel_1, vessel_2, two_node_env, two_node_lock):
 
@@ -449,13 +602,16 @@ def test_notebook_0202(Vessel, three_node_env, three_node_lock):
     assert three_node_lock.vessel_planning.shape == (11,22), "The lock planning shape does not have the expected dimensions"
     assert three_node_lock.operation_planning.shape == (5,26), "The lock operation planning shape does not have the expected dimensions"
 
-    #check logbook shapes
+    # check logbook shapes
     for vessel in vessels:
         df_vessel = pd.DataFrame.from_dict(vessel.logbook)
-        assert (df_vessel.shape[0]==18) or (df_vessel.shape[0]==20), f"The vessel {vessel.name} logbook does not have the expected number of entries, namely {df_vessel.shape[0]}"
+        assert df_vessel.shape[0] in [
+            18,
+            20,
+        ], f"The vessel {vessel.name} logbook does not have the expected number of entries, namely {df_vessel.shape[0]}"
         assert df_vessel.shape[1]==4, f"The vessel {vessel.name} logbook does not have the expected number of columns, namely {df_vessel.shape[1]}"
 
-    #check if we can create gantt chart
+    # check if we can create gantt chart
     df_eventtable = opentnsim.core.logutils.logbook2eventtable([*vessels, three_node_lock.lock_chamber])
     fig = generate_vessel_gantt_chart(df_eventtable)
 
@@ -467,3 +623,146 @@ def test_notebook_0202(Vessel, three_node_env, three_node_lock):
                                      ylimmin = pd.Timestamp('2025-01-01 22:00:00'),
                                      ylimmax = pd.Timestamp('2025-01-02 09:00:00'),
                                      method='Plotly')
+
+
+def test_notebook_0203(Vessel, three_node_env):
+
+    # generate synthetic hydrodynamic data
+    hydrodynamic_data = xr.Dataset()
+
+    simulation_start = three_node_env.epoch
+    time = pd.date_range(start=simulation_start, end=simulation_start + pd.Timedelta(days=7), freq=pd.Timedelta(minutes=5))
+
+    static_water_level = np.zeros(len(time))
+    tidal_amplitude = 1.0
+    tidal_period = 12.5  # hours
+    tidal_water_level = [
+        tidal_amplitude * np.sin(2 * np.pi * (t - simulation_start).total_seconds() / (tidal_period * 3600)) for t in time
+    ]
+
+    stations = ["0", "1"]
+    water_level_data = xr.DataArray(data=[static_water_level, tidal_water_level], coords={"STATION": stations, "TIME": time})
+
+    hydrodynamic_data["Water level"] = water_level_data
+
+    # add hydrodynamic data to the environment
+    # add components important for locking to the environment
+    three_node_env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(
+        graph=three_node_env.graph, crs_m="4087", hydrodynamic_information=hydrodynamic_data
+    )
+    three_node_lock = lock_module.IsLockComplex(
+        env=three_node_env,
+        name="Lock",
+        node_open="0",
+        node_A="0",
+        node_B="1",
+        distance_lock_doors_A_to_waiting_area_A=4800,
+        distance_lock_doors_B_to_waiting_area_B=4800,
+        distance_from_start_node_to_lock_doors_A=4800,
+        distance_from_end_node_to_lock_doors_B=4800,
+        lock_length=400,
+        lock_width=50,
+        lock_depth=15,
+        levelling_time=300,
+        sailing_distance_to_crossing_point=1800,
+        doors_opening_time=300,
+        doors_closing_time=300,
+        speed_reduction_factor_lock_chamber=0.5,
+        sailing_in_time_gap_through_doors=300,
+        sailing_in_speed_sea=1.5,
+        sailing_in_speed_canal=1.5,
+        sailing_out_time_gap_through_doors=120,
+        sailing_time_before_opening_lock_doors=600,
+        sailing_time_before_closing_lock_doors=120,
+        registration_nodes=["-1", "+1"],
+    )
+    # create vessels
+    rng_up = np.random.default_rng(123)
+    rng_down = np.random.default_rng(456)
+
+    # Exponential distributions with different means (scale = mean)
+    arrival_dist_up = lambda: rng_up.exponential(scale=30)  # mean 30 minutes
+    arrival_dist_down = lambda: rng_down.exponential(scale=15)  # mean 15 minutes
+
+    vessels = generate_vessels_with_distributions(
+        env=three_node_env,
+        num_vessels=9,
+        start_time=simulation_start,
+        arrival_dist_up=arrival_dist_up,
+        arrival_dist_down=arrival_dist_down,
+        seed_up=123,
+        seed_down=456,
+        vessel_class=Vessel,
+    )
+
+    # simulate missions
+    for vessel in vessels:
+        three_node_env.process(mission(three_node_env, vessel))
+    three_node_env.run()
+
+    # check vessel planning and operation planning shapes
+    assert three_node_lock.vessel_planning.shape == (9, 22), "The lock planning shape does not have the expected dimensions"
+    assert three_node_lock.operation_planning.shape == (
+        5,
+        26,
+    ), "The lock operation planning shape does not have the expected dimensions"
+
+    # check logbook shapes
+    for vessel in vessels:
+        df_vessel = pd.DataFrame.from_dict(vessel.logbook)
+        assert df_vessel.shape[0] in (
+            16,
+            18,
+            20,
+        ), f"The vessel {vessel.name} logbook does not have the expected number of entries, namely {df_vessel.shape[0]}"
+        assert (
+            df_vessel.shape[1] == 4
+        ), f"The vessel {vessel.name} logbook does not have the expected number of columns, namely {df_vessel.shape[1]}"
+
+    # check if hydrodynamic data is in half of the time similar to lock water level
+    # leveling starts 01-02 om 02 uur en stops at 01-02 om 4 uur. Selecteer indexes tijdens en na levelling
+    indexes_during_levelling = np.where(
+        (hydrodynamic_data.TIME >= pd.Timestamp("2025-01-02 02:30")) & (hydrodynamic_data.TIME <= pd.Timestamp("2025-01-02 03:30"))
+    )
+    similar_during_levelling = (
+        hydrodynamic_data.sel({"STATION": "1"})["Water level"][indexes_during_levelling]
+        == three_node_lock.lock_chamber.water_level[indexes_during_levelling]
+    )
+
+    indexes_after_levelling = np.where(hydrodynamic_data.TIME > pd.Timestamp("2025-01-02 04:00"))
+    similar_after_levelling = (
+        hydrodynamic_data.sel({"STATION": "1"})["Water level"][indexes_after_levelling]
+        == three_node_lock.lock_chamber.water_level[indexes_after_levelling]
+    )
+
+    assert (
+        similar_during_levelling.sum() / len(similar_during_levelling) < 0.5
+    ), "During levelling, the hydrodynamic water level corresponds too much to the lock water level"
+    assert (
+        similar_after_levelling.all()
+    ), "After levelling, the hydrodynamic water level does not correspond to the lock water level"
+
+
+def test_notebook_0204(five_node_env, vessel_3, vessel_4, five_node_lock_1, five_node_lock_2):
+    # start the simulation
+    five_node_env.process(mission(five_node_env, vessel_3))
+    five_node_env.process(mission(five_node_env, vessel_4))
+
+    five_node_env.run()
+
+    # check logbook shapes
+    df_vessel_3 = pd.DataFrame.from_dict(vessel_3.logbook)
+    df_vessel_4 = pd.DataFrame.from_dict(vessel_4.logbook)
+    assert df_vessel_3.shape == (30, 4), "The vessel 3 logbook does not have the expected dimensions"
+    assert df_vessel_4.shape == (30, 4), "The vessel 4 logbook does not have the expected dimensions"
+
+    df_lock_1 = pd.DataFrame.from_dict(five_node_lock_1.lock_chamber.logbook)
+    df_lock_2 = pd.DataFrame.from_dict(five_node_lock_2.lock_chamber.logbook)
+    assert df_lock_1.shape == (12, 4), "The lock 1 logbook does not have the expected dimensions"
+    assert df_lock_2.shape == (18, 4), "The lock 2 logbook does not have the expected dimensions"
+
+    # check if we can create gantt chart
+    df_eventtable = opentnsim.core.logutils.logbook2eventtable(
+        [vessel_3, vessel_4, five_node_lock_1.lock_chamber, five_node_lock_2.lock_chamber]
+    )
+    fig = generate_vessel_gantt_chart(df_eventtable)
