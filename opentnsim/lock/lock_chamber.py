@@ -46,6 +46,14 @@ class IsLockChamberOperator:
         else:
             raise AttributeError("No lock master set for accessing door closing policy")
 
+    @property
+    def closing_doors_in_between_operations(self):
+        """Get policy on closing doors in between operations through lock master."""
+        if self.lock_master:
+            return self.lock_master.closing_doors_in_between_operations
+        else:
+            raise AttributeError("No lock master set for accessing door closing policy")
+
     def close_doors_before_vessel_is_laying_still(self, operation_index):
         """Get policy on closing doors before vessel is laying still through lock master."""
         if self.lock_master:
@@ -293,7 +301,7 @@ class IsLockChamberOperator:
                 next_lockage_is_empty = True
 
         # an action should be done if the doors can be closed in between operations, or if the next lock operation is empty
-        if doors_can_be_closed and lock.lock_master.closing_doors_in_between_operations:
+        if doors_can_be_closed and lock.closing_doors_in_between_operations:
             door_closing_start_time = last_operation.time_potential_lock_door_closure_start
             delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start_time - current_time).total_seconds()])
 
@@ -305,7 +313,7 @@ class IsLockChamberOperator:
             closing_delay = np.max([self.sailing_time_before_closing_lock_doors, (door_closing_start_time - current_time).total_seconds()])
 
             # if there is an empty lock operation and no policy that doors are closed in between operations is active -> close doors and convert chamber afterwards
-            if not lock.lock_master.closing_doors_in_between_operations:
+            if not lock.closing_doors_in_between_operations:
                 convert_chamber_delay = closing_delay
                 closing_doors = True
             # if there is an empty lock operation but the policy that doors are closed in between operations is active -> close doors and convert chamber later, or convert chamber immediately if there is insufficient time
@@ -1381,6 +1389,8 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             **kwargs,
         )
 
+        self._verify_node_AB()
+
         if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
             hydro_manager = HydrodynamicDataManager()
             if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path,str):
@@ -1398,7 +1408,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         if self.node_open is None:
             self.node_open = np.random.choice([start_node, end_node])
 
-        if self.lock_master.closing_doors_in_between_operations:
+        if self.closing_doors_in_between_operations:
             self.door_A_open = False
             self.door_B_open = False
         elif self.node_open == self.start_node:
@@ -1468,6 +1478,17 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             else:
                 self.multidigraph.edges[self.start_node, self.end_node, k]["Lock"].append(self)
                 self.multidigraph.edges[self.end_node, self.start_node, k]["Lock"].append(self)
+
+    def _verify_node_AB(self):
+        """Function to verify if nodes A and B are part of the graph, and have an edge between them."""
+        if self.start_node not in self.env.graph.nodes or self.end_node not in self.env.graph.nodes:
+            raise ValueError(
+                f"Lock chamber {self.name} has invalid node_A {self.start_node} or node_B {self.end_node} which are not part of the graph."
+            )
+        if not self.env.graph.has_edge(self.start_node, self.end_node):
+            raise ValueError(
+                f"Lock chamber {self.name} does not have an edge between node A {self.start_node} and node B {self.end_node}."
+            )
 
     def vessel_sailing_speed_in_lock(self, vessel):
         """
