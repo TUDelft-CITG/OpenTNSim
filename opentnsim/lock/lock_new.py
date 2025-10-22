@@ -2969,85 +2969,158 @@ class IsLockComplex(IsLockMaster):
     # properties from lock chamber. Should be adapted to functions based on which lock we take
     @property
     def distance_from_start_node_to_lock_doors_A(self):
+        """
+        Get distance from start node to lock doors A through lock chamber.
+        """
         return self.lock_chamber.distance_from_start_node_to_lock_doors_A
 
     @property
     def distance_from_end_node_to_lock_doors_B(self):
+        """
+        Get distance from end node to lock doors B through lock chamber.
+        """
         return self.lock_chamber.distance_from_end_node_to_lock_doors_B
 
     @property
     def registration_nodes(self):
+        """
+        Get registration nodes of the lock chamber.
+        """
         return self.lock_chamber.registration_nodes
 
     @property
     def sailing_distance_to_crossing_point(self):
+        """
+        Get sailing distance to crossing point through lock chamber.
+        """
         return self.lock_chamber.sailing_distance_to_crossing_point
 
     def vessel_sailing_in_speed(self, vessel, direction):
+        """
+        Get vessel sailing in speed through lock chamber.
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following parent-classes: PassesLockComplex,  Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the lock operation: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
+        """
         return self.lock_chamber.vessel_sailing_in_speed(vessel, direction)
 
     @property
     def location_lock_doors_A(self):
+        """
+        Get location of lock doors A through lock chamber.
+        """
         return self.lock_chamber.location_lock_doors_A
 
     @property
     def location_lock_doors_B(self):
+        """
+        Get location of lock doors B through lock chamber.
+        """
         return self.lock_chamber.location_lock_doors_B
 
     @property
     def node_open(self):
+        """
+        Get node open status through lock chamber.
+        """
         return self.lock_chamber.node_open
 
     @property
     def name(self):
+        """
+        Get name of the lock chamber.
+        """
         return self.lock_chamber.name
 
     @property
     def lock_length(self):
+        """
+        Get length of the lock chamber.
+        """
         return self.lock_chamber.lock_length
 
     @property
     def lock_width(self):
+        """
+        Get width of the lock chamber.
+        """
         return self.lock_chamber.lock_width
 
     @property
     def doors_closing_time(self):
+        """
+        Get doors closing time through lock chamber.
+        """
         return self.lock_chamber.doors_closing_time
 
     @property
     def doors_opening_time(self):
+        """
+        Get doors opening time through lock chamber.
+        """
         return self.lock_chamber.doors_opening_time
 
     @property
     def start_sailing_out_time_after_doors_have_been_opened(self):
+        """
+        Get start sailing out time after doors have been opened through lock chamber.
+        """
         return self.lock_chamber.start_sailing_out_time_after_doors_have_been_opened
 
     @property
     def sailing_in_time_gap_through_doors(self):
+        """
+        Get sailing in time gap through doors.
+        """
         return self.lock_chamber.sailing_in_time_gap_through_doors
 
     @property
     def sailing_out_time_gap_through_doors(self):
+        """
+        Get sailing out time gap through doors.
+        """
         return self.lock_chamber.sailing_out_time_gap_through_doors
 
     @property
     def sailing_in_time_gap_after_berthing_previous_vessel(self):
+        """
+        Get sailing in time gap after berthing previous vessel through lock chamber.
+        """
         return self.lock_chamber.sailing_in_time_gap_after_berthing_previous_vessel
 
     @property
     def sailing_out_time_gap_after_berthing_previous_vessel(self):
+        """
+        Get sailing out time gap after berthing previous vessel through lock chamber.
+        """
         return self.lock_chamber.sailing_out_time_gap_after_berthing_previous_vessel
 
     def vessel_sailing_out_speed(self, vessel, direction, P_used=None, h0=17, until_crossing_point=False):
+        """
+        Get vessel sailing out speed through lock chamber.
+        """
         return self.lock_chamber.vessel_sailing_out_speed(vessel, direction, P_used, h0, until_crossing_point)
 
     def vessel_sailing_speed_out_lock(self, vessel):
+        """
+        Get vessel sailing speed out of lock through lock chamber.
+        """
         return self.lock_chamber.vessel_sailing_speed_out_lock(vessel)
 
     def vessel_sailing_speed_in_lock(self, vessel):
+        """
+        Get vessel sailing speed in lock through lock chamber.
+        """
         return self.lock_chamber.vessel_sailing_speed_in_lock(vessel)
 
     def determine_levelling_time(self, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
+        """
+        Determine levelling time through lock chamber.
+        """
         return self.lock_chamber.determine_levelling_time(t_start, direction, wlev_init, operation_index, prediction)
 
     def _verify_node_AB(self):

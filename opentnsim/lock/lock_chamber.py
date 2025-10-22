@@ -19,7 +19,7 @@ from opentnsim.constants import knots
 class IsLockChamberOperator:
     """The lock chamber operator operates one chamber of the lock.
 
-    The operator communicates with the lock master through a mediator (LockComplex)
+    The operator communicates with the lock master through self.lock_master
     to coordinate vessel operations and lock state changes.
     """
 
@@ -27,12 +27,14 @@ class IsLockChamberOperator:
         super().__init__(*args, **kwargs)
         self.lock_master = lock_master
 
-    def set_lock_master(self, lock_master):
-        """Set the lock master for communication with lock chamber."""
-        self.lock_master = lock_master
-
     def _get_appropriate_waiting_area(self, direction):
-        """Get appropriate waiting area through lock master."""
+        """Get appropriate waiting area through lock master.
+
+        Parameters
+        ----------
+        direction : int
+            the direction of the vessel: 0 (A -> B) or 1 (B -> A)
+        """
         if self.lock_master:
             return self.lock_master._get_appropriate_waiting_area(direction)
         else:
@@ -55,7 +57,13 @@ class IsLockChamberOperator:
             raise AttributeError("No lock master set for accessing door closing policy")
 
     def close_doors_before_vessel_is_laying_still(self, operation_index):
-        """Get policy on closing doors before vessel is laying still through lock master."""
+        """Get policy on closing doors before vessel is laying still through lock master.
+
+        Parameters
+        ----------
+        operation_index : int
+            index of the lock operation
+        """
         if self.lock_master:
             return self.lock_master.close_doors_before_vessel_is_laying_still(operation_index)
         else:
@@ -101,37 +109,51 @@ class IsLockChamberOperator:
         else:
             raise AttributeError("No lock master set for accessing waiting area A")
 
-    def _get_operation_planning(self):
-        """Get operation planning through lock master."""
-        if self.lock_master:
-            return self.lock_master.get_operation_planning()
-        else:
-            raise AttributeError("No lock master set for accessing operation planning")
-
-    def _notify_levelling_started(self, vessel, operation_index):
-        """Notify lock master that levelling has started."""
-        if self.lock_master:
-            self.lock_master.on_levelling_started(vessel, operation_index)
-
-    def _notify_vessel_entered_chamber(self, vessel, operation_index):
-        """Notify lock master that vessel has entered the chamber."""
-        if self.lock_master:
-            self.lock_master.on_vessel_entered_chamber(vessel, operation_index)
-
-    def _notify_vessel_exited_chamber(self, vessel, operation_index):
-        """Notify lock master that vessel has exited the chamber."""
-        if self.lock_master:
-            self.lock_master.on_vessel_exited_chamber(vessel, operation_index)
-
     def register_vessel(self, vessel):
+        """Register vessel through lock master.
+
+        Parameters
+        ----------
+        vessel : type
+            a type including the following mixins: PassesLockComplex,Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        """
         if self.lock_master:
             yield from self.lock_master.register_vessel(vessel)
 
     def calculate_sailing_time_to_waiting_area(self, vessel, direction, current_node=None, prognosis=False, overwrite=True):
+        """Calculate sailing time to waiting area through lock master.
+        Parameters
+        ----------
+        vessel : type
+            a type including the following mixins: PassesLockComplex,Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        direction : int
+            the direction of the vessel: 0 (A -> B) or 1 (B -> A)
+        current_node : str
+            node name (that has to be in the graph) on which the vessel is currently sailing, to navigate an edge should form an edge with the origin)
+        prognosis : bool
+            if the sailing time is calculated for prognosis purposes (True) or for actual sailing (False)
+        overwrite : bool
+            if existing sailing time in the vessel planning should be overwritten (True) or not (False)
+        """
+
         if self.lock_master:
             return self.lock_master.calculate_sailing_time_to_waiting_area(vessel, direction, current_node, prognosis, overwrite)
 
     def calculate_vessel_departure_start_delay(self, vessel, operation_index, direction, prognosis=False):
+        """Calculate vessel departure start delay through lock master.
+        Parameters
+        ----------
+        vessel : type
+            a type including the following mixins: PassesLockComplex,Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+        operation_index : int
+            index of the lock operation
+        direction : int
+            the direction of the vessel: 0 (A -> B) or 1 (B -> A)
+        prognosis : bool
+            if the delay is calculated for prognosis purposes (True) or for actual sailing (False)
+        overwrite : bool
+            if existing delay in the vessel planning should be overwritten (True) or not (False)
+        """
         if self.lock_master:
             return self.lock_master.calculate_vessel_departure_start_delay(vessel, operation_index, direction, prognosis)
 
