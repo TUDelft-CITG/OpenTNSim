@@ -21,6 +21,7 @@ import uuid
 import yaml
 from itertools import cycle
 
+from plotly.offline import init_notebook_mode, iplot
 
 # spatial libraries
 import pyproj
@@ -724,6 +725,9 @@ def plot_graph(graph, static: bool = False):
     ----------
     graph : networkx.Graph
         A graph object.
+    static : bool, optional
+        If True, returns a static Plotly figure object.
+        If False, displays the figure
 
     Returns
     -------
