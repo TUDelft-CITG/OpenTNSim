@@ -11,21 +11,8 @@ from opentnsim.lock import lock_new as lock_module
 from opentnsim.core import vessel_properties as vessel_module
 from opentnsim import vessel_traffic_service as vessel_traffic_service_module
 import datetime as dt
-import pandas as pd
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import pickle
-import matplotlib.dates as mdates
-import folium
-from shapely.ops import nearest_points, linemerge, split, snap, transform
 import pyproj
-import re
 
-import opentnsim.core as core
-from opentnsim.core import VesselProperties, ExtraMetadata
-from opentnsim.graph import HasMultiDiGraph
-from opentnsim.output import HasOutput
 from opentnsim.lock.lock_new import (
     PassesLockComplex,
     IsLockChamber,
