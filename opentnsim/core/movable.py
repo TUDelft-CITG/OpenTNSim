@@ -282,7 +282,7 @@ class Movable(Locatable, Routable, Log):
         """
 
         # Check if vessel has arrival time and let vessel wait to start moving
-        if 'arrival_time' in self.metadata:
+        if hasattr(self, "metadata") and "arrival_time" in self.metadata:
             arrival_time = self.metadata['arrival_time']
             current_time = datetime.datetime.fromtimestamp(self.env.now)
             delay = (arrival_time - current_time).total_seconds()
