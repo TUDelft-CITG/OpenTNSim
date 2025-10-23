@@ -1271,24 +1271,6 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
     creates a lock chamber with a resource which is requested when a vessels wants to enter the area with limited capacity
 
-    Parent classes
-    --------------
-    HasResource :
-        to be able to pass edges and nodes of the graph
-    HasLength :
-        to have a length that can be requested by a vessel
-    Identifiable :
-        to be identifiable (id)
-    Log :
-        to maintain a logbook
-    HasOutput :
-        to keep track of specific output
-    HasMultiDiGraph :
-        a networkx.MultiDiGraph is constructed where edges are constructed with a start_node, end_node, and an
-        identifier (k) to be able to construct multiple edges between the same node pair (i.e., parallel lock chambers)
-    ExtraMetadata :
-        to have extra parameters
-
     Attributes
     ----------
     vessel_sailing_speed_in_lock :

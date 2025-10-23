@@ -809,15 +809,6 @@ class HasLockPlanning:
 class PassesLockComplex(Movable, HasMultiDiGraph):
     """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
 
-    Parent classes
-    --------------
-    Movable :
-        to be able to pass edges and nodes of the graph
-    HasMultiDiGraph :
-        a networkx.MultiDiGraph is constructed where edges are constructed with a start_node, end_node, and an
-        identifier (k) to be able to construct multiple edges between the same node pair (i.e., parallel lock chambers)
-
-
     Pre-requisites
     --------------
     arrival_time:
@@ -1215,23 +1206,12 @@ class IsLockWaitingArea(HasResource, Identifiable, Log, HasOutput, HasMultiDiGra
 
     creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity
 
-    Parent classes
-    --------------
-    HasResource :
-        to be able to pass edges and nodes of the graph
-    Identifiable :
-        to be identifiable (id)
-    Log :
-        to maintain a logbook
-    HasOutput :
-        to keep track of specific output
-    HasMultiDiGraph :
-        a networkx.MultiDiGraph is constructed where edges are constructed with a start_node, end_node, and an
-        identifier (k) to be able to construct multiple edges between the same node pair (i.e., parallel lock chambers)
-
     Attributes
     ----------
-    none
+    waiting_area : simpy.PriorityResource
+        the waiting area resource with a certain capacity
+    location : Location
+        the location of the waiting area on the edge
 
     """
 
@@ -1257,11 +1237,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
     """Mixin class: lock complex has a lock master:
 
     Creates a lock master that schedules the vessels into lock operations
-
-    Parent classes
-    --------------
-    SimpyObject :
-        to be able to pass edges and nodes of the graph
 
     Attributes
     ----------
@@ -2796,12 +2771,7 @@ class IsLockComplex(IsLockMaster):
     """Mixin-class: a lock complex object
 
     TODO: I would like the lock complex to be decoupled from its infrastructure, so that you can add multiple lock chambers, line-up areas and waiting areas
-    Parent classes
-    --------------
-    IsLockChamber :
-        lock complex has a lock chamber
-    IsLockMaster :
-        lock complex has a lock master
+
 
     Attributes:
     -----------
