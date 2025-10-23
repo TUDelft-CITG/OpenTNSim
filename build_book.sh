@@ -4,6 +4,9 @@ cp notebooks/*.ipynb book/examples/
 # copy the data from the notebooks folder
 mkdir -p book/examples/data/
 cp notebooks/data/* book/examples/data/
+# copy the figures from the notebooks folder
+mkdir -p book/examples/figures/
+cp notebooks/figures/*.png book/examples/figures/
 # Copy the api docs from the docs folder
 cp docs/opentnsim.rst book/docs
 # Copy the Authors list from the root folder
