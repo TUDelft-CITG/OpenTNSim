@@ -146,6 +146,10 @@ Only then can a contribution can be merged into the main branch.
 Branching
 ---------
 
+_NOTE: Currently `OpenTNSim` does not have a `develop` branch. In the near future it should be 
+decided to add it into GitHub, or update the branching model below._
+
+
 Please follow this branching model when developing in `OpenTNSim`:
 
 main
