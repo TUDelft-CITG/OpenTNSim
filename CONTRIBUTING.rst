@@ -1,54 +1,52 @@
 .. highlight:: shell
 
-
 ===========================
 Contributing to `OpenTNSim`
 ===========================
 
-Contributions are welcome, and they are greatly appreciated! Every little bit
-helps, and credit will always be given.
+Contributions are welcome, and they are greatly appreciated! Every little bit helps, and credit will
+always be given.
 
-This document describes how you can contribute to `OpenTNSim`, the review
-process, and how your contribution gets accepted. 
+This document describes how you can contribute to `OpenTNSim`, the review process, and how your
+contribution gets accepted.
 
 Thank you, and happy coding!
-
 
 Ways to contribute
 ==================
 
 You can contribute in many ways:
 
-
 Report bugs
 -----------
 
-Report bugs at https://github.com/TUDelft-CITG/OpenTNSim/issues. The issue can be used
-to track the progress of the bug fix, and for discussion with maintainers and other developers.
+Report bugs at https://github.com/TUDelft-CITG/OpenTNSim/issues. The issue can be used to track the
+progress of the bug fix, and for discussion with maintainers and other developers.
 
 If you are reporting a bug, please use the `Bug` issue template, through which you include:
 
 - A clear and descriptive title.
-- Name and version of your operating system, Python version, and `OpenTNSim`` version.
+- Name and version of your operating system, Python version, and `OpenTNSim` version.
 - Any details about your local setup that might be helpful in troubleshooting.
 - Detailed steps to reproduce the bug.
 
 Preferably, you also include a minimal code example that reproduces the bug.
 
-
 Fix bugs
 --------
 
-Look through the GitHub issues for bugs. Anything tagged with "bug" and "help
-wanted" is open to whoever wants to implement it.
+Look through the GitHub issues for bugs. Anything tagged with "bug" and "help wanted" is open to
+whoever wants to implement it.
 
-_When you fix a bug, please take into account the agreements on developing in `OpenTNSim`, described below._
-
+_When you fix a bug, please take into account the agreements on developing in `OpenTNSim`, described
+below._
 
 Report new ideas
 ----------------
 
-If you have an idea for a new feature or improvement, cool! Feature requests can be reported at https://github.com/TUDelft-CITG/OpenTNSim/issues. Please use the `Feature Request` issue template, through which you include:
+If you have an idea for a new feature or improvement, cool! Feature requests can be reported at
+https://github.com/TUDelft-CITG/OpenTNSim/issues. Please use the `Feature Request` issue template,
+through which you include:
 
 - A clear and descriptive title.
 - A detailed description of the feature or improvement.
@@ -56,30 +54,30 @@ If you have an idea for a new feature or improvement, cool! Feature requests can
 
 If you have a code example or prototype, please include that as well.
 
-
 Implement new features
 ----------------------
 
-Look through the GitHub issues for features. Anything tagged with "enhancement"
-and "help wanted" is open to whoever wants to implement it.
+Look through the GitHub issues for features. Anything tagged with "enhancement" and "help wanted" is
+open to whoever wants to implement it.
 
-Please follow the agreements on developing in `OpenTNSim`, described below, and feel free to get started!
-
+Please follow the agreements on developing in `OpenTNSim`, described below, and feel free to get
+started!
 
 Add examples
 ------------
 
-Examples are a great way to help users understand how to use `OpenTNSim` and its features. In `OpenTNSim` examples
-are provided as jupyter notebooks in the `notebooks` folder. You can contribute new examples or improve existing ones.
+Examples are a great way to help users understand how to use `OpenTNSim` and its features. In
+`OpenTNSim` examples are provided as jupyter notebooks in the `notebooks` folder. You can contribute
+new examples or improve existing ones.
 
-Please follow the agreements on developing in `OpenTNSim`, described below, and feel free to get started!
+Please follow the agreements on developing in `OpenTNSim`, described below, and feel free to get
+started!
 
 Write documentation
 -------------------
 
-OpenTNSim could always use more documentation, whether as part of the
-official OpenTNSim docs, in docstrings, or even on the web in blog posts,
-articles, and such.
+OpenTNSim could always use more documentation, whether as part of the official OpenTNSim docs, in
+docstrings, or even on the web in blog posts, articles, and such.
 
 Did you find something missing in the documentation? For example
 
