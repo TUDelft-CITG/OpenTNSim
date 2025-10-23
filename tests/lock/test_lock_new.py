@@ -1,4 +1,4 @@
-"""This file contains tests for the lock_new module."""
+"""This file contains tests for the lock module."""
 
 import pytest
 import networkx as nx
@@ -7,14 +7,14 @@ from shapely.geometry import Point, LineString, Polygon
 import simpy
 import xarray as xr
 
-from opentnsim.lock import lock_new as lock_module
+from opentnsim.lock import lock as lock_module
 from opentnsim.core import vessel_properties as vessel_module
 from opentnsim import vessel_traffic_service as vessel_traffic_service_module
 import datetime as dt
 import pyproj
 from shapely.ops import transform
 
-from opentnsim.lock.lock_new import (
+from opentnsim.lock.lock import (
     PassesLockComplex,
     IsLockChamber,
     IsLockMaster,

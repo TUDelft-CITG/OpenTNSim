@@ -1,4 +1,4 @@
-from .lock_new import (
+from .lock import (
     PassesLockComplex,
     IsLockComplex,
     IsLockMaster,

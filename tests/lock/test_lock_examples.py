@@ -13,7 +13,7 @@ from opentnsim.core.logutils import logbook2eventtable
 from opentnsim.core.plotutils import generate_vessel_gantt_chart
 
 # import of modules important for locking
-from opentnsim.lock import lock_new as lock_module
+from opentnsim.lock import lock as lock_module
 from opentnsim import vessel_traffic_service as vessel_traffic_service_module
 
 # package(s) needed for inspecting the output
