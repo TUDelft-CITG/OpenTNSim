@@ -22,6 +22,7 @@ import simpy
 # from netCDF4 import Dataset
 from IPython.display import display
 
+from opentnsim.utils import inherit_docstring
 from opentnsim.core import HasResource, Identifiable, Log, Movable, HasLength, SimpyObject, ExtraMetadata
 from opentnsim.graph import HasMultiDiGraph, get_length_of_edge
 from opentnsim.output import HasOutput
@@ -35,6 +36,8 @@ from opentnsim.lock.utils import (
 )
 from opentnsim.lock.lock_chamber import IsLockChamber
 
+
+@inherit_docstring
 class HasLockPlanning:
     """This class keeps track of the lock-planning of a lock-master."""
 
@@ -802,6 +805,7 @@ class HasLockPlanning:
         return operation_index, add_operation, available_operations
 
 
+@inherit_docstring
 class PassesLockComplex(Movable, HasMultiDiGraph):
     """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
 
@@ -1205,6 +1209,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         self.distance_left_on_edge = distance_left_on_edge
 
 
+@inherit_docstring
 class IsLockWaitingArea(HasResource, Identifiable, Log, HasOutput, HasMultiDiGraph):
     """Mixin class: lock complex has waiting area object:
 
@@ -1754,7 +1759,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         Calculates the sailing time of a vessel from its location to the waiting area
 
         Parameters
-        ----------
+        -------------
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         direction : int
@@ -2786,6 +2791,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         return last_vessel
 
 
+@inherit_docstring
 class IsLockComplex(IsLockMaster):
     """Mixin-class: a lock complex object
 

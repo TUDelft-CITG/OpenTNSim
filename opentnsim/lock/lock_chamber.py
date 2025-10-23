@@ -122,6 +122,7 @@ class IsLockChamberOperator:
 
     def calculate_sailing_time_to_waiting_area(self, vessel, direction, current_node=None, prognosis=False, overwrite=True):
         """Calculate sailing time to waiting area through lock master.
+
         Parameters
         ----------
         vessel : type
@@ -141,6 +142,7 @@ class IsLockChamberOperator:
 
     def calculate_vessel_departure_start_delay(self, vessel, operation_index, direction, prognosis=False):
         """Calculate vessel departure start delay through lock master.
+
         Parameters
         ----------
         vessel : type
@@ -644,6 +646,8 @@ class IsLockChamberOperator:
         """
         Lock operator closes the lock doors TODO: attribute for lock operator
 
+        Parameters
+        ----------
         delay : float
             a delay before door opening [s]
 
@@ -788,6 +792,8 @@ class IsLockChamberOperator:
         """
         Lock operator opens the lock doors TODO: attribute for lock operator
 
+        Parameters
+        ----------
         to_level : str
             node of the edge of lock complex to which the lock chamber opens
         vessel : type

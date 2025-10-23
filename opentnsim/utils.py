@@ -37,6 +37,15 @@ class NetworkWarning(Warning):
     pass
 
 
+def inherit_docstring(cls):
+    for name, func in cls.__dict__.items():
+        if callable(func) and not func.__doc__:
+            parent_func = getattr(super(cls, cls), name, None)
+            if parent_func:
+                func.__doc__ = parent_func.__doc__
+    return cls
+
+
 def find_notebook_path():
     """Lookup the path where the notebooks are located. Returns a pathlib.Path object."""
     opentnsim_path = pathlib.Path(opentnsim.__file__)
