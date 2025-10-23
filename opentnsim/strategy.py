@@ -292,6 +292,94 @@ def get_v(vessel, width, depth, margin, bounds):
     return v, depth, margin
 
 
+
+def _power_difference(v, vessel, width, depth):
+    """
+    Helper function for the SciPy solver.
+    It calculates the difference: P_installed - P_tot(v).
+    The solver will find the root (where this function is zero).
+    
+    Note: This function modifies the vessel object's state (P_tot, etc.)
+    as a side effect of the calculation methods.
+    """
+    # Handle v=0 case or very small v
+    if v <= 1e-6:
+        # At zero velocity, required power is zero.
+        # Difference is just P_installed (assuming P_installed > 0)
+        return vessel.P_installed - 0.0
+
+    # 1. Calculate squatted water depth for the given velocity
+    # in energy module waterdepth is called h_0
+    h_0 = vessel.calculate_h_squat(v=v, h_0=depth, width=width)
+
+    # 2. For the squatted water depth, calculate resistance and power
+    vessel.calculate_total_resistance(v=v, h_0=h_0)
+    vessel.calculate_total_power_required(v=v, h_0=h_0)
+
+    # 3. Return the difference
+    return vessel.P_installed - vessel.P_tot
+
+
+def get_upperbound_for_power2v_optim(vessel, width, depth, margin=0, bounds=(0, 20)):
+    """
+    For a waterway section with a given width and depth, compute a maximum installed-
+    power-allowed velocity, considering squat. (Optimized with SciPy solver)
+
+    This velocity can be used as an upperbound in the power2v function.
+    It finds the velocity 'v' where P_tot(v) == P_installed.
+    """
+
+    # 1. Estimate the grounding velocity (hard upper limit)
+    # This is the absolute maximum velocity before the vessel grounds.
+    grounding_v, _, _ = get_v(vessel, width, depth, margin=0, bounds=bounds)
+
+    # If grounding velocity is effectively zero, vessel can't move
+    if grounding_v <= 1e-6:
+        return 0.0
+
+    # Define a small positive velocity as the lower bound for the solver
+    v_min = 1e-6 
+    
+    # 2. Check the power difference at the lower bound (v_min)
+    # We expect P_installed > P_tot, so diff_at_min should be positive
+    diff_at_min = _power_difference(v_min, vessel, width, depth)
+
+    if diff_at_min < 0:
+        # This means required power is *already* > installed power at min velocity.
+        # The vessel cannot move at this speed.
+        print(f"Warning: Required power exceeds installed power at min velocity ({v_min} m/s).")
+        return 0.0
+
+    # 3. Check the power difference at the upper bound (grounding_v)
+    diff_at_grounding = _power_difference(grounding_v, vessel, width, depth)
+
+    if diff_at_grounding >= 0:
+        # P_installed >= P_tot even at the grounding velocity.
+        # This means the vessel is limited by *grounding*, not by power.
+        # The maximum allowed velocity is the grounding velocity.
+        return grounding_v
+
+    # 4. We have a valid bracket for the solver:
+    # diff_at_min > 0 (power is available)
+    # diff_at_grounding < 0 (power limit exceeded)
+    # The solver can now find the root v where diff == 0.
+    
+    sol = scipy.optimize.root_scalar(
+        _power_difference,       # The function to solve
+        args=(vessel, width, depth), # Extra args to pass to the function
+        method='brentq',         # Use Brent's method (fast and robust)
+        bracket=[v_min, grounding_v] # Search between min and grounding velocity
+    )
+
+    if sol.converged:
+        # The solver found the velocity where P_installed == P_tot
+        return sol.root
+    else:
+        # Solver failed, which is rare for brentq with a valid bracket.
+        # Fallback to a safe value.
+        print(f"Warning: Power-velocity solver did not converge. Returning 0.")
+        return 0.0
+
 def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     """for a waterway section with a given width and depth, compute a maximum installed-
     power-allowed velocity, considering squat. This velocity can be used as upperbound in the
