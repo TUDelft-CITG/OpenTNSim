@@ -99,9 +99,9 @@ The best way to send feedback is to file an issue at https://github.com/TUDelft-
 
 If you are proposing a feature:
 
-* Explain in detail how it would work.
-* Keep the scope as narrow as possible, to make it easier to implement.
-* Remember that this is a volunteer-driven project, and that contributions
+- Explain in detail how it would work.
+- Keep the scope as narrow as possible, to make it easier to implement.
+- Remember that this is a volunteer-driven project, and that contributions
   are welcome :)
 
 
@@ -194,10 +194,10 @@ meaningful. This helps maintainers understand the changes you made and their pur
 
 Take into account the following guidelines when making commits:
 
-* Use clear and descriptive commit messages.
-* Break your changes into small, manageable commits.
-* Include tests for your changes.
-* Follow the coding style and conventions used in the project.
+- Use clear and descriptive commit messages.
+- Break your changes into small, manageable commits.
+- Include tests for your changes.
+- Follow the coding style and conventions used in the project.
 
 
 
