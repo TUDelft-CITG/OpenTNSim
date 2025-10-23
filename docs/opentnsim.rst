@@ -33,6 +33,14 @@ opentnsim\.energy module
    :undoc-members:
    :show-inheritance:
 
+opentnsim\.lock module
+--------------------------
+
+.. automodule:: opentnsim.lock
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
