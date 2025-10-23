@@ -27,7 +27,7 @@ Examples of behaviour that contributes to a positive environment for our communi
 - Being respectful of differing opinions, viewpoints, and experiences
 - Giving and gracefully accepting constructive feedback
 - Accepting responsibility and apologising to those affected by our mistakes, and learning from
-    the experience
+  the experience
 - Focusing on what is best not just for us as individuals, but for the overall community
 
 Examples of unacceptable behaviour include:
@@ -36,7 +36,7 @@ Examples of unacceptable behaviour include:
 - Trolling, insulting or derogatory comments, and personal or political attacks
 - Public or private harassment
 - Publishing others' private information, such as a physical or email address, without their
-    explicit permission
+  explicit permission
 - Other conduct which could reasonably be considered inappropriate in a professional setting
 
 Enforcement Responsibilities
@@ -53,18 +53,17 @@ and will communicate reasons for moderation decisions when appropriate.
 Scope
 -----
 
-This Code of Conduct applies within all community spaces, and also applies when an individual is
-officially representing the community in public spaces. Examples of representing our community
-include using an official e-mail address, posting via official social media channels or accounts,
-or acting as an appointed representative at an online or offline event.
+This Code of Conduct applies within all community spaces (such as the GitHub environment), and also 
+applies when an individual is officially representing the community in public spaces. Examples of
+representing our community include posting via official social media channels or accounts, or acting
+as an appointed representative at an online or offline event.
 
 Enforcement
 -----------
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may be reported to the
-community leaders responsible for enforcement via emailing Research Application Manager Kalle
-Westerling, kwesterling@turing.ac.uk. All complaints will be reviewed and investigated promptly
-and fairly.
+community leaders responsible for enforcement via contacting the main authors (see AUTHORS.rst). All
+complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any
 incident.
