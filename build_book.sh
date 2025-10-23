@@ -2,6 +2,7 @@
 # Copy the examples from the notebooks
 cp notebooks/*.ipynb book/examples/
 # copy the data from the notebooks folder
+mkdir -p book/examples/data/
 cp notebooks/data/* book/examples/data/
 # Copy the api docs from the docs folder
 cp docs/opentnsim.rst book/docs
