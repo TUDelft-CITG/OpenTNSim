@@ -20,6 +20,8 @@ class ZeesluisFormulering():
                  T=15,                              # General water temperature [degrees Celsius]
                  T_A=None,                          # Water temperature at side A (sea) [degrees Celsius]
                  T_B=None,                          # Water emperature at side B (inland) [degrees Celsius]
+                 rho_A=None,
+                 rho_B=None,
                  Eff_A=1,                           # Eff_A: Efficiency countermeasure for exchange current at side A (sea) [-]
                  Eff_B=1,                           # Eff_B: Efficiency countermeasure for exchange current at side B (inland) [-]
                  Q_flushing_low_tide=0,             # Q_flushing_low_tide: Flushing discharge during low water to side A (sea) [m3/s]
@@ -74,6 +76,8 @@ class ZeesluisFormulering():
             self.T_A = T_A
         if T_B is not None:
             self.T_B = T_B
+        self.rho_A = rho_A
+        self.rho_B = rho_B
         self.S_lock = S_lock
         self.V_ship_A2B = V_ship_A2B
         self.V_ship_B2A = V_ship_B2A
@@ -231,6 +235,8 @@ class ZeesluisFormulering():
                              S_B=None,          # Salinity at side B (inland) [kg/m3]
                              T_A=None,
                              T_B=None,
+                             rho_A=None,
+                             rho_B=None,
                              V_ship_exit=0,          # Volume of exiting vessels (upstream-bounded) [m3]
                              V_ship_entry=0,         # Volume of entering vessels (downstream-bounded) [m3]
                              Eff=None,          # Efficiency countermeasure for exchange current
@@ -253,6 +259,10 @@ class ZeesluisFormulering():
             T_A = self.T_A
         if T_B is None:
             T_B = self.T_B
+        if rho_A is None:
+            rho_A = self.rho_A
+        if rho_B is None:
+            rho_B = self.rho_B
         if Eff is None:
             Eff = self.Eff_B
         if t_door_open is None:
@@ -273,7 +283,11 @@ class ZeesluisFormulering():
         V_lock_B = self.L_lock * self.B_lock * (h_B - self.z_lock) #lock volume levelled with inner harbour [m3]
         H_effB = h_B - self.z_lock - 0.8 * np.max([0,np.min([(self.z_sillB - self.z_B), (self.z_sillB - self.z_lock)])]) # Effective depth levelled with inner harbour [m]
         V_lock_B_Eff = self.L_lock * self.B_lock * H_effB  # Effective lock volume levelled with inner harbour [m3]
-        rho_MZ = 0.5 * (self.salinity_kgm3_to_density(S_A,T_A)+self.salinity_kgm3_to_density(S_B,T_B)) # Average water density lock complex [kg/m3]
+        if rho_A is None:
+            rho_A = self.salinity_kgm3_to_density(S_A,T_A)
+        if rho_B is None:
+            rho_B = self.salinity_kgm3_to_density(S_B,T_B)
+        rho_MZ = 0.5 *(rho_A+rho_B) # Average water density lock complex [kg/m3]
 
         # vessels exiting lock
         M_init = S_lock*(V_lock_B - V_ship_exit)
@@ -469,12 +483,14 @@ class ZeesluisFormulering():
 
     def door_opening_phase_A(self,
                              h_A=None,          # Water level at side A (sea) [m]
-                             h_B=None,          # Water level at side A (sea) [m]
+                             h_B=None,          # Water level at side B (canal) [m]
                              S_lock=None,       # Initial salinity in lock [kg/m3]
                              S_A=None,          # Salinity at side A (sea) [kg/m3]
                              S_B=None,
                              T_A=None,
                              T_B=None,
+                             rho_A=None,
+                             rho_B=None,
                              V_ship_exit=0,     # Volume of exiting vessels (upstream-bounded) [m3]
                              V_ship_entry=0,    # Volume of entering vessels (downstream-bounded) [m3]
                              Eff=None,          # Efficiency countermeasure for exchange current
@@ -497,6 +513,10 @@ class ZeesluisFormulering():
             T_A = self.T_A
         if T_B is None:
             T_B = self.T_B
+        if rho_A is None:
+            rho_A = self.rho_A
+        if rho_B is None:
+            rho_B = self.rho_B
         if Eff is None:
             Eff = self.Eff_A
         if t_door_open is None:
@@ -517,7 +537,11 @@ class ZeesluisFormulering():
         V_lock_A = self.L_lock * self.B_lock * (h_A - self.z_lock) #lock volume levelled with inner harbour [m3]
         H_effA = h_A - self.z_lock - 0.8 * np.max([0,np.min([(self.z_sillA - self.z_A), (self.z_sillA - self.z_lock)])]) # Effective depth levelled with inner harbour [m]
         V_lock_A_Eff = self.L_lock * self.B_lock * H_effA  # Effective lock volume levelled with inner harbour [m3]
-        rho_MZ = 0.5 * (self.salinity_kgm3_to_density(S_A,T_A)+self.salinity_kgm3_to_density(S_B,T_B)) # Average water density lock complex [kg/m3]
+        if rho_A is None:
+            rho_A = self.salinity_kgm3_to_density(S_A,T_A)
+        if rho_B is None:
+            rho_B = self.salinity_kgm3_to_density(S_B,T_B)
+        rho_MZ = 0.5 * (rho_A+rho_B) # Average water density lock complex [kg/m3]
 
         # vessels exiting lock
         M_A2lock_openAa = V_ship_exit * S_A # Mass flux salt from inner to lock chamber after vessels sailed out [kg]
