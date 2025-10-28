@@ -221,7 +221,11 @@ class Movable(Locatable, Routable, Log):
             self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
             self.position_on_route = index
 
-            yield from self.pass_node(self.current_node)
+            try:
+                yield from self.pass_node(self.current_node)
+            except ValueError as e:
+                if str(e) == 'Port not accessible for vessel':
+                    break
 
             # are we already at destination?
             if self.next_node == self.current_node:
@@ -310,6 +314,7 @@ class Movable(Locatable, Routable, Log):
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
+
 
         # release resource if needed
         if self.req is not None:

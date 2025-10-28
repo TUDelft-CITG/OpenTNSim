@@ -48,12 +48,16 @@ class VesselTrafficService:
 
         # Create sub-routes based on anchorage areas on the route
         if not time_start:
-            time_start = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now, tz=pytz.utc)).to_datetime64()
+            time_start = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
         if not time_stop:
-            time_stop = pd.Timestamp(
-                datetime.datetime.fromtimestamp(vessel.env.now + vessel.metadata["max_waiting_time"], tz=pytz.utc)
-            ).to_datetime64()
-        _, tidal_windows = self.provide_tidal_windows(vessel, route, time_start, time_stop, delay, plot=plot)
+            time_stop = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + pd.Timedelta(days=2).total_seconds())).to_datetime64()
+
+        if not plot:
+            _, tidal_windows = self.provide_tidal_windows(vessel, route, time_start, time_stop, delay, plot=plot)
+        else:
+            _, tidal_windows, _, _ = self.provide_tidal_windows(vessel, route, time_start, time_stop, delay, plot=plot)
+
+        waiting_time = pd.Timedelta('NaT')
         for window in tidal_windows:
             if time_start > window[1]:
                 continue
@@ -97,7 +101,7 @@ class VesselTrafficService:
         k = sorted(
             vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]["geometry"].length
         )[0]
-        edge_geometry = vessel.multidigraph.edges[edge[0], edge[1], k]["Info"]["geometry"]
+        edge_geometry = vessel.multidigraph.edges[edge[0], edge[1], k]["geometry"]
         for coord in edge_geometry.coords:
             distance.append(origin_location.distance(Point(coord)))
         if np.argmin(distance):
@@ -136,7 +140,7 @@ class VesselTrafficService:
         k = sorted(
             vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]["geometry"].length
         )[0]
-        sailing_distance = [edge, vessel.multidigraph.edges[edge[0], edge[1], k]["Info"]["length"]]
+        sailing_distance = [edge, vessel.multidigraph.edges[edge[0], edge[1], k]["length"]]
         return sailing_distance
 
     def provide_sailing_distance_over_route(self, vessel, route):
@@ -392,9 +396,9 @@ class VesselTrafficService:
         MBL, _, available_water_depth = self.provide_water_depth(vessel, node, delay)
 
         ukc_s, ukc_p, ukc_r, fwa = np.zeros(4)
-        if "Vertical tidal restriction" in vessel.multidigraph.nodes[node]["Info"].keys():
-            ukcs_s, ukcs_p, ukcs_r, fwas = vessel.multidigraph.nodes[node]["Info"]["Vertical tidal restriction"]["Type"]
-            specifications = vessel.multidigraph.nodes[node]["Info"]["Vertical tidal restriction"]["Specification"]
+        if "Vertical tidal restriction" in vessel.multidigraph.nodes[node].keys():
+            ukcs_s, ukcs_p, ukcs_r, fwas = vessel.multidigraph.nodes[node]["Vertical tidal restriction"]["Type"]
+            specifications = vessel.multidigraph.nodes[node]["Vertical tidal restriction"]["Specification"]
 
             # Determine which restriction applies to vessel
             restriction_index, _ = self.provide_tidal_window_restriction(vessel, [node], specifications, node, delay=delay)
@@ -404,7 +408,11 @@ class VesselTrafficService:
             ukc_p = ukcs_p[restriction_index] * vessel.T
             ukc_r = ukcs_r[restriction_index][0] * (vessel.T - ukcs_r[restriction_index][1])
             fwa = fwas[restriction_index] * vessel.T
-        ship_related_factors = {"ukc_s": ukc_s, "ukc_p": ukc_p, "ukc_r": ukc_r, "fwa": fwa, "extra_ukc": vessel.metadata["ukc"]}
+
+        extra_ukc = 0.
+        if 'metadata' in dir(vessel) and "ukc" in vessel.metadata.keys():
+            extra_ukc = vessel.metadata["ukc"]
+        ship_related_factors = {"ukc_s": ukc_s, "ukc_p": ukc_p, "ukc_r": ukc_r, "fwa": fwa, "extra_ukc": extra_ukc}
         required_water_depth = vessel.T + sum(ship_related_factors.values())
         net_ukc = available_water_depth - required_water_depth
         gross_ukc = available_water_depth - vessel.T
@@ -485,14 +493,12 @@ class VesselTrafficService:
                 - 2,
             ]
         )
-        time_end_index = np.absolute(
-            self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))
-        ).argmin()
+        time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
         time_net_ukc = net_ukcs.index.to_numpy()
         net_ukc = net_ukcs["min_net_ukc"].to_numpy()
 
-        # Determine zero crossinsg
-        zero_crossings = np.nonzero(np.diff(np.sign(net_ukc)))
+        # Determine zero crossings
+        zero_crossings = np.nonzero(np.diff(np.sign(net_ukc)))[0]
         for root in [time_net_ukc[i] for i in zero_crossings]:
             # -if the net ukc a moment later than the root is higher than the required water depth:
             if net_ukc[bisect.bisect_right(time_net_ukc, root)] > 0:
@@ -502,32 +508,21 @@ class VesselTrafficService:
 
         # Default values
         if vertical_tidal_accessibility.empty:
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Accessible"]
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [
-                0,
-                "Inaccessible",
-            ]
+            if np.max(net_ukc) > 0.0:
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Accessible"]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Inaccessible",]
+            else:
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Inaccessible"]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0, "Accessible"]
         else:
             if vertical_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [
-                    0,
-                    "Accessible",
-                ]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0,"Accessible",]
             else:
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [
-                    0,
-                    "Inaccessible",
-                ]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0,"Inaccessible",]
             if vertical_tidal_accessibility.iloc[-1].Accessibility == "Inaccessible":
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [
-                    0,
-                    "Accessible",
-                ]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Accessible",]
             else:
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [
-                    0,
-                    "Inaccessible",
-                ]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Inaccessible",]
 
         # Return the sail-in or -out-times given the vertical tidal restrictions over the route of the vessel
         vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
@@ -586,6 +581,7 @@ class VesselTrafficService:
             fig.tight_layout()
 
             plt.show()
+
         return vertical_tidal_accessibility, vertical_tidal_windows, net_ukcs
 
     def provide_horizontal_tidal_windows(self, vessel, route, time_start, time_end, delay=0, plot=False):
@@ -834,6 +830,7 @@ class VesselTrafficService:
                     )
                 horizontal_tidal_accessibility["Condition"] = "Current velocity"
                 horizontal_tidal_accessibility = horizontal_tidal_accessibility[["Limit", "Condition", "Accessibility"]]
+
             return horizontal_tidal_accessibility, station
 
         # Start calculation
@@ -843,22 +840,22 @@ class VesselTrafficService:
         horizontal_tidal_accessibility = pd.DataFrame(columns=["Limit", "Condition", "Accessibility"])
         horizontal_tidal_window = False
         for route_index, node_name in enumerate(route):
-            if "Horizontal tidal restriction" in vessel.multidigraph.nodes[node_name]["Info"].keys():
+            if "Horizontal tidal restriction" in vessel.multidigraph.nodes[node_name].keys():
                 horizontal_tidal_window = True
                 sailing_time_to_next_node = self.provide_sailing_time(vessel, route[: (route_index + 1)])
-                specifications = vessel.multidigraph.nodes[node_name]["Info"]["Horizontal tidal restriction"]["Specification"]
+                specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Specification"]
                 restriction_index, no_tidal_window = self.provide_tidal_window_restriction(
                     vessel, route, specifications, node_name, delay=delay
                 )
                 if no_tidal_window:
                     continue
-                hydrodynamic_data = vessel.multidigraph.nodes[node_name]["Info"]["Horizontal tidal restriction"]["Data"][
+                hydrodynamic_data = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Data"][
                     restriction_index
                 ]
-                cross_current_limit = vessel.multidigraph.nodes[node_name]["Info"]["Horizontal tidal restriction"]["Limit"][
+                cross_current_limit = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Limit"][
                     restriction_index
                 ]
-                window_specifications = vessel.multidigraph.nodes[node_name]["Info"]["Horizontal tidal restriction"]["Type"][
+                window_specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Type"][
                     restriction_index
                 ]
                 time_start_index = np.max(
@@ -926,7 +923,6 @@ class VesselTrafficService:
                     horizontal_tidal_accessibility = self.combine_tidal_windows(
                         horizontal_tidal_accessibility, next_horizontal_tidal_accessibility
                     )
-
         if horizontal_tidal_accessibility.empty or not horizontal_tidal_window:
             horizontal_tidal_accessibility = pd.DataFrame(columns=["Limit", "Condition", "Accessibility"])
             horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [
@@ -937,7 +933,7 @@ class VesselTrafficService:
             horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [
                 0,
                 "Current velocity",
-                "Inaccessible",
+                "Accessible",
             ]
         else:
             if horizontal_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
@@ -1043,195 +1039,146 @@ class VesselTrafficService:
         )
 
     def combine_tidal_windows(self, tidal_window_1, tidal_window_2):
-        accessibility_1 = tidal_window_1.iloc[
-            [bisect.bisect_right(tidal_window_1.index, index) - 1 for index in tidal_window_2.index]
-        ].Accessibility.to_numpy()
-        accessibility_2 = tidal_window_2.iloc[
-            [bisect.bisect_right(tidal_window_2.index, index) - 1 for index in tidal_window_1.index]
-        ].Accessibility.to_numpy()
-        accessibility_1_interpolated = tidal_window_1.copy()
-        accessibility_2_interpolated = tidal_window_2.copy()
-        for key, value in zip(tidal_window_2.index, accessibility_1):
-            accessibility_1_interpolated.loc[key, "Accessibility"] = value
-        for key, value in zip(tidal_window_1.index, accessibility_2):
-            accessibility_2_interpolated.loc[key, "Accessibility"] = value
-        accessibility_1_interpolated = accessibility_1_interpolated.sort_index()
-        accessibility_2_interpolated = accessibility_2_interpolated.sort_index()
-        tidal_accessibility = pd.concat([accessibility_1_interpolated, accessibility_2_interpolated], axis=1)
+        tidal_accessibility = pd.concat([tidal_window_1,tidal_window_2],axis=1)
+        tidal_accessibility = tidal_accessibility.bfill().infer_objects(copy=False)
         tidal_accessibility = tidal_accessibility.sort_index()
-        tidal_accessibility_limit = [
-            limit_1 if not math.isnan(limit_1) else limit_2 for limit_1, limit_2 in tidal_accessibility.Limit.to_numpy()
-        ]
-        tidal_accessibility_condition = [
-            condition_1 if isinstance(condition_1, str) else condition_2
-            for condition_1, condition_2 in tidal_accessibility.Condition.to_numpy()
-        ]
-        tidal_accessibility_accessibility = [
-            "Accessible" if accessibility_1 == accessibility_2 and accessibility_1 == "Accessible" else "Inaccessible"
-            for accessibility_1, accessibility_2 in tidal_accessibility.Accessibility.to_numpy()
-        ]
+        tidal_accessibility_limit = [limit_1 if not math.isnan(limit_1) else limit_2 for limit_1, limit_2 in tidal_accessibility.Limit.to_numpy()]
+        tidal_accessibility_condition = [condition_1 if isinstance(condition_1, str) else condition_2 for condition_1, condition_2 in tidal_accessibility.Condition.to_numpy()]
+        tidal_accessibility_accessibility = ["Accessible" if accessibility_1 == accessibility_2 and accessibility_1 == "Accessible" else "Inaccessible" for accessibility_1, accessibility_2 in tidal_accessibility.Accessibility.to_numpy()]
         tidal_accessibility = tidal_accessibility.drop(["Limit", "Condition", "Accessibility"], axis=1)
         tidal_accessibility["Limit"] = tidal_accessibility_limit
         tidal_accessibility["Condition"] = tidal_accessibility_condition
         tidal_accessibility["Accessibility"] = tidal_accessibility_accessibility
-        accessible_indexes = [
-            idx for idx, accessibility in enumerate((tidal_accessibility.Accessibility == "Accessible").to_numpy()) if accessibility
-        ]
-        inaccessible_indexes = [
-            idx
-            for idx, inaccessibility in enumerate((tidal_accessibility.Accessibility == "Inaccessible").to_numpy())
-            if inaccessibility
-        ]
-        accessible_indexes = np.array(
-            [indexes[-1] for indexes in np.split(accessible_indexes, np.nonzero(np.diff(accessible_indexes) != 1) + 1)], dtype=int
-        )
-        inaccessible_indexes = np.array(
-            [indexes[0] for indexes in np.split(inaccessible_indexes, np.nonzero(np.diff(inaccessible_indexes) != 1) + 1)],
-            dtype=int,
-        )
+        accessible_indexes = [idx for idx, accessibility in enumerate((tidal_accessibility.Accessibility == "Accessible").to_numpy()) if accessibility]
+        inaccessible_indexes = [idx for idx, inaccessibility in enumerate((tidal_accessibility.Accessibility == "Inaccessible").to_numpy()) if inaccessibility]
+        if len(accessible_indexes):
+            accessible_indexes = np.array([indexes[-1] for indexes in np.split(accessible_indexes, np.nonzero(np.diff(accessible_indexes) != 1)[0] + 1)], dtype=int)
+        inaccessible_indexes = np.array([indexes[0] for indexes in np.split(inaccessible_indexes, np.nonzero(np.diff(inaccessible_indexes) != 1)[0] + 1)],dtype=int,)
         tidal_window_indexes = np.sort(np.append(accessible_indexes, inaccessible_indexes))
         tidal_accessibility = tidal_accessibility.iloc[tidal_window_indexes]
         return tidal_accessibility
 
     def provide_tidal_windows(self, vessel, route, time_start, time_end, ax_left=None, ax_right=None, delay=0, plot=False):
-        time_start_index = np.max(
-            [
-                0,
-                np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin()
-                - 2,
-            ]
-        )
-        time_end_index = np.absolute(
-            self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))
-        ).argmin()
-        vertical_tidal_accessibility, vertical_tidal_windows, net_ukcs = self.provide_vertical_tidal_windows(
-            vessel, route, time_start, time_end, delay
-        )
-        (
-            horizontal_tidal_accessibility,
-            horizontal_tidal_windows,
-            horizontal_tidal_restriction_nodes,
-            horizontal_tidal_restriction_stations,
-            window_specifications,
-        ) = self.provide_horizontal_tidal_windows(vessel, route, time_start, time_end, delay)
+        time_start_index = np.max([0,np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin()- 2,])
+        time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
+        vertical_tidal_accessibility, vertical_tidal_windows, net_ukcs = self.provide_vertical_tidal_windows(vessel, route, time_start, time_end, delay)
+
+        (horizontal_tidal_accessibility,
+         horizontal_tidal_windows,
+         horizontal_tidal_restriction_nodes,
+         horizontal_tidal_restriction_stations,
+         window_specifications,) = self.provide_horizontal_tidal_windows(vessel, route, time_start, time_end, delay)
+
         tidal_accessibility = self.combine_tidal_windows(vertical_tidal_accessibility, horizontal_tidal_accessibility)
-        tidal_windows = [
-            [window_start[0], window_end[0]]
-            for window_start, window_end in zip(tidal_accessibility.iloc[:-1].iterrows(), tidal_accessibility.iloc[1:].iterrows())
-            if window_start[1].Accessibility == "Accessible"
-        ]
+        tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(tidal_accessibility.iloc[:-1].iterrows(), tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == "Accessible"]
         # Plot
-        if plot:
-            # Create figure
-            if not ax_left:
-                _, ax_left = plt.subplots(figsize=[16 * 2 / 3, 6])
-                ax_right = ax_left.twinx()
+        if not plot:
+            return tidal_accessibility, tidal_windows
 
-            # Plot net UKC
-            # net_ukc = self.provide_minimum_available_water_depth_along_route(vessel, route, time_start, time_end, delay)
-            (net_UKC,) = ax_left.plot(net_ukcs["min_net_ukc"], color="C0", linewidth=2, zorder=1)
-            minimum_required_net_ukc = ax_left.axhline(0, color="C0", linestyle="--", linewidth=2)
+        # Create figure
+        if not ax_left:
+            _, ax_left = plt.subplots(figsize=[16 * 2 / 3, 6])
+        if not ax_right and len(horizontal_tidal_restriction_nodes):
+            ax_right = ax_left.twinx()
 
-            # Plot governing current velocity
-            for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
-                governing_current_velocity, _ = self.provide_governing_current_velocity(
-                    vessel, station, time_start_index, time_end_index
+        # Plot net UKC
+        (net_UKC,) = ax_left.plot(net_ukcs["min_net_ukc"], color="C0", linewidth=2, zorder=2)
+        minimum_required_net_ukc = ax_left.axhline(0, color="C0", linestyle="--", linewidth=2)
+
+        for node in route:
+            ax_left.plot(net_ukcs[node],color='grey',zorder=1)
+
+        # Plot governing current velocity
+        for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
+            governing_current_velocity, _ = self.provide_governing_current_velocity(
+                vessel, station, time_start_index, time_end_index
+            )
+            horizontal_tidal_accessibility_time_correction = np.timedelta64(
+                int(self.provide_sailing_time(vessel, route[: (route.index(node) + 1)])["Time"].sum()), "s"
+            ) + np.timedelta64(15, "m")
+            (current_velocity,) = ax_right.plot(
+                [
+                    time - horizontal_tidal_accessibility_time_correction
+                    for time in self.hydrodynamic_information.TIME.values[time_start_index:time_end_index]
+                ],
+                governing_current_velocity,
+                color="firebrick",
+                linewidth=2,
+                zorder=1,
+            )
+            if window_specifications.window_method == "Maximum":
+                critical_current_velocity = ax_right.axhline(
+                    window_specifications.current_velocity_values["Flood"], color="firebrick", linestyle="--", linewidth=2
                 )
-                horizontal_tidal_accessibility_time_correction = np.timedelta64(
-                    int(self.provide_sailing_time(vessel, route[: (route.index(node) + 1)])["Time"].sum()), "s"
-                ) + np.timedelta64(15, "m")
-                (current_velocity,) = ax_right.plot(
+                ax_right.axhline(
+                    -1 * window_specifications.current_velocity_values["Ebb"], color="firebrick", linestyle="--", linewidth=2
+                )
+            ax_right.set_ylim(np.floor(np.min(governing_current_velocity)), np.ceil(np.max(governing_current_velocity)))
+
+        # Figure bounds
+        ax_left.set_xlim(
+            self.hydrodynamic_information.TIME.values[time_start_index],
+            self.hydrodynamic_information.TIME.values[time_end_index - 36],
+        )
+        ax_left.set_ylim(
+            np.min([np.floor(np.min(net_ukcs["min_net_ukc"].to_numpy())), -1.0]),
+            np.max([np.ceil(np.max(net_ukcs["min_net_ukc"])), 1.0]),
+        )
+
+        # Calculate vertical and horizontal tidal windows
+        vertical_tidal_window_polygons = []
+        for window in vertical_tidal_windows:
+            vertical_tidal_window_polygons.append(
+                Polygon(
                     [
-                        time - horizontal_tidal_accessibility_time_correction
-                        for time in self.hydrodynamic_information.TIME.values[time_start_index:time_end_index]
-                    ],
-                    governing_current_velocity,
-                    color="firebrick",
-                    linewidth=2,
-                    zorder=1,
+                        Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                        Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                        Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                        Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                    ]
                 )
-                if window_specifications.window_method == "Maximum":
-                    critical_current_velocity = ax_right.axhline(
-                        window_specifications.current_velocity_values["Flood"], color="firebrick", linestyle="--", linewidth=2
-                    )
-                    ax_right.axhline(
-                        -1 * window_specifications.current_velocity_values["Ebb"], color="firebrick", linestyle="--", linewidth=2
-                    )
-                ax_right.set_ylim(np.floor(np.min(governing_current_velocity)), np.ceil(np.max(governing_current_velocity)))
-
-            # Figure bounds
-            ax_left.set_xlim(
-                self.hydrodynamic_information.TIME.values[time_start_index],
-                self.hydrodynamic_information.TIME.values[time_end_index - 36],
             )
-            ax_left.set_ylim(
-                np.min([np.floor(np.min(net_ukcs["min_net_ukc"].to_numpy())), -1.0]),
-                np.max([np.ceil(np.max(net_ukcs["min_net_ukc"])), 1.0]),
-            )
-
-            # Calculate vertical and horizontal tidal windows
-            vertical_tidal_window_polygons = []
-            for window in vertical_tidal_windows:
-                vertical_tidal_window_polygons.append(
-                    Polygon(
-                        [
-                            Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                            Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                            Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                            Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                        ]
-                    )
+        horizontal_tidal_window_polygons = []
+        for window in horizontal_tidal_windows:
+            horizontal_tidal_window_polygons.append(
+                Polygon(
+                    [
+                        Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                        Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                        Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                        Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                    ]
                 )
-            horizontal_tidal_window_polygons = []
-            for window in horizontal_tidal_windows:
-                horizontal_tidal_window_polygons.append(
-                    Polygon(
-                        [
-                            Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                            Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                            Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                            Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                        ]
-                    )
-                )
-            tidal_window_polygons = []
-            for window in tidal_windows:
-                tidal_window_polygons.append(
-                    Polygon(
-                        [
-                            Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                            Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                            Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                            Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                        ]
-                    )
-                )
-
-            if not isinstance(horizontal_tidal_window_polygons, Polygon):
-                horizontal_tidal_window_polygons = MultiPolygon(horizontal_tidal_window_polygons)
-            vertical_tidal_window_polygons = MultiPolygon(vertical_tidal_window_polygons).difference(
-                horizontal_tidal_window_polygons
             )
-            vertical_tidal_window_polygons = vertical_tidal_window_polygons.difference(MultiPolygon(tidal_window_polygons))
-            if not isinstance(vertical_tidal_window_polygons, Polygon):
-                vertical_tidal_window_polygons = MultiPolygon(vertical_tidal_window_polygons)
-            horizontal_tidal_window_polygons = MultiPolygon(horizontal_tidal_window_polygons).difference(
-                vertical_tidal_window_polygons
+        tidal_window_polygons = []
+        for window in tidal_windows:
+            tidal_window_polygons.append(
+                Polygon(
+                    [
+                        Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                        Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                        Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                        Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                    ]
+                )
             )
-            horizontal_tidal_window_polygons = horizontal_tidal_window_polygons.difference(MultiPolygon(tidal_window_polygons))
 
-            # Plot vertical tidal windows
-            if not isinstance(vertical_tidal_window_polygons, Polygon):
-                for polygon in vertical_tidal_window_polygons.geoms:
-                    polygon_x = []
-                    for timestamp in polygon.exterior.xy[0]:
-                        polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
-                    polygon_y = list(polygon.exterior.xy[1])
-                    (vertical_tidal_window,) = ax_left.fill(
-                        polygon_x, polygon_y, facecolor="C0", alpha=0.25, edgecolor="none", zorder=0
-                    )
-            elif isinstance(vertical_tidal_window_polygons, Polygon):
-                polygon = vertical_tidal_window_polygons
+        if not isinstance(horizontal_tidal_window_polygons, Polygon):
+            horizontal_tidal_window_polygons = MultiPolygon(horizontal_tidal_window_polygons)
+        vertical_tidal_window_polygons = MultiPolygon(vertical_tidal_window_polygons).difference(
+            horizontal_tidal_window_polygons
+        )
+        vertical_tidal_window_polygons = vertical_tidal_window_polygons.difference(MultiPolygon(tidal_window_polygons))
+        if not isinstance(vertical_tidal_window_polygons, Polygon):
+            vertical_tidal_window_polygons = MultiPolygon(vertical_tidal_window_polygons)
+        horizontal_tidal_window_polygons = MultiPolygon(horizontal_tidal_window_polygons).difference(
+            vertical_tidal_window_polygons
+        )
+        horizontal_tidal_window_polygons = horizontal_tidal_window_polygons.difference(MultiPolygon(tidal_window_polygons))
+
+        # Plot vertical tidal windows
+        if not isinstance(vertical_tidal_window_polygons, Polygon):
+            for polygon in vertical_tidal_window_polygons.geoms:
                 polygon_x = []
                 for timestamp in polygon.exterior.xy[0]:
                     polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
@@ -1239,19 +1186,19 @@ class VesselTrafficService:
                 (vertical_tidal_window,) = ax_left.fill(
                     polygon_x, polygon_y, facecolor="C0", alpha=0.25, edgecolor="none", zorder=0
                 )
+        elif isinstance(vertical_tidal_window_polygons, Polygon):
+            polygon = vertical_tidal_window_polygons
+            polygon_x = []
+            for timestamp in polygon.exterior.xy[0]:
+                polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
+            polygon_y = list(polygon.exterior.xy[1])
+            (vertical_tidal_window,) = ax_left.fill(
+                polygon_x, polygon_y, facecolor="C0", alpha=0.25, edgecolor="none", zorder=0
+            )
 
-            # Plot horizontal tidal windows
-            if not isinstance(horizontal_tidal_window_polygons, Polygon):
-                for polygon in horizontal_tidal_window_polygons.geoms:
-                    polygon_x = []
-                    for timestamp in polygon.exterior.xy[0]:
-                        polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
-                    polygon_y = list(polygon.exterior.xy[1])
-                    (horizontal_tidal_window,) = ax_left.fill(
-                        polygon_x, polygon_y, facecolor="firebrick", alpha=0.25, edgecolor="none", zorder=0
-                    )
-            elif isinstance(horizontal_tidal_window_polygons, Polygon):
-                polygon = horizontal_tidal_window_polygons
+        # Plot horizontal tidal windows
+        if not isinstance(horizontal_tidal_window_polygons, Polygon):
+            for polygon in horizontal_tidal_window_polygons.geoms:
                 polygon_x = []
                 for timestamp in polygon.exterior.xy[0]:
                     polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
@@ -1259,96 +1206,117 @@ class VesselTrafficService:
                 (horizontal_tidal_window,) = ax_left.fill(
                     polygon_x, polygon_y, facecolor="firebrick", alpha=0.25, edgecolor="none", zorder=0
                 )
+        elif isinstance(horizontal_tidal_window_polygons, Polygon):
+            polygon = horizontal_tidal_window_polygons
+            polygon_x = []
+            for timestamp in polygon.exterior.xy[0]:
+                polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
+            polygon_y = list(polygon.exterior.xy[1])
+            (horizontal_tidal_window,) = ax_left.fill(
+                polygon_x, polygon_y, facecolor="firebrick", alpha=0.25, edgecolor="none", zorder=0
+            )
 
-            # Plot tidal windows
-            for window in tidal_windows:
-                (tidal_window,) = ax_left.fill(
-                    [window[0], window[0], window[1], window[1]],
-                    [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]],
-                    facecolor="limegreen",
-                    alpha=0.25,
-                    edgecolor="none",
-                    zorder=0,
-                )
-            if not tidal_windows:
-                tidal_window = ax_left.fill(
-                    [0, 0, 0, 0],
-                    [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]],
-                    facecolor="limegreen",
-                    alpha=0.25,
-                    edgecolor="none",
-                    zorder=0,
-                )
+        # Plot tidal windows
+        for window in tidal_windows:
+            (tidal_window,) = ax_left.fill(
+                [window[0], window[0], window[1], window[1]],
+                [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]],
+                facecolor="limegreen",
+                alpha=0.25,
+                edgecolor="none",
+                zorder=0,
+            )
+        if not tidal_windows:
+            tidal_window = ax_left.fill(
+                [0, 0, 0, 0],
+                [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]],
+                facecolor="limegreen",
+                alpha=0.25,
+                edgecolor="none",
+                zorder=0,
+            )
 
-            # Figure ticks
-            ax_left.set_xticks(ax_left.get_xticks())
-            ax_left.set_xticklabels(ax_left.get_xticklabels(), rotation=45, ha="right")
-            ax_left.xaxis.set_major_formatter(dates.DateFormatter("%Y-%m-%d %H:%M"))
+        # Figure ticks
+        ax_left.set_xticks(ax_left.get_xticks())
+        ax_left.set_xticklabels(ax_left.get_xticklabels(), rotation=45, ha="right")
+        ax_left.xaxis.set_major_formatter(dates.DateFormatter("%Y-%m-%d %H:%M"))
 
-            # Figure axes
-            ax_left.set_xlabel("Date")
-            ax_left.set_ylabel("Net UKC [m]")
+        # Figure axes
+        ax_left.set_xlabel("Start time of vessel trip")
+        ax_left.set_ylabel("Minimum net UKC experienced over entire vessel route [m]")
+        if len(horizontal_tidal_restriction_nodes):
             ax_right.set_ylabel("Current velocity [m/s]")
-            # Legend and title
-            if window_specifications:
-                if window_specifications.window_method == "Maximum":
-                    ax_left.legend(
-                        [
-                            net_UKC,
-                            minimum_required_net_ukc,
-                            current_velocity,
-                            critical_current_velocity,
-                            vertical_tidal_window,
-                            horizontal_tidal_window,
-                            tidal_window,
-                        ],
-                        [
-                            "Net UKC",
-                            "Required net UKC",
-                            "Current velocity",
-                            "Vertical tidal windows",
-                            "Horizontal tidal windows",
-                            "Resulting tidal windows",
-                        ],
-                        frameon=False,
-                        loc="upper left",
-                        bbox_to_anchor=(1.05, 1.0),
-                    )
-                else:
-                    ax_left.legend(
-                        [
-                            net_UKC,
-                            minimum_required_net_ukc,
-                            current_velocity,
-                            vertical_tidal_window,
-                            horizontal_tidal_window,
-                            tidal_window,
-                        ],
-                        [
-                            "Net UKC",
-                            "Required net UKC",
-                            "Current velocity",
-                            "Vertical tidal windows",
-                            "Horizontal tidal windows",
-                            "Resulting tidal windows",
-                        ],
-                        frameon=False,
-                        loc="upper left",
-                        bbox_to_anchor=(1.05, 1.0),
-                    )
-            else:
+
+        (no_tidal_window,) = ax_left.fill(
+            [0, 0, 0, 0],
+            [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]],
+            facecolor="firebrick",
+            alpha=0.25,
+            edgecolor="none",
+            zorder=-1,
+        )
+
+        # Legend and title
+        if window_specifications:
+            if window_specifications.window_method == "Maximum":
                 ax_left.legend(
-                    [net_UKC, minimum_required_net_ukc, vertical_tidal_window, tidal_window],
-                    ["Net UKC", "Required net UKC", "Vertical tidal windows", "Resulting tidal windows"],
+                    [
+                        net_UKC,
+                        minimum_required_net_ukc,
+                        current_velocity,
+                        critical_current_velocity,
+                        vertical_tidal_window,
+                        horizontal_tidal_window,
+                        tidal_window,
+                        no_tidal_window,
+                    ],
+                    [
+                        "Net UKC",
+                        "Required net UKC",
+                        "Current velocity",
+                        "Vertical tidal windows",
+                        "Horizontal tidal windows",
+                        "Accessible",
+                        "Not accessible"
+                    ],
                     frameon=False,
                     loc="upper left",
                     bbox_to_anchor=(1.05, 1.0),
                 )
-            ax_left.set_title(
-                f"Accessibility of {vessel.type}-class vessel with name {vessel.name} "
-                f"and {np.round(vessel.T, 2)}m draught and a length of {np.round(vessel.L)}m, sailing {vessel.bound}"
-            )
-            plt.show()
-            return tidal_accessibility, tidal_windows, ax_left, ax_right
+            else:
+                ax_left.legend(
+                    [
+                        net_UKC,
+                        minimum_required_net_ukc,
+                        current_velocity,
+                        vertical_tidal_window,
+                        horizontal_tidal_window,
+                        tidal_window,
+                        no_tidal_window,
+                    ],
+                    [
+                        "Net UKC",
+                        "Required net UKC",
+                        "Current velocity",
+                        "Vertical tidal windows",
+                        "Horizontal tidal windows",
+                        "Accessible",
+                        "Not accessible"
+                    ],
+                    frameon=False,
+                    loc="upper left",
+                    bbox_to_anchor=(1.05, 1.0),
+                )
+        else:
+            handles = [net_UKC, minimum_required_net_ukc, tidal_window, no_tidal_window]
+            labels = ["Net UKC", "Required net UKC", "Accessible vertical tidal windows","Not accessible"]
+            ax_left.legend(handles, labels, frameon=False, loc="upper left", bbox_to_anchor=(1.05, 1.0),)
+        ax_left.set_title(
+            f"Accessibility of {vessel.type}-class vessel '{vessel.name}' with"
+            f"a draught of {np.round(vessel.T, 2)}m and\na length of {np.round(vessel.L)}m sailing {vessel.bound} from"
+            f" node '{route[0]}' to node '{route[-1]}'."
+        )
+        plt.show()
+        return tidal_accessibility, tidal_windows, ax_left, ax_right
 
-        return tidal_accessibility, tidal_windows
+
