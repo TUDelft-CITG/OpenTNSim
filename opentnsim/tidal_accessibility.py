@@ -1,12 +1,12 @@
-import pandas as pd
 import simpy
+import math
+from opentnsim.core.movable import Interrupted
 
 class HasDraughtRestrictions:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.on_pass_node_functions.append(self.wait_for_tidal_window)
         self.bound = 'inbound'
-
 
     def check_if_route_contains_restrictions(self):
         contains_restriction = False
@@ -42,11 +42,11 @@ class HasDraughtRestrictions:
         for route in routes_with_restrictions:
             waiting_time = self.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel=self, route=route, delay=0, plot=True)
 
+        if math.isnan(waiting_time):
+            raise Interrupted('Port not accessible for vessel.')
+
         if not waiting_time:
             return
-
-        if pd.isna(waiting_time):
-            raise ValueError('Port not accessible for vessel.')
 
         self.log_entry_v0("Waiting for tidal window start",
                           self.env.now,

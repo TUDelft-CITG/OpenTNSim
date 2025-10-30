@@ -23,7 +23,6 @@ from shapely.geometry import MultiPolygon, Point, Polygon
 from matplotlib import dates
 from matplotlib import pyplot as plt
 
-
 class VesselTrafficService:
     """Class: a collection of functions that processes requests of vessels regarding
     the nautical processes on ow to enter the port safely"""
@@ -432,20 +431,12 @@ class VesselTrafficService:
             to sail (can be different than vessel.route)
             - delay:
         """
-        time_start_index = np.max(
-            [
-                0,
-                np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin()
-                - 2,
-            ]
-        )
-        time_end_index = np.absolute(
-            self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))
-        ).argmin()
+        time_start_index = np.max([0, np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
+        time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
         net_ukc = pd.DataFrame()
         times = self.hydrodynamic_information["TIME"].values[time_start_index:time_end_index]
         t_step = times[1] - times[0]
-
+        t_boundaries = []
         # Start of calculation by looping over the nodes of the route
         for route_index, node_name in enumerate(route):
             node_index = list(self.hydrodynamic_information["STATION"].values).index(node_name)
@@ -455,20 +446,19 @@ class VesselTrafficService:
             _, _, _, required_water_depth, _, _ = self.provide_ukc_clearance(vessel, node_name, delay)
             MBL = self.hydrodynamic_information["MBL"][node_index].values[time_start_index:time_end_index]
             water_depth = water_level + MBL
-            net_ukc = pd.concat(
-                [
-                    net_ukc,
-                    pd.DataFrame(
-                        [available_water_depth - required_water_depth for available_water_depth in water_depth],
-                        index=[t - time_correction_index * t_step for t in times],
-                        columns=[node_name],
-                    ),
-                ],
-                axis=1,
-            )
+            net_ukc_node = pd.DataFrame([available_water_depth - required_water_depth for available_water_depth in water_depth],columns=[node_name],index=times)
+            net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
+            t_boundaries.append(time_correction_index)
 
-        # Pick the minimum of the water depths for each time and each node
-        net_ukc = net_ukc.dropna(axis=0)
+        min_net_ukc = net_ukc.min(axis=1).min()
+        for column_index,(boundary_start,boundary_stop) in enumerate(zip(t_boundaries[:-1],t_boundaries[1:])):
+            window = boundary_stop - boundary_start
+            if window:
+                net_ukc.iloc[:, column_index] = net_ukc.iloc[:, column_index].rolling(window=window,center=False).min().shift(-(window-boundary_start))
+
+        if window:
+            net_ukc.iloc[:, -1] = net_ukc.iloc[:, -1].rolling(window=window,center=False).min().shift(-(window-boundary_start)-boundary_stop)
+        net_ukc = net_ukc.ffill().fillna(min_net_ukc)
         net_ukc["min_net_ukc"] = net_ukc.min(axis=1)
         return net_ukc
 
@@ -486,13 +476,7 @@ class VesselTrafficService:
         """
         vertical_tidal_accessibility = pd.DataFrame(columns=["Limit", "Accessibility"])
         net_ukcs = self.provide_minimum_available_water_depth_along_route(vessel, route, time_start, time_end, delay)
-        time_start_index = np.max(
-            [
-                0,
-                np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin()
-                - 2,
-            ]
-        )
+        time_start_index = np.max([0,np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
         time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
         time_net_ukc = net_ukcs.index.to_numpy()
         net_ukc = net_ukcs["min_net_ukc"].to_numpy()
@@ -508,12 +492,12 @@ class VesselTrafficService:
 
         # Default values
         if vertical_tidal_accessibility.empty:
-            if np.max(net_ukc) > 0.0:
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Accessible"]
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Inaccessible",]
-            else:
+            if not len(net_ukc) or np.max(net_ukc) < 0.0:
                 vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Inaccessible"]
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0, "Accessible"]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Accessible",]
+            else:
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Accessible"]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0, "Inaccessible"]
         else:
             if vertical_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
                 vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0,"Accessible",]
@@ -534,7 +518,6 @@ class VesselTrafficService:
             )
             if window_start[1].Accessibility == "Accessible"
         ]
-
         if plot:
             # Create figure
             fig, ax = plt.subplots(figsize=[16 * 2 / 3, 6])
@@ -1040,7 +1023,8 @@ class VesselTrafficService:
 
     def combine_tidal_windows(self, tidal_window_1, tidal_window_2):
         tidal_accessibility = pd.concat([tidal_window_1,tidal_window_2],axis=1)
-        tidal_accessibility = tidal_accessibility.bfill().infer_objects(copy=False)
+        with pd.option_context("future.no_silent_downcasting", True):
+            tidal_accessibility = tidal_accessibility.bfill().infer_objects(copy=False)
         tidal_accessibility = tidal_accessibility.sort_index()
         tidal_accessibility_limit = [limit_1 if not math.isnan(limit_1) else limit_2 for limit_1, limit_2 in tidal_accessibility.Limit.to_numpy()]
         tidal_accessibility_condition = [condition_1 if isinstance(condition_1, str) else condition_2 for condition_1, condition_2 in tidal_accessibility.Condition.to_numpy()]
@@ -1120,10 +1104,13 @@ class VesselTrafficService:
             self.hydrodynamic_information.TIME.values[time_start_index],
             self.hydrodynamic_information.TIME.values[time_end_index - 36],
         )
-        ax_left.set_ylim(
-            np.min([np.floor(np.min(net_ukcs["min_net_ukc"].to_numpy())), -1.0]),
-            np.max([np.ceil(np.max(net_ukcs["min_net_ukc"])), 1.0]),
-        )
+        if not net_ukcs["min_net_ukc"].empty:
+            ax_left.set_ylim(
+                np.min([np.floor(np.min(net_ukcs["min_net_ukc"].to_numpy())), -1.0]),
+                np.max([np.ceil(np.max(net_ukcs["min_net_ukc"])), 1.0]),
+            )
+        else:
+            ax_left.set_ylim(-1.0,1.0)
 
         # Calculate vertical and horizontal tidal windows
         vertical_tidal_window_polygons = []

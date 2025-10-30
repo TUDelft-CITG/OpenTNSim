@@ -31,6 +31,8 @@ from opentnsim.energy.mixins import ConsumesEnergy
 # get logger
 logger = logging.getLogger(__name__)
 
+class Interrupted(Exception):
+    pass
 
 class Routable(SimpyObject):
     """Mixin class: Something with a route (networkx format)
@@ -223,9 +225,9 @@ class Movable(Locatable, Routable, Log):
 
             try:
                 yield from self.pass_node(self.current_node)
-            except ValueError as e:
-                if str(e) == 'Port not accessible for vessel':
-                    break
+            except Interrupted as e:
+                print(e)
+                break
 
             # are we already at destination?
             if self.next_node == self.current_node:
