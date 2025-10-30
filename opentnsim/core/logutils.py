@@ -9,7 +9,7 @@ import pandas as pd
 from shapely import Point
 
 # internal
-import opentnsim.graph
+import opentnsim.graph.graph as graph
 
 
 # # %% CONVERT LOG TO EVENT TABLE
@@ -158,7 +158,7 @@ def logbook2eventtable(objs):
 
             duration_seconds = (stop_time - start_time).total_seconds()
             if isinstance(start_location, Point):
-                distance_meters = opentnsim.graph.calculate_distance(start_location, stop_location)
+                distance_meters = graph.calculate_distance(start_location, stop_location)
             else:
                 distance_meters = None
 

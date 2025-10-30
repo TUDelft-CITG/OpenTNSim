@@ -25,9 +25,10 @@ import pickle
 # import netCDF4
 from shapely import reverse
 from shapely.ops import transform
-from opentnsim import core, graph
+from opentnsim import core
 from opentnsim import model
-from opentnsim.graph import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
+from opentnsim.graph.graph import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
+from opentnsim.graph import graph
 from opentnsim.vessel_traffic_service.hydrodanamic_data_manager import HydrodynamicDataManager
 
 # spatial libraries

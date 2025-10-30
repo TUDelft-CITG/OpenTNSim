@@ -8,7 +8,6 @@ from shapely.ops import transform
 import datetime
 import simpy
 import opentnsim
-from opentnsim import graph
 from opentnsim.core.logutils import logbook2eventtable
 from opentnsim.core.plotutils import generate_vessel_gantt_chart
 

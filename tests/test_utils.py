@@ -43,29 +43,29 @@ def invalid_edge_graph():
 def test_network_check_valid(valid_graph, recwarn):
     """check if a valid network adheres to the convention"""
     assert len(recwarn) == 0, "expected 0 warnings before test started"
-    opentnsim.utils.network_check(valid_graph)
+    opentnsim.graph.utils.network_check(valid_graph)
     assert len(recwarn) == 0, "expected 0 warnings"
 
 
 def test_network_check_empty(empty_graph):
     """check if a valid network adheres to the convention"""
-    with pytest.warns(opentnsim.utils.NetworkWarning):
-        opentnsim.utils.network_check(empty_graph)
+    with pytest.warns(opentnsim.graph.utils.NetworkWarning):
+        opentnsim.graph.utils.network_check(empty_graph)
 
 
 def test_network_check_no_geometry(no_geometry_graph):
     """check if a valid network adheres to the convention"""
-    with pytest.warns(opentnsim.utils.NetworkWarning):
-        opentnsim.utils.network_check(no_geometry_graph)
+    with pytest.warns(opentnsim.graph.utils.NetworkWarning):
+        opentnsim.graph.utils.network_check(no_geometry_graph)
 
 
 def test_network_check_invalid_nodes(invalid_node_graph):
     """check if a valid network adheres to the convention"""
-    with pytest.warns(opentnsim.utils.NetworkWarning):
-        opentnsim.utils.network_check(invalid_node_graph)
+    with pytest.warns(opentnsim.graph.utils.NetworkWarning):
+        opentnsim.graph.utils.network_check(invalid_node_graph)
 
 
 def test_network_check_invalid_edges(invalid_edge_graph):
     """check if a valid network adheres to the convention"""
-    with pytest.warns(opentnsim.utils.NetworkWarning):
-        opentnsim.utils.network_check(invalid_edge_graph)
+    with pytest.warns(opentnsim.graph.utils.NetworkWarning):
+        opentnsim.graph.utils.network_check(invalid_edge_graph)

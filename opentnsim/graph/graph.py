@@ -33,7 +33,8 @@ from shapely.ops import transform
 import simpy
 
 # OpenTNSim
-import opentnsim.utils
+from opentnsim.graph import utils
+from opentnsim.graph import graph as graph_module
 from opentnsim.core import Identifiable, Locatable
 
 logger = logging.getLogger(__name__)
@@ -361,7 +362,7 @@ class Graph:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.graph = nx.Graph()
-        self.graph_info = opentnsim.utils.info(self.graph)
+        self.graph_info = utils.info(self.graph)
 
     def from_shape(self, file_location, shapefile, simplify=True, strict=True):
         """Generate nx.Graph() from shapefile
@@ -747,7 +748,7 @@ def plot_graph(graph, static: bool = False):
     for u, v in graph.edges():
         origin = graph.nodes[u]['geometry']
         destination = graph.nodes[v]['geometry']
-        distance_m = opentnsim.graph.calculate_distance(origin, destination)
+        distance_m = graph_module.calculate_distance(origin, destination)
         edge_labels[(u, v)] = f"{int(distance_m)} m"
 
     # Edge traces and arrow annotations
