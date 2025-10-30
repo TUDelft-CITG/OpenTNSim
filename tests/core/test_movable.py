@@ -7,7 +7,7 @@ from shapely.geometry import Point
 from pyproj import Geod
 
 from opentnsim.core.movable import Routable, Routeable, Movable, ContainerDependentMovable
-from opentnsim.graph.graph import calculate_distance_along_path
+from opentnsim.graph.mixins import calculate_distance_along_path
 from opentnsim.energy.mixins import ConsumesEnergy
 from opentnsim.core.vessel_properties import VesselProperties
 

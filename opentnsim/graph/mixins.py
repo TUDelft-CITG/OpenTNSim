@@ -23,6 +23,7 @@ from itertools import cycle
 
 from plotly.offline import init_notebook_mode, iplot
 
+
 # spatial libraries
 import pyproj
 import shapely.geometry
@@ -34,7 +35,7 @@ import simpy
 
 # OpenTNSim
 from opentnsim.graph import utils
-from opentnsim.graph import graph as graph_module
+from opentnsim.graph import mixins as graph_module
 from opentnsim.core import Identifiable, Locatable
 
 logger = logging.getLogger(__name__)

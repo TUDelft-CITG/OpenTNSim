@@ -184,17 +184,17 @@ def generate_vessels_with_distributions(
 @pytest.fixture
 def Vessel():
     Vessel = type(
-        "Vessel", 
+        "Vessel",
         (
-            lock_module.PassesLockComplex,             # allows to interact with a lock
-            opentnsim.core.Identifiable,               # allows to give the object a name and a random ID,
-            opentnsim.core.Movable,                    # allows the object to move, with a fixed speed, while logging this activity
-            opentnsim.core.VesselProperties,           # allows vessel to have dimensions, namely a length (L), width (B), and draught (T)
-            opentnsim.core.ExtraMetadata,              # allow additional information, such as an arrival time (required for passing a lock)
-            opentnsim.graph.HasMultiDiGraph,           # allow to operate on a graph that can include parallel edges from and to the same nodes
-            opentnsim.output.HasOutput,                # allow additional output to be stored
-        ), 
-        {}
+            lock_module.PassesLockComplex,  # allows to interact with a lock
+            opentnsim.core.Identifiable,  # allows to give the object a name and a random ID,
+            opentnsim.core.Movable,  # allows the object to move, with a fixed speed, while logging this activity
+            opentnsim.core.VesselProperties,  # allows vessel to have dimensions, namely a length (L), width (B), and draught (T)
+            opentnsim.core.ExtraMetadata,  # allow additional information, such as an arrival time (required for passing a lock)
+            opentnsim.mixins.HasMultiDiGraph,  # allow to operate on a graph that can include parallel edges from and to the same nodes
+            opentnsim.output.HasOutput,  # allow additional output to be stored
+        ),
+        {},
     )
     return Vessel
 

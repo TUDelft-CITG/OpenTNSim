@@ -21,7 +21,7 @@ import simpy
 
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 from openclsim.core import SimpyObject
-import opentnsim.graph.graph
+import opentnsim.graph.mixins
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -202,7 +202,7 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph.graph.get_minimum_depth(graph=self.graph, route=self.route)
+            h_min = opentnsim.graph.mixins.get_minimum_depth(graph=self.graph, route=self.route)
 
         return h_min
 

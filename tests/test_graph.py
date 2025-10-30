@@ -4,7 +4,7 @@ from shapely.geometry import Point
 import pytest
 
 import opentnsim.fis
-from opentnsim.graph.graph import calculate_distance, calculate_depth
+from opentnsim.graph.mixins import calculate_distance, calculate_depth
 
 
 # %% TESTING calculate_distance

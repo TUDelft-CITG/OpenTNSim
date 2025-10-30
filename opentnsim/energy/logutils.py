@@ -7,7 +7,7 @@ Logging utilities for energy-related calculations.
 
 
 # internal
-import opentnsim.graph.graph as graph_module
+import opentnsim.graph.mixins as graph_module
 
 
 # %% ADD ENERGY ATTRIBUTES INTO EVENT TABLE
