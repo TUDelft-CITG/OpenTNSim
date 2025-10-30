@@ -9,7 +9,7 @@ import xarray as xr
 
 from opentnsim.lock import lock as lock_module
 from opentnsim.core import vessel_properties as vessel_module
-from opentnsim import vessel_traffic_service as vessel_traffic_service_module
+from opentnsim.vessel_traffic_service import vessel_traffic_service as vessel_traffic_service_module
 import datetime as dt
 import pyproj
 from shapely.ops import transform

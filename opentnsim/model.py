@@ -23,7 +23,7 @@ import networkx as nx
 
 # import core from self
 import opentnsim.core as core
-import opentnsim.vessel_traffic_service as vessel_traffic_service
+import opentnsim.vessel_traffic_service.vessel_traffic_service as vessel_traffic_service
 
 logger = logging.getLogger(__name__)
 
@@ -180,10 +180,6 @@ class VesselGenerator:
             process = environment.process(vessel.move())
             vessel.process = process
 
-class Hydrodata:
-    def __init__(self,hydrodynamic_data):
-        self.hydrodynamic_data = hydrodynamic_data
-        return
 
 class Simulation(core.Identifiable):
     """
