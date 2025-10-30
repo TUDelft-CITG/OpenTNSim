@@ -180,7 +180,7 @@ class ConsumesEnergy:
         self.one_k2 = one_k2
 
         # plugin function that computes velocity based on power
-        self.power2v = opentnsim.energy.power2v
+        self.power2v = power2v
 
         # TODO: C_year is obligatory, so why is this code here?
         if C_year:
@@ -283,7 +283,7 @@ class ConsumesEnergy:
         self.R_e = v * self.L / self.nu  # Reynolds number
 
         self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
-        assert self.D > 0, f"D should be > 0: {self.D}"
+        assert self.D > 0, f"D should be > 0: {self.D}. h_0: {h_0}, T: {self.T}"
 
         # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
         # Van Koningsveld et al (2023) - Eq 5.3
@@ -1409,6 +1409,8 @@ class EnergyCalculation:
 
                 # calculate the delta t
                 self.energy_use["delta_t"].append(delta_t)
+                
+                logger.debug("geometries[i]: {0}, geometries[i + 1] {1}".format(geometries[i], geometries[i + 1]))
 
                 # calculate the water depth
                 h_0 = calculate_depth(geometries[i], geometries[i + 1])
@@ -1417,6 +1419,7 @@ class EnergyCalculation:
                 logger.debug("delta_t: {:.4f} s".format(delta_t))
                 logger.debug("distance: {:.4f} m".format(distance))
                 logger.debug("velocity: {:.4f} m/s".format(v))
+                logger.debug("h_0: {:.4f} m".format(h_0))
 
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
