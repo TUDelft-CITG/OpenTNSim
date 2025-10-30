@@ -41,6 +41,23 @@ opentnsim\.lock module
    :undoc-members:
    :show-inheritance:
 
+opentnsim\.graph module
+--------------------------
+
+.. automodule:: opentnsim.graph
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+opentnsim\.vessel_traffic_service module
+--------------------------
+
+.. automodule:: opentnsim.vessel_traffic_service
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+
 Module contents
 ---------------
 
