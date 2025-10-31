@@ -139,7 +139,7 @@ class VesselTrafficService:
         k = sorted(
             vessel.multidigraph[edge[0]][edge[1]], key=lambda x: vessel.multidigraph[edge[0]][edge[1]][x]["geometry"].length
         )[0]
-        sailing_distance = [edge, vessel.multidigraph.edges[edge[0], edge[1], k]["length"]]
+        sailing_distance = [edge, vessel.multidigraph.edges[edge[0], edge[1], k]["length_m"]]
         return sailing_distance
 
     def provide_sailing_distance_over_route(self, vessel, route):
@@ -442,6 +442,8 @@ class VesselTrafficService:
             node_index = list(self.hydrodynamic_information["STATION"].values).index(node_name)
             sailing_time_to_next_node = vessel.env.vessel_traffic_service.provide_sailing_time(vessel, route[: (route_index + 1)])
             time_correction_index = int(np.round(sailing_time_to_next_node["Time"].sum() / (t_step / np.timedelta64(1, "s"))))
+            time_end_index = np.min([len(self.hydrodynamic_information["Water level"][node_index])-1,time_end_index + time_correction_index])
+            times = self.hydrodynamic_information["TIME"].values[time_start_index:time_end_index]
             water_level = self.hydrodynamic_information["Water level"][node_index].values[time_start_index:time_end_index]
             _, _, _, required_water_depth, _, _ = self.provide_ukc_clearance(vessel, node_name, delay)
             MBL = self.hydrodynamic_information["MBL"][node_index].values[time_start_index:time_end_index]
@@ -451,14 +453,27 @@ class VesselTrafficService:
             t_boundaries.append(time_correction_index)
 
         min_net_ukc = net_ukc.min(axis=1).min()
+        net_ukc_corrected = net_ukc.copy()
         for column_index,(boundary_start,boundary_stop) in enumerate(zip(t_boundaries[:-1],t_boundaries[1:])):
-            window = boundary_stop - boundary_start
+            window_start = boundary_start
+            window_stop = int(np.ceil(np.mean([boundary_start,boundary_stop])))
+            window = window_stop - window_start
+            net_UKC_node_start = net_ukc.iloc[:, column_index]
             if window:
-                net_ukc.iloc[:, column_index] = net_ukc.iloc[:, column_index].rolling(window=window,center=False).min().shift(-(window-boundary_start))
+                net_UKC_node_start = net_ukc.iloc[:, column_index].rolling(window=window, center=False).min().shift(-window_start-window)
+            window_start = int(np.floor(np.mean([boundary_start,boundary_stop])))
+            window_stop = boundary_stop
+            window = window_stop - window_start
+            net_UKC_node_stop = net_ukc.iloc[:, column_index]
+            if window:
+                net_UKC_node_stop = net_ukc.iloc[:, column_index].rolling(window=window,center=False).min().shift(-window_start)
+            net_ukc_node = pd.concat([net_UKC_node_start, net_UKC_node_stop], axis=1)
+            net_ukc_node_min = net_ukc_node.min(axis=1)
+            net_ukc_corrected[route[column_index]] = net_ukc_node_min
 
         if window:
-            net_ukc.iloc[:, -1] = net_ukc.iloc[:, -1].rolling(window=window,center=False).min().shift(-(window-boundary_start)-boundary_stop)
-        net_ukc = net_ukc.ffill().fillna(min_net_ukc)
+            net_ukc_corrected.iloc[:,column_index+1] = net_ukc.iloc[:, -1].rolling(window=window,center=False).min().shift(-window_stop)
+        net_ukc = net_ukc_corrected.ffill().fillna(min_net_ukc)
         net_ukc["min_net_ukc"] = net_ukc.min(axis=1)
         return net_ukc
 
@@ -1299,7 +1314,7 @@ class VesselTrafficService:
             labels = ["Net UKC", "Required net UKC", "Accessible vertical tidal windows","Not accessible"]
             ax_left.legend(handles, labels, frameon=False, loc="upper left", bbox_to_anchor=(1.05, 1.0),)
         ax_left.set_title(
-            f"Accessibility of {vessel.type}-class vessel '{vessel.name}' with"
+            f"Accessibility of {vessel.type}-class vessel '{vessel.name}' with "
             f"a draught of {np.round(vessel.T, 2)}m and\na length of {np.round(vessel.L)}m sailing {vessel.bound} from"
             f" node '{route[0]}' to node '{route[-1]}'."
         )

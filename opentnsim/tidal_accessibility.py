@@ -39,6 +39,10 @@ class HasDraughtRestrictions:
 
         routes_with_restrictions = self.find_route_with_restrictions()
         waiting_time = 0.
+
+        if origin != routes_with_restrictions[0][0]:
+            return
+
         for route in routes_with_restrictions:
             waiting_time = self.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel=self, route=route, delay=0, plot=True)
 
