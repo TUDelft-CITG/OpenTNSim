@@ -26,34 +26,6 @@ import opentnsim.graph
 # get logger
 logger = logging.getLogger(__name__)
 
-
-class HasLength(SimpyObject):
-    """Mixin class: Something with a length. The length is modelled as a storage capacity
-
-    Parameters
-    -----------
-    length: float
-        length that can be requested
-    remaining_length: float, default=0
-        length that is still available at the beginning of the simulation.
-    args, kwargs:
-        passed to SimpyObject. Must at least contain parameter env: simpy.Environment.
-
-    Attributes
-    -----------
-    length: simpy.Container
-        the container that is used to limit the length that can be requested.
-    pos_length: simpy.Container
-        the container that is used to limit the length that can be requested.
-    """
-
-    def __init__(self, length: float, remaining_length: float = 0, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        """Initialization"""
-        self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
-        self.pos_length = simpy.Container(self.env, capacity=length, init=remaining_length)
-
-
 class HasLoad:
     """Mixin class with load dependent height (H) and draught (T). The filling
     degree (filling_degree: fraction) will interpolate between empty and full
