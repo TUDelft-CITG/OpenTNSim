@@ -16,5 +16,4 @@ cp -r docs/_static book/docs
 
 
 # Build the Jupyter Book
-pip install jupyter-book==1.0.4
 jupyter-book build book
