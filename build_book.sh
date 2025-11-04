@@ -13,4 +13,13 @@ cp docs/opentnsim.rst book/docs
 cp AUTHORS.rst book/docs/
 # Copy logos
 cp -r docs/_static book/docs
+
+# Remove old Node.js and install Node.js 20.x from NodeSource repository
+apt-get update
+apt-get install -y curl
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+npm install -g npm@latest
+
+# Build the Jupyter Book
 jupyter-book build book
