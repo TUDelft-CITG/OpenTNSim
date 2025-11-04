@@ -14,12 +14,7 @@ cp AUTHORS.rst book/docs/
 # Copy logos
 cp -r docs/_static book/docs
 
-# Remove old Node.js and install Node.js 20.x from NodeSource repository
-apt-get update
-apt-get install -y curl
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
-npm install -g npm@latest
 
 # Build the Jupyter Book
+pip install jupyter-book==1.0.4
 jupyter-book build book
