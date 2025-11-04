@@ -79,7 +79,7 @@ Write documentation
 OpenTNSim could always use more documentation, whether as part of the official OpenTNSim docs, in
 docstrings, or even on the web in blog posts, articles, and such.
 
-Did you find something missing in the documentation? For example
+Did you find something missing in the documentation? For example:
 
 - missing docstring in a function, class or module
 - docstring that does not corresponds with the actual functionality
