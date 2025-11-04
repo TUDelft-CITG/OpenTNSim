@@ -2,7 +2,7 @@
 FROM continuumio/miniconda3
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt update
-RUN apt install -y build-essential python3-dev ffmpeg
+RUN apt install -y build-essential python3-dev ffmpeg nodejs npm
 
 # Install conda stuff first
 # install gdal library

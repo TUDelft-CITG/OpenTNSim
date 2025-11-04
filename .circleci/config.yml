@@ -37,7 +37,6 @@ jobs:
           name: Generate book
           command: |
             docker exec -it opentnsim bash -c "pip install sphinx"
-            docker exec -it opentnsim bash -c "pip install jupyterlab"
             docker exec -it opentnsim bash -c "make book"
             docker cp opentnsim:/OpenTNSim/book/_build/html /tmp/artifacts/book
 
