@@ -112,11 +112,11 @@ This section outlines the general agreements and guidelines to follow when contr
 
 In summary:
 
-- any contribution should be made in a feature branch, created from the `develop` branch
+- any contribution should be made in a feature branch, created from the `main` branch
 - feature branches are short lived
-- contributions should be submitted via pull requests to the `develop` branch
+- contributions should be submitted via pull requests to the `main` branch
 - the pull request is used for code review and discussion
-- work that is merged into `develop` should meet the Definition of Done (DoD), described below
+- work that is merged into `main` should meet the Definition of Done (DoD), described below
 - commits should be meaningful, small, and have clear messages
 - tickets on the issue board should be used to track work and for discussion, their description should be clear and detailed
 
@@ -127,7 +127,7 @@ Definition of Done (DoD)
 A contribution is considered 'done' when it meets the following criteria:
 
 - The contribution
-  - is implemented in a feature branch and submitted via a pull request to the `develop` branch
+  - is implemented in a feature branch and submitted via a pull request to the `main` branch
   - has been reviewed and approved by at least one maintainer or designated reviewer
   - includes tests that cover the new functionality or bug fix, and all tests pass
 - The developed code
@@ -146,41 +146,33 @@ Only then can a contribution can be merged into the main branch.
 Branching
 ---------
 
-_NOTE: Currently `OpenTNSim` does not have a `develop` branch. In the near future it should be 
-decided to add it into GitHub, or update the branching model below._
-
-
 Please follow this branching model when developing in `OpenTNSim`:
 
+
 main
-~~~~
-
-The `main` branch contains the latest released version of `OpenTNSim`. This branch should always be stable and
-ready for deployment. No direct commits should be made to this branch. Work in this branch meets the DoD.
-
-
-develop
 ~~~~~~~
 
-The `develop` branch contains the latest development code. This is where all completed features and bug fixes
-are merged into. No direct commits should be made to this branch. Work in  this branch meets the DoD. 
+The `main` branch contains the latest stable development code. This is where all completed features and bug fixes
+are merged into. No direct commits should be made to this branch. Work in this branch meets the DoD.
+
+The `main` branch is used to create new releases of `OpenTNSim`.
 
 
 feature branches
 ~~~~~~~~~~~~~~~~
 
-Feature branches are created from the `develop` branch for each new feature or bug fix. These branches
+Feature branches are created from the `main` branch for each new feature or bug fix. These branches
 are used for active development and testing. Work in these branches does not need to meet the DoD until it is
-ready to be merged into the `develop` branch via a pull request.
+ready to be merged into the `main` branch via a pull request.
 
-Feature branches are short lived and should be deleted after the work is merged into `develop`.
+Feature branches are short lived and should be deleted after the work is merged into `main`.
 
 
 Pull requests
 -------------
 
 Pull requests (PRs) are the primary way to submit changes to the `OpenTNSim` project. When you are ready 
-to merge your feature branch into the `develop` branch, create a pull request on GitHub.
+to merge your feature branch into the `main` branch, create a pull request on GitHub.
 
 Make sure to include a clear description of your changes and any relevant context. This will help
 reviewers understand your work and provide feedback.
@@ -206,12 +198,12 @@ Review process
 
 The review process for contributions to `OpenTNSim` is as follows:
 
-- the contributor creates a pull request (PR) from their feature branch to the `develop` branch
+- the contributor creates a pull request (PR) from their feature branch to the `main` branch
 - a reviewer is assigned to the PR, either by the contributor or a maintainer
 - the reviewer reviews the code by testing it, and checking that the DoD is met
 - the reviewer provides feedback, which may include requests for changes or improvements
 - the contributor addresses the feedback and makes any necessary changes, repeat until the reviewer is satisfied
-- once the reviewer approves the PR, a maintainer merges the changes into the `develop` branch
+- once the reviewer approves the PR, a maintainer merges the changes into the `main` branch
 
 
 Release policy
