@@ -1,5 +1,4 @@
-"""Here we test the code for estimating fuel consumption and emission rates of CO2, PM10 and NOx
-for the three waterway sections along the route."""
+"""Here we test power2v for section 1 and 2 in limiting water depth"""
 
 # Importing libraries
 
@@ -48,13 +47,13 @@ def test_simulation(expected_df):
     coords = [[0, 0], [0.8983, 0], [1.7966, 0], [2.6949, 0]]
 
     # for each edge (between above coordinates) specify the depth (m)
-    depths = [6, 6, 6]
+    depths = [6, 2.5, 6]
 
     # check of nr of coords and nr of depths align
     assert len(coords) == len(depths) + 1, "nr of depths does not correspond to nr of coords"
 
     # create a graph based on coords and depths
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
     nodes = []
     path = []
 
@@ -71,7 +70,7 @@ def test_simulation(expected_df):
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
-        FG.add_node(node.name, geometry=node.geometry)
+        graph.add_node(node.name, geometry=node.geometry)
 
     # add edges
     path = [[nodes[i], nodes[i + 1]] for i in range(len(nodes) - 1)]
@@ -80,11 +79,11 @@ def test_simulation(expected_df):
         # For the energy consumption calculation we add info to the graph. We need depth info for resistance.
         # NB: the CalculateEnergy routine expects the graph to have "Info" that contains "GeneralDepth"
         #     this may not be very generic!
-        FG.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
+        graph.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
 
     # toggle to undirected and back to directed to make sure all edges are two way traffic
-    FG = FG.to_undirected()
-    FG = FG.to_directed()
+    graph = graph.to_undirected()
+    graph = graph.to_directed()
 
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
@@ -112,10 +111,10 @@ def test_simulation(expected_df):
         "L": 110,
         "H_e": None,
         "H_f": None,
-        "T": 3.5,
-        "safety_margin": 0.2,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
-        "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False
-        "P_installed": 1750.0,  # kW
+        "T": 2.05,
+        "safety_margin": 0.2,  # for tanker vessel with sandy bed the safety margin is recommended as 0.2 m
+        "h_squat": True,  # if consider the ship squat while moving, set to True, otherwise set to False.
+        "P_installed": 1750.0,
         "P_tot_given": None,  # kW
         "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
         "P_hotel_perc": 0.05,
@@ -126,7 +125,7 @@ def test_simulation(expected_df):
         "C_year": 1990,
     }
 
-    path = nx.dijkstra_path(FG, nodes[0].name, nodes[3].name)
+    path = nx.dijkstra_path(graph, nodes[0].name, nodes[3].name)
 
     # Actual testing starts here
     def run_simulation(V_s, P_tot_given):
@@ -136,13 +135,13 @@ def test_simulation(expected_df):
         env.epoch = time.mktime(simulation_start.timetuple())
 
         # Add graph to environment
-        env.graph = FG
+        env.graph = graph
 
         # Add environment and path to the vessel
         # create a fresh instance of vessel
         vessel = TransportResource(**data_vessel)
-        vessel.env = env  # the created environment
         vessel.name = "Vessel No.1"
+        vessel.env = env  # the created environment
         vessel.route = path  # the route (the sequence of nodes, as stored as the second column in the path)
         vessel.geometry = env.graph.nodes[path[0]][
             "geometry"
@@ -157,10 +156,7 @@ def test_simulation(expected_df):
         return vessel
 
     # prepare input data to loop through
-    input_data = {
-        "V_s": [3.0, 3.5, 4.0, None, None, None],
-        "P_tot_given": [None, None, None, 333, 473, 707],
-    }
+    input_data = {"V_s": [3.0, 3.5, None, None], "P_tot_given": [None, None, 276, 391]}
 
     # create empty plot data
     plot_data = {}
@@ -171,29 +167,19 @@ def test_simulation(expected_df):
         vessel = run_simulation(input_data["V_s"][index], input_data["P_tot_given"][index])
 
         # create an EnergyCalculation object and perform energy consumption calculation
-        energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)
+        energycalculation = opentnsim.energy.EnergyCalculation(graph, vessel)
         energycalculation.calculate_energy_consumption()
 
         # create dataframe from energy calculation computation
         df = pd.DataFrame.from_dict(energycalculation.energy_use)
-
-        # add/modify some comlums to suit our plotting needs
-        df["fuel_kg_per_km"] = (df["total_diesel_consumption_C_year_ICE_mass"] / 1000) / (df["distance"] / 1000)
-        df["CO2_g_per_km"] = (df["total_emission_CO2"]) / (df["distance"] / 1000)
-        df["PM10_g_per_km"] = (df["total_emission_PM10"]) / (df["distance"] / 1000)
-        df["NOx_g_per_km"] = (df["total_emission_NOX"]) / (df["distance"] / 1000)
 
         label = "V_s = " + str(input_data["V_s"][index]) + " P_tot_given = " + str(input_data["P_tot_given"][index])
 
         # Note that we make a dict to collect all plot data.
         # We use labels like ['V_s = None P_tot_given = 274 fuel_kg_km'] to organise the data in the dict
         # The [0, 0, 1, 1, 2, 2] below creates a list per section
-
-        plot_data[label + " fuel_kg_per_km"] = list(df.fuel_kg_per_km[[0, 0, 1, 1, 2, 2]])
-        plot_data[label + " CO2_g_per_km"] = list(df.CO2_g_per_km[[0, 0, 1, 1, 2, 2]])
-        plot_data[label + " PM10_g_per_km"] = list(df.PM10_g_per_km[[0, 0, 1, 1, 2, 2]])
-        plot_data[label + " NOx_g_per_km"] = list(df.NOx_g_per_km[[0, 0, 1, 1, 2, 2]])
-
+        plot_data[label + " P_tot"] = list(df.P_tot[[0, 0, 1, 1, 2, 2]])
+        plot_data[label + " v"] = list(df.distance[[0, 0, 1, 1, 2, 2]] / df.delta_t[[0, 0, 1, 1, 2, 2]])
     plot_df = pd.DataFrame(data=plot_data)
 
     # utils.create_expected_df(path=pathlib.Path(__file__), df=plot_df)

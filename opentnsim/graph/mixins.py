@@ -9,6 +9,7 @@ import functools
 # matplotlib
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+from plotly.offline import init_notebook_mode, iplot
 
 # package(s) for data handling
 import networkx as nx
@@ -22,6 +23,7 @@ from itertools import cycle
 
 from plotly.offline import init_notebook_mode, iplot
 
+
 # spatial libraries
 import pyproj
 import shapely.geometry
@@ -32,15 +34,90 @@ from shapely.ops import transform
 import simpy
 
 # OpenTNSim
-import opentnsim.utils
+from opentnsim.graph import utils
+from opentnsim.graph import mixins as graph_module
 from opentnsim.core import Identifiable, Locatable
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-
 # Determine the wgs84 geoid
 wgs84 = pyproj.Geod(ellps="WGS84")
+
+
+def get_geometry_of_edge(graph, edge):
+    """get the geometry of the edge in WGS84
+
+    Parameters
+    ----------
+    graph: networkx.Graph
+        The graph object.
+    edge : tuple
+        The edge to get the length of. is a tuple of two node-names.
+
+    Returns
+    -------
+    float
+        The length of the edge in meters.
+    """
+
+    edge_info = graph.edges[edge]
+    if "geometry" not in edge_info:
+        orig = nx.get_node_attributes(graph, "geometry")[edge[0]]
+        dest = nx.get_node_attributes(graph, "geometry")[edge[1]]
+        geometry = LineString([orig,dest])
+        graph.edges[edge]["geometry"] = geometry
+    else:
+        geometry = graph.edges[edge]["geometry"]
+
+    coordinates_x = geometry.coords.xy[0]
+    coordinates_y = geometry.coords.xy[1]
+    min_coordinates_x = np.min(coordinates_x)
+    max_coordinates_x = np.max(coordinates_x)
+    min_coordinates_y = np.min(coordinates_y)
+    max_coordinates_y = np.max(coordinates_y)
+    if not isinstance(edge_info["geometry"], shapely.geometry.LineString):
+        raise ValueError(f"Edge geometry in edge {edge}: attribute must be a shapely LineString.")
+    if min_coordinates_x < -180. or max_coordinates_x > 180. or min_coordinates_y < -90. or max_coordinates_y > 90.:
+        raise ValueError(f"Edge geometry in edge {edge}: attribute is not defined in WGS84.")
+
+    return geometry
+
+
+def determine_length_of_edge_geometry(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
+    wgs84 = pyproj.CRS(current_crs)
+    wgs84_m = pyproj.CRS(crs_meter)
+    wgs84_to_wgs84_m = pyproj.transformer.Transformer.from_crs(wgs84, wgs84_m, always_xy=True).transform
+    geometry = get_geometry_of_edge(graph, edge)
+    geometry_m = transform(wgs84_to_wgs84_m, geometry)
+    length_m = geometry_m.length
+    return length_m
+
+
+def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
+    """get the length of an edge in meters
+
+    Parameters
+    ----------
+    graph: networkx.Graph
+        The graph object.
+    edge : tuple
+        The edge to get the length of. is a tuple of two node-names.
+
+    Returns
+    -------
+    float
+        The length of the edge in meters.
+    """
+
+    edge_info = graph.edges[edge]
+    if "length_m" in edge_info:
+        pass
+    else:
+        length_m = determine_length_of_edge_geometry(graph, edge, current_crs, crs_meter)
+        graph.edges[edge]["length_m"] = length_m
+
+    return edge_info["length_m"]
 
 
 def find_closest_node(G, point):
@@ -105,16 +182,16 @@ def calculate_distance_along_path(graph, path):
 
     return path_length
 
-def calculate_depth(geom_start, geom_stop, FG):
+def calculate_depth(geom_start, geom_stop, graph):
     """method to calculate the depth of the waterway in meters between two geometries.
 
     Parameters
     ----------
     geom_start : shapely.geometry.Point
-        Starting point geometry. Must represent a node in graph FG.
+        Starting point geometry. Must represent a node in graph graph.
     geom_stop : shapely.geometry.Point
-        Stopping point geometry. must represent a node in graph FG.
-    FG : networkx.Graph
+        Stopping point geometry. must represent a node in graph graph.
+    graph : networkx.Graph
         The graph containing vaarweginformatie.nl data, with nodes and edges.
         Must contain 'Info' attribute on edges with 'GeneralDepth'.
         Must contain an edge between geom_start and geom_stop.
@@ -127,8 +204,8 @@ def calculate_depth(geom_start, geom_stop, FG):
     Raises
     ------
     ValueError
-        If geom_start or geom_stop are not nodes in the graph FG.
-        If there is no edge between the two nodes in the graph FG.
+        If geom_start or geom_stop are not nodes in the graph graph.
+        If there is no edge between the two nodes in the graph graph.
         If the depth data is not available for the edge between the two nodes.
     """
 
@@ -136,20 +213,20 @@ def calculate_depth(geom_start, geom_stop, FG):
 
     # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
 
-    node_start = find_closest_node(FG, geom_start)[0]
-    node_stop = find_closest_node(FG, geom_stop)[0]
+    node_start = find_closest_node(graph, geom_start)[0]
+    node_stop = find_closest_node(graph, geom_stop)[0]
 
-    # Read from the FG data from vaarweginformatie.nl the General depth of each edge
+    # Read from the graph data from vaarweginformatie.nl the General depth of each edge
     # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
     if node_start == node_stop:
         return np.nan  # if the start and stop nodes are the same, return 0 depth
 
     try:
-        if "Info" in FG.get_edge_data(node_start, node_stop).keys():
-            depth = FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
+        if "Info" in graph.get_edge_data(node_start, node_stop).keys():
+            depth = graph.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
 
-        elif "GeneralDepth" in FG.get_edge_data(node_start, node_stop).keys():
-            depth = FG.get_edge_data(node_start, node_stop)["GeneralDepth"]
+        elif "GeneralDepth" in graph.get_edge_data(node_start, node_stop).keys():
+            depth = graph.get_edge_data(node_start, node_stop)["GeneralDepth"]
         else:
             return np.nan  # if no depth data is available, return NaN
     except:
@@ -196,7 +273,7 @@ def geom_to_node(geom: shapely.geometry.Point, properties: dict):
 
 def gdf_to_nx(gdf):
     """Convert a geopandas dataframe to a networkx DiGraph"""
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
     for _, feature in gdf.iterrows():
         geom = feature.geometry
         if geom is None:
@@ -205,18 +282,18 @@ def gdf_to_nx(gdf):
         # in case we have single points in the geometry, add them as nodes
         if geom.geom_type == "Point":
             node_idx = geom.coords[0]
-            FG.add_node(node_idx, **properties)
+            graph.add_node(node_idx, **properties)
             continue
         if geom.geom_type in ["LineString", "MultiLineString"]:
             for edge_id, edge_properties in geom_to_edges(geom, properties):
                 node_source, node_target = edge_properties["e"]
                 source_geom = shapely.geometry.Point(*node_source)
                 _, node_properties = geom_to_node(source_geom, {})
-                FG.add_node(edge_id[0], **node_properties)
+                graph.add_node(edge_id[0], **node_properties)
                 _, node_properties = geom_to_node(source_geom, {})
-                FG.add_node(edge_id[1], **node_properties)
-                FG.add_edge(edge_id[0], edge_id[1], **edge_properties)
-    return FG
+                graph.add_node(edge_id[1], **node_properties)
+                graph.add_edge(edge_id[0], edge_id[1], **edge_properties)
+    return graph
 
 
 class Node(Identifiable, Locatable):
@@ -286,7 +363,7 @@ class Graph:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.graph = nx.Graph()
-        self.graph_info = opentnsim.utils.info(self.graph)
+        self.graph_info = utils.info(self.graph)
 
     def from_shape(self, file_location, shapefile, simplify=True, strict=True):
         """Generate nx.Graph() from shapefile
@@ -600,19 +677,19 @@ class FIS:
         if os.path.exists(fname):
             print("I am loading cached network")
             with open(fname, "rb") as pkl_file:
-                FG = pickle.load(pkl_file)
+                graph = pickle.load(pkl_file)
                 pkl_file.close()
 
         else:
             print("I am getting new network")
-            FG = FIS.load_fis_network(url)
+            graph = FIS.load_fis_network(url)
 
             os.makedirs(os.path.dirname(fname), exist_ok=True)
             with open(fname, "wb") as pkl_file:
-                pickle.dump(FG, pkl_file)
+                pickle.dump(graph, pkl_file)
                 pkl_file.close()
 
-        return FG
+        return graph
 
 
 class HasMultiDiGraph:
@@ -624,13 +701,21 @@ class HasMultiDiGraph:
     @property
     def multidigraph(self):
         # create a multidigraph copy of graph if it was not done before
-        if not hasattr(self.env, "_multidigraph"):
-            self.env._multidigraph = self.copy()
-        return self.env._multidigraph
+        if hasattr(self,"env"):
+            graph_class = self.env
+        else:
+            graph_class = self
+        if not hasattr(graph_class, "_multidigraph"):
+            graph_class._multidigraph = self.copy()
+        return graph_class._multidigraph
 
     def copy(self):
-        multidigraph = self.env.graph
-        if not isinstance(self.env.graph, nx.MultiDiGraph):
+        if hasattr(self,"env"):
+            graph_class = self.env
+        else:
+            graph_class = self
+        multidigraph = graph_class.graph
+        if not isinstance(graph_class.graph, nx.MultiDiGraph):
             multidigraph = nx.MultiDiGraph(multidigraph)
         return multidigraph
 
@@ -664,7 +749,7 @@ def plot_graph(graph, static: bool = False):
     for u, v in graph.edges():
         origin = graph.nodes[u]['geometry']
         destination = graph.nodes[v]['geometry']
-        distance_m = opentnsim.graph.calculate_distance(origin, destination)
+        distance_m = graph_module.calculate_distance(origin, destination)
         edge_labels[(u, v)] = f"{int(distance_m)} m"
 
     # Edge traces and arrow annotations

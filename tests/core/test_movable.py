@@ -7,7 +7,7 @@ from shapely.geometry import Point
 from pyproj import Geod
 
 from opentnsim.core.movable import Routable, Routeable, Movable, ContainerDependentMovable
-from opentnsim.graph import calculate_distance_along_path
+from opentnsim.graph.mixins import calculate_distance_along_path
 from opentnsim.energy.mixins import ConsumesEnergy
 from opentnsim.core.vessel_properties import VesselProperties
 
@@ -268,7 +268,7 @@ def test_movable_pass_edge(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
     movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable.current_node, movable.next_node = 0, 1
+    movable.update_position(0)
 
     starttime = env.now
 
@@ -313,7 +313,7 @@ def test_movable_pass_edge_with_energy_error(env):
 
     # create an instance of the Vessel class using the input dict data_vessel
     movable = Vessel(**data_vessel)
-    movable.current_node, movable.next_node = 0, 1
+    movable.update_position(0)
 
     def mission_pass_edge(env, vessel):
         yield from vessel.pass_edge(origin=0, destination=1)
@@ -348,7 +348,7 @@ def test_movable_pass_edge_with_energy(env):
     # create an instance of the Vessel class using the input dict data_vessel
     movable = Vessel(**data_vessel)
 
-    movable.current_node, movable.next_node = 0, 1
+    movable.update_position(0)
 
     def mission_pass_edge(env, vessel):
         yield from vessel.pass_edge(origin=0, destination=1)
@@ -406,7 +406,7 @@ def test_movable_pass_edge_with_current(digraph_movable):
     # add current to the edge
     env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
     env.graph.edges[1, 0]["Info"] = {"Current": -0.5}  # -0.5 current in the opposite direction
-    digraph_movable.current_node, digraph_movable.next_node = 0, 1
+    digraph_movable.update_position(0)
 
     starttime = env.now
 
@@ -430,10 +430,10 @@ def test_movable_resource_restriction_one_edge(env):
 
     # create two similar movables
     movable1 = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable1.current_node, movable1.next_node = 0, 1
+    movable1.position_on_route = 0
 
     movable2 = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable2.current_node, movable2.next_node = 0, 1
+    movable2.position_on_route = 0
 
     # Assign a resource to the edge
     resource = simpy.Resource(env, 1)

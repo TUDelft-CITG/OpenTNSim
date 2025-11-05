@@ -33,6 +33,11 @@ parts:
 - caption: Locking module
   chapters:
     - file: examples/0200 - About the OpenTNSim-Locking module.ipynb
+    - file: examples/0201 - Basic locking operation.ipynb
+    - file: examples/0202 - Lock IC with generator.ipynb
+    - file: examples/0203 - Lock with hydrodynamics.ipynb
+    - file: examples/0204 - Multiple locks on a route.ipynb
+    - file: examples/0206 - Lock real-world example.ipynb
 - caption: Advanced programming concepts
   chapters:
     - file: CL2022-02-script-to-program

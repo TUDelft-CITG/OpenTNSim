@@ -1,4 +1,5 @@
-"""Here we test the code for estimating renewable energy sources along the route with varying water depth."""
+"""Here we test the code for estimating renewable energy sources use along the validation route
+(Amsterdam-Ludwigshafen) with varying water depth."""
 
 # Importing libraries
 # package(s) related to time, space and id
@@ -36,8 +37,9 @@ def expected_df():
 
 # Creating the test objects
 
-
 # Actual testing starts here
+
+
 @pytest.mark.skip("Regression tests need to be updated after fix in energy module")
 def test_simulation(expected_df):
     # specify a number of coordinate along your route (coords are: lon, lat)
@@ -49,7 +51,7 @@ def test_simulation(expected_df):
     # check of nr of coords and nr of depths align
     assert len(coords) == len(depths) + 1, "nr of depths does not correspond to nr of coords"
     # create a graph based on coords and depths
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
     nodes = []
     path = []
 
@@ -63,7 +65,7 @@ def test_simulation(expected_df):
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
-        FG.add_node(node.name, geometry=node.geometry)
+        graph.add_node(node.name, geometry=node.geometry)
 
     # add edges
     path = [[nodes[i], nodes[i + 1]] for i in range(len(nodes) - 1)]
@@ -72,11 +74,11 @@ def test_simulation(expected_df):
         # For the energy consumption calculation we add info to the graph. We need depth info for resistance.
         # NB: the CalculateEnergy routine expects the graph to have "Info" that contains "GeneralDepth"
         #     this may not be very generic!
-        FG.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
+        graph.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
 
     # toggle to undirected and back to directed to make sure all edges are two way traffic
-    FG = FG.to_undirected()
-    FG = FG.to_directed()
+    graph = graph.to_undirected()
+    graph = graph.to_directed()
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
         "Vessel",
@@ -104,12 +106,12 @@ def test_simulation(expected_df):
         "H_f": None,
         "T": 2.6,
         "safety_margin": 0.3,  # for tanker vessel with rocky bed the safety margin is recommended as 0.3 m
-        "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False.
-        # Note that here we have disabled h_squat calculation since we regard the water depth h_0 is already
-        # reduced by squat effect. This applies to figures 3, 5, 7, 8 and 9.
+        "h_squat": True,  # if consider the ship squatting while moving, set to True, otherwise set to False. Note that here we
+        # have disabled h_squat calculation since we regard the water depth h_0 is already reduced by squat effect. This applies to
+        # figures 3, 5, 7, 8 and 9.
         "payload": None,
-        "vessel_type": "Tanker",  # vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH"
-        # means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+        "vessel_type": "Tanker",  # vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH" means dry bulk single
+        # hull, "Dry_DH" means dry bulk double hull)
         "P_installed": 2000,  # kW
         "P_tot_given": None,  # kW
         "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
@@ -121,7 +123,7 @@ def test_simulation(expected_df):
         "C_year": 2000,
     }
 
-    path = nx.dijkstra_path(FG, nodes[0].name, nodes[4].name)
+    path = nx.dijkstra_path(graph, nodes[0].name, nodes[4].name)
 
     def run_simulation(V_s):
         # Start simpy environment
@@ -130,7 +132,7 @@ def test_simulation(expected_df):
         env.epoch = time.mktime(simulation_start.timetuple())
 
         # Add graph to environment
-        env.graph = FG
+        env.graph = graph
 
         # Add environment and path to the vessel
         # create a fresh instance of vessel
@@ -160,7 +162,7 @@ def test_simulation(expected_df):
         vessel = run_simulation(input_data["V_s"][index])
 
         # create an EnergyCalculation object and perform energy consumption calculation
-        energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)
+        energycalculation = opentnsim.energy.EnergyCalculation(graph, vessel)
         energycalculation.calculate_energy_consumption()
 
         # create dataframe from energy calculation computation
@@ -170,16 +172,51 @@ def test_simulation(expected_df):
 
         label = "V_s = " + str(input_data["V_s"][index])
 
-        # Note that we make a dict to collect all plot data.
-
-        plot_data[label + " total_diesel_consumption_C_year_ICE_mass"] = list(
-            df.total_diesel_consumption_C_year_ICE_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        plot_data[label + " total_LH2_consumption_PEMFC_mass"] = list(df.total_LH2_consumption_PEMFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_LH2_consumption_SOFC_mass"] = list(df.total_LH2_consumption_SOFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_LH2_consumption_PEMFC_vol"] = list(df.total_LH2_consumption_SOFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_LH2_consumption_SOFC_vol"] = list(df.total_LH2_consumption_SOFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eLNG_consumption_PEMFC_mass"] = list(
+            df.total_eLNG_consumption_PEMFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+        plot_data[label + " total_eLNG_consumption_SOFC_mass"] = list(df.total_eLNG_consumption_SOFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eLNG_consumption_PEMFC_vol"] = list(df.total_eLNG_consumption_PEMFC_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eLNG_consumption_SOFC_vol"] = list(df.total_eLNG_consumption_SOFC_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eLNG_consumption_ICE_mass"] = list(df.total_eLNG_consumption_ICE_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eLNG_consumption_ICE_vol"] = list(df.total_eLNG_consumption_ICE_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eMethanol_consumption_PEMFC_mass"] = list(
+            df.total_eMethanol_consumption_PEMFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+        plot_data[label + " total_eMethanol_consumption_SOFC_mass"] = list(
+            df.total_eMethanol_consumption_SOFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+        plot_data[label + " total_eMethanol_consumption_PEMFC_vol"] = list(
+            df.total_eMethanol_consumption_PEMFC_vol[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+        plot_data[label + " total_eMethanol_consumption_SOFC_vol"] = list(
+            df.total_eMethanol_consumption_SOFC_vol[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+        plot_data[label + " total_eMethanol_consumption_ICE_mass"] = list(
+            df.total_eMethanol_consumption_ICE_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+        plot_data[label + " total_eMethanol_consumption_ICE_vol"] = list(
+            df.total_eMethanol_consumption_ICE_vol[[0, 0, 1, 1, 2, 2, 3, 3]]
         )
 
-        plot_data[label + " total_diesel_consumption_ICE_mass"] = list(
-            df.total_diesel_consumption_ICE_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        plot_data[label + " total_eNH3_consumption_PEMFC_mass"] = list(
+            df.total_eNH3_consumption_PEMFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
         )
-        plot_data[label + " total_diesel_consumption_ICE_vol"] = list(df.total_diesel_consumption_ICE_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eNH3_consumption_SOFC_mass"] = list(df.total_eNH3_consumption_SOFC_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eNH3_consumption_PEMFC_vol"] = list(df.total_eNH3_consumption_PEMFC_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eNH3_consumption_SOFC_vol"] = list(df.total_eNH3_consumption_SOFC_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eNH3_consumption_ICE_mass"] = list(df.total_eNH3_consumption_ICE_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_eNH3_consumption_ICE_vol"] = list(df.total_eNH3_consumption_ICE_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+
+        plot_data[label + " total_Li_NMC_Battery_mass"] = list(df.total_Li_NMC_Battery_mass[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_Li_NMC_Battery_vol"] = list(df.total_Li_NMC_Battery_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
+        plot_data[label + " total_Battery2000kWh_consumption_num"] = list(
+            df.total_Battery2000kWh_consumption_num[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
 
     plot_df = pd.DataFrame(data=plot_data)
 

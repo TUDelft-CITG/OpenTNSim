@@ -22,11 +22,15 @@ from shapely import Geometry
 import networkx as nx
 import simpy
 
+# time packages
+import datetime
+
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core.container import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
+from opentnsim.graph.mixins import get_length_of_edge
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -180,6 +184,8 @@ class Movable(Locatable, Routable, Log):
         self.distance = 0
         self.on_pass_node_functions = []
         self.on_pass_edge_functions = []
+        self.on_complete_pass_edge_functions = []
+        self.on_look_ahead_to_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
         self._check_attributes()
@@ -187,6 +193,9 @@ class Movable(Locatable, Routable, Log):
         # resource memory for passing nodes and edges
         self.req = None
         self.resource = None
+
+        # keep track of distance travelled on edge
+        self.distance_left_on_edge = np.nan
 
     def _check_attributes(self):
         """Check if all required attributes are set."""
@@ -198,6 +207,67 @@ class Movable(Locatable, Routable, Log):
                     [node for node in self.route if node not in geoms]
                 )
             )
+
+    @property
+    def current_node(self) -> Union[str, None]:
+        """Return the current node on the route based on self.position_on_route."""
+        if 0 <= self.position_on_route < len(self.route):
+            return self.route[self.position_on_route]
+        else:
+            return None
+
+    @property
+    def next_node(self) -> Union[str, None]:
+        """Return the next node on the route based on self.position_on_route."""
+        if 0 <= self.position_on_route < len(self.route) - 1:
+            return self.route[self.position_on_route + 1]
+        else:
+            return None
+
+    @property
+    def route_ahead(self):
+        """Return the remaining route ahead of the current position."""
+        if 0 <= self.position_on_route < len(self.route):
+            return self.route[self.position_on_route :]
+        else:
+            return []
+
+    def determine_route_to_target_node(self, target_node: str):
+        """Determine the route to the target node.
+        Parameters
+        ----------
+        target_node: str
+            The target node to determine the route to.
+        Returns
+        -------
+        list
+            The route to the target node.
+        """
+        if target_node not in self.route_ahead:
+            raise ValueError("Target node must be in the remaining route ahead.")
+        # get index of first occurrence of target_node in route_ahead
+        try:
+            idx = self.route_ahead.index(target_node)
+        except ValueError:
+            warnings.warn(f"No route found to waiting area")
+            return []
+
+        # get route to target node
+        route = self.route_ahead[: idx + 1]
+
+        return route
+
+    def update_position(self, position_on_route: int):
+        """Update the position on the route.
+
+        Parameters
+        ----------
+        position_on_route: int
+            index of position on the route
+
+        """
+        self.position_on_route = position_on_route
+        self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
 
     # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
     def move(self):
@@ -211,15 +281,24 @@ class Movable(Locatable, Routable, Log):
 
         """
 
+        # Check if vessel has arrival time and let vessel wait to start moving
+        if hasattr(self, "metadata") and "arrival_time" in self.metadata:
+            arrival_time = self.metadata['arrival_time']
+            current_time = datetime.datetime.fromtimestamp(self.env.now)
+            delay = (arrival_time - current_time).total_seconds()
+            yield self.env.timeout(delay)
+
         # Check if vessel is at correct location - if not, move to location
         yield from self._move_to_start()
+
+        # look ahead to first node
+        self.position_on_route = 0
+        yield from self.look_ahead_to_node(self.route[0])
 
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
             # update current position
-            self.current_node, self.next_node = edge  # origin and destination
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
-            self.position_on_route = index
+            self.update_position(index)
 
             yield from self.pass_node(self.current_node)
 
@@ -232,12 +311,14 @@ class Movable(Locatable, Routable, Log):
                 continue
 
             yield from self.pass_edge(self.current_node, self.next_node)
+            yield from self.complete_pass_edge(self.next_node)
 
             # we arrived at destination
             # update to new position
-            self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.next_node]
-            self.current_node = self.next_node
-            self.position_on_route = index + 1
+            self.update_position(index + 1)
+
+            # look ahead to next node
+            yield from self.look_ahead_to_node(self.current_node)
 
         # arrived at end of route. release resource if needed
         if self.req is not None:
@@ -285,7 +366,6 @@ class Movable(Locatable, Routable, Log):
         ------
         The time it takes to pass the node.
         """
-
         # request resource if needed
         if "Resources" in self.graph.nodes[node].keys() and self.req is None:
             arrival = self.env.now  # remember when we arrived at the node
@@ -372,16 +452,12 @@ class Movable(Locatable, Routable, Log):
         ------
         The time it takes to pass the edge.
         """
-        edge = self.graph.edges[origin, destination]
+        edge = (origin, destination)
+        edge_info = self.graph.edges[edge]
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
-
-        distance = self.wgs84.inv(
-            shapely.geometry.shape(orig).x,
-            shapely.geometry.shape(orig).y,
-            shapely.geometry.shape(dest).x,
-            shapely.geometry.shape(dest).y,
-        )[2]
+        distance = get_length_of_edge(self.graph, edge)
+        self.distance_left_on_edge = distance
 
         # calculate velocity based on depth and power, if possible.
         self.v = self._compute_velocity_on_edge(origin, destination)
@@ -389,10 +465,9 @@ class Movable(Locatable, Routable, Log):
         # Check if the edge has current info
         # NB: positive current is directed from origin to destination
         current = self._get_current(origin, destination)
-
         # Wait for edge resources to become available
         # TODO: Misschien moeten we Resources ook onder Info hangen?
-        if "Resources" in edge.keys() and self.req is None:
+        if "Resources" in edge_info.keys() and self.req is None:
             arrival = self.env.now  # remember when we arrived at the edge
             yield from self._request_resource(self.graph.edges[origin, destination]["Resources"])
             # we had to wait, log it
@@ -422,20 +497,20 @@ class Movable(Locatable, Routable, Log):
             yield from on_pass_edge_function(origin, destination)
 
         # default velocity based on current speed.
-        timeout = distance / (self.current_speed + current)
+        timeout = self.distance_left_on_edge / (self.current_speed + current)
         yield self.env.timeout(timeout)
-        self.distance += distance
+        self.distance += self.distance_left_on_edge
 
         self.log_entry_v0(
             "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
             self.env.now,
-            self.distance,
+            self.distance,  # TODO distance klopt nu  niet na een sluismodule
             dest,
         )
         self.geometry = dest
 
         # release resource if needed
-        if "Resources" in edge.keys():
+        if "Resources" in edge_info.keys():
             # only release if resource is not needed in the next node
             if "Resources" not in self.graph.nodes[destination].keys():
                 self._release_resource()
@@ -444,6 +519,15 @@ class Movable(Locatable, Routable, Log):
                 self.resource = None
             else:
                 pass
+
+    def complete_pass_edge(self, destination):
+        for gen in self.on_complete_pass_edge_functions:
+            yield from gen(destination)
+
+    def look_ahead_to_node(self, destination):
+
+        for gen in self.on_look_ahead_to_node_functions:
+            yield from gen(destination)
 
     def _get_current(self, origin, destination):
         """Get the current on the edge
@@ -497,6 +581,12 @@ class Movable(Locatable, Routable, Log):
         destination: str
             the destination node of the edge
         """
+
+        edge = (origin, destination)
+        if hasattr(self,'overruled_speed') and edge in self.overruled_speed.index:
+            overruled_speed = self.overruled_speed.loc[edge]
+            return overruled_speed
+
         # check if we have the energy mixin and ptot_given
         if not isinstance(self, ConsumesEnergy):
             return self.v

@@ -1,4 +1,4 @@
-"""Here we test the code for estimating emissions along the validation route (Amsterdam-Ludwigshafen) with varying water depth."""
+"""Here we test the code for estimating renewable energy sources along the route with varying water depth."""
 
 # Importing libraries
 # package(s) related to time, space and id
@@ -15,6 +15,7 @@ import pandas as pd
 import shapely.geometry
 
 # package(s) for data handling
+
 # OpenTNSim
 import opentnsim
 
@@ -48,7 +49,7 @@ def test_simulation(expected_df):
     # check of nr of coords and nr of depths align
     assert len(coords) == len(depths) + 1, "nr of depths does not correspond to nr of coords"
     # create a graph based on coords and depths
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
     nodes = []
     path = []
 
@@ -62,7 +63,7 @@ def test_simulation(expected_df):
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
-        FG.add_node(node.name, geometry=node.geometry)
+        graph.add_node(node.name, geometry=node.geometry)
 
     # add edges
     path = [[nodes[i], nodes[i + 1]] for i in range(len(nodes) - 1)]
@@ -71,11 +72,11 @@ def test_simulation(expected_df):
         # For the energy consumption calculation we add info to the graph. We need depth info for resistance.
         # NB: the CalculateEnergy routine expects the graph to have "Info" that contains "GeneralDepth"
         #     this may not be very generic!
-        FG.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
+        graph.add_edge(edge[0].name, edge[1].name, weight=1, Info={"GeneralDepth": depths[index]})
 
     # toggle to undirected and back to directed to make sure all edges are two way traffic
-    FG = FG.to_undirected()
-    FG = FG.to_directed()
+    graph = graph.to_undirected()
+    graph = graph.to_directed()
     # Make your preferred class out of available mix-ins.
     TransportResource = type(
         "Vessel",
@@ -107,8 +108,8 @@ def test_simulation(expected_df):
         # Note that here we have disabled h_squat calculation since we regard the water depth h_0 is already
         # reduced by squat effect. This applies to figures 3, 5, 7, 8 and 9.
         "payload": None,
-        "vessel_type": "Tanker",  # vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker".
-        # ("Dry_SH" means dry bulk single hull, "Dry_DH" means dry bulk double hull)
+        "vessel_type": "Tanker",  # vessel types: "Container","Dry_SH","Dry_DH","Barge","Tanker". ("Dry_SH"
+        # means dry bulk single hull, "Dry_DH" means dry bulk double hull)
         "P_installed": 2000,  # kW
         "P_tot_given": None,  # kW
         "bulbous_bow": False,  # if a vessel has no bulbous_bow, set to False; otherwise set to True.
@@ -120,7 +121,7 @@ def test_simulation(expected_df):
         "C_year": 2000,
     }
 
-    path = nx.dijkstra_path(FG, nodes[0].name, nodes[4].name)
+    path = nx.dijkstra_path(graph, nodes[0].name, nodes[4].name)
 
     def run_simulation(V_s):
         # Start simpy environment
@@ -129,7 +130,7 @@ def test_simulation(expected_df):
         env.epoch = time.mktime(simulation_start.timetuple())
 
         # Add graph to environment
-        env.graph = FG
+        env.graph = graph
 
         # Add environment and path to the vessel
         # create a fresh instance of vessel
@@ -159,7 +160,7 @@ def test_simulation(expected_df):
         vessel = run_simulation(input_data["V_s"][index])
 
         # create an EnergyCalculation object and perform energy consumption calculation
-        energycalculation = opentnsim.energy.EnergyCalculation(FG, vessel)
+        energycalculation = opentnsim.energy.EnergyCalculation(graph, vessel)
         energycalculation.calculate_energy_consumption()
 
         # create dataframe from energy calculation computation
@@ -167,15 +168,18 @@ def test_simulation(expected_df):
 
         # add/modify some comlums to suit our plotting needs
 
-        df["CO2_g_per_km"] = (df["total_emission_CO2"]) / (df["distance"] / 1000)
-        df["PM10_g_per_km"] = (df["total_emission_PM10"]) / (df["distance"] / 1000)
-        df["NOx_g_per_km"] = (df["total_emission_NOX"]) / (df["distance"] / 1000)
-
         label = "V_s = " + str(input_data["V_s"][index])
 
-        plot_data[label + " CO2_g_per_km"] = list(df.CO2_g_per_km[[0, 0, 1, 1, 2, 2, 3, 3]])
-        plot_data[label + " PM10_g_per_km"] = list(df.PM10_g_per_km[[0, 0, 1, 1, 2, 2, 3, 3]])
-        plot_data[label + " NOx_g_per_km"] = list(df.NOx_g_per_km[[0, 0, 1, 1, 2, 2, 3, 3]])
+        # Note that we make a dict to collect all plot data.
+
+        plot_data[label + " total_diesel_consumption_C_year_ICE_mass"] = list(
+            df.total_diesel_consumption_C_year_ICE_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+
+        plot_data[label + " total_diesel_consumption_ICE_mass"] = list(
+            df.total_diesel_consumption_ICE_mass[[0, 0, 1, 1, 2, 2, 3, 3]]
+        )
+        plot_data[label + " total_diesel_consumption_ICE_vol"] = list(df.total_diesel_consumption_ICE_vol[[0, 0, 1, 1, 2, 2, 3, 3]])
 
     plot_df = pd.DataFrame(data=plot_data)
 
