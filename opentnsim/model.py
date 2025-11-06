@@ -23,7 +23,7 @@ import networkx as nx
 
 # import core from self
 import opentnsim.core as core
-import opentnsim.vessel_traffic_service as vessel_traffic_service
+import opentnsim.vessel_traffic_service.vessel_traffic_service as vessel_traffic_service
 
 logger = logging.getLogger(__name__)
 
@@ -195,31 +195,29 @@ class Simulation(core.Identifiable):
         scenario with vessels - should be coupled to the database
     """
 
-    def __init__(
-        self,
-        graph,
-        simulation_start=datetime.datetime.now(),
-        simulation_duration=None,
-        simulation_stop=None,
-        hydrodynamic_data=None,
-        vessel_speed_data=None,
-        scenario=None,
-    ):
+    def __init__(self,
+                 graph,
+                 simulation_start=datetime.datetime.now(),
+                 simulation_duration=None,
+                 simulation_stop=None,
+                 hydrodynamic_start_time=datetime.datetime.now(),
+                 hydrodynamic_data_path=None,
+                 vessel_speed_data_path=None, scenario=None):
+        """ 
+        Initialization 
+        
+        scenario: scenario with vessels - should be coupled to the database
         """
-        Initialization
-
-
-        """
-        self.environment = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
-        self.environment.graph = graph
-        self.environment.simulation_start = simulation_start
-        self.environment.simulation_stop = simulation_stop
+        self.env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
+        self.env.graph = graph
+        self.env.simulation_start = simulation_start
+        self.env.simulation_stop = simulation_stop
         self.simulation_duration = simulation_duration
-        if self.environment.simulation_stop:
-            self.simulation_duration = self.environment.simulation_stop - self.environment.simulation_start
+        if self.env.simulation_stop:
+            self.simulation_duration = self.env.simulation_stop-self.env.simulation_start
         else:
-            self.environment.simulation_stop = self.environment.simulation_start + self.simulation_duration
-        self.environment.routes = pd.DataFrame.from_dict(
+            self.env.simulation_stop = self.env.simulation_start+self.simulation_duration
+        self.env.routes = pd.DataFrame.from_dict(
             {
                 "Origin": [],
                 "Destination": [],
@@ -231,34 +229,13 @@ class Simulation(core.Identifiable):
         )
         self.scenario = scenario
 
-        self.environment.vessels = []
+        self.env.vessels = []
         self.output = {}
 
-        if not vessel_speed_data:
-            vessel_speed_data = None
-            # vessel_speed_data = pd.DataFrame(columns=['edge', 'speed'])
-            # for idx, edge in enumerate(graph.edges):
-            #     vessel_speed_data.at[idx, 'edge'] = edge
-            #     vessel_speed_data.at[idx, 'speed'] = np.NaN
-            # vessel_speed_data.set_index('edge')
-
-        if not hydrodynamic_data:
-            hydrodynamic_data = None
-            # hydrodynamic_data = xr.Dataset()
-            # stations = list(graph.nodes)
-            # times = [simulation_start, simulation_stop]
-            # layers = [0]
-            # static_data = [np.NaN] * len(graph.nodes)
-            # dynamic_time_data = [[np.NaN, np.NaN]] * len(graph.nodes)
-            # dynamic_time_layer_data = [[[np.NaN], [np.NaN]]] * len(graph.nodes)
-            # MBL = xr.DataArray(data=static_data, dims='STATION', coords=dict(STATION=stations))
-            # wlev = xr.DataArray(data=dynamic_time_data, dims=['STATION', 'TIME'],
-            #                     coords=dict(STATION=stations, TIME=times))
-            # cvel = xr.DataArray(data=dynamic_time_layer_data, dims=['STATION', 'TIME', 'LAYER'],
-            #                     coords=dict(STATION=stations, TIME=times, LAYER=layers))
-            # hydrodynamic_data['MBL'] = MBL
-            # hydrodynamic_data['Water level'] = wlev
-            # hydrodynamic_data['Current velocity'] = cvel
+        self.env.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(FG=graph,
+                                                                                      hydrodynamic_start_time = hydrodynamic_start_time,
+                                                                                      hydrodynamic_information_path = hydrodynamic_data_path,
+                                                                                      vessel_speed_data_path=vessel_speed_data_path)
 
         self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data, vessel_speed_data)
 
@@ -301,17 +278,17 @@ class Simulation(core.Identifiable):
             arrival_distribution and arrival_process are ignored.
         """
 
-        if vessel_generator is None:
-            self.environment.vessels.append(vessel)
-            process = self.environment.process(vessel.move())
+        if vessel_generator == None:
+            self.env.vessels.append(vessel)
+            process = self.env.process(vessel.move())
             vessel.process = process
-            if "metadata" in dir(vessel) and "arrival_time" not in vessel.metadata.keys():
-                vessel.metadata["arrival_time"] = self.environment.simulation_start
+            if 'metadata' in dir(vessel) and 'arrival_time' not in vessel.metadata.keys():
+                vessel.metadata["arrival_time"] = self.env.simulation_start
 
         else:
-            self.environment.process(
+            self.env.process(
                 vessel_generator.arrival_process(
-                    self.environment,
+                    self.env,
                     origin,
                     destination,
                     arrival_distribution,
@@ -328,4 +305,4 @@ class Simulation(core.Identifiable):
         duration:   float
             specify the duration of the simulation in seconds
         """
-        self.environment.run(until=self.environment.now + self.simulation_duration.total_seconds())
+        self.env.run(until=self.env.now + self.simulation_duration.total_seconds())
