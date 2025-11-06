@@ -5,6 +5,9 @@ Most functions are called by the ConsumesEnergy mixin.
 
 # %% IMPORT DEPENDENCIES
 # generic
+#
+import collections
+
 import logging
 import numpy as np
 
@@ -206,6 +209,9 @@ def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
     T_F = T  # Forward draught of the vessel [m]
     h_B = 0.2 * T  # Position of the centre of the transverse area [m]
 
+    names = ["C_M", "C_WP", "C_P", "delta", "lcb", "L_R", "A_T", "A_BT", "S",
+             "S_APP", "S_B", "T_F", "h_B"]
+    vessel_energy_properties = collections.namedtuple("VesselEnergyProperties", names)
     return C_M, C_WP, C_P, delta, lcb, L_R, A_T, A_BT, S, S_APP, S_B, T_F, h_B
 
 
@@ -320,7 +326,12 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     R_f = (0.5 * rho * (v**2) * C_f * S) / 1000
     assert not isinstance(R_f, complex), f"R_f should not be complex: {R_f}"
 
-    return R_f, C_f, R_e, Cf_deep, Cf_shallow, Cf_0, Cf_Katsui, V_B, D, a
+    names = ["R_f", "C_f", "R_e", "Cf_deep", "Cf_shallow", "Cf_0", "Cf_Katsui", "V_B", "D", "a"]
+    frictional_resisistance_properties = collections.namedtuple("FrictionalResistanceProperties", names)
+
+    return frictional_resisistance_properties(
+        R_f, C_f, R_e, Cf_deep, Cf_shallow, Cf_0, Cf_Katsui, V_B, D, a
+    )
 
 
 def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta):
