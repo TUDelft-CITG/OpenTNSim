@@ -106,7 +106,8 @@ def calculate_max_sinkage(v, h_0, T, B, C_B, width):
         raise ValueError(f"Width of the fairway ({width}) should be larger than " f"the beam of the vessel ({B})")
 
     # calculate the maximum sinkage
-    return (C_B * ((B * T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+    sinkage = (C_B * ((B * T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+    return sinkage
 
 
 def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
@@ -212,7 +213,8 @@ def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
     names = ["C_M", "C_WP", "C_P", "delta", "lcb", "L_R", "A_T", "A_BT", "S",
              "S_APP", "S_B", "T_F", "h_B"]
     vessel_energy_properties = collections.namedtuple("VesselEnergyProperties", names)
-    return C_M, C_WP, C_P, delta, lcb, L_R, A_T, A_BT, S, S_APP, S_B, T_F, h_B
+    result = vessel_energy_properties(C_M=C_M, C_WP=C_WP, C_P=C_P, delta=delta, lcb=lcb, L_R=L_R, A_T=A_T, A_BT=A_BT, S=S, S_APP=S_APP, S_B=S_B, T_F=T_F, h_B=h_B)
+    return result
 
 
 def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
@@ -329,9 +331,10 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     names = ["R_f", "C_f", "R_e", "Cf_deep", "Cf_shallow", "Cf_0", "Cf_Katsui", "V_B", "D", "a"]
     frictional_resisistance_properties = collections.namedtuple("FrictionalResistanceProperties", names)
 
-    return frictional_resisistance_properties(
+    result = frictional_resisistance_properties(
         R_f, C_f, R_e, Cf_deep, Cf_shallow, Cf_0, Cf_Katsui, V_B, D, a
     )
+    return result
 
 
 def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta):
@@ -383,8 +386,9 @@ def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta):
     ) * ((1 - C_P) ** (-0.604))
 
     R_f_one_k1 = R_f * one_k1
-
-    return c_14, one_k1, R_f_one_k1
+    viscous_resistance_properties = collections.namedtuple("ViscousResistanceProperties", ["c_14", "one_k1", "R_f_one_k1"])
+    result = viscous_resistance_properties(c_14=c_14, one_k1=one_k1, R_f_one_k1=R_f_one_k1)
+    return result
 
 
 def calculate_appendage_resistance(v, rho, S_APP, one_k2, C_f):
@@ -535,7 +539,9 @@ def karpov(v, h_0, g, T):
 
     V_2 = v / alpha_xx
 
-    return F_rh, V_2, alpha_xx
+    karpov_properties = collections.namedtuple("KarpovProperties", ["F_rh", "V_2", "alpha_xx"])
+    result = karpov_properties(F_rh=F_rh, V_2=V_2, alpha_xx=alpha_xx)
+    return result
 
 
 def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho):
@@ -664,7 +670,38 @@ def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_
     # F_n,V_2 < 0.4 class
     R_W = c_1 * c_2 * c_5 * delta * rho * g * np.exp(m_1 * (F_rL ** (-0.9)) + m_2 * np.cos(lmbda * (F_rL ** (-2)))) / 1000  # kN
 
-    return F_rL, i_E, c_1, c_2, c_5, c_7, c_15, c_16, lmbda, m_1, m_2, R_W
+    wave_resistance_properties = collections.namedtuple(
+        "WaveResistanceProperties",
+        [
+            "F_rL",
+            "i_E",
+            "c_1",
+            "c_2",
+            "c_5",
+            "c_7",
+            "c_15",
+            "c_16",
+            "lmbda",
+            "m_1",
+            "m_2",
+            "R_W",
+        ],
+    )
+    result = wave_resistance_properties(
+        F_rL=F_rL,
+        i_E=i_E,
+        c_1=c_1,
+        c_2=c_2,
+        c_5=c_5,  
+        c_7=c_7,
+        c_15=c_15,
+        c_16=c_16,
+        lmbda=lmbda,
+        m_1=m_1,
+        m_2=m_2,
+        R_W=R_W,
+    )   
+    return result
 
 
 def calculate_residual_resistance(V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, h_B, A_BT, bulbous_bow):
@@ -768,7 +805,36 @@ def calculate_residual_resistance(V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, 
 
     R_res = R_TR + R_A + R_B
 
-    return F_nT, c_6, R_TR, c_4, c_2, C_A, R_A, F_ni, P_B, R_B, R_res
+    residual_resistance_properties = collections.namedtuple(
+        "ResidualResistanceProperties",
+        [
+            "F_nT",
+            "c_6",
+            "R_TR",
+            "c_4",
+            "c_2",
+            "C_A",
+            "R_A",
+            "F_ni",
+            "P_B",
+            "R_B",
+            "R_res",
+        ],
+    )
+    result = residual_resistance_properties(
+        F_nT=F_nT,  
+        c_6=c_6,
+        R_TR=R_TR,
+        c_4=c_4,
+        c_2=c_2,
+        C_A=C_A,
+        R_A=R_A,
+        F_ni=F_ni,
+        P_B=P_B,
+        R_B=R_B,
+        R_res=R_res,
+    )       
+    return result
 
 
 def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, rho, c_stern, one_k2):
@@ -1077,16 +1143,33 @@ def calculate_total_power_required(
 
     assert not isinstance(P_given, complex), f"P_given number should not be complex: {P_given}"
 
-    return (
-        P_e,
-        dw,
-        w,
-        t,
-        eta_h,
-        P_d,
-        P_b,
-        P_propulsion,
-        P_tot,
-        P_given,
-        P_partial,
-    )  # , eta_D
+    total_power_required_properties = collections.namedtuple(
+        "TotalPowerRequiredProperties",
+        [
+            "P_e",
+            "dw",
+            "w",
+            "t",
+            "eta_h",
+            "P_d",
+            "P_b",
+            "P_propulsion",
+            "P_tot",
+            "P_given",
+            "P_partial",
+        ],
+    )
+    result = total_power_required_properties(
+        P_e=P_e,
+        dw=dw,
+        w=w,
+        t=t,
+        eta_h=eta_h,
+        P_d=P_d,
+        P_b=P_b,
+        P_propulsion=P_propulsion,
+        P_tot=P_tot,
+        P_given=P_given,
+        P_partial=P_partial,
+    )   
+    return result

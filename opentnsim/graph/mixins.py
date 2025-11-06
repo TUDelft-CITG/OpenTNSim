@@ -1,42 +1,34 @@
 # -*- coding: utf-8 -*-
 
 """Graph module."""
+import functools
 # packkage(s) for documentation, debugging, saving and loading
 import logging
 import os
-import functools
+import pickle
+import uuid
+from itertools import cycle
 
 # matplotlib
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-from plotly.offline import init_notebook_mode, iplot
-
 # package(s) for data handling
 import networkx as nx
-import numpy as np
-import os
-import pickle
-import requests
-import uuid
 import yaml
-from itertools import cycle
-
-from plotly.offline import init_notebook_mode, iplot
-
-
+import numpy as np
+import plotly.graph_objects as go
 # spatial libraries
 import pyproj
+import requests
 import shapely.geometry
-from shapely.geometry import Point, LineString
-from shapely.ops import transform
-
 # package(s) related to the simulation
 import simpy
-
-# OpenTNSim
-from opentnsim.graph import utils
-from opentnsim.graph import mixins as graph_module
 from opentnsim.core import Identifiable, Locatable
+# OpenTNSim
+from opentnsim.graph import mixins as graph_module
+from opentnsim.graph import utils
+from plotly.offline import init_notebook_mode, iplot
+from shapely.geometry import LineString, Point
+from shapely.ops import transform
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
