@@ -66,6 +66,7 @@ testing = [
     "lonboard>=0.11.1",
     "pyarrow",
     "anywidget",
+    "mapclassify>=2.10.0",
 ]
 
 [project.scripts]
