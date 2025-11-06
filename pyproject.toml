@@ -99,3 +99,8 @@ norecursedirs = [
     ".eggs"
 ]
 testpaths = "tests"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.30.1",
+]
