@@ -16,7 +16,7 @@ __author__ = """Mark van Koningsveld"""
 __email__ = "M.vanKoningsveld@tudelft.nl"
 
 try:
-    __version__ = version("mypackage")
+    __version__ = version("opentnsim")
 except PackageNotFoundError:
     # Package is not installed yet (e.g., running tests from source without an install)
     # This value will be replaced by the build system when the package is installed
