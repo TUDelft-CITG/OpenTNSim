@@ -30,9 +30,10 @@ If you do not have [pip](https://pip.pypa.io) installed, this [Python installati
 
 **Step 1: Install Poetry**
 
-Poetry is our dependency manager. It automatically handles virtual environments and packages.
-Use offical installer: 
-[official poetry installment guide](https://python-poetry.org/docs/#installing-with-the-official-installer)
+Poetry is a dependency manager that automatically handles virtual environments and packages.
+
+For detailed instructions, see the [official Poetry installation guide](https://python-poetry.org/docs/#installing-with-the-official-installer).
+
 **Windows (PowerShell):**
 ```powershell
 (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
@@ -45,7 +46,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**Verify (Linxu/Mac/Windows):** `poetry --version` should show version 2.0.0 or higher.
+**Verify (Linux/Mac/Windows):** `poetry --version` should show version 2.0.0 or higher.
 ```bash
 Poetry (version 2.2.1)
 ```
@@ -53,7 +54,7 @@ Poetry (version 2.2.1)
 **Upgrade poetry itself**
 If it does not show poetry version 2 or higher then update poetry with:
 ```bash
-peoetry self update
+poetry self update
 ```
 
 **Step 2: Get OpenTNSim**
@@ -67,7 +68,7 @@ cd OpenTNSim
 poetry install
 ```
 
-Done! Poetry automatically creates a virtual environment and installs all packages.
+Finsihed. Poetry automatically creates a virtual environment and installs all packages.
 
 **Step 3: Verify Installation**
 
@@ -110,7 +111,7 @@ pytest
 2. Open any `.ipynb` file
 3. Select "opentnsim" kernel. Should look something like: `opentnsim-py3.13`.
 
-**Jupyter Server in Broser**
+**Jupyter Server in Browser**
 ```bash
 # Install Jupyter kernel (one-time setup)
 poetry run python -m ipykernel install --user --name=opentnsim
