@@ -91,14 +91,15 @@ poetry run jupyter notebook
 ```
 
 **Option B: Activate Poetry environment**
+1. 
 ```bash
 # Activate environment
 poetry env activate
 ```
-# copy the output in your terminal
+2. copy the output in your terminal
 `source /home/your_linux_user_name/OpenTNSim/.venv/bin/activate`
 
-# Now you can run commands normally
+3. Now you can run commands normally
 ```bash
 python your_script.py
 pytest
@@ -131,9 +132,9 @@ poetry run jupyter notebook
 | Remove a package | `poetry remove package-name` |
 | Update packages | `poetry update` |
 | List packages | `poetry show` |
-| Run Python script | `poetry run python script.py` |
+| Run Python script | `poetry run script.py` |
 | Run tests | `poetry run pytest` |
-| Activate environment | `poetry shell` |
+| Activate environment | `poetry env activate` |
 
 
 ### Installing from PyPI (End Users)
@@ -192,6 +193,8 @@ poetry install
 
 # If lock file has issues
 poetry lock --no-update
+
+# then reinstall again
 poetry install
 ```
 
@@ -284,7 +287,7 @@ A: Not recommended during development. Use `poetry add` instead. For end users, 
 A: Poetry creates a virtual environment. Check location with `poetry env info`.
 
 **Q: How do I share my environment with teammates?**  
-A: Commit `pyproject.toml`. Teammates/Students run `poetry install` to get exact same versions.
+A: Commit `pyproject.toml`. Teammates/Students can run `poetry install` to get same versions and dependencies
 
 **Q: How do I reset everything?**  
 A: Delete the environment and reinstall:
