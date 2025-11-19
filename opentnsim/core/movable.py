@@ -642,6 +642,198 @@ class Movable(Locatable, Routable, Log):
         else:
             return self.graph.edges[origin, destination]["Info"]["GeneralWidth"]
 
+    def execute_vessel_mission(
+        self,
+        mission_type="move",
+        origin=None,
+        destination=None,
+        repeat_until=None,
+        cargo_callback=None,
+    ):
+        """Execute a standard vessel mission pattern.
+
+        This method provides a comprehensive wrapper for common vessel mission patterns,
+        eliminating the need to define custom mission functions for standard operations.
+
+        Parameters
+        ----------
+        mission_type : str, optional
+            Type of mission to execute. Options are:
+            - "move" (default): Simple movement from current position to end of route
+            - "cargo": Load at origin, move to destination, unload, return to origin, repeat
+        origin : str, optional
+            Origin node identifier. Required for "cargo" mission type.
+        destination : str, optional
+            Destination node identifier. Required for "cargo" mission type.
+        repeat_until : callable, optional
+            Function that takes (env, vessel) and returns True when mission should stop.
+            For "cargo" missions, default is to repeat until destination site is full.
+        cargo_callback : dict, optional
+            Dictionary with cargo handling callbacks. Keys can include:
+            - "load_amount": callable(vessel) -> amount to load
+            - "load_duration": callable(amount) -> duration in seconds
+            - "unload_amount": callable(vessel) -> amount to unload
+            - "unload_duration": callable(amount) -> duration in seconds
+
+        Yields
+        ------
+        simpy events
+            The generator yields simpy events for vessel movement and cargo operations.
+
+        Examples
+        --------
+        Basic movement mission:
+        >>> env.process(vessel.execute_vessel_mission())
+
+        Cargo mission with default settings:
+        >>> env.process(vessel.execute_vessel_mission(
+        ...     mission_type="cargo",
+        ...     origin="0",
+        ...     destination="1"
+        ... ))
+
+        Cargo mission with custom callbacks:
+        >>> callbacks = {
+        ...     "load_amount": lambda v: min(v.container.capacity, 1000),
+        ...     "load_duration": lambda amt: amt * 500
+        ... }
+        >>> env.process(vessel.execute_vessel_mission(
+        ...     mission_type="cargo",
+        ...     origin="0",
+        ...     destination="1",
+        ...     cargo_callback=callbacks
+        ... ))
+
+        Notes
+        -----
+        - For "move" mission: vessel must have self.route already defined
+        - For "cargo" mission: vessel must have container mixin and nodes must have 'site' with container
+        """
+        # Basic movement mission - move along route until end is reached
+        if mission_type == "move":
+            while True:
+                yield from self.move()
+
+                # Check if we've reached the end of the route
+                if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
+                    break
+
+        elif mission_type == "cargo":
+            # Validate required parameters
+            if origin is None or destination is None:
+                raise ValueError("origin and destination are required for cargo mission type")
+
+            # Set default callbacks if not provided
+            if cargo_callback is None:
+                cargo_callback = {}
+
+            # Default load amount: min of vessel capacity and available cargo
+            def default_load_amount(vessel):
+                return np.min(
+                    [
+                        vessel.container.capacity,
+                        self.env.graph.nodes[origin]["site"].container.level,
+                    ]
+                )
+
+            # Default load duration: proportional to amount
+            def default_load_duration(amount):
+                return amount * 1000
+
+            # Default unload amount: all cargo in vessel
+            def default_unload_amount(vessel):
+                return vessel.container.level
+
+            # Default unload duration: proportional to amount
+            def default_unload_duration(amount):
+                return amount * 1000
+
+            # Default repeat condition: stop when destination site is full
+            def default_repeat_until(env, vessel):
+                return (
+                    self.env.graph.nodes[destination]["site"].container.level
+                    >= self.env.graph.nodes[destination]["site"].container.capacity
+                )
+
+            # Get callbacks with defaults
+            load_amount_fn = cargo_callback.get("load_amount", default_load_amount)
+            load_duration_fn = cargo_callback.get("load_duration", default_load_duration)
+            unload_amount_fn = cargo_callback.get("unload_amount", default_unload_amount)
+            unload_duration_fn = cargo_callback.get("unload_duration", default_unload_duration)
+
+            # Use provided repeat_until or default
+            stop_condition = repeat_until if repeat_until is not None else default_repeat_until
+
+            # Main cargo mission loop
+            while True:
+                # *** LOAD at origin ***
+                amount = load_amount_fn(self)
+                duration = load_duration_fn(amount)
+
+                self.log_entry_v0(
+                    f"Loading from node {origin} start",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[origin]["geometry"],
+                )
+
+                yield self.env.graph.nodes[origin]["site"].container.get(amount)
+                yield self.container.put(amount)
+                yield self.env.timeout(duration)
+
+                self.log_entry_v0(
+                    f"Loading from node {origin} stop",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[origin]["geometry"],
+                )
+
+                # *** MOVE to destination ***
+                route = nx.dijkstra_path(self.env.graph, origin, destination)
+                self.route = route
+                while True:
+                    yield from self.move()
+
+                    if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
+                        break
+
+                # *** UNLOAD at destination ***
+                amount = unload_amount_fn(self)
+                duration = unload_duration_fn(amount)
+
+                self.log_entry_v0(
+                    f"Unloading to node {destination} start",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[destination]["geometry"],
+                )
+
+                yield self.container.get(amount)
+                yield self.env.graph.nodes[destination]["site"].container.put(amount)
+                yield self.env.timeout(duration)
+
+                self.log_entry_v0(
+                    f"Unloading to node {destination} stop",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[destination]["geometry"],
+                )
+
+                # *** MOVE back to origin ***
+                self.route = nx.dijkstra_path(self.env.graph, destination, origin)
+                while True:
+                    yield from self.move()
+
+                    if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
+                        break
+
+                # Check if we should stop repeating
+                if stop_condition(self.env, self):
+                    break
+
+        else:
+            raise ValueError(f"Unknown mission_type: {mission_type}. Use 'move' or 'cargo'.")
+
 
 class ContainerDependentMovable(Movable, HasContainer):
     """Mixin class: ContainerDependentMovable class
