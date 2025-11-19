@@ -18,62 +18,280 @@ You can find the opentnsim book, based on the examples in the `notebooks` folder
 
 
 ## Installation
-### using the package
-To install OpenTNSim, run this command in your terminal:
 
-``` bash
+### Quick Start (5 minutes)
+
+**Prerequisites:**
+- Python 3.12 or higher
+- pip
+- Poetry (see guide)
+
+If you do not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process. You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods and a more detailed description.
+
+**Step 1: Install Poetry**
+
+Poetry is our dependency manager. It automatically handles virtual environments and packages.
+Use offical installer: 
+[official poetry installment guide](https://python-poetry.org/docs/#installing-with-the-official-installer)
+**Windows (PowerShell):**
+```powershell
+(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
+```
+
+**Linux/Mac:**
+```bash
+curl -sSL https://install.python-poetry.org | python3 -
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Verify (Linxu/Mac/Windows):** `poetry --version` should show version 2.0.0 or higher.
+```bash
+Poetry (version 2.2.1)
+```
+
+**Upgrade poetry itself**
+If it does not show poetry version 2 or higher then update poetry with:
+```bash
+peoetry self update
+```
+
+**Step 2: Get OpenTNSim**
+
+```bash
+# Clone the repository
+git clone https://github.com/TUDelft-CITG/OpenTNSim.git
+cd OpenTNSim
+
+# Install all dependencies (may take some time)
+poetry install
+```
+
+Done! Poetry automatically creates a virtual environment and installs all packages.
+
+**Step 3: Verify Installation**
+
+```bash
+# Check packages are installed
+poetry show
+
+# Test OpenTNSim works
+poetry run python -c "import opentnsim; print('opentnsim.__version__')"
+```
+
+### Using OpenTNSim
+
+You have two options for running Python code:
+
+**Option A: Use `poetry run` (Recommended)**
+```bash
+poetry run python your_script.py
+poetry run pytest
+poetry run jupyter notebook
+```
+
+**Option B: Activate Poetry environment**
+```bash
+# Activate environment
+poetry env activate
+```
+# copy the output in your terminal
+`source /home/your_linux_user_name/OpenTNSim/.venv/bin/activate`
+
+# Now you can run commands normally
+```bash
+python your_script.py
+pytest
+```
+### Working with Jupyter Notebooks
+**Recommended: Usage in VS Code:**
+1. Check if Jupyter extension is installed with poetry `show ipykernel`.
+2. Open any `.ipynb` file
+3. Select "opentnsim" kernel. Should look something like: `opentnsim-py3.13`.
+
+**Jupyter Server in Broser**
+```bash
+# Install Jupyter kernel (one-time setup)
+poetry run python -m ipykernel install --user --name=opentnsim
+
+# Start Jupyter
+poetry run jupyter notebook
+```
+1. Terminal shows a link to jupyter server: example [http://localhost:8888/tree?token=the_generated_token](https://)
+2. Will take you to your browser, select notebook and kernel: 'opentnsim'
+3. Run the notebooks 
+
+
+### Common Commands
+
+| Task | Command |
+|------|---------|
+| Install dependencies | `poetry install` |
+| Add a package | `poetry add package-name` |
+| Remove a package | `poetry remove package-name` |
+| Update packages | `poetry update` |
+| List packages | `poetry show` |
+| Run Python script | `poetry run python script.py` |
+| Run tests | `poetry run pytest` |
+| Activate environment | `poetry shell` |
+
+
+### Installing from PyPI (End Users)
+
+If you just want to use OpenTNSim without development:
+
+```bash
 pip install opentnsim
 ```
 
-To also install the extra dependencies used for testing you can use:
-``` bash
-pip install opentnsim[testing]
-```
-
-This is the preferred method to install OpenTNSim, as it will always install the most recent stable release.
-
-If you don not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process. You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods and a more detailed description.
-
-### local development
-
-The sources for OpenTNSim can be downloaded from the Github repo. You can clone the public repository:
-
-``` bash
-# Use git to clone OpenTNSim
-git clone git://github.com/TUDelft-CITG/OpenTNSim
-```
-
-Once you have a copy of the source, you need to create a virtual environment to install the packages in. Run the following code in the base directory of the OpenTNSim folder:
-
-``` bash
-# create virtual environment
-python3 -m venv .venv
-
-# install packages (the dot is important!)
-pip install -e .
-pip install -e .[testing]
-```
-
-
+**Note:** The Poetry method above is recommended for development and running notebooks.
 
 ## Testing
-When you have installed the package loacally, you can run the unit tests
+All test commands use `poetry run` to ensure correct environment:
 
 ```bash
+# Run all unit tests
+poetry run pytest
+
+# Run notebook tests
+poetry run pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup --ignore ./notebooks/student_notebooks --ignore ./notebooks/broken
+
+# Run specific test
+poetry run pytest -k test_graph
+
+# Run with coverage
+poetry run pytest --cov=opentnsim
+```
+
+If you activated the environment with `poetry env activate`, it is not necessary to run `poetry run`:
+```bash
+poetry env activate
 pytest
+pytest -k test_graph
 ```
 
-Or you can run the notebook tests:
+## Troubleshooting
+
+### "poetry: command not found"
+
+**Windows:** Add Poetry to PATH and restart terminal. Check `C:\Users\YourName\AppData\Roaming\Python\Scripts` exists and is in PATH.
+
+**Linux/Mac:** Run `export PATH="$HOME/.local/bin:$PATH"` and add to `~/.bashrc` permanently.
+
+### "No module named 'opentnsim'"
+
+Make sure you:
+1. Installed dependencies: `poetry install`
+2. Use `poetry run` before Python commands, or activate with `poetry env activate`
+
+### Tests fail or packages missing
+
 ```bash
-pytest --nbmake ./notebooks --nbmake-kernel=python3 --ignore ./notebooks/cleanup --ignore ./notebooks/student_notebooks --ignore ./notebooks/broken
+# Reinstall dependencies
+poetry install
+
+# If lock file has issues
+poetry lock --no-update
+poetry install
 ```
 
-Or you can run a specific test like this:
+### Wrong Python version
 
-``` bash
-pytest -k test_single_engine
+```bash
+# Check current version
+poetry env info
+
+# Check available python versions
+pyenv versions
+
+# Use specific Python version
+poetry env use python3.12
+poetry env use python3.13
+
+# Reinstall
+poetry install
 ```
 
+### Can't select "opentnsim" kernel in Jupyter
+
+```bash
+# Reinstall kernel
+poetry run python -m ipykernel install --user --name=opentnsim --display-name "OpenTNSim"
+
+# Restart Jupyter
+```
+
+## Managing Dependencies
+
+### Adding Packages
+
+```bash
+# Add production dependency
+poetry add package-name
+
+# Add development dependency
+poetry add --group dev package-name
+
+# Example: Add with version constraint
+poetry add "requests>=2.28.0"
+```
+
+### Removing Packages
+
+```bash
+poetry remove package-name
+poetry remove --group dev package-name
+```
+
+### Updating Packages
+
+```bash
+# Update all packages
+poetry update
+
+# Update specific package
+poetry update package-name
+
+# Show outdated packages
+poetry show --outdated
+```
+
+## Understanding Poetry Files
+
+**`pyproject.toml`** - Lists all dependencies and project configuration. Edit using `poetry add/remove` commands.
+
+**`poetry.lock`** - Contains exact versions of all packages. Never edit manually.
+
+**`.venv/`** - Virtual environment folder. Never commit to Git (in `.gitignore`).
+
+## FAQ
+
+**Q: Should I use Poetry or pip?**  
+A: Use Poetry for development and notebooks. It handles environments automatically and ensures everyone has the same package versions.
+
+**Q: Do I need to activate a virtual environment?**  
+A: Not necessarily. There are two options:
+1. Poetry handles this automatically when you use `poetry run`. 
+2. Or use `poetry env activate` & paste the output in your terminal to activate it explicitly
+For Linux: `source /home/your_linux_user_name/OpenTNSim/.venv/bin/activate`
+For Windows
+
+
+**Q: Can I still use pip?**  
+A: Not recommended during development. Use `poetry add` instead. For end users, `pip install opentnsim` still works.
+
+**Q: Where are my packages installed?**  
+A: Poetry creates a virtual environment. Check location with `poetry env info`.
+
+**Q: How do I share my environment with teammates?**  
+A: Commit `pyproject.toml`. Teammates/Students run `poetry install` to get exact same versions.
+
+**Q: How do I reset everything?**  
+A: Delete the environment and reinstall:
+```bash
+poetry env remove
+poetry install
+```
 
 ## Examples
 
