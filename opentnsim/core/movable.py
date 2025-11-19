@@ -31,9 +31,6 @@ from opentnsim.energy.mixins import ConsumesEnergy
 # get logger
 logger = logging.getLogger(__name__)
 
-class Interrupted(Exception):
-    pass
-
 class Routable(SimpyObject):
     """Mixin class: Something with a route (networkx format)
 
@@ -182,6 +179,7 @@ class Movable(Locatable, Routable, Log):
         self.distance = 0
         self.on_pass_node_functions = []
         self.on_pass_edge_functions = []
+        self.on_complete_edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
         self._check_attributes()
@@ -225,8 +223,7 @@ class Movable(Locatable, Routable, Log):
 
             try:
                 yield from self.pass_node(self.current_node)
-            except Interrupted as e:
-                print(e)
+            except simpy.exceptions.Interrupt as e:
                 break
 
             # are we already at destination?
@@ -237,7 +234,10 @@ class Movable(Locatable, Routable, Log):
                 )
                 continue
 
-            yield from self.pass_edge(self.current_node, self.next_node)
+            try:
+                yield from self.pass_edge(self.current_node, self.next_node)
+            except simpy.exceptions.Interrupt as e:
+                break
 
             # we arrived at destination
             # update to new position
@@ -440,6 +440,9 @@ class Movable(Locatable, Routable, Log):
             dest,
         )
         self.geometry = dest
+
+        for on_complete_edge_function in self.on_complete_edge_functions:
+            yield from on_complete_edge_function(origin, destination)
 
         # release resource if needed
         if "Resources" in edge.keys():

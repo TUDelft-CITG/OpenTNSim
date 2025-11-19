@@ -10,6 +10,7 @@ import logging
 
 # package(s) related to the simulation
 import simpy
+from simpy import FilterStore
 
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 from openclsim.core import SimpyObject
@@ -69,3 +70,20 @@ class HasResource(SimpyObject):
         self.resource = (
             simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources)
         )
+
+class PriorityFilterStore(FilterStore):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_with_priority(self, vessel, filter, priority=0):
+        vessels_in_waiting_area_old = self.get_queue.copy()
+        request = self.get(filter)
+        request.priority = priority
+        request.obj = vessel
+        if priority and vessels_in_waiting_area_old:
+            for number_in_line,waiting_vessels in enumerate(vessels_in_waiting_area_old):
+                if not waiting_vessels.priority:
+                    break
+            self.get_queue.insert(number_in_line, self.get_queue.pop())
+        return request

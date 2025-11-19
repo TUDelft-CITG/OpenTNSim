@@ -169,7 +169,8 @@ class VesselTrafficService:
         sailing_times_to_anchorages = []
         # Loop over the nodes of the network and identify all the anchorage areas:
         for node_anchorage in vessel.multidigraph.nodes:
-            if "Anchorage" in vessel.multidigraph.nodes[node_anchorage]:
+            if "Anchorage Area" in vessel.multidigraph.nodes[node_anchorage]:
+                print('hooo')
                 # Determine if the anchorage area can be reached
                 anchorage_reachable = True
                 route_to_anchorage = nx.dijkstra_path(vessel.multidigraph, node, node_anchorage)
