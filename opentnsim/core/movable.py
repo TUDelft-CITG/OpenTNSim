@@ -341,7 +341,7 @@ class Movable(Locatable, Routable, Log):
         # Check if vessel is at correct location - if not, move to location
         vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
         if self.geometry != vessel_origin_location:
-            self.log_entry_v0("Sailing to start start", self.env.now, self.distance, self.geometry)
+            self.log_entry_v0("Sailing to start", self.env.now, self.distance, self.geometry)
             start_location = self.geometry
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
@@ -352,7 +352,7 @@ class Movable(Locatable, Routable, Log):
 
             yield self.env.timeout(self.distance / self.current_speed)
             self.geometry = vessel_origin_location
-            self.log_entry_v0("Sailing to start stop", self.env.now, self.distance, self.geometry)
+            self.log_entry_v0("Sailing to stop", self.env.now, self.distance, self.geometry)
 
     def pass_node(self, node):
         """pass a node and call all on_pass_node_functions
@@ -642,13 +642,51 @@ class Movable(Locatable, Routable, Log):
         else:
             return self.graph.edges[origin, destination]["Info"]["GeneralWidth"]
 
+    
+    def _default_cargo_load_amount(self, origin):
+        """Calculate default load amount from origin site."""
+        return np.min([
+            self.container.capacity,
+            self.env.graph.nodes[origin]["site"].container.level,
+        ])
+    
+    def _default_cargo_load_duration(self, amount):
+        """Calculate default loading duration."""
+        return amount * 1000
+    
+    def _default_cargo_unload_amount(self):
+        """Calculate default unload amount from vessel."""
+        return self.container.level
+    
+    def _default_cargo_unload_duration(self, amount):
+        """Calculate default unloading duration."""
+        return amount * 1000
+    
+    def _move_until_endpoint(self):
+        """Move vessel until it reaches the destination node.
+
+        Parameters
+        ----------
+        destination : str
+            Destination node identifier.
+
+        Yields
+        ------
+        simpy events
+            The generator yields simpy events for vessel movement.
+        """
+        # Move along the route until reaching the destination
+        while True:
+            yield from self.move()
+
+            if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
+                break
+
     def execute_vessel_mission(
         self,
         mission_type="move",
         origin=None,
         destination=None,
-        repeat_until=None,
-        cargo_callback=None,
     ):
         """Execute a standard vessel mission pattern.
 
@@ -707,80 +745,39 @@ class Movable(Locatable, Routable, Log):
         Notes
         -----
         - For "move" mission: vessel must have self.route already defined
-        - For "cargo" mission: vessel must have container mixin and nodes must have 'site' with container
+        - For "cargo" mission: vessel must have self.route defined from origin to destination, and nodes must have 'site' with container
         """
+
+        
         # Basic movement mission - move along route until end is reached
         if mission_type == "move":
-            while True:
-                yield from self.move()
-
-                # Check if we've reached the end of the route
-                if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
-                    break
+            yield from self._move_until_endpoint()
+            
 
         elif mission_type == "cargo":
-            # Validate required parameters
+            # Validate required parameters for cargo mission
             if origin is None or destination is None:
                 raise ValueError("origin and destination are required for cargo mission type")
-
-            # Set default callbacks if not provided
-            if cargo_callback is None:
-                cargo_callback = {}
-
-            # Default load amount: min of vessel capacity and available cargo
-            def default_load_amount(vessel):
-                return np.min(
-                    [
-                        vessel.container.capacity,
-                        self.env.graph.nodes[origin]["site"].container.level,
-                    ]
-                )
-
-            # Default load duration: proportional to amount
-            def default_load_duration(amount):
-                return amount * 1000
-
-            # Default unload amount: all cargo in vessel
-            def default_unload_amount(vessel):
-                return vessel.container.level
-
-            # Default unload duration: proportional to amount
-            def default_unload_duration(amount):
-                return amount * 1000
-
-            # Default repeat condition: stop when destination site is full
-            def default_repeat_until(env, vessel):
-                return (
-                    self.env.graph.nodes[destination]["site"].container.level
-                    >= self.env.graph.nodes[destination]["site"].container.capacity
-                )
-
-            # Get callbacks with defaults
-            load_amount_fn = cargo_callback.get("load_amount", default_load_amount)
-            load_duration_fn = cargo_callback.get("load_duration", default_load_duration)
-            unload_amount_fn = cargo_callback.get("unload_amount", default_unload_amount)
-            unload_duration_fn = cargo_callback.get("unload_duration", default_unload_duration)
-
-            # Use provided repeat_until or default
-            stop_condition = repeat_until if repeat_until is not None else default_repeat_until
+           
 
             # Main cargo mission loop
+            # Load move unload repeat
             while True:
                 # *** LOAD at origin ***
-                amount = load_amount_fn(self)
-                duration = load_duration_fn(amount)
-
+                amount = self._default_cargo_load_amount(origin)
+                duration = self._default_cargo_load_duration(amount)
+                 # Log loading start
                 self.log_entry_v0(
                     f"Loading from node {origin} start",
                     self.env.now,
                     0,
                     self.env.graph.nodes[origin]["geometry"],
                 )
-
                 yield self.env.graph.nodes[origin]["site"].container.get(amount)
                 yield self.container.put(amount)
                 yield self.env.timeout(duration)
 
+                # Log loading stop
                 self.log_entry_v0(
                     f"Loading from node {origin} stop",
                     self.env.now,
@@ -789,18 +786,14 @@ class Movable(Locatable, Routable, Log):
                 )
 
                 # *** MOVE to destination ***
-                route = nx.dijkstra_path(self.env.graph, origin, destination)
-                self.route = route
-                while True:
-                    yield from self.move()
-
-                    if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
-                        break
+                self.route = nx.dijkstra_path(self.env.graph, origin, destination)
+                yield from self._move_until_endpoint()
 
                 # *** UNLOAD at destination ***
-                amount = unload_amount_fn(self)
-                duration = unload_duration_fn(amount)
+                amount = self._default_cargo_unload_amount()
+                duration = self._default_cargo_unload_duration(amount)
 
+                # Log unloading start
                 self.log_entry_v0(
                     f"Unloading to node {destination} start",
                     self.env.now,
@@ -812,6 +805,7 @@ class Movable(Locatable, Routable, Log):
                 yield self.env.graph.nodes[destination]["site"].container.put(amount)
                 yield self.env.timeout(duration)
 
+                # Log unloading stop    
                 self.log_entry_v0(
                     f"Unloading to node {destination} stop",
                     self.env.now,
@@ -820,15 +814,13 @@ class Movable(Locatable, Routable, Log):
                 )
 
                 # *** MOVE back to origin ***
+                # Update route for return trip
                 self.route = nx.dijkstra_path(self.env.graph, destination, origin)
-                while True:
-                    yield from self.move()
-
-                    if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
-                        break
-
-                # Check if we should stop repeating
-                if stop_condition(self.env, self):
+                yield from self._move_until_endpoint()
+                
+                # Check if destination site is full (stop condition)
+                if (self.env.graph.nodes[destination]["site"].container.level == 
+                    self.env.graph.nodes[destination]["site"].container.capacity):
                     break
 
         else:
