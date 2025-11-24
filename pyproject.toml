@@ -1,72 +1,92 @@
-[tool.poetry]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Metadata for uv, Poetry 2.x, pip, PyPI
+[project]
 name = "opentnsim"
 version = "1.3.7"
-description = "The OpenTNSim package aims to facilitate the analysis of network performance for different network configurations, fleet compositions and traffic rules."
-authors = ["Mark van Koningsveld <m.vankoningsveld@tudelft.nl>"]
+description = "Transport Network Simulation package"
+authors = [
+    { name = "Mark van Koningsveld", email = "m.vankoningsveld@tudelft.nl" },
+]
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/TUDelft-CITG/OpenTNSim"
-keywords = ["OpenTNSim", "simulation", "transport"]
+keywords = ["OpenTNSim", "simulation", "transport", "OpenCLSim"]
 classifiers = [
-    "Development Status :: 2 - Pre-Aplha",
+    "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
 ]
+dynamic = ["version"]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-pandas = ">=2.2.3"
-matplotlib = ">=3.10.1"
-geopandas = ">=1.0.1"
-shapely = ">=2.1.0"
-sphinx = ">=7.4.7"
-deprecated = ">=1.2.18"
-networkx = ">=3.4.2"
-simpy = ">=4.1.1"
-openclsim = ">=1.6.2"
-scipy = ">=1.15.2"
-requests-cache = ">=1.2.1"
-simplekml = ">=1.3.6"
-tqdm = ">=4.67.1"
-xarray = ">=2025.3.1"
-click = ">=8.1.8"
-# Packages needed for notebooks
-folium = ">=0.19.5"
-movingpandas = {version = ">=0.22.4", extras = ["smoothing", "viz"]}
-pyarrow = ">=22.0.0"
-pyyaml = ">=6.0.2"
-lonboard = ">=0.11.1"
-anywidget = "*"
+# set python version
+requires-python = ">=3.12, <4"
 
-[tool.poetry.group.dev.dependencies]
-pytest = ">=8.3.5"
-pytest-cov = ">=6.1.1"
-pytest-timeout = ">=2.3.1"
-pytest-datadir = ">=1.6.1"
-jupyter = ">=1.1.1"
-ipykernel = ">=6.29.5"
-notebook = ">=7.4.2"
-jupyter-book = "==1.0.4.post1"
-sphinx-rtd-theme = ">=3.0.2"
-colorcet = ">=3.1.0"
-cython = ">=3.1.0"
-fiona = ">=1.10.1"
-ipyleaflet = ">=0.19.2"
-ipywidgets = ">=8.1.7"
-jsonschema = ">=4.23.0"
-jupyterlab-widgets = ">=3.0.15"
-momepy = ">=0.10.0"
-nbconvert = ">=7.16.6"
-nbmake = ">=1.5.5"
-openpyxl = ">=3.1.5"
+dependencies = [
+    "pandas >=2.2.3",
+    "matplotlib >=3.10.1",
+    "geopandas >=1.0.1",
+    "shapely >=2.1.0",
+    "sphinx >= 7.4.7",
+    "deprecated >=1.2.18",
+    "networkx >=3.4.2",
+    "simpy >=4.1.1",
+    "openclsim >=1.6.2",
+    "scipy >=1.15.2",
+    "requests-cache >=1.2.1",
+    "simplekml >=1.3.6",
+    "tqdm >=4.67.1",
+    "xarray >=2025.3.1",
+    "click >=8.1.8,<9",
+]
 
-[tool.poetry.scripts]
+# Extras 
+[project.optional-dependencies]
+testing = [
+    "pytest >=8.3.5",
+    "jupyter >=1.1.1",
+    "ipykernel >=6.29.5",
+    "pytest-cov >=6.1.1",
+    "pytest-timeout >=2.3.1",
+    "colorcet >=3.1.0",
+    "cython >= 3.1.0",
+    "fiona >=1.10.1",
+    "folium >=0.19.5",
+    "ipyleaflet >=0.19.2",
+    "ipywidgets >=8.1.7",
+    "jsonschema >=4.23.0",
+    "jupyter-book >=1.0.4.post1",
+    "jupyterlab_widgets >=3.0.15",
+    "momepy >=0.10.0",
+    "nbconvert >=7.16.6",
+    "nbmake >=1.5.5",
+    "notebook >=7.4.2",
+    "openpyxl >=3.1.5",
+    "pytest-datadir >=1.6.1",
+    "pyyaml >=6.0.2",
+    "sphinx-rtd-theme >= 3.0.2",
+    "movingpandas[smoothing,viz]>=0.22.4",
+    "lonboard>=0.11.1",
+    "pyarrow",
+    "anywidget",
+]
+
+[project.scripts]
 opentnsim = "opentnsim.cli:cli"
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[project.urls]
+Homepage = "https://github.com/TUDelft-CITG/OpenTNSim"
+
+[tool.hatch.version]
+path = "opentnsim/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/opentnsim",
+]
 
 [tool.black]
 line-length = 132
@@ -74,6 +94,7 @@ line-length = 132
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "--cov --cov-report term-missing --cov-report html --verbose"
+
 norecursedirs = [
     "dist",
     "build",

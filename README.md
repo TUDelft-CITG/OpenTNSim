@@ -24,7 +24,7 @@ You can find the opentnsim book, based on the examples in the `notebooks` folder
 **Prerequisites:**
 - Python 3.12 or higher
 - pip
-- Poetry (see guide)
+- Dependency manager; Poetry or UV (see guides below)
 
 If you do not have [pip](https://pip.pypa.io) installed, this [Python installation guide](http://docs.python-guide.org/en/latest/starting/installation/) can guide you through the process. You can read the [documentation](https://opentnsim.readthedocs.io/en/latest/installation.html) for other installation methods and a more detailed description.
 
