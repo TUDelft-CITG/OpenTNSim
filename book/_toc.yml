@@ -11,8 +11,8 @@ parts:
   chapters:
     - file: Command_basics
       title: Command Prompt
-    - file: Anaconda_basics
-      title: Anaconda
+    - file: Venv_basics
+      title: Virtual Environments basics
 - caption:  Basics of OpenTNSim
   chapters:
     - file: examples/0000 - Basic trip over a single edge.ipynb
