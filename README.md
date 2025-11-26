@@ -56,7 +56,11 @@ poetry install --extras testing
 
 Activate your virtual environment:
 ``` bash
+# Linux
 source .venv/bin/activate
+
+# Windows
+source .venv\Scripts\activate
 ```
 
 
