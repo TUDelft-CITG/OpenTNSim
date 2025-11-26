@@ -1246,7 +1246,7 @@ class ConsumesEnergy:
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
         self.emission_g_s_NOX = self.P_given * self.total_factor_NOX / 3600
-
+###################################################################################
 
     def calculate_max_sinkage(self, v, h_0, width=150):
         """Calculate the maximum sinkage of a moving ship
@@ -1278,7 +1278,7 @@ class ConsumesEnergy:
 
         return h_squat
 
-
+######################################################################
 class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
@@ -1336,6 +1336,8 @@ class EnergyCalculation:
             "water depth": [],
             "distance": [],
             "delta_t": [],
+            "water_velocity": [],
+            "discharge": [],
         }
 
         self.co2_footprint = {"total_footprint": 0, "stationary": 0}
@@ -1374,6 +1376,24 @@ class EnergyCalculation:
             # depth of waterway between two points
             return h_0
 
+        def is_downstream(g_edge, g_start, g_stop):
+            try:
+                x0, y0 = g_edge.coords[0]
+                x1, y1 = g_edge.coords[-1]
+            except Exception:
+                return True
+
+            ex = x1 - x0
+            ey = y1 - y0
+
+            sx = g_stop.x - g_start.x
+            sy = g_stop.y - g_start.y
+
+            dot = ex * sx + ey * sy
+
+            return dot >= 0.0  # True = downstream, False = upstream
+
+
         # log messages that are related to locking
         # todo: check if this still works with Floors new locking module
         stationary_phase_indicator = [
@@ -1402,34 +1422,80 @@ class EnergyCalculation:
                 self.energy_use["edge_start"].append(geometries[i])
                 self.energy_use["edge_stop"].append(geometries[i + 1])
 
+                # water velocity and edge geometry
+                v_w = 0.0
+                g_edge = None
+                Q = None
+
                 # calculate the distance travelled and the associated velocity
-                distance = calculate_distance(geometries[i], geometries[i + 1])
-                v = distance / delta_t
+                message = messages[i]
+                if 'from node ' in message and 'to node ' in message:
+                    node_start = message.split('from node ')[1].split(' to node')[0]
+                    node_stop = message.split('to node ')[1].split(' ')[0]
+
+                    # edge data from environment graph
+                    e_data = self.vessel.env.FG.edges[node_start, node_stop]
+                    g_edge = e_data.get("geometry", None)
+
+                    # distance along edge (fallback to geometric)
+                    distance = e_data.get("length", calculate_distance(geometries[i], geometries[i + 1]))
+
+                    # water velocity
+                    if "velocity" in e_data and e_data["velocity"] is not None:
+                        try:
+                            v_w = float(e_data["velocity"])
+                        except (TypeError, ValueError):
+                            v_w = 0.0
+
+                    # discharge (if stored on edge)
+                    Q = e_data.get("discharge", None)
+                else:
+                    distance = calculate_distance(geometries[i], geometries[i + 1])
+
+                v_g = distance / delta_t
+
+                # decide downstream / upstream based on geometry
+                if g_edge is not None:
+                    ds = is_downstream(g_edge, geometries[i], geometries[i+1])
+                else:
+                    ds = True  # fallback: assume downstream if we don't know
+
+                # speed through water:
+                # downstream: c = v_g - v_w
+                # upstream:   c = v_g + v_w
+                if ds:
+                    v = max(v_g - v_w, 0.0)
+                else:
+                    v = max(v_g + v_w, 0.0)
+
                 self.energy_use["distance"].append(distance)
 
                 # calculate the delta t
                 self.energy_use["delta_t"].append(delta_t)
-                
+
                 logger.debug("geometries[i]: {0}, geometries[i + 1] {1}".format(geometries[i], geometries[i + 1]))
 
                 # calculate the water depth
                 h_0 = calculate_depth(geometries[i], geometries[i + 1])
 
+
                 # printstatements to check the output (can be removed later)
                 logger.debug("delta_t: {:.4f} s".format(delta_t))
                 logger.debug("distance: {:.4f} m".format(distance))
+                logger.debug("v_ground: {:.4f} m/s".format(v_g))
+                logger.debug("u_water: {:.4f} m/s".format(v_w))
                 logger.debug("velocity: {:.4f} m/s".format(v))
                 logger.debug("h_0: {:.4f} m".format(h_0))
+
 
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
-                # print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
-                self.vessel.calculate_total_power_required(v=v, h_0=h_0)
+                self.vessel.calculate_total_power_required(v, h_0=h_0)
 
-                self.vessel.calculate_emission_factors_total(v=v, h_0=h_0)
-                self.vessel.calculate_SFC_final(v=v, h_0=h_0)
+                self.vessel.calculate_emission_factors_total(v, h_0=h_0)
+                self.vessel.calculate_SFC_final(v, h_0=h_0)
 
                 if messages[i + 1] in stationary_phase_indicator:  # if we are in a stationary stage only log P_hotel
                     # Energy consumed per time step delta_t in the stationary stage
@@ -1529,8 +1595,10 @@ class EnergyCalculation:
                     self.energy_use["total_Li_NMC_Battery_mass"].append(delta_Li_NMC_Battery_mass)
                     self.energy_use["total_Li_NMC_Battery_vol"].append(delta_Li_NMC_Battery_vol)
                     self.energy_use["total_Battery2000kWh_consumption_num"].append(delta_Battery2000kWh)
-
+                    self.energy_use["water_velocity"].append(v_w)
+                    self.energy_use["discharge"].append(Q)
                     self.energy_use["water depth"].append(h_0)
+
                     # self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
 
         # TODO: er moet hier een heel aantal dingen beter worden ingevuld

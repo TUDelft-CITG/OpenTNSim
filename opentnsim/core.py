@@ -282,12 +282,31 @@ class Movable(Locatable, Routable, Log):
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
-
+##################################################################
     def pass_edge(self, origin, destination, end_location):
         edge = self.graph.edges[origin, destination]
         k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
-        self.distance = self.multidigraph.edges[origin, destination, k]['length']
 
+        
+        md = self.multidigraph.edges[origin, destination, k]
+        
+        if 'length_m' in md and md['length_m'] is not None:
+            self.distance = md['length_m']
+        
+        elif 'geometry' in md and md['geometry'] is not None:
+            d = 0.0
+            coords = list(md['geometry'].coords)
+            for (x1, y1), (x2, y2) in zip(coords, coords[1:]):
+                d += self.wgs84.inv(x1, y1, x2, y2)[2]
+            self.distance = d
+
+        elif 'length' in md and md['length'] is not None:
+            self.distance = md['length']
+
+        else:
+            raise ValueError("No distance found for this edge")
+
+####################################################################
         next_node = None
         if self.route[-1] != destination:
             next_node = self.route[self.route.index(destination)+1]
