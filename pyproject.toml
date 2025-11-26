@@ -5,7 +5,6 @@ build-backend = "hatchling.build"
 # Metadata for uv, Poetry 2.x, pip, PyPI
 [project]
 name = "opentnsim"
-version = "1.3.7"
 description = "Transport Network Simulation package"
 authors = [
     { name = "Mark van Koningsveld", email = "m.vankoningsveld@tudelft.nl" },
