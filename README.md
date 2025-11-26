@@ -63,8 +63,6 @@ source .venv/bin/activate
 source .venv\Scripts\activate
 ```
 
-
-
 You can now run scripts or tests:
 ```bash
 ## run specific python script
@@ -98,7 +96,8 @@ Based on the examples and docs a book can be generated using the commands `make 
 ## Code quality
 Code quality is checked using sonarcloud. You can see results on the [sonarcloud](https://sonarcloud.io/project/overview?id=TUDelft-CITG_OpenTNSim) website. For now we have disabled coverage and duplication checks. These can be enabled when we include coverage measurements and reduce duplication by optimizing the tests.
 
-
+## OpenCLSim 
+OpenTNSim makes use of the [OpenCLSim](https://github.com/TUDelft-CITG/OpenCLSim) code. Both packages are maintained by the same team of developers. You can use these packages together, and combine mixins from both packages. When you experience a problem with integrating the two packages, please let us know. We are working towards further integrating these two software packages.
 
 
 
