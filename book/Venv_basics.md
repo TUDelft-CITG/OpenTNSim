@@ -19,6 +19,125 @@ The advantages of using virtual environments are:
 - Install packages on a host on which you do not have admin privileges.
 - Keep your global directory tidy because you don't have to install packages system-wide that you only need for a single project.
 
+### Poetry
+Poetry is a dependency manager that automatically handles virtual environments and packages. The steps to install poetry are outlined in the guide  below. For additional information on how to install see the [official Poetry installation guide](https://python-poetry.org/docs/#installing-with-the-official-installer). 
+
+#### Poetry installation guide
+
+**Step 1: Install Poetry**
+Installing Poetry via command line:
+
+**Windows (PowerShell):**
+```powershell
+(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
+```
+**Linux/Mac:**
+```bash
+curl -sSL https://install.python-poetry.org | python3 -
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Verify (Linux/Mac/Windows):** `poetry --version` should show version 2.0.0 or higher.
+```bash
+Poetry (version 2.2.1)
+```
+**Upgrade poetry itself**
+If it does not show poetry version 2 or higher then update poetry with:
+```bash
+poetry self update
+```
+**Step 2: Poetry for OpenTNSim**
+
+```bash
+# Clone the repository
+git clone https://github.com/TUDelft-CITG/OpenTNSim.git
+cd OpenTNSim
+```
+Install all dependencies (may take some time)
+```bash
+poetry install 
+```
+
+If you want to use notebooks and run tests, then also install the extras
+```bash
+poetry install --extras testing
+```
+**Step 3: Verify Installation**
+```bash
+# Check packages are installed
+poetry show
+
+# Test OpenTNSim works
+poetry run python -c "import opentnsim; print('opentnsim.__version__')"
+```
+### uv
+Poetry is a dependency manager that automatically handles virtual environments and packages. The steps to install uv are outlined in the guide  below. For additional information on how to install see the [official uv installation guide](https://docs.astral.sh/uv/getting-started/installation/). 
+
+#### uv installation guide
+
+**Step 1: Install uv**
+Installing uv via command line:
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+**Linux/Mac:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Verify (Linux/Mac/Windows):** `uv --version` should show version 0.9.12 or higher.
+```bash
+uv 0.9.12
+```
+**Upgrade uv itself**
+```bash
+uv self update
+```
+**Step 2: uv for OpenTNSim**
+
+```bash
+# Clone the repository
+git clone https://github.com/TUDelft-CITG/OpenTNSim.git
+cd OpenTNSim
+```
+Install all dependencies (may take some time)
+```bash
+uv sync 
+```
+
+If you want to use notebooks and run tests, then also install the extras
+```bash
+uv sync --extra testing
+```
+**Step 3: Verify Installation**
+```bash
+# Check packages are installed
+uv pip list
+
+# Test OpenTNSim works
+uv run python -c "import opentnsim; print('opentnsim.__version__')"
+
+```
+
+
+### Using Poetry or uv Commands
+| Task | Poetry Command | UV Command |
+|------|----------------|------------|
+| Install dependencies | `poetry install` | `uv sync` |
+| Add a package | `poetry add package-name` | `uv add package-name` |
+| Remove a package | `poetry remove package-name` | `uv remove package-name` |
+| Update packages | `poetry update` | `uv lock --upgrade` |
+| List packages | `poetry show` | `uv pip list` |
+| Run Python script | `poetry run script.py` | `uv run script.py` |
+| Run tests | `poetry run pytest` | `uv run pytest` |
+| Activate environment | `source .venv/bin/activate` (Linux/Mac) or `.venv\Scripts\activate` (Windows) | `source .venv/bin/activate` (Linux/Mac) or `.venv\Scripts\activate` (Windows) |
+
+*NOTE*: When you have activated your virtual environment there is no need to include `poetry` or `uv` before running your command. You can run your command as is. e.g: `pyest` or
+`pytest -k test_graph`
+
 ### Conda 
 Conda is a package manager and environment manager that you use with command line commands at the Anaconda Prompt for Windows, or in a terminal window for macOS or Linux (which is used in this tutorial). Further, Anaconda Navigator is a graphical interface to use conda (not considered in this tutorial). 
 
