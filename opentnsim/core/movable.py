@@ -9,7 +9,7 @@ The following classes are provided:
 import logging
 import warnings
 import deprecated
-from typing import Union
+from typing import Union, Optional
 
 # math packages
 import numpy as np
@@ -341,7 +341,7 @@ class Movable(Locatable, Routable, Log):
         # Check if vessel is at correct location - if not, move to location
         vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
         if self.geometry != vessel_origin_location:
-            self.log_entry_v0("Sailing to start start", self.env.now, self.distance, self.geometry)
+            self.log_entry_v0("Sailing to start", self.env.now, self.distance, self.geometry)
             start_location = self.geometry
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
@@ -352,7 +352,7 @@ class Movable(Locatable, Routable, Log):
 
             yield self.env.timeout(self.distance / self.current_speed)
             self.geometry = vessel_origin_location
-            self.log_entry_v0("Sailing to start stop", self.env.now, self.distance, self.geometry)
+            self.log_entry_v0("Sailing to stop", self.env.now, self.distance, self.geometry)
 
     def pass_node(self, node):
         """pass a node and call all on_pass_node_functions
@@ -641,6 +641,183 @@ class Movable(Locatable, Routable, Log):
             return None
         else:
             return self.graph.edges[origin, destination]["Info"]["GeneralWidth"]
+
+    
+    def _cargo_load_amount(self, origin):
+        """Calculate the default cargo load amount from the origin site.
+        
+        Returns the minimum of the vessel's capacity and the available cargo
+        at the origin site.
+        Capacity is determined by self.container.capacity when intializing the Vessel object. 
+        Level is determined by the site container level when initializing the Vessel object.
+        
+        Parameters
+        ----------
+        origin : str
+            Origin node identifier containing the site to load from.
+            
+        Returns
+        -------
+        float
+            Amount to load, limited by vessel capacity or site availability.
+        """
+        return np.min([
+            self.container.capacity,
+            self.env.graph.nodes[origin]["site"].container.level,
+        ])
+    
+    def _cargo_unload_load_duration(self, amount: int, duration: int=1000):
+        """Calculate default loading or unloading duration."""
+        return amount * duration
+    
+    def _cargo_unload_amount(self):
+        """Calculate default unload amount from vessel."""
+        return self.container.level
+    
+    def _move_until_endpoint(self):
+        """Move vessel until it reaches the destination node.
+
+        Parameters
+        ----------
+        destination : str
+            Destination node identifier.
+
+        Yields
+        ------
+        simpy events
+            The generator yields simpy events for vessel movement.
+        """
+        # Move along the route until reaching the destination
+        while True:
+            yield from self.move()
+
+            if self.geometry == nx.get_node_attributes(self.env.graph, "geometry")[self.route[-1]]:
+                break
+
+    def execute_vessel_mission(
+        self,
+        mission_type="move",
+        origin=None,
+        destination=None,
+        duration_per_unit_load: Optional[int] = 1000,
+        duration_per_unit_unload: Optional[int] = 1000,
+    ):
+        """Execute a standard vessel mission pattern.
+
+        This method provides a comprehensive wrapper for common vessel mission patterns,
+        eliminating the need to define custom mission functions for standard operations.
+
+        Parameters
+        ----------
+        mission_type : str, optional
+            Type of mission to execute. Options are:
+            - "move" (default): Simple movement from current position to end of route
+            - "cargo": Load at origin, move to destination, unload, return to origin, repeat
+        origin : str, optional
+            Origin node identifier. Required for "cargo" mission type.
+        destination : str, optional
+            Destination node identifier. Required for "cargo" mission type.
+    
+        Yields
+        ------
+        simpy events
+            The generator yields simpy events for vessel movement and cargo operations.
+
+        Examples
+        --------
+        Basic movement mission:
+        >>> env.process(vessel.execute_vessel_mission())
+
+        Cargo mission with default settings:
+        >>> env.process(vessel.execute_vessel_mission(
+        ...     mission_type="cargo",
+        ...     origin="0",
+        ...     destination="1"
+        ... ))
+
+        Notes
+        -----
+        - For "move" mission: vessel must have self.route already defined
+        - For "cargo" mission: vessel must have self.route defined from origin to destination, and nodes must have 'site' with container
+        """
+
+        
+        # Basic movement mission - move along route until end is reached
+        if mission_type == "move":
+            yield from self._move_until_endpoint()
+            
+
+        elif mission_type == "cargo":
+            # Validate required parameters for cargo mission
+            if origin is None or destination is None:
+                raise ValueError("origin and destination are required for cargo mission type")
+           
+
+            # Main cargo mission loop
+            # Load move unload repeat
+            while True:
+                # *** LOAD at origin ***
+                amount = self._cargo_load_amount(origin)
+                duration = self._cargo_unload_load_duration(amount, duration_per_unit_load)
+                 # Log loading start
+                self.log_entry_v0(
+                    f"Loading from node {origin} start",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[origin]["geometry"],
+                )
+                yield self.env.graph.nodes[origin]["site"].container.get(amount)
+                yield self.container.put(amount)
+                yield self.env.timeout(duration)
+
+                # Log loading stop
+                self.log_entry_v0(
+                    f"Loading from node {origin} stop",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[origin]["geometry"],
+                )
+
+                # *** MOVE to destination ***
+                self.route = nx.dijkstra_path(self.env.graph, origin, destination)
+                yield from self._move_until_endpoint()
+
+                # *** UNLOAD at destination ***
+                amount = self._cargo_unload_amount()
+                duration = self._cargo_unload_load_duration(amount, duration_per_unit_unload)
+
+                # Log unloading start
+                self.log_entry_v0(
+                    f"Unloading to node {destination} start",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[destination]["geometry"],
+                )
+
+                yield self.container.get(amount)
+                yield self.env.graph.nodes[destination]["site"].container.put(amount)
+                yield self.env.timeout(duration)
+
+                # Log unloading stop    
+                self.log_entry_v0(
+                    f"Unloading to node {destination} stop",
+                    self.env.now,
+                    0,
+                    self.env.graph.nodes[destination]["geometry"],
+                )
+
+                # *** MOVE back to origin ***
+                # Update route for return trip
+                self.route = nx.dijkstra_path(self.env.graph, destination, origin)
+                yield from self._move_until_endpoint()
+                
+                # Check if destination site is full (stop condition)
+                if (self.env.graph.nodes[destination]["site"].container.level == 
+                    self.env.graph.nodes[destination]["site"].container.capacity):
+                    break
+
+        else:
+            raise ValueError(f"Unknown mission_type: {mission_type}. Use 'move' or 'cargo'.")
 
 
 class ContainerDependentMovable(Movable, HasContainer):
