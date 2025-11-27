@@ -80,6 +80,7 @@ notebooks/Port_of_Rotterdam/geospatial_data
 notebooks/Port_of_Rotterdam
 uv.lock
 poetry.lock
+uv.lock
 poetry.toml
 pyproject3.toml
 
