@@ -30,19 +30,43 @@ If you do not have [pip](https://pip.pypa.io) installed, this [Python installati
 It is recommended to use either Poetry or uv for as dependency manager. For help on installing, using and trouble shooting these dependencymanagers see `Virtual Environments basics` folder on  [opentnsim-book](https://happy-bush-0c5d10603.1.azurestaticapps.net/).
 
 #### User 
-To install OpenTNSim, run this command in your terminal:
+To install OpenTNSim, you can choose how to install it into your system
+The set of commands show the three options for pip, Poetry and uv. Choose your desired installation method and enter the corresponding commands in the terminal:
 
 ``` bash
+# using pip
 pip install opentnsim
+
+# using Poetry
+poetry add opentnsim
+
+# using uv
+uv add opentnsim
+
 ```
 
 Then also install the extra dependencies used for testing and notebook support:
 ``` bash
+# using pip
 pip install opentnsim[testing]
+
+# using Poetry
+poetry add opentnsim[testing]
+
+# using uv
+uv add opentnsim[testing]
 ```
 
 #### Local Development: Contributing & Notebooks
 If you want to contribute or run notebooks follow the steps below:
+
+**Clone the repository**
+Clone the repository and navigate to the location on your local machine
+``` bash
+# Use git to clone OpenTNSim
+git clone git://github.com/TUDelft-CITG/OpenTNSim
+cd opentnsim
+```
 
 **Using uv**
 install packages.This will also automatically create your virtual environment under .venv

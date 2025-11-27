@@ -72,7 +72,7 @@ poetry show
 poetry run python -c "import opentnsim; print('opentnsim.__version__')"
 ```
 ### uv
-Poetry is a dependency manager that automatically handles virtual environments and packages. The steps to install uv are outlined in the guide  below. For additional information on how to install see the [official uv installation guide](https://docs.astral.sh/uv/getting-started/installation/). 
+uv is a dependency manager that automatically handles virtual environments and packages. The steps to install uv are outlined in the guide  below. For additional information on how to install see the [official uv installation guide](https://docs.astral.sh/uv/getting-started/installation/). 
 
 #### uv installation guide
 
