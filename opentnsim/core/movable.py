@@ -9,7 +9,7 @@ The following classes are provided:
 import logging
 import warnings
 import deprecated
-from typing import Union
+from typing import Union, Optional
 
 # math packages
 import numpy as np
@@ -643,24 +643,36 @@ class Movable(Locatable, Routable, Log):
             return self.graph.edges[origin, destination]["Info"]["GeneralWidth"]
 
     
-    def _default_cargo_load_amount(self, origin):
-        """Calculate default load amount from origin site."""
+    def _cargo_load_amount(self, origin):
+        """Calculate the default cargo load amount from the origin site.
+        
+        Returns the minimum of the vessel's capacity and the available cargo
+        at the origin site.
+        Capacity is determined by self.container.capacity when intializing the Vessel object. 
+        Level is determined by the site container level when initializing the Vessel object.
+        
+        Parameters
+        ----------
+        origin : str
+            Origin node identifier containing the site to load from.
+            
+        Returns
+        -------
+        float
+            Amount to load, limited by vessel capacity or site availability.
+        """
         return np.min([
             self.container.capacity,
             self.env.graph.nodes[origin]["site"].container.level,
         ])
     
-    def _default_cargo_load_duration(self, amount):
-        """Calculate default loading duration."""
-        return amount * 1000
+    def _cargo_unload_load_duration(self, amount: int, duration: int=1000):
+        """Calculate default loading or unloading duration."""
+        return amount * duration
     
-    def _default_cargo_unload_amount(self):
+    def _cargo_unload_amount(self):
         """Calculate default unload amount from vessel."""
         return self.container.level
-    
-    def _default_cargo_unload_duration(self, amount):
-        """Calculate default unloading duration."""
-        return amount * 1000
     
     def _move_until_endpoint(self):
         """Move vessel until it reaches the destination node.
@@ -687,6 +699,8 @@ class Movable(Locatable, Routable, Log):
         mission_type="move",
         origin=None,
         destination=None,
+        duration_per_unit_load: Optional[int] = 1000,
+        duration_per_unit_unload: Optional[int] = 1000,
     ):
         """Execute a standard vessel mission pattern.
 
@@ -743,8 +757,8 @@ class Movable(Locatable, Routable, Log):
             # Load move unload repeat
             while True:
                 # *** LOAD at origin ***
-                amount = self._default_cargo_load_amount(origin)
-                duration = self._default_cargo_load_duration(amount)
+                amount = self._cargo_load_amount(origin)
+                duration = self._cargo_unload_load_duration(amount, duration_per_unit_load)
                  # Log loading start
                 self.log_entry_v0(
                     f"Loading from node {origin} start",
@@ -769,8 +783,8 @@ class Movable(Locatable, Routable, Log):
                 yield from self._move_until_endpoint()
 
                 # *** UNLOAD at destination ***
-                amount = self._default_cargo_unload_amount()
-                duration = self._default_cargo_unload_duration(amount)
+                amount = self._cargo_unload_amount()
+                duration = self._cargo_unload_load_duration(amount, duration_per_unit_unload)
 
                 # Log unloading start
                 self.log_entry_v0(
