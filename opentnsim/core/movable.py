@@ -703,16 +703,7 @@ class Movable(Locatable, Routable, Log):
             Origin node identifier. Required for "cargo" mission type.
         destination : str, optional
             Destination node identifier. Required for "cargo" mission type.
-        repeat_until : callable, optional
-            Function that takes (env, vessel) and returns True when mission should stop.
-            For "cargo" missions, default is to repeat until destination site is full.
-        cargo_callback : dict, optional
-            Dictionary with cargo handling callbacks. Keys can include:
-            - "load_amount": callable(vessel) -> amount to load
-            - "load_duration": callable(amount) -> duration in seconds
-            - "unload_amount": callable(vessel) -> amount to unload
-            - "unload_duration": callable(amount) -> duration in seconds
-
+    
         Yields
         ------
         simpy events
@@ -728,18 +719,6 @@ class Movable(Locatable, Routable, Log):
         ...     mission_type="cargo",
         ...     origin="0",
         ...     destination="1"
-        ... ))
-
-        Cargo mission with custom callbacks:
-        >>> callbacks = {
-        ...     "load_amount": lambda v: min(v.container.capacity, 1000),
-        ...     "load_duration": lambda amt: amt * 500
-        ... }
-        >>> env.process(vessel.execute_vessel_mission(
-        ...     mission_type="cargo",
-        ...     origin="0",
-        ...     destination="1",
-        ...     cargo_callback=callbacks
         ... ))
 
         Notes
