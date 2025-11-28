@@ -21,7 +21,7 @@ import simpy
 
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 from openclsim.core import SimpyObject
-import opentnsim.graph
+import opentnsim.graph.mixins
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -171,6 +171,9 @@ class VesselProperties:
         self.renewable_fuel_volume = renewable_fuel_volume
         self.renewable_fuel_required_space = renewable_fuel_required_space
 
+        # for lock module: #TODO: op een andere manier toevoegen?
+        self.bound = "inbound"
+
     @property
     def T(self):
         """Compute the actual draught.
@@ -199,7 +202,7 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph.get_minimum_depth(graph=self.graph, route=self.route)
+            h_min = opentnsim.graph.mixins.get_minimum_depth(graph=self.graph, route=self.route)
 
         return h_min
 

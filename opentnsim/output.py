@@ -11,7 +11,8 @@ class HasOutput:
         self.output = {}
         super().__init__(*args, **kwargs)
 
-        if self.__class__.__name__ == "Vessel":
+        if self.__class__.__name__ == 'Vessel' or self.__class__.__name__ == 'IsVessel':
+
             # Route-dependent output
             self.output["origin"] = ""
             self.output["destination"] = ""
@@ -26,8 +27,9 @@ class HasOutput:
             self.output["draught"] = np.nan
             self.output["sailing_distance"] = np.nan
             self.output["sailing_time"] = np.nan
-            self.output["waiting_times_in_anchorages"] = []
-            self.output["waiting_times_at_terminals"] = []
+            self.output['waiting_time'] = {}
+            self.output['waiting_time']['Anchorage'] = []
+            self.output["waiting_time"]["Terminal"] = []
             self.output["turning_times"] = []
             self.output["(un)loading_times"] = []
 
@@ -41,6 +43,10 @@ class HasOutput:
             self.output["net_ukc"] = np.nan
             self.output["gross_ukc"] = np.nan
             self.output["ship_related_ukc_factors"] = {}
+
+            # Eextra output
+            self.output['available_water_depth'] = np.nan
+            self.output["required_water_depth"] = np.nan
             self.output["limiting current velocity"] = np.nan
 
             # Historic output

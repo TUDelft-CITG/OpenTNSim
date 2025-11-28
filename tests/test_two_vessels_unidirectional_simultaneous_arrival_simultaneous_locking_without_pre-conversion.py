@@ -11,7 +11,7 @@ import math
 
 # OpenTNSim
 from opentnsim import core
-import opentnsim.lock
+import opentnsim.lock.lock
 
 # spatial libraries
 import shapely.geometry
@@ -52,15 +52,15 @@ def test_basic_simulation():
             for j in range(len(nodes) - 1):
                 path.append([nodes[j + 1], nodes[j]])
 
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
 
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
-        FG.add_node(node.name, geometry=node.geometry)
+        graph.add_node(node.name, geometry=node.geometry)
 
     for edge in path:
-        FG.add_edge(edge[0].name, edge[1].name, weight=1)
+        graph.add_edge(edge[0].name, edge[1].name, weight=1)
 
     # SIMULATION SET-UP
     simulation_start = datetime.datetime.now()
@@ -77,8 +77,8 @@ def test_basic_simulation():
     data_vessel_one = {
         "env": env,
         "name": "Vessel",
-        "route": nx.dijkstra_path(FG, start_point, end_point, weight="length"),
-        "geometry": FG.nodes[start_point]["geometry"],
+        "route": nx.dijkstra_path(graph, start_point, end_point, weight="length"),
+        "geometry": graph.nodes[start_point]["geometry"],
         "capacity": 1_000,
         "v": 4,
         "type": "CEMT - Va",
@@ -86,7 +86,7 @@ def test_basic_simulation():
         "L": 135.0,
     }
 
-    env.graph = FG
+    env.graph = graph
     vessels = []
 
     for v in range(2):
@@ -100,15 +100,15 @@ def test_basic_simulation():
         wlev_dif[1][i] = 2
 
     # lock area parameters
-    waiting_area_1 = opentnsim.lock.IsLockWaitingArea(
+    waiting_area_1 = opentnsim.lock.lock.IsLockWaitingArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 2"
     )
 
-    lineup_area_1 = opentnsim.lock.IsLockLineUpArea(
+    lineup_area_1 = opentnsim.lock.lock.IsLockLineUpArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 3", lineup_length=300
     )
 
-    lock_1 = opentnsim.lock.IsLock(
+    lock_1 = opentnsim.lock.lock.IsLock(
         env=env,
         nr_resources=100,
         priority=True,
@@ -130,24 +130,24 @@ def test_basic_simulation():
         operating_time=25 * 60,
     )
 
-    waiting_area_2 = opentnsim.lock.IsLockWaitingArea(
+    waiting_area_2 = opentnsim.lock.lock.IsLockWaitingArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 10"
     )
 
-    lineup_area_2 = opentnsim.lock.IsLockLineUpArea(
+    lineup_area_2 = opentnsim.lock.lock.IsLockLineUpArea(
         env=env, nr_resources=1, priority=True, name="Volkeraksluizen_1", node="Node 9", lineup_length=300
     )
 
     lock_1.water_level = "Node 5"
 
     # location of lock areas in graph
-    FG.nodes["Node 6"]["Lock"] = [lock_1]
+    graph.nodes["Node 6"]["Lock"] = [lock_1]
 
-    FG.nodes["Node 2"]["Waiting area"] = [waiting_area_1]
-    FG.nodes["Node 3"]["Line-up area"] = [lineup_area_1]
+    graph.nodes["Node 2"]["Waiting area"] = [waiting_area_1]
+    graph.nodes["Node 3"]["Line-up area"] = [lineup_area_1]
 
-    FG.nodes["Node 10"]["Waiting area"] = [waiting_area_2]
-    FG.nodes["Node 9"]["Line-up area"] = [lineup_area_2]
+    graph.nodes["Node 10"]["Waiting area"] = [waiting_area_2]
+    graph.nodes["Node 9"]["Line-up area"] = [lineup_area_2]
 
     # INITIATE VESSELS
     for vessel in vessels:
@@ -155,7 +155,7 @@ def test_basic_simulation():
         env.process(vessel.move())
 
     # RUN MODEL
-    env.graph = FG
+    env.graph = graph
     env.run()
 
     # OUTPUT ANALYSIS

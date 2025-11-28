@@ -29,7 +29,7 @@ import opentnsim
 # Actual testing starts here
 def test_basic_simulation():
     # 1. create graph
-    FG = nx.DiGraph()
+    graph = nx.DiGraph()
 
     Node = type("Site", (opentnsim.core.Identifiable, opentnsim.core.Locatable), {})
 
@@ -48,7 +48,7 @@ def test_basic_simulation():
     positions = {}
     for node in nodes:
         positions[node.name] = (node.geometry.x, node.geometry.y)
-        FG.add_node(node.name, geometry=node.geometry)
+        graph.add_node(node.name, geometry=node.geometry)
 
     path = [
         [node_1, node_2],  # From node 1 to node 2
@@ -60,7 +60,7 @@ def test_basic_simulation():
     ]  # From node 2 to node 1
 
     for edge in path:
-        FG.add_edge(edge[0].name, edge[1].name, weight=1)
+        graph.add_edge(edge[0].name, edge[1].name, weight=1)
 
     # 2. Create vessel
     # Make your preferred class out of available mix-ins.
@@ -74,10 +74,10 @@ def test_basic_simulation():
     simulation_start = datetime.datetime.now()
     env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
     env.epoch = time.mktime(simulation_start.timetuple())
-    env.graph = FG
+    env.graph = graph
 
     # 3. Define path
-    path = nx.dijkstra_path(FG, node_1.name, node_4.name)
+    path = nx.dijkstra_path(graph, node_1.name, node_4.name)
 
     # Create a dict with all important settings
     data_vessel = {

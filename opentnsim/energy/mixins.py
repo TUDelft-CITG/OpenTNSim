@@ -14,7 +14,7 @@ import pandas as pd
 
 # OpenTNSim
 import opentnsim
-from opentnsim.graph import calculate_distance, calculate_depth
+from opentnsim.graph.mixins import calculate_distance, calculate_depth
 from opentnsim.energy.algorithms import power2v
 from opentnsim.energy.calculations import (
     sample_engine_age,
@@ -1138,11 +1138,11 @@ class EnergyCalculation:
     # ToDo: add other alternatives from Marin's table to have completed renewable energy sources
     # ToDo: add renewable fuel cost from Marin's table, add fuel cell / other engine cost, power plan cost to calculate the cost of ship refit or new ships.
 
-    def __init__(self, FG, vessel, *args, **kwargs):
+    def __init__(self, graph, vessel, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         """Initialization"""
-        self.graph = FG
+        self.graph = graph
         self.vessel = vessel
 
         self.energy_use = {

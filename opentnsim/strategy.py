@@ -3,14 +3,14 @@
 The vessel-waterway interaction is complex, since the vessel's sailing behaviors are influenced
 by not only the changing waterway situations along the route, but also the varation of its own payload,
 fuel weight, velocity, engine power, etc. Therefore, to sail wisely and safely, it is necessary to
-formulate optimal sailing stratigies to achieve various sailing goals according to different needs.
+formulate optimal sailing strategies to achieve various sailing goals according to different needs.
 
-This package combine with "optimal sailing stratigies notebook" provides stratigies for
+This package combine with "optimal sailing strategies notebook" provides strategies for
  preventing ship grounding, optimizing cargo capacity, optimizing fuel usage, reducing emissions,
  considering sailing duration, etc.
 """
 
-# To Do in this pacakge:
+# To Do in this package:
 # 1) add "burning lighter" function to monitor the fuel weight decreasing along the route.
 # For the battery-container or electricity powered vessel, the "fuel weight" is constant.
 # 2）add "refueling heavier" function to show the fuel weight increased again at the refueling

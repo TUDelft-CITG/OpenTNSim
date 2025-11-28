@@ -1,6 +1,9 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
 
 [project]
 name = "opentnsim"
@@ -55,7 +58,7 @@ testing = [
     "ipyleaflet >=0.19.2",
     "ipywidgets >=8.1.7",
     "jsonschema >=4.23.0",
-    "jupyter-book >=1.0.4.post1",
+    "jupyter-book ==1.0.4.post1",
     "jupyterlab_widgets >=3.0.15",
     "momepy >=0.10.0",
     "nbconvert >=7.16.6",
@@ -76,9 +79,6 @@ opentnsim = "opentnsim.cli:cli"
 
 [project.urls]
 Homepage = "https://github.com/TUDelft-CITG/OpenTNSim"
-
-[tool.hatch.version]
-path = "opentnsim/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
