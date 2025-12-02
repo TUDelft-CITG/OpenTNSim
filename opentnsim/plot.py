@@ -22,7 +22,7 @@ def vessel_planning(vessels, activities, colors, web=False):
         """extract 'start' and 'stop' of activities from log"""
         x = []
         y = []
-        for i, v in series.iteritems():
+        for i, v in series.items():
             if v == activity + " start":
                 start = i
             if v == activity + " stop":

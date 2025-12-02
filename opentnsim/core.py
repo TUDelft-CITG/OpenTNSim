@@ -179,6 +179,28 @@ class Routable(SimpyObject):
         return graph
 
 
+class WithCurrent:
+
+    def get_edge_current(self, edge):
+        return edge.get("current_ms", 0.0)
+
+    def compute_speeds_on_edge(self, edge):
+        """
+          v_w = speed through water
+          v_c = speed with current
+          v_g = speed over ground
+        """
+        v_g = getattr(self, "v", 0.0)
+        v_c = self.get_edge_current(edge)
+        v_w = v_g - v_c
+
+        self.v_w = v_w
+        self.v_c = v_c
+        self.v_g = v_g
+
+        return v_w, v_c, v_g
+
+
 class Movable(Locatable, Routable, Log):
     """Mixin class: Something can move.
 
@@ -199,6 +221,9 @@ class Movable(Locatable, Routable, Log):
         self.on_complete_pass_edge_functions = []
         self.on_look_ahead_to_node_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
+        
+        self.v_c = 0.0   # current speed (m/s)
+        self.v_g = 0.0     # speed over ground (m/s)
 
     def move(self):
         """determine distance between origin and destination, and
@@ -234,7 +259,14 @@ class Movable(Locatable, Routable, Log):
                                             vessel_origin_location.y
                                             )[2]
 
-            yield self.env.timeout(self.distance / self.current_speed)
+            v_w = getattr(self, "v", 0.0)
+            v_g = max(v_w, 1e-6)
+            self.v_w = v_w
+            self.v_c = 0.0
+            self.v_g = v_g
+
+
+            yield self.env.timeout(self.distance / v_g)
             self.log_entry("Sailing to start", self.env.now, self.output.copy(), vessel_origin_location)
 
         # Move over the path and log every step
@@ -272,8 +304,10 @@ class Movable(Locatable, Routable, Log):
 
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
+            v_g = getattr(self, "v_g", self.current_speed)
             logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
-            logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
+            logger.debug("  v_ground: " + "%4.2f" % v_g + " m/s")
+            logger.debug("  duration: " + "%4.2f" % ((self.distance / v_g) / 3600) + " hrs")
         else:
             logger.debug("  current_speed:  not set")
         self.update_route_status_report(True)
@@ -282,11 +316,11 @@ class Movable(Locatable, Routable, Log):
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
+
 ##################################################################
     def pass_edge(self, origin, destination, end_location):
         edge = self.graph.edges[origin, destination]
         k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
-
         
         md = self.multidigraph.edges[origin, destination, k]
         
@@ -323,6 +357,8 @@ class Movable(Locatable, Routable, Log):
             edge = self.graph.edges[origin, destination]
             depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
 
+
+
             # You can input more power than is realistic
             # There are two mechanisms that reduce the power given:
             # 1. The grounding speed:
@@ -336,6 +372,7 @@ class Movable(Locatable, Routable, Log):
             # Here the upperbound is used to estimate the actual velocity
             power_used = min(self.P_tot_given, upperbound)
             self.v = self.power2v(self, edge, power_used)
+            
             # store upperbound velocity
             # TODO: remove these three fields after debugging
             self.selected = selected
@@ -347,6 +384,7 @@ class Movable(Locatable, Routable, Log):
         # Maximum speed restriction may be limiting the on power speed
         if 'vessel_traffic_service' in dir(self.env):
             self.v = self.env.vessel_traffic_service.provide_speed(self,edge)
+
 
         # Wait for edge resources to become available
         if "Resources" in edge.keys():
@@ -368,7 +406,8 @@ class Movable(Locatable, Routable, Log):
                     )
 
         # default velocity based on current speed.
-        timeout = self.distance / self.current_speed
+        v_w, v_c, v_g = self.compute_speeds_on_edge(edge)
+        timeout = self.distance / v_g
         yield self.env.timeout(timeout)
         if next_node:
             status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))

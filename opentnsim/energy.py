@@ -1278,7 +1278,6 @@ class ConsumesEnergy:
 
         return h_squat
 
-######################################################################
 class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
 
@@ -1336,8 +1335,6 @@ class EnergyCalculation:
             "water depth": [],
             "distance": [],
             "delta_t": [],
-            "water_velocity": [],
-            "discharge": [],
         }
 
         self.co2_footprint = {"total_footprint": 0, "stationary": 0}
@@ -1365,7 +1362,7 @@ class EnergyCalculation:
             node_stop = find_closest_node(self.FG, geom_stop)[0]
 
             # Read from the FG data from vaarweginformatie.nl the General depth of each edge
-            # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
+            #TODO: check it this needs to be made more general, now relies on ['Info'] to be present
             try:  # if node_start != node_stop:
                 depth = self.FG.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
             except:
@@ -1375,23 +1372,6 @@ class EnergyCalculation:
 
             # depth of waterway between two points
             return h_0
-
-        def is_downstream(g_edge, g_start, g_stop):
-            try:
-                x0, y0 = g_edge.coords[0]
-                x1, y1 = g_edge.coords[-1]
-            except Exception:
-                return True
-
-            ex = x1 - x0
-            ey = y1 - y0
-
-            sx = g_stop.x - g_start.x
-            sy = g_stop.y - g_start.y
-
-            dot = ex * sx + ey * sy
-
-            return dot >= 0.0  # True = downstream, False = upstream
 
 
         # log messages that are related to locking
@@ -1422,11 +1402,6 @@ class EnergyCalculation:
                 self.energy_use["edge_start"].append(geometries[i])
                 self.energy_use["edge_stop"].append(geometries[i + 1])
 
-                # water velocity and edge geometry
-                v_w = 0.0
-                g_edge = None
-                Q = None
-
                 # calculate the distance travelled and the associated velocity
                 message = messages[i]
                 if 'from node ' in message and 'to node ' in message:
@@ -1440,33 +1415,25 @@ class EnergyCalculation:
                     # distance along edge (fallback to geometric)
                     distance = e_data.get("length", calculate_distance(geometries[i], geometries[i + 1]))
 
-                    # water velocity
-                    if "velocity" in e_data and e_data["velocity"] is not None:
-                        try:
-                            v_w = float(e_data["velocity"])
-                        except (TypeError, ValueError):
-                            v_w = 0.0
-
                     # discharge (if stored on edge)
                     Q = e_data.get("discharge", None)
+                    v_c = e_data.get("current_ms", 0.0)
+
                 else:
                     distance = calculate_distance(geometries[i], geometries[i + 1])
+                    v_c = 0.0
+                    e_data = {}
+
 
                 v_g = distance / delta_t
+                v_w = v_g - v_c
 
-                # decide downstream / upstream based on geometry
-                if g_edge is not None:
-                    ds = is_downstream(g_edge, geometries[i], geometries[i+1])
-                else:
-                    ds = True  # fallback: assume downstream if we don't know
 
-                # speed through water:
-                # downstream: c = v_g - v_w
-                # upstream:   c = v_g + v_w
-                if ds:
-                    v = max(v_g - v_w, 0.0)
-                else:
-                    v = max(v_g + v_w, 0.0)
+                self.vessel.v_g = v_g
+                self.vessel.v_c = v_c
+                self.vessel.v_w = v_w
+
+                v = v_w
 
                 self.energy_use["distance"].append(distance)
 
@@ -1483,8 +1450,7 @@ class EnergyCalculation:
                 logger.debug("delta_t: {:.4f} s".format(delta_t))
                 logger.debug("distance: {:.4f} m".format(distance))
                 logger.debug("v_ground: {:.4f} m/s".format(v_g))
-                logger.debug("u_water: {:.4f} m/s".format(v_w))
-                logger.debug("velocity: {:.4f} m/s".format(v))
+                logger.debug("v_water:  {:.4f} m/s".format(v))
                 logger.debug("h_0: {:.4f} m".format(h_0))
 
 
@@ -1595,11 +1561,9 @@ class EnergyCalculation:
                     self.energy_use["total_Li_NMC_Battery_mass"].append(delta_Li_NMC_Battery_mass)
                     self.energy_use["total_Li_NMC_Battery_vol"].append(delta_Li_NMC_Battery_vol)
                     self.energy_use["total_Battery2000kWh_consumption_num"].append(delta_Battery2000kWh)
-                    self.energy_use["water_velocity"].append(v_w)
-                    self.energy_use["discharge"].append(Q)
+
                     self.energy_use["water depth"].append(h_0)
 
-                    # self.energy_use["water depth info from vaarweginformatie.nl"].append(depth)
 
         # TODO: er moet hier een heel aantal dingen beter worden ingevuld
         # - de kruissnelheid is nu nog per default 1 m/s (zie de Movable mixin). Eigenlijk moet in de
