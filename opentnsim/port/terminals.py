@@ -43,8 +43,77 @@ class HasTerminal(Movable):
         if not self.berth in berths:
             return
 
-        print('hi, continue here: berthing process, loading process, deberthing process, while updating schedule')
-        yield from []
+        yield from self.request_berth_access()
+        yield from self.berthing(destination)
+        yield from self.loading(destination)
+        yield from self.release_berth_access()
+        yield from self.deberthing(destination)
+
+
+    def determine_new_route(self):
+        origin = self.route[-1]
+        if len(self.next_terminals):
+            next_terminal = self.next_terminals[-1]
+            self.next_terminals = self.next_terminals[1:]
+        next_terminal.request_terminal_access(vessel, origin)
+
+    def request_berth_access(self):
+        if isinstance(self.berth, IsQuay):
+            yield from self.berth.request_quay_access(self)
+        elif isinstance(self.berth, IsJetty):
+            yield from []
+
+
+    def release_berth_access(self):
+        if isinstance(self.berth, IsQuay):
+            yield from self.berth.release_quay_access(self)
+        elif isinstance(self.berth, IsJetty):
+            yield from []
+
+
+    def berthing(self, origin):
+        self.log_entry_v0("Berthing start",
+                          self.env.now,
+                          self.distance,
+                          self.env.graph.nodes[origin]["geometry"])
+        yield self.env.timeout(self.berthing_time)
+        self.log_entry_v0("Berthing stop",
+                          self.env.now,
+                          self.distance,
+                          self.env.graph.nodes[origin]["geometry"])
+        if len(self.next_berthing_times):
+            self.berthing_time = self.next_berthing_times[0]
+            self.next_berthing_times = self.next_berthing_times[1:]
+
+
+    def loading(self, origin):
+        self.log_entry_v0("Loading start",
+                          self.env.now,
+                          self.distance,
+                          self.env.graph.nodes[origin]["geometry"])
+        yield self.env.timeout(self.loading_time)
+        self.log_entry_v0("Loading stop",
+                          self.env.now,
+                          self.distance,
+                          self.env.graph.nodes[origin]["geometry"])
+        if len(self.next_loading_times):
+            self.loading_time = self.next_loading_times[0]
+            self.next_loading_times = self.next_loading_times[1:]
+
+
+    def deberthing(self, origin):
+        self.log_entry_v0("Deberthing start",
+                          self.env.now,
+                          self.distance,
+                          self.env.graph.nodes[origin]["geometry"])
+        yield self.env.timeout(self.deberthing_time)
+        self.log_entry_v0("Deberthing stop",
+                          self.env.now,
+                          self.distance,
+                          self.env.graph.nodes[origin]["geometry"])
+        if len(self.next_deberthing_times):
+            self.deberthing_time = self.next_deberthing_times[0]
+            self.next_deberthing_times = self.next_deberthing_times[1:]
 
 
     def wait_for_berth_availability(self, origin, waiting_time):
@@ -60,6 +129,7 @@ class HasTerminal(Movable):
 
 
 class HasBerthPlanning:
+
     def __init__(self, *args, **kwargs):
         berth_names = [berth.name for berth in self.berths.items]
         berth_capacities = [berth.length for berth in self.berths.items]
@@ -169,7 +239,6 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
 
         return df_berth_time_slot
 
-
     def pick_best_available_berth(self, df_berth_time_slot, df_entry):
         minimum_waiting_time = df_berth_time_slot.Waiting_time.min()
         berths_with_minimum_waiting_time = df_berth_time_slot[df_berth_time_slot.Waiting_time == minimum_waiting_time]
@@ -237,40 +306,52 @@ class IsJetty(OnNode, HasResource, Identifiable, Log):
 
 class IsQuay(OnNode, HasLength, Identifiable, Log):
     def __init__(self, length, depth, *args, **kwargs):
-        super().__init__(length=length, *args, **kwargs)
+        super().__init__(length=length, remaining_length=length,*args, **kwargs)
         add_berth_to_graph(self)
         self.length = length
         self.depth = depth
         self.capacity = np.inf
+        self.availability_quay_positions = pd.DataFrame(data=[[0, length, length, None]],columns=['Distance_start','Distance_stop','Length','Occupant'])
+
+
+    def request_quay_access(self, vessel):
+        quay_position = self.select_quay_position(vessel)
+        yield from self.adjust_availability_quay_positions(vessel, quay_position)
+
+
+    def release_quay_access(self, vessel):
+        quay_position = self.find_quay_position(vessel)
+        yield from self.readjust_availability_quay_positions(quay_position)
+
+
+
+    def find_quay_position(self, vessel):
+        quay_position = self.availability_quay_positions[self.availability_quay_positions.Occupant == vessel].index[0]
+        return quay_position
+
 
     def calculate_quay_length_level(self):
-        """ Function that keeps track of the maximum length that is available at the quay
+        """ Function that keeps track of the maximum length that is available at the quay. """
+        new_level = np.max(self.availability_quay_positions[self.availability_quay_positions.Occupant.isna()]['Length'])
+        return new_level
+
+
+    def select_quay_position(self, vessel):
+        """ Function that claims a length along the quay equal to the length of the vessel itself and calculates the relative position of the vessel along the quay. If there are multiple
+            relative positions possible, the vessel claims the first position. If there is no suitable position availalble (vessel does not fit), then it returns the action
+            of moving to the anchorage area.
 
             Input:
-                - terminal: the terminal of call of the vessel, created with the IsTerminal-class
+                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
 
         """
 
-        # Set default parameters
-        aql = self.available_quay_lengths
-        new_level = np.max(aql)
-        available_quay_lengths = [0]
+        potential_quay_positions = self.availability_quay_positions[self.availability_quay_positions.Length >= vessel.L]
+        quay_position = potential_quay_positions['Length'].idxmin()
+        return quay_position
 
-        # Loop over the position indexes
-        for index in range(len(aql)):
-            # If the index of the locaton is 0, or if the previous location is the same as the current location (and hence the index of the location is not 0) or if the location is not available (value = 1):
-            if index == 0 or aql[index][1] == aql[index - 1][1] or aql[index][0] == 1:
-                # Continue, else if its the last index and there is not yet a suitable index found for an available location: return that available length is the last one in the list (=0)
-                if index == len(aql) - 1:
-                    new_level = available_quay_lengths[-1]
-                continue
 
-            # If there is an available location: append length to list and return the maximum of the list
-            available_quay_lengths.append(aql[index][1] - aql[index - 1][1])
-            new_level = np.max(available_quay_lengths)
-        return new_level
-
-    def adjust_available_quay_lengths(self, vessel, index_quay_position):
+    def adjust_availability_quay_positions(self, vessel, quay_position):
         """ Function that adjusts the available quay lenghts and positions given a honored request of a vessel at a given position
 
             Input:
@@ -278,47 +359,37 @@ class IsQuay(OnNode, HasLength, Identifiable, Log):
                 - index_quay_position: quay position index at which the vessel is located at the quay with respect to the other vessels
 
         """
-
-        # Import the locations of the current configuration of vessels located at the quay
-        aql = self.available_quay_lengths
-
         # Determine the current maximum available length of the terminal
         old_level = self.calculate_quay_length_level()
 
-        # If the value of the position index before the honered quay position (start of the available position) is still available (=0), change it to 1
-        if aql[index_quay_position - 1][0] == 0:
-            aql[index_quay_position - 1][0] = 1
+        # Add vessel to layout
+        quay_position_info = self.availability_quay_positions.loc[quay_position].copy()
+        self.availability_quay_positions.loc[quay_position, 'Distance_stop'] = quay_position_info.Distance_start + vessel.L
+        self.availability_quay_positions.loc[quay_position, 'Length'] = vessel.L
+        self.availability_quay_positions.loc[quay_position, 'Occupant'] = vessel
 
-        # If the value of the honered quay position (end of the available position) is still available (=0) and the end of this position equals the start of the position added with the vessel length, change it to 1
-        if aql[index_quay_position][0] == 0 and aql[index_quay_position][1] == aql[index_quay_position - 1][1] + vessel.L:
-            aql[index_quay_position][0] = 1
+        # Add additional row with leftover quay length
+        position = self.availability_quay_positions.index.get_loc(quay_position)+1
+        if quay_position_info.Length != vessel.L:
+            distance_start = self.availability_quay_positions.loc[quay_position, 'Distance_stop']
+            distance_stop = quay_position_info.Distance_stop
+            length = distance_stop - distance_start
+            new_position = pd.DataFrame({'Distance_start':[distance_start],
+                                         'Distance_stop':[distance_stop],
+                                         'Length':[length],
+                                         'Occupant':[None]})
+            self.availability_quay_positions = pd.concat([self.availability_quay_positions.iloc[:position], new_position, self.availability_quay_positions.iloc[position:]])
+        self.availability_quay_positions = self.availability_quay_positions.reset_index(drop=True)
 
-        # Else insert a new stopping location in the locations of the current configuration of vessels located at the quay by twice adding the vessel length to the start position of the location, once with a occupied value (=1), followed by a available value (=0)
-        else:
-            aql.insert(index_quay_position, [1, vessel.L + aql[index_quay_position - 1][1]])
-            aql.insert(index_quay_position + 1, [0, vessel.L + aql[index_quay_position - 1][1]])
-
-        # Replace the list of the locations of the current configuration of vessels located at the quay of the terminal
-        self.available_quay_lengths = aql
-        # Calculate the quay position and append to the vessel (mid-length of the vessel + starting length of the position)
-        vessel.quay_position = 0.5 * vessel.L + aql[index_quay_position - 1][1]
         # Determine the new current maximum available length of the terminal
         new_level = self.calculate_quay_length_level()
-        # If the old level does not equal (is greater than) the new level and the vessel does not have to wait in the anchorage first: then claim the difference between these lengths
-        if old_level != new_level and vessel.waiting_in_anchorage != True:
-            self.length.get(old_level - new_level)
-        # Else if the vessel has to wait in the anchorage first: calculate the difference between the lengths corrected by the vessel length to be claimed by the vessel (account for this vessel, so that it has priority over new vessels)
-        elif vessel.waiting_in_anchorage == True:
-            new_level = old_level-vessel.L-new_level
-            # If this difference is negative: give absolute length back to terminal
-            if new_level < 0:
-                self.length.put(-new_level)
-            # Else if this difference is positive: claim this length of the terminal
-            elif new_level > 0:
-                self.length.get(new_level)
-        return
 
-    def readjust_available_quay_lengths(self, position):
+        # Claim length of resource so that the level equals the berth position with the largest length (unless it has not changed)
+        if old_level != new_level:
+            yield self.resource.get(old_level - new_level)
+
+
+    def readjust_availability_quay_positions(self, position):
         """ Function that readjusts the available quay lenghts and positions given a release of a request of a vessel at a given position
 
             Input:
@@ -326,37 +397,27 @@ class IsQuay(OnNode, HasLength, Identifiable, Log):
                 - position: quay position index at which the vessel is located at the quay with respect to the other vessels
 
         """
+        # Determine the current maximum available length of the terminal
+        old_level = self.calculate_quay_length_level()
 
-        # Import the locations of the current configuration of vessels located at the quay
-        aql = self.available_quay_lengths
-        # Loop over the position indexes
-        for index in range(len(aql)):
-            # Skip the first position index
-            if index == 0:
-                continue
-            # If the position of the vessel falls within the position bounds in the current configuration: break loop (save index)
-            if aql[index - 1][1] < position and aql[index][1] > position:
-                break
+        # Drop vessel from layout
+        self.availability_quay_positions.loc[position,'Occupant'] = None
 
-        # Set both values of these position bounds to zero (available again)
-        aql[index - 1][0] = 0
-        aql[index][0] = 0
+        # Combine subsequent empty positions
+        self.availability_quay_positions['Occupant_filled'] = self.availability_quay_positions['Occupant'].fillna('NA')
+        self.availability_quay_positions['group'] = (self.availability_quay_positions['Occupant_filled'] != self.availability_quay_positions['Occupant_filled'].shift()).cumsum()
+        self.availability_quay_positions = self.availability_quay_positions.groupby('group', as_index=False).agg({'Distance_start': 'first',
+                                                                                                                  'Distance_stop': 'last',
+                                                                                                                  'Length':'sum',
+                                                                                                                  'Occupant': 'first'})
+        self.availability_quay_positions = self.availability_quay_positions.drop(columns=['group'])
 
-        # Set a default list of redundant indexes to be removed
-        to_remove = []
-        # Nested loop over the position indexes
-        for index in enumerate(aql):
-            for jndex in enumerate(aql):
-                # If the two indexes are not equal and the value at position index 1 and index 2 are both zero (available) and the locations of the two indexes are equal: remove the first positional index
-                if index[0] != jndex[0] and index[1][0] == 0 and jndex[1][0] == 0 and index[1][1] == jndex[1][1]:
-                    to_remove.append(index[0])
+        # Determine the new current maximum available length of the terminal
+        new_level = self.calculate_quay_length_level()
 
-        # If there are indexes to be removed, loop over these indexes and remove them
-        for index in list(reversed(to_remove)):
-            aql.pop(index)
-
-        # Return the locations of the new configuration of vessels located at the quay
-        return aql
+        # Put back length to resource so that the level equals the berth position with the largest length (unless it has not changed)
+        if old_level != new_level:
+            yield self.resource.put(new_level - old_level)
 
 
 

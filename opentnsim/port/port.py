@@ -27,17 +27,15 @@ class HasPortAccess(Movable):
         return sailing_time
 
 
-    def request_port_access(self, origin):
-        # Request for a terminal
-        if 'Port Entry' not in self.env.graph.nodes[origin].keys():
-            return
+    def request_port_passage(self, origin):
+        port = self.terminal.port
+        yield from self.request_port_access(origin,port)
 
-        port = self.env.graph.nodes[origin]['Port Entry'].port
-        if not self.terminal.port == port:
-            return
-        elif 'port_accessed' in dir(self) and self.port_accessed == port:
-            return
+        self.env.process(self.move())
+        raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
+
+    def get_port_access_info(self, origin):
         tide_bound = check_if_route_contains_restrictions(self)
         route = self.route
         time_start = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
@@ -57,6 +55,23 @@ class HasPortAccess(Movable):
 
         #Terminal makes decision -> selected_berth, entry_time
         berth, berth_name, waiting_times, waiting_causes = self.terminal.request_terminal_access(vessel=self, origin=origin, df_entry=df_entry)
+        return  berth, berth_name, waiting_times, waiting_causes
+
+
+    def request_port_access(self, origin, berth = None, berth_name = None, waiting_times = None, waiting_causes = None):
+        # Request for a terminal
+        if berth is None:
+            if 'Port Entry' not in self.env.graph.nodes[origin].keys():
+                return
+
+            port = self.env.graph.nodes[origin]['Port Entry'].port
+            if not self.terminal.port == port:
+                return
+            elif 'port_accessed' in dir(self) and self.port_accessed == port:
+                return
+
+            berth, berth_name, waiting_times, waiting_causes = self.get_port_access_info(origin)
+
         self.port_accessed = port
         for index,(waiting_time,waiting_cause) in enumerate(zip(waiting_times,waiting_causes)):
             waiting_time = waiting_time.total_seconds()
