@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import datetime
 import networkx as nx
+import simpy
 
 class HasTerminal(Movable):
     def __init__(self,
@@ -16,6 +17,7 @@ class HasTerminal(Movable):
                  berthing_time,
                  loading_time,
                  deberthing_time,
+                 next_destination = None,
                  next_terminals = [],
                  next_berthing_times=[],
                  next_loading_times = [],
@@ -26,6 +28,9 @@ class HasTerminal(Movable):
         self.berthing_time = berthing_time
         self.loading_time = loading_time
         self.deberthing_time = deberthing_time
+        if next_destination is None and not len(next_terminals):
+            raise ValueError('The vessel has no destination after the terminal.')
+        self.next_destination = next_destination
         self.next_berthing_times = next_berthing_times
         self.next_terminals = next_terminals
         self.next_loading_times = next_loading_times
@@ -46,16 +51,11 @@ class HasTerminal(Movable):
         yield from self.request_berth_access()
         yield from self.berthing(destination)
         yield from self.loading(destination)
-        yield from self.release_berth_access()
+        yield from self.release_berth_access(destination)
         yield from self.deberthing(destination)
+        self.env.process(self.move())
+        raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
-
-    def determine_new_route(self):
-        origin = self.route[-1]
-        if len(self.next_terminals):
-            next_terminal = self.next_terminals[-1]
-            self.next_terminals = self.next_terminals[1:]
-        next_terminal.request_terminal_access(vessel, origin)
 
     def request_berth_access(self):
         if isinstance(self.berth, IsQuay):
@@ -64,12 +64,16 @@ class HasTerminal(Movable):
             yield from []
 
 
-    def release_berth_access(self):
+    def release_berth_access(self, origin):
         if isinstance(self.berth, IsQuay):
             yield from self.berth.release_quay_access(self)
         elif isinstance(self.berth, IsJetty):
             yield from []
 
+        # if going to new terminal -> request port passage
+        pass
+        # if leaving the port -> request port exit
+        yield from self.request_port_exit(origin)
 
     def berthing(self, origin):
         self.log_entry_v0("Berthing start",
@@ -163,17 +167,6 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
                 suitable_berths.append(berth_name)
         return suitable_berths
 
-
-    def determine_potential_available_berths(self, vessel):
-        berth_planning = self.berth_planning
-        terminal_berths = self.berths.items
-        fit_berths_names = [berth.name for berth in terminal_berths if (berth.depth > vessel.T) and (berth.length > vessel.L)]
-        current_time = datetime.datetime.fromtimestamp(self.env.now)
-        fit_berth_planning = berth_planning[fit_berths_names]
-        fit_berth_planning_availability = fit_berth_planning[fit_berth_planning.index >= current_time]
-        return fit_berth_planning_availability
-
-
     def determine_sailing_time_to_berth(self, vessel, origin, berth):
         destination = berth.node
         route = nx.dijkstra_path(self.env.graph,origin,destination)
@@ -199,27 +192,36 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
         return df_availability
 
 
-    def determine_berth_availability(self, vessel, origin, df_entry):
+    def determine_potential_available_berths(self, vessel):
+        berth_planning = self.berth_planning
+        terminal_berths = self.berths.items
+        fit_berths_names = [berth.name for berth in terminal_berths if (berth.depth >= vessel.T) and (berth.length >= vessel.L)]
+        current_time = datetime.datetime.fromtimestamp(self.env.now)
+        fit_berth_planning = berth_planning[fit_berths_names]
+        fit_berth_planning_availability = fit_berth_planning[fit_berth_planning.index >= current_time]
+        return fit_berth_planning_availability
+
+
+    def determine_terminal_availability(self, vessel):
+        fit_berth_planning_availability = self.determine_potential_available_berths(vessel)
+        df_availability = self.determine_potential_berth_availability(fit_berth_planning_availability, vessel)
+        return df_availability
+
+
+    def determine_berth_availability(self, vessel, origin):
         berthing_time = vessel.berthing_time
         loading_time = vessel.loading_time
         deberthing_time = vessel.deberthing_time
         occupation_duration = berthing_time + loading_time + deberthing_time
         current_time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
 
-        df_berth_availability = df_entry.copy()
-        if 'Tide' in df_entry.columns:
-            df_tidal_windows = df_entry['Tide'].copy()
-            df_berth_availability = df_berth_availability.drop('Tide', axis=1)
-        else:
-            df_entry['Tide'] = True
-            df_tidal_windows = df_entry['Tide'].copy()
-
+        df_berth_availability = self.determine_terminal_availability(vessel)
         df_berth_time_slot = pd.DataFrame(columns=['Time_start','Time_stop','Waiting_time','Berth_length'])
         for berth_name in df_berth_availability.columns:
             berth = self.select_berth_based_on_name(berth_name)
             berth_available = df_berth_availability[berth_name]
-            mask_berth_available_and_reachable = (berth_available == True) & (df_tidal_windows == True)
-            berth_availability_start_times = np.array(berth_available[mask_berth_available_and_reachable].index)
+            mask_berth_available = (berth_available == True)
+            berth_availability_start_times = np.array(berth_available[mask_berth_available].index)
             if not len(berth_availability_start_times):
                  continue
             for berth_availability_start_time in berth_availability_start_times:
@@ -239,53 +241,9 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
 
         return df_berth_time_slot
 
-    def pick_best_available_berth(self, df_berth_time_slot, df_entry):
-        minimum_waiting_time = df_berth_time_slot.Waiting_time.min()
-        berths_with_minimum_waiting_time = df_berth_time_slot[df_berth_time_slot.Waiting_time == minimum_waiting_time]
-        minimum_berth_length = berths_with_minimum_waiting_time.Berth_length.min()
-        best_available_berths = berths_with_minimum_waiting_time[berths_with_minimum_waiting_time.Berth_length == minimum_berth_length]
-        best_available_berth = best_available_berths.iloc[0]
-        best_available_berth_name = best_available_berth.name
-        entry_time = best_available_berth.Time_start
-        current_time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        df_entry_future_to_entry_time = df_entry[(df_entry.index >= current_time) & (df_entry.index <= entry_time)]
-        if 'Tide' in df_entry_future_to_entry_time.columns:
-            df_entry_future_to_entry_time = df_entry_future_to_entry_time[['Tide',best_available_berth_name]]
-        else:
-            df_entry_future_to_entry_time = df_entry_future_to_entry_time[[best_available_berth_name]]
-        df_entry_future_to_entry_time['Combined'] = df_entry_future_to_entry_time.all(axis=1)
-        df_entry_future_to_entry_time['Redundant'] = df_entry_future_to_entry_time.any(axis=1) == False
-        df_entry_future_to_entry_time = df_entry_future_to_entry_time[df_entry_future_to_entry_time['Redundant'] == False]
-        df_entry_future_to_entry_time = df_entry_future_to_entry_time.drop('Redundant', axis=1)
-        df_entry_future_to_entry_time["Reason"] = df_entry_future_to_entry_time.apply(lambda row: row.index[row.eq(False)][0] if any(row.eq(False)) else None, axis=1)
-        with pd.option_context("future.no_silent_downcasting", True):
-            df_entry_future_to_entry_time = df_entry_future_to_entry_time.ffill()
-        waiting_stops_info = df_entry_future_to_entry_time[df_entry_future_to_entry_time.Combined == True]
-        waiting_starts_info = df_entry_future_to_entry_time[df_entry_future_to_entry_time.Combined == False]
-        waiting_times = []
-        waiting_causes = []
-        for (waiting_start_time, waiting_start_info), (waiting_stop_time, waiting_stop_info) in zip(waiting_starts_info.iterrows(), waiting_stops_info.iterrows()):
-            waiting_times.append(waiting_stop_time - waiting_start_time)
-            waiting_causes.append(waiting_start_info.Reason)
-        best_available_berth = self.select_berth_based_on_name(best_available_berth_name)
-        return best_available_berth, best_available_berth_name, waiting_times, waiting_causes
-
-
     def assign_berth_to_vessel(self, vessel, berth):
         vessel.berth = berth
 
-
-    def request_terminal_access(self, vessel, origin, df_entry):
-        available_berth_time_slots = self.determine_berth_availability(vessel, origin, df_entry)
-        berth, berth_name, waiting_times, waiting_causes = self.pick_best_available_berth(available_berth_time_slots, df_entry)
-        self.assign_berth_to_vessel(vessel, berth)
-        return berth, berth_name, waiting_times, waiting_causes
-
-
-    def determine_terminal_availability(self, vessel):
-        fit_berth_planning_availability = self.determine_potential_available_berths(vessel)
-        df_availability = self.determine_potential_berth_availability(fit_berth_planning_availability, vessel)
-        return df_availability
 
 
 def add_berth_to_graph(berth):
