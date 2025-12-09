@@ -27,7 +27,7 @@ from shapely import reverse
 from shapely.ops import transform
 from opentnsim import core
 from opentnsim import model
-from opentnsim.graph.mixins import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
+from opentnsim.graph.utils import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
 from opentnsim.graph import mixins
 from opentnsim.vessel_traffic_service.hydrodanamic_data_manager import HydrodynamicDataManager
 

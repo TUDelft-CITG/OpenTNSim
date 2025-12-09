@@ -3,17 +3,111 @@
 # packkage(s) for documentation, debugging, saving and loading
 import warnings
 
+# numerical libraries
+import numpy as np
+
 # spatial libraries
 import networkx as nx
 import shapely
+import pyproj
+from shapely.geometry import LineString
+from shapely.ops import transform
 
 
 class NetworkWarning(Warning):
     pass
 
 
+def get_geometry_of_edge(graph, edge):
+    """get the geometry of the edge in WGS84
+
+    Parameters
+    ----------
+    graph: networkx.Graph
+        The graph object.
+    edge : tuple
+        The edge to get the length of. is a tuple of two node-names.
+
+    Returns
+    -------
+    float
+        The length of the edge in meters.
+    """
+
+    edge_info = graph.edges[edge]
+    if "geometry" not in edge_info:
+        orig = nx.get_node_attributes(graph, "geometry")[edge[0]]
+        dest = nx.get_node_attributes(graph, "geometry")[edge[1]]
+        geometry = LineString([orig, dest])
+        graph.edges[edge]["geometry"] = geometry
+    else:
+        geometry = graph.edges[edge]["geometry"]
+
+    coordinates_x = geometry.coords.xy[0]
+    coordinates_y = geometry.coords.xy[1]
+    min_coordinates_x = np.min(coordinates_x)
+    max_coordinates_x = np.max(coordinates_x)
+    min_coordinates_y = np.min(coordinates_y)
+    max_coordinates_y = np.max(coordinates_y)
+    if not isinstance(edge_info["geometry"], shapely.geometry.LineString):
+        raise ValueError(f"Edge geometry in edge {edge}: attribute must be a shapely LineString.")
+    if min_coordinates_x < -180.0 or max_coordinates_x > 180.0 or min_coordinates_y < -90.0 or max_coordinates_y > 90.0:
+        raise ValueError(f"Edge geometry in edge {edge}: attribute is not defined in WGS84.")
+
+    return geometry
+
+
+def determine_length_of_edge_geometry(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
+    wgs84 = pyproj.CRS(current_crs)
+    wgs84_m = pyproj.CRS(crs_meter)
+    wgs84_to_wgs84_m = pyproj.transformer.Transformer.from_crs(wgs84, wgs84_m, always_xy=True).transform
+    geometry = get_geometry_of_edge(graph, edge)
+    geometry_m = transform(wgs84_to_wgs84_m, geometry)
+    length_m = geometry_m.length
+    return length_m
+
+
+def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
+    """get the length of an edge in meters
+
+    Parameters
+    ----------
+    graph: networkx.Graph
+        The graph object.
+    edge : tuple
+        The edge to get the length of. is a tuple of two node-names.
+
+    Returns
+    -------
+    float
+        The length of the edge in meters.
+    """
+
+    edge_info = graph.edges[edge]
+    if "length_m" in edge_info:
+        pass
+    else:
+        length_m = determine_length_of_edge_geometry(graph, edge, current_crs, crs_meter)
+        graph.edges[edge]["length_m"] = length_m
+
+    return edge_info["length_m"]
+
+
+def find_closest_node(G, point):
+    """find the closest node on the graph from a given point"""
+
+    distance = np.full((len(G.nodes)), fill_value=np.nan)
+    for ii, n in enumerate(G.nodes):
+        distance[ii] = point.distance(G.nodes[n]["geometry"])
+    name_node = list(G.nodes)[np.argmin(distance)]
+    distance_node = np.min(distance)
+
+    return name_node, distance_node
+
+
 def network_check(graph):
     """Assertions about the graphs used in OpenTNSim"""
+    # TODO Determine where we should save this function. This function is not called by any mixins.
     node_type = (str, shapely.Point)
     ok = True
 
@@ -405,3 +499,168 @@ def info(G, n=None):
     info += "Neighbors: "
     info += " ".join(str(nbr) for nbr in G.neighbors(n))
     return info
+
+
+def get_minimum_depth(graph, route):
+    """return the minimum depth on the route based on the GeneralDepth in the Info dictionary
+
+    Parameters
+    ----------
+    graph: networkx.Graph
+        The graph object. Edges in the graph should have a property called Info (dict), with key GeneralDepth
+    route: list
+        The route to check the depth for. The route is a list of node ids.
+
+    Returns
+    -------
+    float
+        The minimum depth on the route
+    """
+    # loop over the route
+    depths = []
+    # loop over all node pairs (e: edge numbers)
+    for e in zip(route[:-1], route[1:]):
+        # get the properties
+        edge = graph.get_edge_data(e[0], e[1])
+        # lookup the depth
+        depth = edge["Info"]["GeneralDepth"]
+        # remember
+        depths.append(depth)
+        # find the minimum
+    h_min = np.min(depths)
+    return h_min
+
+
+def calculate_depth(geom_start, geom_stop, graph):
+    """method to calculate the depth of the waterway in meters between two geometries.
+
+    Parameters
+    ----------
+    geom_start : shapely.geometry.Point
+        Starting point geometry. Must represent a node in graph graph.
+    geom_stop : shapely.geometry.Point
+        Stopping point geometry. must represent a node in graph graph.
+    graph : networkx.Graph
+        The graph containing vaarweginformatie.nl data, with nodes and edges.
+        Must contain 'Info' attribute on edges with 'GeneralDepth'.
+        Must contain an edge between geom_start and geom_stop.
+
+    Returns
+    -------
+    float
+        The depth of the waterway between the two geometries in meters.
+
+    Raises
+    ------
+    ValueError
+        If geom_start or geom_stop are not nodes in the graph graph.
+        If there is no edge between the two nodes in the graph graph.
+        If the depth data is not available for the edge between the two nodes.
+    """
+
+    depth = 0
+
+    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
+
+    node_start = find_closest_node(graph, geom_start)[0]
+    node_stop = find_closest_node(graph, geom_stop)[0]
+
+    # Read from the graph data from vaarweginformatie.nl the General depth of each edge
+    # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
+    if node_start == node_stop:
+        return np.nan  # if the start and stop nodes are the same, return 0 depth
+
+    try:
+        if "Info" in graph.get_edge_data(node_start, node_stop).keys():
+            depth = graph.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
+
+        elif "GeneralDepth" in graph.get_edge_data(node_start, node_stop).keys():
+            depth = graph.get_edge_data(node_start, node_stop)["GeneralDepth"]
+        else:
+            return np.nan  # if no depth data is available, return NaN
+    except:
+        depth = np.nan  # When there is no data of the depth available of this edge, it gives a message
+
+    h_0 = depth
+
+    # depth of waterway between two points
+    return h_0
+
+
+def transform_projection(from_spatialref, to_EPSG):
+    """create a transformation object to transform the graph to a new projection
+    Make sure to install the required package gdal.
+
+    run pip show gdal to check if gdal is installed.
+    Parameters
+    ----------
+    to_EPSG: int
+        The EPSG code to transform the graph to
+    """
+
+    from osgeo import ogr, osr
+
+    to_spatialref = osr.SpatialReference()
+    to_spatialref.ImportFromEPSG(to_EPSG)
+
+    # Transform the coordinates
+    transform = osr.CoordinateTransformation(from_spatialref, to_spatialref)
+    return transform
+
+
+def geom_to_edges(geom, properties):
+    """Generate edges from a geometry, yielding an edge id and edge properties. The edge_id consists of a tuple of coordinates"""
+    if geom.geom_type not in ["LineString", "MultiLineString"]:
+        msg = "Only ['LineString', 'MultiLineString'] are supported, got {}".format(geom.geom_type)
+        raise ValueError(msg)
+    if geom.geom_type == "MultiLineString":
+        for geom in geom.geoms:
+            yield from geom_to_edges(geom, properties)
+    elif geom.geom_type == "LineString":
+        edge_properties = properties.copy()
+        edge_source_coord = geom.coords[0]
+        edge_target_coord = geom.coords[-1]
+        edge_properties["Wkt"] = shapely.wkt.dumps(geom)
+        edge_properties["Wkb"] = shapely.wkb.dumps(geom)
+        edge_properties["Json"] = shapely.geometry.mapping(geom)
+        edge_properties["e"] = [edge_source_coord, edge_target_coord]
+        edge_id = (edge_source_coord, edge_target_coord)
+        yield edge_id, edge_properties
+
+
+def geom_to_node(geom: shapely.geometry.Point, properties: dict):
+    if not geom.geom_type == "Point":
+        msg = "Only 'Point' is supported, got {}".format(geom.geom_type)
+        raise ValueError(msg)
+    node_properties = properties.copy()
+    node_properties["Wkt"] = shapely.wkt.dumps(geom)
+    node_properties["Wkb"] = shapely.wkb.dumps(geom)
+    node_properties["Json"] = shapely.geometry.mapping(geom)
+    node_properties["n"] = geom.coords[0]
+    node_id = geom.coords[0]
+    return node_id, node_properties
+
+
+def gdf_to_nx(gdf):
+    """Convert a geopandas dataframe to a networkx DiGraph"""
+    graph = nx.DiGraph()
+    for _, feature in gdf.iterrows():
+        geom = feature.geometry
+        if geom is None:
+            raise nx.NetworkXError("Bad data: feature missing geometry")
+        properties = feature.drop(labels=["geometry"])
+        # in case we have single points in the geometry, add them as nodes
+        if geom.geom_type == "Point":
+            node_idx = geom.coords[0]
+            graph.add_node(node_idx, **properties)
+            continue
+        if geom.geom_type in ["LineString", "MultiLineString"]:
+            for edge_id, edge_properties in geom_to_edges(geom, properties):
+                node_source, node_target = edge_properties["e"]
+                source_geom = shapely.geometry.Point(*node_source)
+                _, node_properties = geom_to_node(source_geom, {})
+                graph.add_node(edge_id[0], **node_properties)
+                _, node_properties = geom_to_node(source_geom, {})
+                graph.add_node(edge_id[1], **node_properties)
+                graph.add_edge(edge_id[0], edge_id[1], **edge_properties)
+    return graph

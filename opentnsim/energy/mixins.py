@@ -14,8 +14,8 @@ import pandas as pd
 
 # OpenTNSim
 import opentnsim
-from opentnsim.graph.mixins import calculate_distance, calculate_depth
-from opentnsim.energy.algorithms import power2v
+from opentnsim.graph.utils import calculate_depth
+from opentnsim.graph.calculations import calculate_distance
 from opentnsim.energy.calculations import (
     sample_engine_age,
     calculate_properties,
@@ -28,6 +28,7 @@ from opentnsim.energy.calculations import (
     calculate_total_power_required,
     calculate_max_sinkage,
     calculate_total_resistance,
+    power2v,
 )
 
 
@@ -177,7 +178,7 @@ class ConsumesEnergy:
         self.one_k2 = one_k2
 
         # plugin function that computes velocity based on power
-        self.power2v = opentnsim.energy.algorithms.power2v
+        self.power2v = opentnsim.energy.calculations.power2v
 
         # TODO: C_year is obligatory, so why is this code here?
         if C_year:

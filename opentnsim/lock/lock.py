@@ -24,7 +24,8 @@ from IPython.display import display
 
 from opentnsim.utils import inherit_docstring
 from opentnsim.core import HasResource, Identifiable, Log, Movable, HasLength, SimpyObject, ExtraMetadata
-from opentnsim.graph.mixins import HasMultiDiGraph, get_length_of_edge
+from opentnsim.graph.mixins import HasMultiDiGraph
+from opentnsim.graph.utils import get_length_of_edge
 from opentnsim.output import HasOutput
 from opentnsim.vessel_traffic_service.hydrodanamic_data_manager import HydrodynamicDataManager
 from opentnsim.lock.utils import (
