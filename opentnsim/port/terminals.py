@@ -3,7 +3,6 @@ from opentnsim.output import HasOutput
 from opentnsim.graph import OnNode, OnEdge
 from opentnsim.core.capacity import PriorityFilterStore
 from opentnsim.port.port import IsPartofPort
-from opentnsim.tidal_accessibility import check_if_route_contains_restrictions
 
 import numpy as np
 import pandas as pd
@@ -202,24 +201,25 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
         return fit_berth_planning_availability
 
 
-    def determine_terminal_availability(self, vessel):
-        fit_berth_planning_availability = self.determine_potential_available_berths(vessel)
-        df_availability = self.determine_potential_berth_availability(fit_berth_planning_availability, vessel)
+    def provide_terminal_availability_info(self, vessel):
+        berth_planning_availability = self.determine_potential_available_berths(vessel)
+        df_availability = self.determine_potential_berth_availability(berth_planning_availability, vessel)
         return df_availability
 
 
-    def determine_berth_availability(self, vessel, origin):
+    def determine_berth_availability(self, vessel, origin, df_entry):
         berthing_time = vessel.berthing_time
         loading_time = vessel.loading_time
         deberthing_time = vessel.deberthing_time
         occupation_duration = berthing_time + loading_time + deberthing_time
         current_time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
 
-        df_berth_availability = self.determine_terminal_availability(vessel)
         df_berth_time_slot = pd.DataFrame(columns=['Time_start','Time_stop','Waiting_time','Berth_length'])
-        for berth_name in df_berth_availability.columns:
-            berth = self.select_berth_based_on_name(berth_name)
-            berth_available = df_berth_availability[berth_name]
+        for berth in self.berths.items:
+            berth_name = berth.name
+            if berth_name not in df_entry.columns:
+                continue
+            berth_available = df_entry[berth_name]
             mask_berth_available = (berth_available == True)
             berth_availability_start_times = np.array(berth_available[mask_berth_available].index)
             if not len(berth_availability_start_times):
@@ -230,6 +230,7 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
                     berth_availability_stop_time = berth_available.index[-1]
                 else:
                     berth_availability_stop_time = berth_availability_stop_times[0]
+
                 berth_availability_duration = (berth_availability_stop_time - berth_availability_start_time) / np.timedelta64(1, 's')
                 if berth_availability_duration < occupation_duration:
                     continue
@@ -238,12 +239,25 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
                 waiting_time = np.max([pd.Timedelta(seconds=0),waiting_time])
                 df_berth_time_slot.loc[berth_name,:] = [berth_availability_start_time,berth_availability_stop_time,waiting_time,berth.length]
                 break
-
+        print(df_berth_time_slot)
         return df_berth_time_slot
+
+
+    def select_berth_for_vessel(self, available_berths):
+        best_available_berth = None
+        minimum_waiting_time = available_berths.Waiting_time.min()
+        berths_with_minimum_waiting_time = available_berths[available_berths.Waiting_time == minimum_waiting_time]
+        minimum_berth_length = berths_with_minimum_waiting_time.Berth_length.min()
+        best_available_berths = berths_with_minimum_waiting_time[berths_with_minimum_waiting_time.Berth_length == minimum_berth_length]
+        if len(best_available_berths):
+            best_available_berth = best_available_berths.iloc[0]
+        best_available_berth_name = best_available_berth.name
+        best_available_berth = self.select_berth_based_on_name(best_available_berth_name)
+        return best_available_berth
+
 
     def assign_berth_to_vessel(self, vessel, berth):
         vessel.berth = berth
-
 
 
 def add_berth_to_graph(berth):

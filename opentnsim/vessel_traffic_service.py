@@ -510,10 +510,10 @@ class VesselTrafficService:
         if vertical_tidal_accessibility.empty:
             if not len(net_ukc) or np.max(net_ukc) < 0.0:
                 vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Inaccessible"]
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Accessible",]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Inaccessible",]
             else:
                 vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Accessible"]
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0, "Inaccessible"]
+                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0, "Accessible"]
         else:
             if vertical_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
                 vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0,"Accessible",]
@@ -1058,11 +1058,11 @@ class VesselTrafficService:
         tidal_accessibility = tidal_accessibility.iloc[tidal_window_indexes]
         return tidal_accessibility
 
+
     def provide_tidal_windows(self, vessel, route, time_start, time_end, ax_left=None, ax_right=None, delay=0, plot=False):
         time_start_index = np.max([0,np.absolute(self.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin()- 2,])
         time_end_index = np.absolute(self.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
         vertical_tidal_accessibility, vertical_tidal_windows, net_ukcs = self.provide_vertical_tidal_windows(vessel, route, time_start, time_end, delay)
-
         (horizontal_tidal_accessibility,
          horizontal_tidal_windows,
          horizontal_tidal_restriction_nodes,
@@ -1071,6 +1071,7 @@ class VesselTrafficService:
 
         tidal_accessibility = self.combine_tidal_windows(vertical_tidal_accessibility, horizontal_tidal_accessibility)
         tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(tidal_accessibility.iloc[:-1].iterrows(), tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == "Accessible"]
+
         # Plot
         if not plot:
             return tidal_accessibility, tidal_windows

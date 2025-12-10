@@ -32,34 +32,34 @@ class HasDraughtRestrictions:
         #self.on_pass_node_functions.append(self.wait_for_tidal_window)
         self.bound = 'inbound'
 
-    def request_tidal_window(self, origin):
-        infrastructure_suitable_to_wait_for_tidal_window = ['Waiting Area', 'Terminal']
-        suitable_location_to_wait_for_tidal_window = False
-        for infrastructure in infrastructure_suitable_to_wait_for_tidal_window:
-            if infrastructure in self.env.graph.nodes[origin].keys():
-                suitable_location_to_wait_for_tidal_window = True
-                break
-
-        if not suitable_location_to_wait_for_tidal_window:
-            return self.tidal_waiting_time
-
-        contains_restriction = check_if_route_contains_restrictions(self)
-        if not contains_restriction:
-            return self.tidal_waiting_time
-
-        routes_with_restrictions = find_route_with_restrictions(self)
-        self.tidal_waiting_time = 0.
-
-        if origin != routes_with_restrictions[0][0]:
-            return self.tidal_waiting_time
-
-        for route in routes_with_restrictions:
-            self.tidal_waiting_time = self.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel=self, route=route, delay=0, plot=True)
-
-        if math.isnan(self.tidal_waiting_time):
-            raise simpy.exceptions.Interrupt('Port not accessible for vessel.')
-
-        return self.tidal_waiting_time
+    # def request_tidal_window(self, origin):
+    #     infrastructure_suitable_to_wait_for_tidal_window = ['Waiting Area', 'Terminal']
+    #     suitable_location_to_wait_for_tidal_window = False
+    #     for infrastructure in infrastructure_suitable_to_wait_for_tidal_window:
+    #         if infrastructure in self.env.graph.nodes[origin].keys():
+    #             suitable_location_to_wait_for_tidal_window = True
+    #             break
+    #
+    #     if not suitable_location_to_wait_for_tidal_window:
+    #         return self.tidal_waiting_time
+    #
+    #     contains_restriction = check_if_route_contains_restrictions(self)
+    #     if not contains_restriction:
+    #         return self.tidal_waiting_time
+    #
+    #     routes_with_restrictions = find_route_with_restrictions(self)
+    #     self.tidal_waiting_time = 0.
+    #
+    #     if origin != routes_with_restrictions[0][0]:
+    #         return self.tidal_waiting_time
+    #
+    #     for route in routes_with_restrictions:
+    #         self.tidal_waiting_time = self.env.vessel_traffic_service.provide_waiting_time_for_inbound_tidal_window(vessel=self, route=route, delay=0, plot=True)
+    #
+    #     if math.isnan(self.tidal_waiting_time):
+    #         raise simpy.exceptions.Interrupt('Port not accessible for vessel.')
+    #
+    #     return self.tidal_waiting_time
 
 
     def wait_for_tidal_window(self, origin, waiting_time = None):
