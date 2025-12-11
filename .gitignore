@@ -81,6 +81,7 @@ MANIFEST
 notebooks/Port_of_Rotterdam/geospatial_data
 notebooks/Port_of_Rotterdam
 poetry.lock
+uv.lock
 poetry.toml
 pyproject3.toml
 
