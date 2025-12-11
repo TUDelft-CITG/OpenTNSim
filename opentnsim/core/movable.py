@@ -610,12 +610,7 @@ class Movable(Locatable, Routable, Log):
         edge_width = self._get_general_width(origin, destination)
         edge_width = edge_width if edge_width is not None else 150  # default width if not set
 
-        (
-            upperbound,
-            selected,
-            results_df,
-        ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=edge_width, depth=depth, margin=0)
-
+        upperbound = opentnsim.strategy.get_upperbound_for_power2v_optim(self, width=edge_width, depth=depth, margin=0)
         # Here the upperbound is used to estimate the actual velocity
         power_used = min(self.P_tot_given, upperbound)
         return self.power2v(self, edge, power_used)

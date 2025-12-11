@@ -13,20 +13,29 @@ import shapely.geometry
 # inject caching
 requests_cache.install_cache("fis_cache")
 
-urls = {
+fis_urls = {
     "0.2": "https://zenodo.org/record/4578289/files/network_digital_twin_v0.2.pickle",
     "0.3": "https://zenodo.org/record/6673604/files/network_digital_twin_v0.3.pickle",
 }
+euris_urls = {
+    "0.1": "https://zenodo.org/records/17298014/files/export-graph-v0.1.0.pickle"
+}
+networks = {
+    "fis": fis_urls,
+    "euris": euris_urls,
+}
 
-
-def load_network(version="0.3"):
+def load_network(network="fis", version="0.3"):
     """load the pickle version of the fairway information system network
 
     Parameters
     ----------
+    network : str
+        The network to load. Choose "fis" or "euris". Default is "fis".
     version : str
         The version of the network to load. Choose 0.2 or 0.3. Default is "0.3".
     """
+    urls = networks[network]
     url = urls[version]
     resp = requests.get(url)
     # convert the response to a file

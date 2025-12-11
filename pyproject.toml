@@ -15,10 +15,13 @@ description = "The OpenTNSim package aims to facilitate the analysis of network 
 authors = [
     { name = "Mark van Koningsveld", email = "m.vankoningsveld@tudelft.nl" },
 ]
+
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/TUDelft-CITG/OpenTNSim"
 keywords = ["OpenTNSim", "simulation", "transport", "OpenCLSim"]
+
+
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
@@ -44,6 +47,7 @@ dependencies = [
     "tqdm >=4.67.1",
     "xarray >=2025.3.1",
     "click >=8.1.8,<9",
+    "pyyaml>=6.0.3",
 ]
 
 # Extras 
@@ -75,6 +79,7 @@ testing = [
     "lonboard>=0.11.1",
     "pyarrow",
     "anywidget",
+    "mapclassify>=2.10.0",
 ]
 
 [project.scripts]
@@ -102,3 +107,12 @@ norecursedirs = [
     ".eggs"
 ]
 testpaths = "tests"
+
+[dependency-groups]
+dev = [
+    "black[jupyter]>=25.9.0",
+    "ipykernel>=6.30.1",
+    "ipython>=9.6.0",
+    "nbformat>=5.10.4",
+]
+

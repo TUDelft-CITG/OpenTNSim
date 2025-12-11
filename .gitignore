@@ -1,3 +1,5 @@
+.env
+
 # generated files
 fis_cache
 fis_cache.sqlite
