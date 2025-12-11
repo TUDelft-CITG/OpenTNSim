@@ -69,7 +69,8 @@ testing = [
     "ipyleaflet >=0.19.2",
     "ipywidgets >=8.1.7",
     "jsonschema >=4.23.0",
-    "jupyter-book >=1.0.4.post1",
+    # jupyter book 2 needs testing (and node installed)
+    "jupyter-book >=1.0.4.post1,<2",
     "jupyterlab_widgets >=3.0.15",
     "momepy >=0.10.0",
     "nbconvert >=7.16.6",
@@ -112,6 +113,7 @@ norecursedirs = [
 ]
 testpaths = "tests"
 
+# depdencies for development (e.g. specific jupyter kernel)
 [dependency-groups]
 dev = [
     "black[jupyter]>=25.9.0",
