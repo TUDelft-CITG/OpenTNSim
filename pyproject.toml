@@ -4,6 +4,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 source = "vcs"
+# No dirty states, otherwise we also get them in the book 
+# The book first runs calculations and then the notebooks are updated.
+version_scheme = "only-version"
+
 
 [tool.poetry]
 package-mode = false
