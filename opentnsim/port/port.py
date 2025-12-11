@@ -207,7 +207,7 @@ class IsPort(SimpyObject, Identifiable):
         sailing_time = np.max([pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=48)])
         time_end = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time)
         if tide_bound:
-            df_tidal_availability = vessel.env.vessel_traffic_service.provide_tidal_windows(vessel, route, time_start, time_end, plot=True)[0]
+            df_tidal_availability = vessel.env.vessel_traffic_service.provide_tidal_windows(vessel, route, time_start, time_end)[0]
         return df_tidal_availability
 
 
