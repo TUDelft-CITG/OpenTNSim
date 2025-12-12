@@ -14,6 +14,11 @@ class PassesAnchorage(Movable):
         super().__init__(*args, **kwargs)
 
 
+    def determine_sailing_time_to_anchorage_area(self, route_to_anchorage_area):
+        sailing_time_to_anchorage_area = self.env.vessel_traffic_service.provide_sailing_time(self,route_to_anchorage_area)["Time"].sum()
+        return sailing_time_to_anchorage_area
+
+
     def sail_to_anchorage(self, node):
         """ Function: moves a vessel to the anchorage area instead of continuing its route to the terminal if a vessel is required to wait in the anchorage area
 
@@ -26,7 +31,6 @@ class PassesAnchorage(Movable):
         # Set some default parameters:
         anchorage_area = self.find_nearest_anchorage_area(node)
         yield from anchorage_area.request_anchorage_area_access(vessel=self)
-        self.anchorage_areas.append(anchorage_area)
         self.route_to_anchorage_area = nx.dijkstra_path(self.env.graph, node, anchorage_area.node)
         self.route_after_anchorage_area = nx.dijkstra_path(self.env.graph, anchorage_area.node, self.route[-1])
         if len(self.route_to_anchorage_area) > 1:

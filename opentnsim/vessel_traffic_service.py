@@ -162,7 +162,6 @@ class VesselTrafficService:
         # Loop over the nodes of the network and identify all the anchorage areas:
         for node_anchorage in vessel.multidigraph.nodes:
             if "Anchorage Area" in vessel.multidigraph.nodes[node_anchorage]:
-                print('hooo')
                 # Determine if the anchorage area can be reached
                 anchorage_reachable = True
                 route_to_anchorage = nx.dijkstra_path(vessel.multidigraph, node, node_anchorage)
@@ -931,9 +930,6 @@ class VesselTrafficService:
         tidal_accessibility["Accessibility"] = tidal_accessibility_accessibility
         accessible_indexes = [idx for idx, accessibility in enumerate((tidal_accessibility.Accessibility == "Accessible").to_numpy()) if accessibility]
         inaccessible_indexes = [idx for idx, inaccessibility in enumerate((tidal_accessibility.Accessibility == "Inaccessible").to_numpy()) if inaccessibility]
-        if len(accessible_indexes):
-            accessible_indexes = np.array([indexes[-1] for indexes in np.split(accessible_indexes, np.nonzero(np.diff(accessible_indexes) != 1)[0] + 1)], dtype=int)
-        inaccessible_indexes = np.array([indexes[0] for indexes in np.split(inaccessible_indexes, np.nonzero(np.diff(inaccessible_indexes) != 1)[0] + 1)],dtype=int,)
         tidal_window_indexes = np.sort(np.append(accessible_indexes, inaccessible_indexes))
         tidal_accessibility = tidal_accessibility.iloc[tidal_window_indexes]
         return tidal_accessibility

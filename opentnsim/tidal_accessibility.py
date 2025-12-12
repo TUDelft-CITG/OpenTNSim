@@ -83,57 +83,12 @@ def find_route_with_restrictions(self):
 class HasDraughtRestrictions:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        #self.on_pass_node_functions.append(self.wait_for_tidal_window)
         self.bound = 'inbound'
         self.tidal_window_calculations = []
 
-        # def request_tidal_window(self, origin):
-    #     infrastructure_suitable_to_wait_for_tidal_window = ['Waiting Area', 'Terminal']
-    #     suitable_location_to_wait_for_tidal_window = False
-    #     for infrastructure in infrastructure_suitable_to_wait_for_tidal_window:
-    #         if infrastructure in self.env.graph.nodes[origin].keys():
-    #             suitable_location_to_wait_for_tidal_window = True
-    #             break
-    #
-    #     if not suitable_location_to_wait_for_tidal_window:
-    #         return self.tidal_waiting_time
-    #
-    #     contains_restriction = check_if_route_contains_restrictions(self)
-    #     if not contains_restriction:
-    #         return self.tidal_waiting_time
-    #
-    #     routes_with_restrictions = find_route_with_restrictions(self)
-    #     self.tidal_waiting_time = 0.
-    #
-    #     if origin != routes_with_restrictions[0][0]:
-    #         return self.tidal_waiting_time
-    #
-    #     for route in routes_with_restrictions:
-    #         self.tidal_waiting_time = self.env.self_traffic_service.provide_waiting_time_for_inbound_tidal_window(self=self, route=route, delay=0, plot=True)
-    #
-    #     if math.isnan(self.tidal_waiting_time):
-    #         raise simpy.exceptions.Interrupt('Port not accessible for self.')
-    #
-    #     return self.tidal_waiting_time
 
-
-    def wait_for_tidal_window(self, origin, waiting_time = None):
-        if waiting_time is not None:
-            self.tidal_waiting_time = waiting_time
-        self.log_entry_v0("Waiting for tidal window start",
-                          self.env.now,
-                          self.distance,
-                          self.env.graph.nodes[origin]["geometry"])
-        yield self.env.timeout(self.tidal_waiting_time)
-        self.log_entry_v0("Waiting for tidal window stop",
-                          self.env.now,
-                          self.distance,
-                          self.env.graph.nodes[origin]["geometry"])
-        self.tidal_waiting_time = 0.
-
-
-    def create_plot_vertical_tidal_window(self, calculation_index = 0, plot = False):
-        tidal_window_calculation_results = self.tidal_window_calculations[calculation_index]
+    def create_plot_vertical_tidal_window(self, trip_index = 0, plot = False):
+        tidal_window_calculation_results = self.tidal_window_calculations[trip_index]
         time_start_index = tidal_window_calculation_results['time_start_index']
         time_end_index = tidal_window_calculation_results['time_end_index']
         route = tidal_window_calculation_results['route']
@@ -169,6 +124,7 @@ class HasDraughtRestrictions:
             vertical_tidal_window_polygons.append(vertical_tidal_window_polygon)
 
         # Plot vertical tidal windows
+        vertical_tidal_window = None
         for polygon in vertical_tidal_window_polygons:
             polygon_x = []
             for timestamp in polygon.exterior.xy[0]:
@@ -191,9 +147,10 @@ class HasDraughtRestrictions:
         labels = ["Net UKC", "Minimum required net UKC", "Vertical tidal windows"]
         legend_handles = []
         legend_labels = []
-        for handle, legend in zip(handles, labels):
-            legend_handles.append(handle)
-            legend_labels.append(legend)
+        for handle, label in zip(handles, labels):
+            if handle is not None:
+                legend_handles.append(handle)
+                legend_labels.append(label)
 
         ax.set_xlabel("Start time of trip")
         ax.set_ylabel("Minimum net UKC experienced over entire self route [m]")
@@ -207,16 +164,19 @@ class HasDraughtRestrictions:
             )
             fig.tight_layout()
             plt.show()
+            plt.close(fig)
         else:
             plt.close(fig)
         return fig, legend_handles, legend_labels
 
 
-    def create_plot_horizontal_tidal_window(self, calculation_index = 0, plot = False):
-        tidal_window_calculation_results = self.tidal_window_calculations[calculation_index]
+    def create_plot_horizontal_tidal_window(self, trip_index = 0, plot = False):
+        tidal_window_calculation_results = self.tidal_window_calculations[trip_index]
         time_start_index = tidal_window_calculation_results['time_start_index']
         time_end_index = tidal_window_calculation_results['time_end_index']
         route = tidal_window_calculation_results['route']
+        bound = tidal_window_calculation_results['bound']
+        draught = tidal_window_calculation_results['draught']
         horizontal_tidal_windows = tidal_window_calculation_results['horizontal_tidal_windows']
         horizontal_tidal_restriction_nodes = tidal_window_calculation_results['horizontal_tidal_restriction_nodes']
         horizontal_tidal_restriction_stations = tidal_window_calculation_results['horizontal_tidal_restriction_stations']
@@ -252,7 +212,7 @@ class HasDraughtRestrictions:
             horizontal_tidal_accessibility_time -= horizontal_tidal_accessibility_time_correction
             (current_velocity,) = ax.plot(horizontal_tidal_accessibility_time, governing_current_velocity,
                                           color="firebrick", linewidth=3,)
-        ax.axhline(0, color="k", linewidth=2)
+        ax.axhline(0, color="k", linewidth=.5)
 
         # Calculate vertical and horizontal tidal windows
         horizontal_tidal_window_polygons = []
@@ -308,33 +268,37 @@ class HasDraughtRestrictions:
             ax.legend(legend_handles, legend_labels, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
             ax.set_title(
                 f"Horizontal tidal windows of {self.type}-class self '{self.name}' with "
-                f"a draught of {np.round(self.T, 2)}m and\na length of {np.round(self.L)}m sailing {self.bound} from"
+                f"a draught of {np.round(draught, 2)}m and\na length of {np.round(self.L)}m sailing {bound} from"
                 f" node '{route[0]}' to node '{route[-1]}'."
             )
             fig.tight_layout()
             plt.show()
+            plt.close(fig)
         else:
             plt.close(fig)
         return fig, legend_handles, legend_labels
 
 
-    def plot_tidal_window(self, calculation_index = 0):
-        tidal_window_calculation_results = self.tidal_window_calculations[calculation_index]
+    def plot_tidal_windows(self, trip_index = 0, plot_all = False):
+        tidal_window_calculation_results = self.tidal_window_calculations[trip_index]
         route = tidal_window_calculation_results['route']
+        bound = tidal_window_calculation_results['bound']
+        draught = tidal_window_calculation_results['draught']
         tidal_windows = tidal_window_calculation_results['tidal_windows']
 
         # Create figure
-        fig, ax_left = plt.subplots(figsize=[16 * 2 / 3, 6])
+        fig_final, ax_left = plt.subplots(figsize=[16 * 2 / 3, 6])
+        plt.close()
         ax_left.set_facecolor('none')
         ax_right = ax_left.twinx()
         ax_left.set_facecolor('none')
 
         # Plot governing current velocity
-        fig_left, ax_left_handles, ax_left_labels = self.create_plot_vertical_tidal_window(calculation_index)
-        fig_right, ax_right_handles, ax_right_labels = self.create_plot_horizontal_tidal_window(calculation_index)
+        fig_left, ax_left_handles, ax_left_labels = self.create_plot_vertical_tidal_window(trip_index, plot_all)
+        fig_right, ax_right_handles, ax_right_labels = self.create_plot_horizontal_tidal_window(trip_index, plot_all)
 
-        for fig, ax_target in zip([fig_left, fig_right], [ax_left, ax_right]):
-            for ax_old in fig.get_axes():
+        for fig_target, ax_target in zip([fig_left, fig_right], [ax_left, ax_right]):
+            for ax_old in fig_target.get_axes():
                 for line in ax_old.get_lines():
                     xdata = line.get_xdata()
                     ydata = line.get_ydata()
@@ -368,7 +332,6 @@ class HasDraughtRestrictions:
                 # Copy labels and title
                 ax_target.set_xlabel(ax_old.get_xlabel(), rotation=ax_old.xaxis.label.get_rotation())
                 ax_target.set_ylabel(ax_old.get_ylabel(), rotation=ax_old.yaxis.label.get_rotation())
-                ax_target.set_title(ax_old.get_title())
 
                 # Copy tick positions and rotation
                 ax_target.set_xticks(ax_old.get_xticks())
@@ -398,15 +361,12 @@ class HasDraughtRestrictions:
             tidal_window_polygons.append(tidal_window_polygon)
 
         # Plot tidal windows
+        tidal_window = None
         window_y = [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]]
         color = lighten_color("limegreen", alpha=0.4)
         for window in tidal_windows:
             window_x = [window[0], window[0], window[1], window[1]]
             (tidal_window,) = ax_left.fill(window_x, window_y,
-                                           facecolor=color, edgecolor="none", zorder=-5,)
-        if not tidal_windows:
-            window_x = [0, 0, 0, 0]
-            tidal_window = ax_left.fill(window_x, window_y,
                                            facecolor=color, edgecolor="none", zorder=-5,)
 
         # Figure axes
@@ -428,15 +388,20 @@ class HasDraughtRestrictions:
             legend_handles.append(handle)
             legend_labels.append(label)
 
-        handles = [tidal_window, no_tidal_window]
-        labels = ["Tidal window", "No tidal window"]
+        handles = []
+        labels = []
+        for handle, label in zip([tidal_window, no_tidal_window],["Tidal windows", "No tidal window"]):
+            if handle is not None:
+                handles.append(handle)
+                labels.append(label)
+
         legend_handles = np.append(legend_handles, handles)
         legend_labels = np.append(legend_labels, labels)
 
         ax_left.legend(legend_handles, legend_labels, frameon=False, loc="upper left", bbox_to_anchor=(1.05, 1.0),)
         ax_left.set_title(
             f"Accessibility of {self.type}-class self '{self.name}' with "
-            f"a draught of {np.round(self.T, 2)}m and\na length of {np.round(self.L)}m sailing {self.bound} from"
+            f"a draught of {np.round(draught, 2)}m and\na length of {np.round(self.L)}m sailing {bound} from"
             f" node '{route[0]}' to node '{route[-1]}'."
         )
-        return fig
+        return fig_final
