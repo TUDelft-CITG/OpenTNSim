@@ -150,6 +150,7 @@ Module Structure
 ----------------
 When implementing a new module, please follow the structure of existing modules.
 Each module can have the following content: 
+
 - mixins.py or mixins/ : for mixin classes
 - calculations.py : for calculation functions. Generally, these functions should start with 'calculate_'
 - logutils.py : for logging related functions
@@ -160,6 +161,7 @@ start function names with an underscore if the function is only used internally 
 and shouldnt be called by users. These functions will not be included in the documentation.
 
 When in doubt if your function should be a method of the class or a standalone function in utils.py/calculations.py, follow these guidelines:
+
 - If the function needs to access or modify the internal state of the class, it should be a method of the class.
 - if the function will be frequently used by users, it should be a method of the class. 
 - else, it should be a standalone function in utils.py/calculations.py.
