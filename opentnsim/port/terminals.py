@@ -13,6 +13,20 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from scipy.spatial import ConvexHull
 
+
+def horizontal_fill_between_equals(row):
+    row_values = row.values
+    for i in range(len(row_values)):
+        if pd.notna(row_values[i]):
+            j = i + 1
+            while j < len(row_values) and pd.isna(row_values[j]):
+                if j + 1 < len(row_values) and pd.notna(row_values[j + 1]) and row_values[j + 1] == row_values[i]:
+                    row_values[i + 1:j + 1] = row_values[i]
+                    break
+                j += 1
+    return pd.Series(row_values, index=row.index)
+
+
 class HasTerminal(Movable):
     def __init__(self,
                  terminal,
@@ -60,17 +74,11 @@ class HasTerminal(Movable):
 
 
     def request_berth_access(self):
-        if isinstance(self.berth, IsQuay):
-            yield from self.berth.request_quay_access(self)
-        elif isinstance(self.berth, IsJetty):
-            yield from []
+        yield from self.berth.request_access(self)
 
 
     def release_berth_access(self, origin):
-        if isinstance(self.berth, IsQuay):
-            yield from self.berth.release_quay_access(self)
-        elif isinstance(self.berth, IsJetty):
-            yield from []
+        yield from self.berth.release_access(self)
 
         # if going to new terminal -> request port passage
         pass
@@ -328,77 +336,55 @@ def add_berth_to_graph(berth):
     node_info['Berth'].append(berth)
 
 
-class IsJetty(OnNode, HasResource, Identifiable, Log):
-    def __init__(self, length, depth, capacity=1, *args, **kwargs):
-        super().__init__(nr_resources=capacity, *args, **kwargs)
-        add_berth_to_graph(self)
-        self.length = length
+class IsBerth(OnNode, Identifiable, Log):
+
+    def __init__(self, berth_length, depth, *args, **kwargs):
         self.depth = depth
-        self.capacity = capacity
-
-
-class IsQuay(OnNode, HasLength, Identifiable, Log):
-    def __init__(self, length, depth, *args, **kwargs):
-        super().__init__(length=length, remaining_length=length,*args, **kwargs)
+        self.length = berth_length
+        super().__init__(*args, **kwargs)
         add_berth_to_graph(self)
-        self.length = length
-        self.depth = depth
-        self.capacity = np.inf
-        self.availability_quay_positions = pd.DataFrame(data=[[0, length, length, None]],columns=['Distance_start','Distance_stop','Length_available','Occupant'])
-        self.historic_quay_planning = pd.DataFrame(data={0: [None,None], length: [None,None]},
-                                                   index=[self.env.simulation_start,self.env.simulation_stop])
+        self.historic_berth_planning = pd.DataFrame(data={0: [None, None], berth_length: [None, None]},
+                                                    index=[self.env.simulation_start, self.env.simulation_stop])
 
+    def add_berth_position_to_historic_planning(self, vessel, quay_position=0, delay=0, leaving=False):
+        current_time = datetime.datetime.fromtimestamp(self.env.now) + pd.Timedelta(seconds=delay)
+        if isinstance(self,IsQuay):
+            quay_position = self.availability_quay_positions.loc[quay_position]
+            position_start = quay_position.Distance_start + 0.001
+            position_stop = quay_position.Distance_stop - 0.001
+        elif isinstance(self,IsJetty):
+            gap = (self.length - vessel.L) / 2
+            position_start = gap
+            position_stop = self.length - gap
 
-    def add_quay_position_to_historic_planning(self, vessel, quay_position_nr, add=True):
+        if not leaving:
+            if position_start not in self.historic_berth_planning.columns:
+                self.historic_berth_planning.loc[:, position_start] = None
+            if position_stop not in self.historic_berth_planning.columns:
+                self.historic_berth_planning.loc[:, position_stop] = None
 
-        def horizontal_fill_between_equals(row):
-            row_values = row.values
-            for i in range(len(row_values)):
-                if pd.notna(row_values[i]):
-                    j = i + 1
-                    while j < len(row_values) and pd.isna(row_values[j]):
-                        if j + 1 < len(row_values) and pd.notna(row_values[j + 1]) and row_values[j + 1] == row_values[i]:
-                            row_values[i + 1:j + 1] = row_values[i]
-                            break
-                        j += 1
-            return pd.Series(row_values, index=row.index)
+        self.historic_berth_planning.loc[current_time, position_start] = vessel.id
+        self.historic_berth_planning.loc[current_time, position_stop] = vessel.id
 
-        quay_position = self.availability_quay_positions.loc[quay_position_nr]
-        current_time = datetime.datetime.fromtimestamp(self.env.now)
-        quay_position_start = quay_position.Distance_start + 0.001
-        quay_position_stop = quay_position.Distance_stop - 0.001
-
-        if add:
-            if quay_position.Distance_start not in self.historic_quay_planning.columns:
-                self.historic_quay_planning.loc[:,quay_position_start] = None
-            if quay_position.Distance_stop not in self.historic_quay_planning.columns:
-                self.historic_quay_planning.loc[:,quay_position_stop] = None
-
-        self.historic_quay_planning.loc[current_time, quay_position_start] = vessel.id
-        self.historic_quay_planning.loc[current_time, quay_position_stop] = vessel.id
-
-        if not add:
-            for col in [quay_position_start,quay_position_stop]:
-                notna = self.historic_quay_planning[col].notna()
+        if leaving:
+            for position_columm in [position_start, position_stop]:
+                notna = self.historic_berth_planning[position_columm].notna()
                 if not notna.any():
                     continue
-
                 first_idx = notna.idxmax()
                 last_idx = notna[::-1].idxmax()
+                mask = (self.historic_berth_planning.index >= first_idx) & (self.historic_berth_planning.index <= last_idx)
+                self.historic_berth_planning.loc[mask, position_columm] = self.historic_berth_planning.loc[mask, position_columm].bfill()
+            self.historic_berth_planning = self.historic_berth_planning.apply(horizontal_fill_between_equals, axis=1)
 
-                mask = (self.historic_quay_planning.index >= first_idx) & (self.historic_quay_planning.index <= last_idx)
+        self.historic_berth_planning = self.historic_berth_planning.sort_index()
+        self.historic_berth_planning = self.historic_berth_planning.reindex(sorted(self.historic_berth_planning.columns), axis=1)
+        self.historic_berth_planning[self.historic_berth_planning.isna()] = None
+        self.historic_berth_planning = self.historic_berth_planning.sort_index()
 
-                self.historic_quay_planning.loc[mask, col] = self.historic_quay_planning.loc[mask, col].bfill()
-
-            self.historic_quay_planning = self.historic_quay_planning.apply(horizontal_fill_between_equals, axis=1)
-
-        self.historic_quay_planning = self.historic_quay_planning.sort_index()
-        self.historic_quay_planning = self.historic_quay_planning.reindex(sorted(self.historic_quay_planning.columns), axis=1)
-        self.historic_quay_planning[self.historic_quay_planning.isna()] = None
-
-    def plot_historic_quay_planning(self):
+    def plot_historic_berth_planning(self):
         fig, ax = plt.subplots()
-        historic_quay_planning_plot = self.historic_quay_planning.stack().reset_index()
+        historic_quay_planning_plot = self.historic_berth_planning.stack().reset_index()
         historic_quay_planning_plot.columns = ['timestamp', 'column', 'id']
         historic_quay_planning_plot = historic_quay_planning_plot[historic_quay_planning_plot['id'].notna()]
         historic_quay_planning_plot_id_mapping = {id_: list(zip(sub_df['timestamp'], sub_df['column'])) for id_, sub_df
@@ -422,15 +408,36 @@ class IsQuay(OnNode, HasLength, Identifiable, Log):
         plt.close()
         return fig
 
-    def request_quay_access(self, vessel):
+class IsJetty(IsBerth, HasResource):
+    def __init__(self, length, capacity=1, *args, **kwargs):
+        self.capacity = capacity
+        super().__init__(berth_length=length,nr_resources=capacity, *args, **kwargs)
+
+    def request_access(self, vessel):
+        self.add_berth_position_to_historic_planning(vessel, delay = vessel.berthing_time)
+        yield from []
+
+
+    def release_access(self, vessel):
+        self.add_berth_position_to_historic_planning(vessel, leaving = True)
+        yield from []
+
+
+class IsQuay(IsBerth, HasLength):
+    def __init__(self, length, capacity = np.inf, *args, **kwargs):
+        self.capacity = capacity
+        super().__init__(berth_length=length,length=length,remaining_length=length,*args, **kwargs)
+        self.availability_quay_positions = pd.DataFrame(data=[[0, length, length, None]],columns=['Distance_start','Distance_stop','Length_available','Occupant'])
+
+    def request_access(self, vessel):
         quay_position = self.select_quay_position(vessel)
         yield from self.adjust_availability_quay_positions(vessel, quay_position)
-        self.add_quay_position_to_historic_planning(vessel, quay_position)
+        self.add_berth_position_to_historic_planning(vessel, quay_position, delay = vessel.berthing_time)
 
 
-    def release_quay_access(self, vessel):
+    def release_access(self, vessel):
         quay_position = self.find_quay_position(vessel)
-        self.add_quay_position_to_historic_planning(vessel, quay_position, add=False)
+        self.add_berth_position_to_historic_planning(vessel, quay_position, leaving=True)
         yield from self.readjust_availability_quay_positions(quay_position)
 
 
