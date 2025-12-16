@@ -34,6 +34,7 @@ class PassesAnchorage(Movable):
         self.route_to_anchorage_area = nx.dijkstra_path(self.env.graph, node, anchorage_area.node)
         self.route_after_anchorage_area = nx.dijkstra_path(self.env.graph, anchorage_area.node, self.route[-1])
         if len(self.route_to_anchorage_area) > 1:
+            self.routes_sailed.append(self.route_to_anchorage_area)
             self.route = self.route_to_anchorage_area
             self.env.process(self.move())
             raise simpy.exceptions.Interrupt('Route of vessel has changed.')

@@ -67,6 +67,7 @@ class HasTerminal(Movable):
         yield from self.request_berth_access()
         yield from self.berthing(destination)
         yield from self.loading(destination)
+        yield from self.request_port_exit(destination)
         yield from self.release_berth_access(destination)
         yield from self.deberthing(destination)
         self.env.process(self.move())
@@ -79,11 +80,11 @@ class HasTerminal(Movable):
 
     def release_berth_access(self, origin):
         yield from self.berth.release_access(self)
-
-        # if going to new terminal -> request port passage
-        pass
-        # if leaving the port -> request port exit
-        yield from self.request_port_exit(origin)
+        #
+        # # if going to new terminal -> request port passage
+        # pass
+        # # if leaving the port -> request port exit
+        # yield from self.request_port_exit(origin)
 
     def berthing(self, origin):
         self.log_entry_v0("Berthing start",
@@ -105,7 +106,13 @@ class HasTerminal(Movable):
                           self.env.now,
                           self.distance,
                           self.env.graph.nodes[origin]["geometry"])
-        yield self.env.timeout(self.loading_time*3600)
+        new_route = self.terminal.port.plan_new_route_for_vessel(self)
+        self.route = new_route
+        self.bound = 'outbound'
+        loading_process = self.env.timeout(self.loading_time*3600)
+        negotiate_port_exit = self.env.process(self.request_port_exit(origin, parallel_process=loading_process, loading = True))
+        yield loading_process | negotiate_port_exit
+        negotiate_port_exit.interrupt()
         self.log_entry_v0("Loading stop",
                           self.env.now,
                           self.distance,
@@ -318,14 +325,14 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
             mask = (berth_planning.index > time_start)&(berth_planning.index < time_stop)
             berth_planning.loc[berth_planning[mask].index, berth.name] = 0
             berth_planning[berth.name] = berth_planning[berth.name].astype(int)
+
         berth_planning = berth_planning.sort_index()
         with pd.option_context("future.no_silent_downcasting", True):
             berth_planning = berth_planning.ffill().infer_objects(copy=False)
 
         if isinstance(berth, IsQuay):
-            mask = (berth_planning.index > time_start)&(berth_planning.index < time_stop)
+            mask = (berth_planning.index >= time_start)&(berth_planning.index < time_stop)
             berth_planning.loc[berth_planning[mask].index, berth.name] -= vessel.L
-
         self.berth_planning = berth_planning
 
 
@@ -382,6 +389,7 @@ class IsBerth(OnNode, Identifiable, Log):
         self.historic_berth_planning[self.historic_berth_planning.isna()] = None
         self.historic_berth_planning = self.historic_berth_planning.sort_index()
 
+
     def plot_historic_berth_planning(self):
         fig, ax = plt.subplots()
         historic_quay_planning_plot = self.historic_berth_planning.stack().reset_index()
@@ -408,6 +416,7 @@ class IsBerth(OnNode, Identifiable, Log):
         plt.close()
         return fig
 
+
 class IsJetty(IsBerth, HasResource):
     def __init__(self, length, capacity=1, *args, **kwargs):
         self.capacity = capacity
@@ -423,15 +432,24 @@ class IsJetty(IsBerth, HasResource):
         yield from []
 
 
+    def update_planning(self, vessel, new_release_time):
+        pass
+
+
 class IsQuay(IsBerth, HasLength):
     def __init__(self, length, capacity = np.inf, *args, **kwargs):
         self.capacity = capacity
         super().__init__(berth_length=length,length=length,remaining_length=length,*args, **kwargs)
-        self.availability_quay_positions = pd.DataFrame(data=[[0, length, length, None]],columns=['Distance_start','Distance_stop','Length_available','Occupant'])
+        self.availability_quay_positions = pd.DataFrame(data=[[0, length, length, None, None, None]],
+                                                        columns=['Distance_start','Distance_stop','Length_available','Occupant','Time_start','Time_stop'])
 
     def request_access(self, vessel):
         quay_position = self.select_quay_position(vessel)
-        yield from self.adjust_availability_quay_positions(vessel, quay_position)
+        time_start = datetime.datetime.fromtimestamp(vessel.env.now)
+        time_stop = time_start + pd.Timedelta(seconds = vessel.berthing_time*60 +
+                                                        vessel.loading_time*3600 +
+                                                        vessel.deberthing_time*60)
+        yield from self.adjust_availability_quay_positions(vessel, quay_position, time_start, time_stop)
         self.add_berth_position_to_historic_planning(vessel, quay_position, delay = vessel.berthing_time)
 
 
@@ -467,7 +485,39 @@ class IsQuay(IsBerth, HasLength):
         return quay_position
 
 
-    def adjust_availability_quay_positions(self, vessel, quay_position):
+    def update_planning(self, vessel, new_release_time):
+        new_release_time += pd.Timedelta(seconds=vessel.deberthing_time*60)
+        vessel.terminal.berth_planning.loc[new_release_time, self.name] = np.nan
+        with pd.option_context("future.no_silent_downcasting", True):
+            vessel.terminal.berth_planning = vessel.terminal.berth_planning.ffill().infer_objects(copy=False)
+
+        vessel.terminal.berth_planning =  vessel.terminal.berth_planning.sort_index()
+        quay_position = self.find_quay_position(vessel)
+
+        old_release_time = self.availability_quay_positions.loc[quay_position, 'Time_stop']
+        delay = (new_release_time-old_release_time).total_seconds()
+        self.availability_quay_positions.loc[quay_position, 'Time_stop'] += pd.Timedelta(seconds=delay)
+
+        current_level = self.calculate_quay_length_level()
+        availability_quay_positions_copy = self.availability_quay_positions.copy()
+        mask = availability_quay_positions_copy.Occupant.notna()
+        time_start_min = availability_quay_positions_copy[mask]['Time_start'].min()
+        times = np.sort(np.unique(availability_quay_positions_copy[mask]['Time_stop'].values.flatten()))
+
+        mask = vessel.terminal.berth_planning.index >= time_start_min
+        vessel.terminal.berth_planning.loc[vessel.terminal.berth_planning[mask].index, self.name] = current_level
+        for time in times:
+            vessels_leaving = availability_quay_positions_copy[availability_quay_positions_copy.Time_stop == time]
+            for quay_position,vessel_leaving in vessels_leaving.iterrows():
+                self.remove_vessel_from_planning(quay_position)
+            new_level = self.calculate_quay_length_level()
+            mask = vessel.terminal.berth_planning.index >= time
+            vessel.terminal.berth_planning.loc[vessel.terminal.berth_planning[mask].index, self.name] = new_level
+
+        self.availability_quay_positions = availability_quay_positions_copy
+
+
+    def adjust_availability_quay_positions(self, vessel, quay_position, time_start, time_stop):
         """ Function that adjusts the available quay lenghts and positions given a honored request of a vessel at a given position
 
             Input:
@@ -483,6 +533,8 @@ class IsQuay(IsBerth, HasLength):
         self.availability_quay_positions.loc[quay_position, 'Distance_stop'] = quay_position_info.Distance_start + vessel.L
         self.availability_quay_positions.loc[quay_position, 'Length_available'] = 0.0
         self.availability_quay_positions.loc[quay_position, 'Occupant'] = vessel.id
+        self.availability_quay_positions.loc[quay_position, 'Time_start'] = time_start
+        self.availability_quay_positions.loc[quay_position, 'Time_stop'] = time_stop
 
         quay_claimed = self.availability_quay_positions[self.availability_quay_positions.Length_available == 0.0]
         length_claimed = (quay_claimed.Distance_stop - quay_claimed.Distance_start).sum()
@@ -496,7 +548,9 @@ class IsQuay(IsBerth, HasLength):
                 new_position = pd.DataFrame({'Distance_start': [distance_stop],
                                              'Distance_stop': [distance_start],
                                              'Length_available': [length],
-                                             'Occupant': [None]})
+                                             'Occupant': [None],
+                                             'Time_start': [None],
+                                             'Time_stop': [None]})
                 self.availability_quay_positions = pd.concat([self.availability_quay_positions.iloc[:next_quay_position], new_position, self.availability_quay_positions.iloc[next_quay_position:]])
 
         elif length_claimed != self.length:
@@ -504,7 +558,9 @@ class IsQuay(IsBerth, HasLength):
             new_position = pd.DataFrame({'Distance_start': self.availability_quay_positions.loc[quay_position, 'Distance_stop'],
                                          'Distance_stop':  self.length,
                                          'Length_available': [length],
-                                         'Occupant': [None]})
+                                         'Occupant': [None],
+                                         'Time_start': [None],
+                                         'Time_stop': [None]})
             self.availability_quay_positions = pd.concat([self.availability_quay_positions.iloc[:next_quay_position], new_position])
 
         self.availability_quay_positions = self.availability_quay_positions.reset_index(drop=True)
@@ -515,6 +571,32 @@ class IsQuay(IsBerth, HasLength):
         # Claim length of resource so that the level equals the berth position with the largest length (unless it has not changed)
         if old_level != new_level:
             yield self.resource.get(old_level - new_level)
+
+
+    def remove_vessel_from_planning(self, position):
+        # Drop vessel from layout
+        self.availability_quay_positions.loc[position, 'Occupant'] = None
+
+        # Combine subsequent empty positions
+        self.availability_quay_positions['Occupant_filled'] = self.availability_quay_positions['Occupant'].fillna('NA')
+        self.availability_quay_positions['group'] = (
+                    self.availability_quay_positions['Occupant_filled'] != self.availability_quay_positions[
+                'Occupant_filled'].shift()).cumsum()
+        self.availability_quay_positions = self.availability_quay_positions.groupby('group', as_index=False).agg(
+            {'Distance_start': 'first',
+             'Distance_stop': 'last',
+             'Length_available': 'sum',
+             'Occupant': 'first',
+             'Time_start': 'first',
+             'Time_stop': 'first', })
+        mask = self.availability_quay_positions.Occupant.isna()
+        available_lenghts = self.availability_quay_positions[mask].apply(lambda x: x.Distance_stop - x.Distance_start,
+                                                                         axis=1)
+        self.availability_quay_positions.loc[
+            self.availability_quay_positions[mask].index, 'Length_available'] = available_lenghts
+        self.availability_quay_positions.loc[self.availability_quay_positions[mask].index, 'Time_start'] = None
+        self.availability_quay_positions.loc[self.availability_quay_positions[mask].index, 'Time_stop'] = None
+        self.availability_quay_positions = self.availability_quay_positions.drop(columns=['group'])
 
 
     def readjust_availability_quay_positions(self, position):
@@ -528,17 +610,7 @@ class IsQuay(IsBerth, HasLength):
         # Determine the current maximum available length of the terminal
         old_level = self.calculate_quay_length_level()
 
-        # Drop vessel from layout
-        self.availability_quay_positions.loc[position,'Occupant'] = None
-
-        # Combine subsequent empty positions
-        self.availability_quay_positions['Occupant_filled'] = self.availability_quay_positions['Occupant'].fillna('NA')
-        self.availability_quay_positions['group'] = (self.availability_quay_positions['Occupant_filled'] != self.availability_quay_positions['Occupant_filled'].shift()).cumsum()
-        self.availability_quay_positions = self.availability_quay_positions.groupby('group', as_index=False).agg({'Distance_start': 'first',
-                                                                                                                  'Distance_stop': 'last',
-                                                                                                                  'Length_available':'sum',
-                                                                                                                  'Occupant': 'first'})
-        self.availability_quay_positions = self.availability_quay_positions.drop(columns=['group'])
+        self.remove_vessel_from_planning(position)
 
         # Determine the new current maximum available length of the terminal
         new_level = self.calculate_quay_length_level()
