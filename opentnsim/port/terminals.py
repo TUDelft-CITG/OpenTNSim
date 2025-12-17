@@ -168,7 +168,23 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
             self.berths.put(berth)
         super().__init__(env=env, *args, **kwargs)
         self.port.terminals.append(self)
-        self.vessels_waiting_df = pd.DataFrame(columns=["Waiting_start_time","Vessel_length","Cargo_volume","Event"])
+        self.queue = pd.DataFrame(columns=["Vessel_L","Vessel_B","Vessel_T","Berth","Waiting_start_time","Waiting_stop_time"])
+
+
+    def assign_vessel_to_queue(self, vessel, waiting_time=0., berth_name=None):
+        current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+        berth = self.select_berth_based_on_name(berth_name)
+        waiting_stop = current_time + pd.Timedelta(seconds=waiting_time)
+        self.queue.loc[vessel.id] = [vessel.L, vessel.B, vessel.T, berth_name, current_time, waiting_stop]
+
+
+    def update_queue(self, vessel, berth=None):
+        self.assign_vessel_to_queue(vessel, berth)
+
+
+    def remove_vessel_from_queue(self, vessel):
+        if vessel.id in self.queue.index:
+            self.queue = self.queue.pop(vessel.id)
 
 
     def find_suitable_berths(self, vessel):
@@ -305,10 +321,11 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
         return time_at_berth
 
 
-    def assign_berth_to_vessel(self, vessel, origin, berth):
+    def assign_berth_to_vessel(self, vessel, origin, berth, delay = 0.):
+        delay = pd.Timedelta(seconds = delay)
         vessel.berth = berth
-        sailing_time_to_berth = self.determine_sailing_time_to_berth(vessel, origin, berth)
-        time_start = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds=sailing_time_to_berth)
+        sailing_time_to_berth = pd.Timedelta(seconds=self.determine_sailing_time_to_berth(vessel, origin, berth))
+        time_start = datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time_to_berth + delay
         time_at_berth = self.calculate_time_at_berth(vessel)
         time_stop = time_start + pd.Timedelta(seconds=time_at_berth)
         self.update_berth_planning(vessel, berth, time_start, time_stop)

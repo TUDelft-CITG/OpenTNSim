@@ -64,8 +64,8 @@ class HasPortAccess(Movable, Log):
             port = self.terminal.port
 
         berth = self.select_berth(origin)
-        yield from port.communicate_port_accessibility_info(self, origin, berth, leaving_port=leaving_port, parallel_process = parallel_process, loading = loading)
-
+        yield from port.communicate_port_accessibility_info(self, origin, berth, leaving_port=leaving_port,
+                                                            parallel_process=parallel_process, loading=loading)
 
     def select_berth(self, origin, leaving_port = False):
         berth = None
@@ -168,13 +168,24 @@ class IsPort(SimpyObject, Identifiable):
                 future_event = future_events.iloc[0]
                 if future_event.Combined and len(future_events) > 1:
                     vessel.berth.update_planning(vessel, new_release_time = future_event.name)
+                    self.update_terminal_planning(vessel)
+
                 waiting_time = future_event.name - current_time
             yield vessel.env.timeout(waiting_time.total_seconds())
 
 
-    def request_updated_resource_plannings(self, resources_requested = {}):
-        for resource in resources_requested.items():
-            pass
+    def find_vessel(self, id):
+        vessel = None
+        for vessel in self.env.vessels:
+            if vessel.id == id:
+                break
+        return vessel
+
+    def update_terminal_planning(self, vessel):
+        for queued_vessel_id,vessel_info in vessel.terminal.queue.iterrows():
+            queued_vessel = self.find_vessel(queued_vessel_id)
+            if queued_vessel.waiting_event.is_alive:
+                queued_vessel.waiting_event.interrupt()
 
 
     def communicate_port_accessibility_info(self, vessel, origin, berth = None, leaving_port = False, parallel_process = None, loading = False):
@@ -191,40 +202,48 @@ class IsPort(SimpyObject, Identifiable):
                 yield from self.communicate_vessel_to_wait(vessel, origin, waiting_events)
 
         else:
-            #Assign vessel to berth
-            vessel.terminal.assign_berth_to_vessel(vessel, origin, berth)
-
-            #Tides (already pre-calculated)
-            #Terminal (planning should be updated and can be updated)
-
-            #Move vessel to the anchorage area if required
+            total_waiting_time = 0.
             if len(waiting_events):
                 total_waiting_time = sum(waiting_events.values())
+
+            vessel.terminal.assign_berth_to_vessel(vessel, origin, berth, delay = total_waiting_time)
+
+            if total_waiting_time:
                 required_to_sail_to_anchorage_area = self.determine_if_vessel_needs_to_sail_to_the_anchorage_area(vessel, origin, total_waiting_time)
+                vessel.terminal.assign_vessel_to_queue(vessel,waiting_time=total_waiting_time,berth_name=berth.name)
                 if required_to_sail_to_anchorage_area:
                     yield from self.communicate_vessel_to_sail_to_anchorage(vessel, origin)
 
-                yield from self.communicate_vessel_to_wait(vessel, origin, waiting_events)
+                vessel.waiting_event = vessel.env.process(self.communicate_vessel_to_wait(vessel, origin, waiting_events, berth, leaving_port))
+                yield vessel.waiting_event
 
         yield from self.communicate_vessel_to_continue_trip(vessel)
 
 
-    def communicate_vessel_to_wait(self, vessel, origin, waiting_events):
-        waiting_event = self.env.event()
-        waiting_event.succeed()
-
-        for waiting_event_reason, waiting_event_time in waiting_events.items():
-            vessel.log_entry_v0(f"Waiting for {waiting_event_reason} start",
-                                vessel.env.now,
-                                vessel.distance,
-                                vessel.env.graph.nodes[origin]["geometry"])
-            yield vessel.env.timeout(waiting_event_time)
-            vessel.log_entry_v0(f"Waiting for {waiting_event_reason} stop",
-                                vessel.env.now,
-                                vessel.distance,
-                                vessel.env.graph.nodes[origin]["geometry"])
-
-        yield waiting_event
+    def communicate_vessel_to_wait(self, vessel, origin, waiting_events, berth=None, leaving_port=False):
+        interrupted = False
+        while True:
+            for waiting_event_reason, waiting_event_time in waiting_events.items():
+                waiting_event_reason = waiting_event_reason.split(' (')[0]
+                if not interrupted:
+                    vessel.log_entry_v0(f"Waiting for {waiting_event_reason} start",
+                                        vessel.env.now,
+                                        vessel.distance,
+                                        vessel.env.graph.nodes[origin]["geometry"])
+                interrupted = False
+                try:
+                    yield vessel.env.timeout(waiting_event_time)
+                except simpy.Interrupt:
+                    interrupted = True
+                    port_availability_df = self.get_accessibility_info(vessel, origin, berth, leaving_port=leaving_port)
+                    waiting_events = self.determine_vessel_waiting_events(vessel, port_availability_df, leaving_port)
+                    break
+                vessel.log_entry_v0(f"Waiting for {waiting_event_reason} stop",
+                                    vessel.env.now,
+                                    vessel.distance,
+                                    vessel.env.graph.nodes[origin]["geometry"])
+            if not interrupted:
+                break
 
 
     def determine_if_vessel_needs_to_sail_to_the_anchorage_area(self, vessel, origin, waiting_time):
@@ -274,16 +293,14 @@ class IsPort(SimpyObject, Identifiable):
         port_available_df = port_availability_df[port_availability_df['Combined'] == True]
         if port_available_df.empty:
             return None
-
         waiting_time_end = port_available_df.iloc[0].name
         waiting_events = port_availability_df.loc[:waiting_time_end]
         waiting_reasons = waiting_events['Reason'][:-1]
         waiting_times = (waiting_events.index.to_series().shift(-1) - waiting_events.index).apply(lambda x: x.total_seconds())
-
         waiting_events = {}
-        for waiting_reason, waiting_time in zip(waiting_reasons,waiting_times):
-            waiting_events[waiting_reason] = waiting_time
-
+        for index, (waiting_reason, waiting_time) in enumerate(zip(waiting_reasons,waiting_times)):
+            index += 1
+            waiting_events[waiting_reason + f' ({index})'] = waiting_time
         vessel.port_accessed = self
         return waiting_events
 
@@ -335,7 +352,8 @@ class IsPort(SimpyObject, Identifiable):
         port_availability_df = port_availability_df.sort_index()
         with pd.option_context("future.no_silent_downcasting", True):
             port_availability_df = port_availability_df.ffill()
-            port_availability_df = port_availability_df.ffill()
+        port_availability_df = port_availability_df[port_availability_df != port_availability_df.shift()].dropna(how='all')
+        port_availability_df = port_availability_df.ffill()
         return port_availability_df
 
 
