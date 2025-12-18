@@ -190,9 +190,9 @@ class WithCurrent:
           v_c = speed with current
           v_g = speed over ground
         """
-        v_g = getattr(self, "v", 0.0)
+        v_w = getattr(self, "v", 0.0)
         v_c = self.get_edge_current(edge)
-        v_w = v_g - v_c
+        v_g  = v_w + v_c
 
         self.v_w = v_w
         self.v_c = v_c
