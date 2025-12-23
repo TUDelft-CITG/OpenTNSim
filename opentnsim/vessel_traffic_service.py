@@ -967,8 +967,6 @@ class VesselTrafficService:
                                 'window_specifications':window_specifications,
                                 'tidal_accessibility':tidal_accessibility,
                                 'tidal_windows':tidal_windows}
-        # Store results in
-        vessel.tidal_window_calculations.append(tidal_window_results)
-        return tidal_accessibility, tidal_windows
+        return tidal_window_results
 
 

@@ -56,15 +56,6 @@ def copy_patch(patch, ax_target, zorder = None):
     ax_target.add_patch(new_patch)
 
 
-def check_if_route_contains_restrictions(self):
-    contains_restriction = False
-    for node in self.route:
-        if 'Vertical tidal restriction' in self.env.graph.nodes[node].keys():
-            contains_restriction = True
-            break
-    return contains_restriction
-
-
 def find_route_with_restrictions(self):
     routes_with_restrictions = []
     route_with_restriction = []
@@ -84,7 +75,7 @@ class HasDraughtRestrictions:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.bound = 'inbound'
-        self.tidal_window_calculations = []
+        self.tidal_window_calculations = {}
 
 
     def create_plot_vertical_tidal_window(self, trip_index = 0, plot = False):
