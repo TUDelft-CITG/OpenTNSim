@@ -1,7 +1,10 @@
 from opentnsim.port.utils import transform_geometry, transform_route_geometry
 
+import xarray as xr
 import networkx as nx
 import numpy as np
+import pyproj
+import pandas as pd
 import matplotlib.dates as mdates
 from scipy.interpolate import interp1d
 
@@ -11,6 +14,53 @@ def calculate_total_waiting_time(waiting_events):
         total_waiting_time = sum(waiting_events.values())
     return total_waiting_time
 
+
+def calculate_inerpolated_water_levels_over_network(graph, hydrodynamic_data, method = 'nearest'):
+    geod = pyproj.Geod(ellps="WGS84")
+    distances_to_measurement_stations = pd.DataFrame(columns=(hydrodynamic_data.STATION.values))
+    stations = hydrodynamic_data.STATION.values
+    for node in graph.nodes:
+        node_info = graph.nodes[node]
+        geometry = node_info['geometry']
+        longitude, latitude = geometry.coords.xy
+        distances_to_station_m = []
+        for station_meas, (_, geometry_meas) in zip(stations, hydrodynamic_data.attrs.items()):
+            longitude_meas, latitude_meas = geometry_meas.coords.xy
+            _, _, distance_to_station_m = geod.inv(longitude, latitude, longitude_meas, latitude_meas)
+            distances_to_station_m.append(distance_to_station_m[0])
+        distances_to_measurement_stations.loc[node, :] = distances_to_station_m
+
+    distances_to_measurement_stations['distance_min'] = distances_to_measurement_stations.min(axis=1)
+    interpolatable_nodes = distances_to_measurement_stations[distances_to_measurement_stations['distance_min'] < 50000]
+
+    if method == 'nearest':
+        node_arrays = {}
+        nearest_df = interpolatable_nodes.drop(columns="distance_min").idxmin(axis=1)
+        nearest_station = nearest_df.to_dict()
+        for node, station in nearest_station.items():
+            node_arrays[node] = hydrodynamic_data['Water level'].sel({'STATION': station})
+        hydrodynamic_data_nodes = xr.concat(list(node_arrays.values()), dim='STATION')
+        hydrodynamic_data_nodes = hydrodynamic_data_nodes.transpose('TIME', 'STATION')
+
+
+    elif method == 'weighted':
+        dist = interpolatable_nodes[stations]
+        power = 2
+
+        weights = 1 / dist ** power
+        weights_df = weights.div(weights.sum(axis=1), axis=0)
+
+        weights_xr = xr.DataArray(
+            weights_df.values,
+            dims=("Node", "STATION"),
+            coords={"Node": weights.index, "STATION": weights.columns}
+        )
+
+        hydrodynamic_data_nodes = xr.dot(hydrodynamic_data['Water level'], weights_xr, dims="STATION")
+        hydrodynamic_data_nodes = hydrodynamic_data_nodes.rename({'Node': 'STATION'})
+    hydrodynamic_data = xr.Dataset()
+    hydrodynamic_data['Water level'] = hydrodynamic_data_nodes
+    return hydrodynamic_data
 
 def calculate_depth_values_over_route(env, node_start, node_stop, offset = 500):
     hydrodynamic_data = env.vessel_traffic_service.hydrodynamic_information

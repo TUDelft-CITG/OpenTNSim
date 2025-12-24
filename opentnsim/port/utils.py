@@ -21,10 +21,14 @@ def create_logbook_with_directed_distances(vessel):
     first_index = 0
     df = pd.DataFrame(vessel.logbook)
     corrected_df = pd.DataFrame()
+
     for index, route in enumerate(vessel.routes_sailed):
         mask = df.index > first_index
         mask2 = df[mask].Message.apply(lambda x: route[-1] in x and 'stop' in x)
-        last_index = df[mask][mask2].iloc[0].name
+        last_index_df = df[mask][mask2]
+        if last_index_df.empty:
+            continue
+        last_index = last_index_df.iloc[0].name
         df_route = df[(df.index >= first_index) & (df.index <= last_index)]
         maximum_sailed_distance = df_route.Value.max()
         if index == 1:
@@ -157,6 +161,8 @@ def get_accessibility_info(vessel, origin, berth = None, leaving_port = False):
     port_availability_df = port_availability_df[port_availability_df != port_availability_df.shift()].dropna(how='all')
     with pd.option_context("future.no_silent_downcasting", True):
         port_availability_df = port_availability_df.ffill()
+    with pd.option_context("future.no_silent_downcasting", True):
+        port_availability_df = port_availability_df.bfill()
     return port_availability_df, priority
 
 

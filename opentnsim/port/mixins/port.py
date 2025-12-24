@@ -97,11 +97,13 @@ class IsPort(SimpyObject, Identifiable):
         self.env.ports.append(self)
 
 
-    def plan_vessel_trip(self, vessel, origin, berth=None, leaving_port=False):
+    def plan_vessel_trip(self, vessel, origin, berth=None, leaving_port=False, process_stop_time = pd.Timestamp('NaT')):
         port_availability_df, priority = get_accessibility_info(vessel, origin, berth, leaving_port=leaving_port)
         waiting_events = determine_vessel_waiting_events(self, vessel, port_availability_df)
+        current_time = datetime.datetime.fromtimestamp(vessel.env.now)
         total_waiting_time = calculate_total_waiting_time(waiting_events)
-
+        if leaving_port and not pd.isna(process_stop_time):
+            total_waiting_time = (process_stop_time-current_time).total_seconds()
         passing_waterways = find_waterways_to_be_passed(vessel)
         for waterway in passing_waterways.values():
             waterway.add_vessel_to_passing_vessels(vessel, origin, delay=total_waiting_time, priority=priority)
@@ -116,10 +118,10 @@ class IsPort(SimpyObject, Identifiable):
 
 
     def communicate_port_accessibility_info(self, vessel, origin, berth = None, leaving_port = False, parallel_process = None, process_stop_time = pd.Timestamp('NaT')):
+        port_availability_df, priority, waiting_events, total_waiting_time = self.plan_vessel_trip(vessel, origin, berth, leaving_port, process_stop_time)
+
         if not parallel_process is None:
             yield from self.communicate_vessel_to_hold_position(vessel, origin, parallel_process,leaving_port=leaving_port, process_stop_time = process_stop_time)
-
-        port_availability_df, priority, waiting_events, total_waiting_time = self.plan_vessel_trip(vessel, origin, berth, leaving_port)
 
         # if trip is not possible: stop vessel
         if waiting_events is None:
@@ -203,9 +205,6 @@ class IsPort(SimpyObject, Identifiable):
         while not parallel_process.processed:
             port_availability_df, _ = get_accessibility_info(vessel, origin, leaving_port=leaving_port)
             port_availability_df['Combined'] = port_availability_df.all(axis=1)
-            with pd.option_context("future.no_silent_downcasting", True):
-                port_availability_df = port_availability_df.ffill()
-
             if pd.isna(process_stop_time):
                 process_stop_time = datetime.datetime.fromtimestamp(vessel.env.now)
             current_time = datetime.datetime.fromtimestamp(vessel.env.now)

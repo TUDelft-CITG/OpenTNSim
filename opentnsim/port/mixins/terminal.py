@@ -93,7 +93,7 @@ class HasTerminal(Movable):
         self.route = new_route
         self.bound = 'outbound'
         current_time = datetime.datetime.fromtimestamp(self.env.now)
-        process_stop_time = current_time + pd.Timedelta(seconds=self.loading_time*3600)
+        process_stop_time = current_time + pd.Timedelta(seconds=self.loading_time*3600 + self.deberthing_time*60)
         loading_process = self.env.timeout(self.loading_time*3600)
         negotiate_port_exit = self.env.process(self.request_port_exit(origin, parallel_process=loading_process, process_stop_time = process_stop_time))
         yield loading_process | negotiate_port_exit
