@@ -3,10 +3,13 @@ import pandas as pd
 import numpy as np
 import networkx as nx
 import pyproj
+import shapely
 from shapely.ops import transform
 from pyproj import Transformer
+from opentnsim.port.calculations import calculate_tidal_windows
 from IPython.display import display
 pd.options.mode.chained_assignment = None
+
 
 def get_vessel_from_id(env, vessel_ids):
     vessels = []
@@ -216,11 +219,12 @@ def get_tidal_availability_info(vessel):
     if vessel.trip_index in vessel.tidal_window_calculations.keys() and len(vessel.tidal_window_calculations[vessel.trip_index]):
         df_tidal_availability = vessel.tidal_window_calculations[vessel.trip_index]['tidal_accessibility']
     elif has_tidal_window_policy:
-        tidal_window_results = vessel.env.vessel_traffic_service.provide_tidal_windows(vessel, route, time_start, time_end)
+        tidal_window_results = calculate_tidal_windows(vessel, route, time_start, time_end)
         df_tidal_availability = tidal_window_results['tidal_accessibility']
         vessel.tidal_window_calculations[vessel.trip_index] = tidal_window_results
     df_tidal_availability['Tide'] = df_tidal_availability['Accessibility'] == 'Accessible'
     return df_tidal_availability[['Tide']]
+
 
 def provide_trajectory(env, node_1, node_2):
     nodes = nx.dijkstra_path(env.graph, node_1, node_2)
@@ -233,14 +237,99 @@ def provide_trajectory(env, node_1, node_2):
             final_geometry = geom
     return final_geometry
 
-def transform_geometry(geometry, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
-    proj_in = pyproj.CRS(crs_in)
-    proj_out = pyproj.CRS(crs_out)
-    transformer = Transformer.from_crs(proj_in, proj_out, always_xy=True)
-    geometry_transformed = transform(transformer.transform,geometry)
-    return geometry_transformed
 
-def transform_route_geometry(env, node_start, node_stop, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
-    route_geometry = provide_trajectory(env, node_start, node_stop)
-    route_geometry_transformed = transform_geometry(route_geometry, crs_in, crs_out)
-    return route_geometry_transformed
+def provide_waiting_time_for_inbound_tidal_window(vessel, route, time_start=None, time_stop=None, delay=0):
+    """Function: calculates the time that a vessel has to wait depending on the available tidal windows
+
+    Input:
+        - vessel: an identity which is Identifiable, Movable, and Routeable, and has VesselProperties
+        - route: a list of strings that resemble the route of the vessel (can be different than the vessel.route)
+        - delay: a delay that can be included to calculate a future situation
+
+    """
+
+    # Create sub-routes based on anchorage areas on the route
+    if not time_start:
+        time_start = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now)).to_datetime64()
+    if not time_stop:
+        time_stop = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + pd.Timedelta(days=2).total_seconds())).to_datetime64()
+
+    _, tidal_windows = calculate_tidal_windows(vessel, route, time_start, time_stop, delay)
+
+    waiting_time = pd.Timedelta('NaT')
+    for window in tidal_windows:
+        if time_start > window[1]:
+            continue
+        if time_start >= window[0]:
+            waiting_time = pd.Timedelta(0, "s")
+        else:
+            waiting_time = window[0] - time_start
+        break
+
+    waiting_time = waiting_time.total_seconds()
+    return waiting_time
+
+def provide_waiting_time_for_outbound_tidal_window(vessel, route, delay=0):
+    vessel.bound = "outbound"
+    vessel._T -= vessel.metadata["(un)loading"][0]
+    waiting_time = provide_waiting_time_for_inbound_tidal_window(vessel, route=route, delay=delay)
+    vessel._T += vessel.metadata["(un)loading"][0]
+    vessel.bound = "inbound"
+    return waiting_time
+
+def provide_nearest_anchorage_area(env, vessel, node):
+    nodes_of_anchorages = []
+    capacity_of_anchorages = []
+    users_of_anchorages = []
+    sailing_times_to_anchorages = []
+    # Loop over the nodes of the network and identify all the anchorage areas:
+    for node_anchorage in vessel.multidigraph.nodes:
+        if "Anchorage Area" in vessel.multidigraph.nodes[node_anchorage]:
+            # Determine if the anchorage area can be reached
+            anchorage_reachable = True
+            route_to_anchorage = nx.dijkstra_path(vessel.multidigraph, node, node_anchorage)
+            for node_on_route in route_to_anchorage:
+                station_index = list(env.vessel_traffic_service.hydrodynamic_information["STATION"]).index(node_on_route)
+                min_water_level = np.min(env.vessel_traffic_service.hydrodynamic_information["Water level"][station_index].values)
+                _, _, _, required_water_depth, _, MBL = provide_ukc_clearance(vessel, node)
+                if min_water_level + MBL < required_water_depth:
+                    anchorage_reachable = False
+                    break
+
+            if not anchorage_reachable:
+                continue
+
+            # Extract information over the individual anchorage areas:
+            # capacity, users, and the sailing distance to the anchorage area
+            # from the designated terminal the vessel is planning to call
+            nodes_of_anchorages.append(node_anchorage)
+            capacity_of_anchorages.append(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.capacity)
+            users_of_anchorages.append(len(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.users))
+            route_from_anchorage = nx.dijkstra_path(vessel.multidigraph, node_anchorage, vessel.route[-1])
+            sailing_time_to_anchorage = vessel.env.vessel_traffic_service.provide_sailing_time(vessel, route_from_anchorage)[
+                "Time"
+            ].sum()
+            sailing_times_to_anchorages.append(sailing_time_to_anchorage)
+
+    # Sort the lists based on the sailing distance to the anchorage area from the designated terminal
+    #  the vessel is planning to call
+    sorted_nodes_anchorages = [nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, nodes_of_anchorages))]
+    sorted_users_of_anchorages = [nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, users_of_anchorages))]
+    sorted_capacity_of_anchorages = [
+        nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, capacity_of_anchorages))
+    ]
+
+    # Take the anchorage area that is closest to the designated terminal the vessel is planning to call if there
+    # is sufficient capacity:
+    node_anchorage = 0
+    for anchorage_index, node_anchorage in enumerate(sorted_nodes_anchorages):
+        if sorted_users_of_anchorages[anchorage_index] < sorted_capacity_of_anchorages[anchorage_index]:
+            # node anchorage is found
+            break
+
+    return node_anchorage
+
+
+
+
+

@@ -2,7 +2,7 @@ from opentnsim.core import  HasResource, Identifiable, Locatable, Log, HasLength
 from opentnsim.output import HasOutput
 from opentnsim.graph import OnNode, OnEdge
 from opentnsim.core.capacity import PriorityFilterStore
-from opentnsim.port.mixins.port import IsPartofPort
+from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.mixins.berth import IsQuay, IsJetty, IsBerth
 from opentnsim.port.utils import determine_new_route_for_vessel, get_vessel_from_id
 
@@ -138,7 +138,7 @@ class HasBerthPlanning:
         super().__init__(*args, **kwargs)
 
 
-class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPartofPort, HasOutput):
+class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput):
 
     def __init__(self, env, berths, *args,**kwargs):
         """ Creates a terminal

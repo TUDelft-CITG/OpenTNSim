@@ -23,9 +23,9 @@ def merge_figures(fig1, fig2):
     return new_fig, new_ax
 
 
-def plot_vessels_over_route(env, node_start, node_stop, vessels,
+def plot_vessels_over_route(env, node_start, node_stop, vessels, ddistance=1000,
                             xmin=None, xmax = None, ymin = None, ymax = None, zmin=0, zmax = 15, dz = 1, levels = []):
-    interpolated_distance, node_times_num, interpolated_depth = calculate_interpolated_depth_values(env, node_start, node_stop)
+    interpolated_distance, node_times_num, interpolated_depth = calculate_interpolated_depth_values(env, node_start, node_stop, ddistance)
 
     fig, ax = plt.subplots()
     plt.close()

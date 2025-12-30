@@ -1,7 +1,7 @@
 from opentnsim.core import HasResource, Identifiable, Log, Locatable, Movable
 from opentnsim.output import HasOutput
 from opentnsim.waiting_area import IsWaitingArea
-from opentnsim.port.mixins.port import IsPartofPort
+from opentnsim.port.mixins.port import IsPortComponent
 
 import simpy
 import pandas as pd
@@ -78,7 +78,7 @@ class PassesAnchorage(Movable):
         return anchorage_area
 
 
-class IsAnchorage(IsWaitingArea, IsPartofPort, HasOutput):
+class IsAnchorage(IsWaitingArea, IsPortComponent, HasOutput):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
             creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
 

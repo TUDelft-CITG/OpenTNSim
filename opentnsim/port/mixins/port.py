@@ -17,7 +17,7 @@ from IPython.display import display
 import matplotlib.pyplot as plt
 pd.options.mode.chained_assignment = None
 
-class IsPartofPort:
+class IsPortComponent:
     def __init__(self, port, *args, **kwargs):
         if not isinstance(port,IsPort):
             raise ValueError("'port' should be an IsPort-object")
@@ -81,20 +81,9 @@ class HasPortAccess(Movable, Log):
         return fig
 
 
-class IsPort(SimpyObject, Identifiable):
-    def __init__(self, port_entry_nodes, *args, **kwargs):
+class IsPortAuthority:
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.port_entry_nodes = port_entry_nodes
-        if not len(self.port_entry_nodes):
-            raise ValueError('The port will not be accessible for vessels. It needs port entry_nodes')
-        for port_entry_node in self.port_entry_nodes:
-            IsPortEntry(env=self.env,node=port_entry_node,port=self)
-        self.anchorage_areas = []
-        self.terminals = []
-        self.env.vessels = []
-        if 'ports' not in dir(self.env):
-            self.env.ports = []
-        self.env.ports.append(self)
 
 
     def plan_vessel_trip(self, vessel, origin, berth=None, leaving_port=False, process_stop_time = pd.Timestamp('NaT')):
@@ -237,12 +226,27 @@ class IsPort(SimpyObject, Identifiable):
         yield from []
 
 
+class IsPort(IsPortAuthority, SimpyObject, Identifiable):
+    def __init__(self, port_entry_nodes, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.port_entry_nodes = port_entry_nodes
+        if not len(self.port_entry_nodes):
+            raise ValueError('The port will not be accessible for vessels. It needs port entry_nodes')
+        for port_entry_node in self.port_entry_nodes:
+            IsPortEntry(env=self.env,node=port_entry_node,port=self)
+        self.anchorage_areas = []
+        self.terminals = []
+        self.env.vessels = []
+        if 'ports' not in dir(self.env):
+            self.env.ports = []
+        self.env.ports.append(self)
+
     def plot_vessels(self, vessels = None):
         fig = plot_vessels(self.env,vessels)
         return fig
 
 
-class IsPortEntry(SimpyObject, OnNode, IsPartofPort):
+class IsPortEntry(SimpyObject, OnNode, IsPortComponent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env.graph.nodes[self.node]['Port Entry'] = self

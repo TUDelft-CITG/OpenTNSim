@@ -9,13 +9,6 @@ from IPython.display import display
 from opentnsim.port.mixins.rules import Expr, AggregateExpr, ComparisonExpr
 from opentnsim.port.utils import get_vessel_from_id
 
-class IsPartofWaterway:
-    def __init__(self, waterway, *args, **kwargs):
-        if not isinstance(port,IsPort):
-            raise ValueError("'port' should be an IsPort-object")
-        self.waterway = waterway
-        super().__init__(*args, **kwargs)
-
 
 class PassesWaterway:
     def __init__(self, *args, **kwargs):
