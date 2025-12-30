@@ -5,6 +5,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pyproj
+from pyproj.transformer import Transformer
 from scipy.interpolate import interp1d
 from shapely.ops import linemerge, transform
 from shapely.geometry import LineString, MultiLineString
@@ -19,10 +20,10 @@ def provide_trajectory(graph, node_1, node_2):
         multigraph = True
     for loc, edge in enumerate(zip(nodes[:-1], nodes[1:])):
         if multigraph:
-            k = sorted(multidigraph[edge[0]][edge[1]], key=lambda x: multidigraph[edge[0]][edge[1]][x]["geometry"].length)[0]
-            geom = multidigraph.edges[edge[0], edge[1], k]["geometry"]
+            k = sorted(graph[edge[0]][edge[1]], key=lambda x: graph[edge[0]][edge[1]][x]["geometry"].length)[0]
+            geom = graph.edges[edge[0], edge[1], k]["geometry"]
         else:
-            geom = multidigraph.edges[edge[0], edge[1]]["geometry"]
+            geom = graph.edges[edge[0], edge[1]]["geometry"]
 
         if not loc:
             final_geometry = geom
@@ -43,7 +44,7 @@ def transform_geometry(geometry, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
 
 
 def transform_route_geometry(env, node_start, node_stop, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
-    route_geometry = provide_trajectory(env, node_start, node_stop)
+    route_geometry = provide_trajectory(env.graph, node_start, node_stop)
     route_geometry_transformed = transform_geometry(route_geometry, crs_in, crs_out)
     return route_geometry_transformed
 
@@ -771,7 +772,6 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
         t_boundaries.append(time_correction_index)
 
-    display(net_ukc)
     min_net_ukc = net_ukc.min(axis=1).min()
     net_ukc_corrected = net_ukc.copy()
     window = False

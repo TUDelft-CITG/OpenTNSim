@@ -318,7 +318,10 @@ class Movable(Locatable, Routable, Log):
             except simpy.exceptions.Interrupt as e:
                 break
 
-            yield from self.complete_pass_edge(self.next_node)
+            try:
+                yield from self.complete_pass_edge(self.next_node)
+            except simpy.exceptions.Interrupt as e:
+                break
 
             # we arrived at destination
             # update to new position

@@ -241,8 +241,8 @@ class IsPort(IsPortAuthority, SimpyObject, Identifiable):
             self.env.ports = []
         self.env.ports.append(self)
 
-    def plot_vessels(self, vessels = None):
-        fig = plot_vessels(self.env,vessels)
+    def plot_vessels(self, node_start, node_stop, *args, **kwargs):
+        fig = plot_vessels_over_route(self.env, node_start, node_stop, self.env.vessels, *args, **kwargs)
         return fig
 
 

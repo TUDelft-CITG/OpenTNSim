@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import pickle
-# import netCDF4
+
 from shapely import reverse
 from shapely.ops import transform
 from opentnsim import core
@@ -97,24 +97,24 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         self.horizontal_tidal_restrictions_condition_df = self.horizontal_tidal_restrictions_condition_df.reset_index(drop=True)
         self.vertical_tidal_restrictions_condition_df = self.vertical_tidal_restrictions_condition_df.reset_index(drop=True)
 
-        if self.hydrodynamic_information_path is not None:
+        if True:
             hydro_manager = HydrodynamicDataManager()
             if isinstance(hydrodynamic_information_path,str):
-                hydro_manager.hydrodynamic_data = netCDF4.Dataset(self.hydrodynamic_information_path)
+                hydro_manager.hydrodynamic_data = xr.Dataset(self.hydrodynamic_information_path)
             else:
                 hydro_manager.hydrodynamic_data = hydrodynamic_information
 
             self.hydrodynamic_start_time = hydrodynamic_start_time
             if isinstance(hydrodynamic_information_path, str):
                 self.hydrodynamic_times = hydro_manager.hydrodynamic_times = (
-                    hydro_manager.hydrodynamic_data["TIME"][:].data.astype("timedelta64[m]") + hydrodynamic_start_time
+                    hydro_manager.hydrodynamic_data["TIME"].values + hydrodynamic_start_time
                 )
             else:
-                self.hydrodynamic_times = hydro_manager.hydrodynamic_data["TIME"][:]
+                self.hydrodynamic_times = hydro_manager.hydrodynamic_times = hydro_manager.hydrodynamic_data["TIME"].values
 
-        if isinstance(vessel_speed_information_path, str):
-            with open(vessel_speed_information_path, "rb") as file:
-                self.restricted_vessel_speeds = pickle.load(file)
+            if isinstance(vessel_speed_information_path, str):
+                with open(vessel_speed_information_path, "rb") as file:
+                    self.restricted_vessel_speeds = pickle.load(file)
 
         super().__init__(*args, **kwargs)
 
@@ -692,8 +692,8 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         time_index = np.absolute(
             hydromanager.hydrodynamic_times - pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + delay)).to_datetime64()
         ).argmin()
-        water_level = hydromanager.hydrodynamic_data["Water level"][time_index, node_index].data
-        MBL = hydromanager.hydrodynamic_data["MBL"][time_index, node_index].data
+        water_level = hydromanager.hydrodynamic_data["Water level"][node_index, time_index].values
+        MBL = hydromanager.hydrodynamic_data["MBL"][node_index, time_index].values
         available_water_depth = water_level - MBL
         return MBL,water_level,available_water_depth
 

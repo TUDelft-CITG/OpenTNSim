@@ -14,7 +14,8 @@ import pandas as pd
 
 # OpenTNSim
 import opentnsim
-from opentnsim.graph.mixins import calculate_distance, calculate_depth
+from opentnsim.graph.calculations import calculate_distance
+from opentnsim.graph.mixins import calculate_depth
 from opentnsim.energy.algorithms import power2v
 from opentnsim.energy.calculations import (
     sample_engine_age,

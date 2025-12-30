@@ -60,7 +60,7 @@ class HasOutput:
             self.output["visited_lock_chambers"] = []
 
         elif self.__class__.__name__ == "IsTerminal" or self.__class__.__name__ == "IsJettyTerminal":
-            for berth in [berth.name for berth in self.resource.items]:
+            for berth in [berth.name for berth in self.berths.items]:
                 # Visit-dependent output
                 self.output[berth] = {}
                 self.output[berth]["vessel_information"] = {}

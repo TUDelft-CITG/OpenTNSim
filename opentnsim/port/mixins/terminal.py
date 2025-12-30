@@ -37,11 +37,10 @@ class HasTerminal(Movable):
         self.next_loading_times = next_loading_times
         self.next_deberthing_times = next_deberthing_times
         super().__init__(*args, **kwargs)
-        self.on_complete_edge_functions.append(self.pass_terminal)
+        self.on_complete_pass_edge_functions.append(self.pass_terminal)
 
 
-    def pass_terminal(self, origin, destination):
-        # origin (although not used) is needed as this is a 'complete edge'-function
+    def pass_terminal(self, destination):
         if 'Berth' not in self.env.graph.nodes[destination].keys():
             return
 
