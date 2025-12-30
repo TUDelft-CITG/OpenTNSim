@@ -1,7 +1,6 @@
-from opentnsim.core import  HasResource, Identifiable, Locatable, Log, HasLength, Movable, SimpyObject
+from opentnsim.core import  HasResource, Identifiable, Locatable, Log, HasLength, Movable, SimpyObject, PriorityFilterStore
 from opentnsim.output import HasOutput
-from opentnsim.graph import OnNode, OnEdge
-from opentnsim.core.capacity import PriorityFilterStore
+from opentnsim.graph.mixins import OnNode, OnEdge
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.mixins.berth import IsQuay, IsJetty, IsBerth
 from opentnsim.port.utils import determine_new_route_for_vessel, get_vessel_from_id

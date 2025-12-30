@@ -288,6 +288,18 @@ def gdf_to_nx(gdf):
     return graph
 
 
+class OnNode:
+    def __init__(self, node, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.node = node
+
+
+class OnEdge:
+    def __init__(self, edge, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.edge = edge
+
+
 class Node(Identifiable, Locatable):
 
     def __init__(self, *args, **kwargs):

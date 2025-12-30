@@ -1,5 +1,5 @@
 from opentnsim.core import  HasResource, Identifiable, Log, HasLength, Movable
-from opentnsim.graph import OnNode, OnEdge
+from opentnsim.graph.mixins import OnNode, OnEdge
 
 import numpy as np
 import pandas as pd
