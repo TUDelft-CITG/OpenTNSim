@@ -300,7 +300,10 @@ class Movable(Locatable, Routable, Log):
             # update current position
             self.update_position(index)
 
-            yield from self.pass_node(self.current_node)
+            try:
+                yield from self.pass_node(self.current_node)
+            except simpy.exceptions.Interrupt as e:
+                break
 
             # are we already at destination?
             if self.next_node == self.current_node:
@@ -310,7 +313,11 @@ class Movable(Locatable, Routable, Log):
                 )
                 continue
 
-            yield from self.pass_edge(self.current_node, self.next_node)
+            try:
+                yield from self.pass_edge(self.current_node, self.next_node)
+            except simpy.exceptions.Interrupt as e:
+                break
+
             yield from self.complete_pass_edge(self.next_node)
 
             # we arrived at destination
