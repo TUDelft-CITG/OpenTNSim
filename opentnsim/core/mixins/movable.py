@@ -28,7 +28,7 @@ import datetime
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
-from opentnsim.core.container import HasContainer
+from opentnsim.core import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
 from opentnsim.graph.mixins import get_length_of_edge
 

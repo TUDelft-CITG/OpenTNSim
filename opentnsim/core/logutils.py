@@ -138,8 +138,12 @@ def logbook2eventtable(objs):
 
     # construct all logged events
     events = []
+    eventtable = pd.DataFrame(columns=["object id", "object name", "activity name", "start location", "stop location",
+                                       "start time", "stop time", "distance (m)", "duration (s)"])
     for obj in objs:
         df = pd.DataFrame.from_dict(obj.logbook)
+        if df.empty:
+            continue
         df.sort_values(by="Timestamp", inplace=True)
 
         for i in range(0, len(df)):
@@ -177,6 +181,6 @@ def logbook2eventtable(objs):
             )
 
     # Final DataFrame
-    eventtable = pd.DataFrame(events)
-
+    if len(events):
+        eventtable = pd.DataFrame(events)
     return eventtable

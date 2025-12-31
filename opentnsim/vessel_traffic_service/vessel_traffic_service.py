@@ -29,7 +29,7 @@ from opentnsim import core
 from opentnsim import model
 from opentnsim.graph.mixins import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
 from opentnsim.graph import mixins
-from opentnsim.vessel_traffic_service.hydrodanamic_data_manager import HydrodynamicDataManager
+from opentnsim.hydrodanamic_data_manager import HydrodynamicDataManager
 
 # spatial libraries
 import networkx as nx
@@ -59,7 +59,7 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         self.graph = graph
 
         if isinstance(hydrodynamic_information, xr.Dataset):
-            self.hydrodynamic_information_path = False
+            self.hydrodynamic_information_path = True
         if isinstance(vessel_speed_information, xr.Dataset):
             self.vessel_speeds = vessel_speed_information
 
@@ -97,7 +97,7 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         self.horizontal_tidal_restrictions_condition_df = self.horizontal_tidal_restrictions_condition_df.reset_index(drop=True)
         self.vertical_tidal_restrictions_condition_df = self.vertical_tidal_restrictions_condition_df.reset_index(drop=True)
 
-        if True:
+        if self.hydrodynamic_information_path is not None:
             hydro_manager = HydrodynamicDataManager()
             if isinstance(hydrodynamic_information_path,str):
                 hydro_manager.hydrodynamic_data = xr.Dataset(self.hydrodynamic_information_path)

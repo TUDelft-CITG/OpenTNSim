@@ -10,7 +10,7 @@ from opentnsim.core import HasResource, Identifiable, Log, HasLength, ExtraMetad
 from opentnsim.utils import time_to_numpy
 from opentnsim.lock.calculations import calculate_z, levelling_time_equation
 from opentnsim.lock.utils import _get_lock_operation_to_and_from_node
-from opentnsim.vessel_traffic_service.hydrodanamic_data_manager import HydrodynamicDataManager
+from opentnsim.hydrodanamic_data_manager import HydrodynamicDataManager
 from opentnsim.output import HasOutput
 from opentnsim.graph.mixins import HasMultiDiGraph, get_length_of_edge
 from opentnsim.constants import knots

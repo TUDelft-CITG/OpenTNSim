@@ -31,7 +31,7 @@ class IsBerth(OnNode, Identifiable, Log):
 
     def __init__(self, berth_length, depth, *args, **kwargs):
         self.depth = depth
-        self.length = berth_length
+        self.berth_length = berth_length
         super().__init__(*args, **kwargs)
         add_berth_to_graph(self)
         self.historic_berth_planning = pd.DataFrame(data={0: [None, None], berth_length: [None, None]},
@@ -46,9 +46,9 @@ class IsBerth(OnNode, Identifiable, Log):
             position_start = quay_position.Distance_start + 0.001
             position_stop = quay_position.Distance_stop - 0.001
         elif isinstance(self,IsJetty):
-            gap = (self.length - vessel.L) / 2
+            gap = (self.berth_length - vessel.L) / 2
             position_start = gap
-            position_stop = self.length - gap
+            position_stop = self.berth_length - gap
 
         if not leaving:
             if position_start not in self.historic_berth_planning.columns:
@@ -118,7 +118,7 @@ class IsBerth(OnNode, Identifiable, Log):
                     quay_position_over_time[quay_position_over_time_polygons.vertices, 1], )
 
         plt.gca().yaxis_date()
-        plt.xlim(0,self.length)
+        plt.xlim(0,self.berth_length)
         plt.ylabel("Time")
         if isinstance(self, IsQuay):
             plt.xlabel("Quay length [m]")
@@ -264,10 +264,10 @@ class IsQuay(IsBerth, HasLength):
                                              'Time_stop': [None]})
                 self.availability_quay_positions = pd.concat([self.availability_quay_positions.iloc[:next_quay_position], new_position, self.availability_quay_positions.iloc[next_quay_position:]])
 
-        elif length_claimed != self.length:
-            length = self.length - length_claimed
+        elif length_claimed != self.berth_length:
+            length = self.berth_length - length_claimed
             new_position = pd.DataFrame({'Distance_start': self.availability_quay_positions.loc[quay_position, 'Distance_stop'],
-                                         'Distance_stop':  self.length,
+                                         'Distance_stop':  self.berth_length,
                                          'Length_available': [length],
                                          'Occupant': [None],
                                          'Time_start': [None],
@@ -281,7 +281,7 @@ class IsQuay(IsBerth, HasLength):
 
         # Claim length of resource so that the level equals the berth position with the largest length (unless it has not changed)
         if old_level != new_level:
-            yield self.resource.get(old_level - new_level)
+            yield self.length.get(old_level - new_level)
 
 
     def remove_vessel_from_planning(self, position):
@@ -328,4 +328,4 @@ class IsQuay(IsBerth, HasLength):
 
         # Put back length to resource so that the level equals the berth position with the largest length (unless it has not changed)
         if old_level != new_level:
-            yield self.resource.put(new_level - old_level)
+            yield self.length.put(new_level - old_level)

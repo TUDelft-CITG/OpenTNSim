@@ -1,7 +1,21 @@
 # config.py
 import numpy as np
-
 import xarray as xr
+import warnings
+from opentnsim.core import SimpyObject
+
+class HydrodynamicData(SimpyObject):
+
+    def __init__(self, hydrodynamic_data: xr.Dataset):
+        self.hydrodynamic_data = hydrodynamic_data
+        super().__init__(*args, **kwargs)
+        if not hasattr(self.env,'graph'):
+            raise InputError("A graph needs to be added to the environment as env.graph = graph")
+
+        accepted_data_variables = ['Water level','Current velocity','Current direction','Nautical depth']
+        for data_variable in list(self.hydrodynamic_data.data_vars):
+            if data_variable not in accepted_data_variables:
+                warnings.warn(f"Data column {data_variable} is not used in the simulation")
 
 class HydrodynamicDataManager:
     """

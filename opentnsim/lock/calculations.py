@@ -3,7 +3,7 @@
 import numpy as np
 from opentnsim.utils import time_to_numpy
 from opentnsim.constants import gravitational_acceleration
-from opentnsim.vessel_traffic_service.hydrodanamic_data_manager import HydrodynamicDataManager
+from opentnsim.hydrodanamic_data_manager import HydrodynamicDataManager
 
 
 def calculate_z(

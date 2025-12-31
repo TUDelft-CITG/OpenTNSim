@@ -1,11 +1,11 @@
 from openclsim.core import Identifiable, Locatable, Log, SimpyObject
 
-from .container import HasContainer
+from .mixins.container import HasContainer
+from .mixins.movable import ContainerDependentMovable, Movable, Routable, Routeable
+from .mixins.resource import HasResource, HasLength, PriorityFilterStore
+from .mixins.vessel_properties import HasLoad, VesselProperties
 from .misc import ExtraMetadata, Neighbours
-from .movable import ContainerDependentMovable, Movable, Routable, Routeable
-from .resource import HasResource, HasLength, PriorityFilterStore
-from .vessel_properties import HasLoad, VesselProperties
-from . import logutils, plotutils
+from . import logutils, visualizations
 
 __all__ = [
     "Identifiable",
@@ -25,5 +25,5 @@ __all__ = [
     "HasLoad",
     "VesselProperties",
     "logutils",
-    "plotutils",
+    "visualizations",
 ]

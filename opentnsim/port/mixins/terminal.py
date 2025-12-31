@@ -125,7 +125,7 @@ class HasBerthPlanning:
 
     def __init__(self, *args, **kwargs):
         berth_names = [berth.name for berth in self.berths.items]
-        berth_capacities = [berth.length if isinstance(berth, IsQuay) else 1 for berth in self.berths.items]
+        berth_capacities = [berth.berth_length if isinstance(berth, IsQuay) else 1 for berth in self.berths.items]
         self.berth_planning = pd.DataFrame(columns=berth_names)
         self.berth_planning.loc[self.env.simulation_start] = berth_capacities
         self.berth_planning.loc[self.env.simulation_stop] = berth_capacities
@@ -221,7 +221,7 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput
     def determine_potential_available_berths(self, vessel):
         berth_planning = self.berth_planning
         terminal_berths = self.berths.items
-        fit_berths_names = [berth.name for berth in terminal_berths if (berth.depth >= vessel.T) and (berth.length >= vessel.L)]
+        fit_berths_names = [berth.name for berth in terminal_berths if (berth.depth >= vessel.T) and (berth.berth_length >= vessel.L)]
         current_time = datetime.datetime.fromtimestamp(self.env.now)
         fit_berth_planning_availability = berth_planning[fit_berths_names]
         previous_events = fit_berth_planning_availability[fit_berth_planning_availability.index <= current_time]
@@ -295,7 +295,7 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput
 
                 waiting_time = berth_availability_start_time - current_time - sailing_time_to_berth
                 waiting_time = np.max([pd.Timedelta(seconds=0),waiting_time])
-                df_berth_time_slot.loc[berth_name,:] = [berth_availability_start_time,berth_availability_stop_time,waiting_time,berth.length]
+                df_berth_time_slot.loc[berth_name,:] = [berth_availability_start_time,berth_availability_stop_time,waiting_time,berth.berth_length]
                 break
 
         return df_berth_time_slot
