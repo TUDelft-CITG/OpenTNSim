@@ -7,15 +7,23 @@ import warnings
 import numpy as np
 
 # spatial libraries
+import pandas as pd
+import math
 import networkx as nx
 import shapely
 import pyproj
-from shapely.geometry import LineString
-from shapely.ops import transform
-
+from shapely.geometry import LineString, Point, MultiLineString
+from opentnsim.graph.calculations import reverse_geometry, calculate_length_of_edge, calculate_length_of_edge
 
 class NetworkWarning(Warning):
     pass
+
+
+def check_graph_is_multidigraph_type(graph):
+    is_multidigraph = False
+    if isinstance(graph, nx.MultiDiGraph):
+        is_multidigraph = True
+    return is_multidigraph
 
 
 def get_geometry_of_edge(graph, edge):
@@ -33,15 +41,19 @@ def get_geometry_of_edge(graph, edge):
     float
         The length of the edge in meters.
     """
+    is_multidigraph = check_graph_is_multidigraph_type(graph)
+    if not is_multidigraph:
+        edge_info = graph.edges[edge[:2]]
+    else:
+        edge_info = graph.edges[edge]
 
-    edge_info = graph.edges[edge]
     if "geometry" not in edge_info:
         orig = nx.get_node_attributes(graph, "geometry")[edge[0]]
         dest = nx.get_node_attributes(graph, "geometry")[edge[1]]
         geometry = LineString([orig, dest])
-        graph.edges[edge]["geometry"] = geometry
+        edge_info["geometry"] = geometry
     else:
-        geometry = graph.edges[edge]["geometry"]
+        geometry = edge_info["geometry"]
 
     coordinates_x = geometry.coords.xy[0]
     coordinates_y = geometry.coords.xy[1]
@@ -55,16 +67,6 @@ def get_geometry_of_edge(graph, edge):
         raise ValueError(f"Edge geometry in edge {edge}: attribute is not defined in WGS84.")
 
     return geometry
-
-
-def determine_length_of_edge_geometry(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
-    wgs84 = pyproj.CRS(current_crs)
-    wgs84_m = pyproj.CRS(crs_meter)
-    wgs84_to_wgs84_m = pyproj.transformer.Transformer.from_crs(wgs84, wgs84_m, always_xy=True).transform
-    geometry = get_geometry_of_edge(graph, edge)
-    geometry_m = transform(wgs84_to_wgs84_m, geometry)
-    length_m = geometry_m.length
-    return length_m
 
 
 def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:4087"):
@@ -87,7 +89,7 @@ def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:408
     if "length_m" in edge_info:
         pass
     else:
-        length_m = determine_length_of_edge_geometry(graph, edge, current_crs, crs_meter)
+        length_m = calculate_length_of_edge(graph, edge, current_crs, crs_meter)
         graph.edges[edge]["length_m"] = length_m
 
     return edge_info["length_m"]
@@ -531,83 +533,6 @@ def get_minimum_depth(graph, route):
     return h_min
 
 
-def calculate_depth(geom_start, geom_stop, graph):
-    """method to calculate the depth of the waterway in meters between two geometries.
-
-    Parameters
-    ----------
-    geom_start : shapely.geometry.Point
-        Starting point geometry. Must represent a node in graph graph.
-    geom_stop : shapely.geometry.Point
-        Stopping point geometry. must represent a node in graph graph.
-    graph : networkx.Graph
-        The graph containing vaarweginformatie.nl data, with nodes and edges.
-        Must contain 'Info' attribute on edges with 'GeneralDepth'.
-        Must contain an edge between geom_start and geom_stop.
-
-    Returns
-    -------
-    float
-        The depth of the waterway between the two geometries in meters.
-
-    Raises
-    ------
-    ValueError
-        If geom_start or geom_stop are not nodes in the graph graph.
-        If there is no edge between the two nodes in the graph graph.
-        If the depth data is not available for the edge between the two nodes.
-    """
-
-    depth = 0
-
-    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
-
-    node_start = find_closest_node(graph, geom_start)[0]
-    node_stop = find_closest_node(graph, geom_stop)[0]
-
-    # Read from the graph data from vaarweginformatie.nl the General depth of each edge
-    # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
-    if node_start == node_stop:
-        return np.nan  # if the start and stop nodes are the same, return 0 depth
-
-    try:
-        if "Info" in graph.get_edge_data(node_start, node_stop).keys():
-            depth = graph.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
-
-        elif "GeneralDepth" in graph.get_edge_data(node_start, node_stop).keys():
-            depth = graph.get_edge_data(node_start, node_stop)["GeneralDepth"]
-        else:
-            return np.nan  # if no depth data is available, return NaN
-    except:
-        depth = np.nan  # When there is no data of the depth available of this edge, it gives a message
-
-    h_0 = depth
-
-    # depth of waterway between two points
-    return h_0
-
-
-def transform_projection(from_spatialref, to_EPSG):
-    """create a transformation object to transform the graph to a new projection
-    Make sure to install the required package gdal.
-
-    run pip show gdal to check if gdal is installed.
-    Parameters
-    ----------
-    to_EPSG: int
-        The EPSG code to transform the graph to
-    """
-
-    from osgeo import ogr, osr
-
-    to_spatialref = osr.SpatialReference()
-    to_spatialref.ImportFromEPSG(to_EPSG)
-
-    # Transform the coordinates
-    transform = osr.CoordinateTransformation(from_spatialref, to_spatialref)
-    return transform
-
-
 def geom_to_edges(geom, properties):
     """Generate edges from a geometry, yielding an edge id and edge properties. The edge_id consists of a tuple of coordinates"""
     if geom.geom_type not in ["LineString", "MultiLineString"]:
@@ -664,3 +589,230 @@ def gdf_to_nx(gdf):
                 graph.add_node(edge_id[1], **node_properties)
                 graph.add_edge(edge_id[0], edge_id[1], **edge_properties)
     return graph
+
+
+def get_trajectory(graph, node_1, node_2):
+    geometry = None
+    route = nx.dijkstra_path(graph, node_1, node_2)
+    is_multidigraph = check_graph_is_multidigraph_type(graph)
+    for edge in zip(route[:-1], route[1:]):
+        edge = get_edge(graph, edge, is_multidigraph)
+        edge_geometry = graph.edges[edge]['geometry']
+        aligned = check_if_geometry_is_aligned_with_edge(graph, edge)
+        if not aligned:
+            edge_geometry = reverse_geometry(edge_geometry)
+
+        if geometry:
+            geometry = shapely.ops.linemerge(MultiLineString([geometry, edge_geometry]))
+        else:
+            geometry = edge_geometry
+
+    return geometry
+
+
+def get_closest_location_on_edge_to_point(graph, edge, point):
+    edge_geometry = graph.edges[edge]["geometry"]
+    point_on_edge = edge_geometry.interpolate(edge_geometry.project(point))
+    return point_on_edge
+
+
+def check_if_geometry_is_aligned_with_edge(graph, edge):
+    node_start = edge[0]
+    node_stop = edge[1]
+    edge_geometry = get_geometry_of_edge(graph, edge)
+    first_point = Point(edge_geometry.coords[0])
+    distance_to_edge_nodes = {}
+    for node in [node_start, node_stop]:
+        node_geometry = graph.nodes[node]["geometry"]
+        distance_to_edge_nodes[node] = first_point.distance(node_geometry)
+    closest_node = min(distance_to_edge_nodes, key=distance_to_edge_nodes.get)
+    aligned = closest_node == node_start
+    return aligned
+
+
+def get_edge_at_distance_from_node(graph, node_1, node_2, distance):
+    route = nx.dijkstra_path(graph, node_1, node_2)
+    total_length = 0
+    edge = None
+    is_multidigraph = check_graph_is_multidigraph_type(graph)
+    for edge in zip(route[:-1], route[1:]):
+        edge = get_edge(graph, edge, is_multidigraph)
+        edge_length = graph.edges[edge]['length_m']
+        total_length += edge_length
+        if total_length < distance:
+            continue
+        edge = (node_I,node_II,k)
+        break
+    return edge
+
+
+def get_edge(graph, edge, is_multidigraph=False):
+    edge = edge[:2]
+    if is_multidigraph:
+        k = sorted(graph[edge[0]][edge[1]], key=lambda x: get_length_of_edge(graph, (edge[0], edge[1], x)))[0]
+        edge = (edge[0], edge[1], k)
+    return edge
+
+def get_edges(graph, route):
+    edges = []
+    is_multidigraph = check_graph_is_multidigraph_type(graph)
+    for idx, edge in enumerate(zip(route[:-1], route[1:])):
+        edge = get_edge(graph, edge, is_multidigraph)
+        edges.append(edge)
+    return edges
+
+def get_sailing_distance(graph, route):
+    """
+    Calculates sailing distance of a route
+
+    Parameters
+    ----------
+    vessel :
+        a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+    edge : tuple
+        tuple resembles an edge with: a start_node [u] as str, end_node (v) as str
+
+    Returns
+    -------
+    sailing_distance_over_route : float
+        sailing distance along the route in [m]
+    """
+
+    # calculate sailing distance along route
+    sailing_distance = 0
+    sailing_distance_df = pd.DataFrame(columns=['node_start','node_stop','distance'])
+    edges = get_edges(graph, route)
+    for edge in edges:
+        edge_distance = graph.edges[edge]['length_m']
+        sailing_distance += edge_distance
+        sailing_distance_df.loc[len(sailing_distance_df),:] = [edge[0],edge[1],edge_distance]
+
+    return sailing_distance, sailing_distance_df
+
+
+def get_edge_speed(vessel, graph, edge):
+    edge_info = graph.edges[edge]
+    sailing_speed = vessel.v
+    if 'restricted_speed' in edge_info.keys():
+        restricted_speed = edge_info['restricted_speed']
+        if sailing_speed > restricted_speed:
+            sailing_speed = restricted_speed
+    if 'overruled_speed' in edge_info.keys():
+        sailing_speed = edge_info['overruled_speed']
+    return sailing_speed
+
+
+def get_sailing_speed(vessel, graph, route):
+    """
+    Provides the speed along a vessel's route
+
+    Parameters
+    ----------
+    vessel : type
+        a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+    route : list of str
+        str resemble node names that have to be in the graph
+
+    Returns
+    vessel_speed_over_route : pd.DataFrame
+        vessel speed per edge of the route
+    -------
+    """
+    # construct dataframe of speed information per edge
+    vessel_sailing_speed_df = pd.DataFrame(columns=['node_start','node_stop','speed'])
+    edges = get_edges(graph, route)
+    total_sailing_distance = 0.
+    total_sailing_time = 0.
+    average_sailing_speed = 0.
+    for edge in edges:
+        edge_info = graph.edges[edge]
+        sailing_speed = get_edge_speed(vessel, graph, edge)
+
+        sailing_distance = edge_info['length_m']
+        total_sailing_distance += sailing_distance
+        total_sailing_time += sailing_distance/sailing_speed
+
+        vessel_sailing_speed_df.loc[len(vessel_sailing_speed_df),:] = [edge[0],edge[1],sailing_speed]
+    if total_sailing_time:
+        average_sailing_speed = total_sailing_distance/total_sailing_time
+    return average_sailing_speed, vessel_sailing_speed_df
+
+
+def get_sailing_time(vessel, route):
+    """
+    Calculates sailing time of vessel
+
+    Parameters
+    ----------
+    vessel :
+        a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+    route : list of str
+        str resemble node names that have to be in the graph
+    edges : list of tuples
+        tuples resemble edges with: a start_node [u] as str, end_node (v) as str, and identifier (k) as int
+
+    Returns
+    -------
+    sailing_time_over_route : pd.DataFrame
+        dataframe with edges as (multi)index and the following column-information: Speed, Distance, Time
+
+    """
+    graph = vessel.env.graph
+    sailing_distance, sailing_distance_df = get_sailing_distance(graph, route)
+    average_sailing_speed, vessel_sailing_speed_df = get_sailing_speed(vessel, graph, route)
+    sailing_time_df = pd.merge(sailing_distance_df,vessel_sailing_speed_df)
+    sailing_time_df['time'] = sailing_time_df['distance'] / sailing_time_df['speed']
+    sailing_time = sailing_time_df['time'].sum()
+    return sailing_time, sailing_time_df
+
+
+def get_heading(vessel, graph, edge):
+    is_multidigraph = check_graph_is_multidigraph_type(graph)
+    edge = get_edge(graph, edge, is_multidigraph)
+    edge_geometry = vessel.multidigraph.edges[edge[0], edge[1], k]["geometry"]
+    heading = np.degrees(math.atan2(edge_geometry.coords[0][0] - edge_geometry.coords[-1][0],
+                                    edge_geometry.coords[0][1] - edge_geometry.coords[-1][1]))
+    return heading
+
+
+def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, distance_sailed_on_first_edge=0., distance_sailed_on_last_edge=0.):
+    """
+    Calculates the distance from a location along an edge A to another location along an edge B
+
+    Parameters
+    ----------
+    vessel : type
+        a type including the following parent-classes: Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
+    route : list of str
+        str resemble node names that have to be in the graph
+    distance_sailed_on_first_edge : float
+        distance that is already covered on the edge at which the vessel is currently sailing
+    distance_sailed_on_last_edge : float
+        distance on the last edge that the vessel has to sail to reach its location of interest
+    edges : list of tuples
+        tuples resemble edges with: a start_node [u] as str, end_node (v) as str, and identifier (k) as int
+
+    Returns
+    -------
+    sailing_information_df : pd.DataFrame
+        dataframe with edges as (multi)index and the following column-information: Speed, Distance, Time
+
+    """
+
+    # obtain dataframe with information of sailing speed, distance and time along route
+    _, sailing_information_df = get_sailing_time(vessel=vessel, route=route)
+
+    # determine indexes of first and last edges
+    index_first_edge = pd.Index([sailing_information_df.iloc[0].name])
+    index_last_edge = pd.Index([sailing_information_df.iloc[-1].name])
+
+    # determine distance that must still be sailed on the current edge of the vessel
+    distance_to_sail_on_first_edge = (sailing_information_df.loc[index_first_edge, 'distance']-distance_sailed_on_first_edge)
+
+    # adjust information of the sailing distance and sailing time on the first and last edges
+    sailing_information_df.loc[index_first_edge, 'time'] = sailing_information_df.loc[index_first_edge, 'time']*(distance_to_sail_on_first_edge/sailing_information_df.loc[index_first_edge, 'distance'])
+    sailing_information_df.loc[index_first_edge, 'distance'] = distance_to_sail_on_first_edge
+    sailing_information_df.loc[index_last_edge, 'time'] = sailing_information_df.loc[index_last_edge, 'time']*(distance_sailed_on_last_edge/sailing_information_df.loc[index_last_edge, 'distance'])
+    sailing_information_df.loc[index_last_edge, 'distance'] = distance_sailed_on_last_edge
+
+    return sailing_information_df

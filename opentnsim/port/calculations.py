@@ -11,6 +11,9 @@ from shapely.ops import linemerge, transform
 from shapely.geometry import LineString, MultiLineString
 import xarray as xr
 
+from opentnsim.graph.utils import get_sailing_time
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
+from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity
 
 def provide_trajectory(graph, node_1, node_2):
     nodes = nx.dijkstra_path(graph, node_1, node_2)
@@ -54,6 +57,7 @@ def calculate_total_waiting_time(waiting_events):
     if waiting_events is not None and len(waiting_events):
         total_waiting_time = sum(waiting_events.values())
     return total_waiting_time
+
 
 def calculate_inerpolated_water_levels_over_network(graph, hydrodynamic_data, method = 'nearest'):
     geod = pyproj.Geod(ellps="WGS84")
@@ -103,8 +107,9 @@ def calculate_inerpolated_water_levels_over_network(graph, hydrodynamic_data, me
     return hydrodynamic_data
 
 def calculate_depth_values_over_route(env, node_start, node_stop, offset = 500):
-    hydrodynamic_data = env.vessel_traffic_service.hydrodynamic_information
-    water_depth = hydrodynamic_data['Water level'] + hydrodynamic_data['MBL']
+    hydromanager = HydrodynamicDataManager()
+    hydrodynamic_data = hydromanager.hydrodynamic_data
+    water_depth = hydrodynamic_data['Water level'] + hydrodynamic_data['Nautical depth']
     route = nx.dijkstra_path(env.graph, node_start, node_stop)
     transformed_geometry = transform_route_geometry(env, node_start, node_stop)
     node_distances = {}
@@ -324,169 +329,179 @@ def determine_tidal_window_restriction(vessel, route, specifications, node, dela
     return restriction_class[0], no_tidal_window
 
 
-def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, delay=0):
-    def calculate_horizontal_tidal_window(
-        vessel,
-        time_start_index,
-        time_end_index,
-        hydrodynamic_data,
-        critical_limits=[],
-        cross_current_limit_dataframe=pd.DataFrame(),
-        flood=True,
-        ebb=True,
-        decreasing=False,
-    ):
-        station = hydrodynamic_data.STATION.values
-        time_start_index = np.max(
-            [
-                0,
-                time_start_index
-                - int(np.timedelta64(12, "h") / (hydrodynamic_data.TIME.values[1] - hydrodynamic_data.TIME.values[0])),
-            ]
-        )
-        currents_time = hydrodynamic_data.TIME.values[time_start_index:time_end_index]
-        currents_data, _ = vessel.env.vessel_traffic_service.provide_governing_current_velocity(vessel, station, time_start_index, time_end_index)
-        index_prev_root = 0
-        roots = sc.interpolate.CubicSpline(currents_time, currents_data).roots()
+def calculate_horizontal_tidal_window(vessel,
+                                      time_start_index,
+                                      time_end_index,
+                                      critical_limits=[],
+                                      cross_current_limit_dataframe=pd.DataFrame(),
+                                      flood=True,
+                                      ebb=True,
+                                      decreasing=False):
+    hydromanager = HydrodynamicDataManager()
+    hydrodynamic_data = hydromanager.hydrodynamic_data
+    station = hydrodynamic_data.STATION.values
+    delta_time = (hydrodynamic_data.TIME.values[1] - hydrodynamic_data.TIME.values[0])
+    time_start_index = np.max([0,time_start_index - int(np.timedelta64(12, "h") / delta_time)])
+    currents_time = hydrodynamic_data.TIME.values[time_start_index:time_end_index]
+    currents_data, _ = get_governing_current_velocity(vessel, station, time_start_index, time_end_index)
+    index_prev_root = 0
+    roots = sc.interpolate.CubicSpline(currents_time, currents_data).roots()
+    roots = [root for root in roots if root >= currents_time[0].astype(float) and root <= currents_time[-1].astype(float)]
+    times_horizontal_tidal_period = []
+    for root in roots:
+        root = pd.Timestamp(root).to_datetime64()
+        index_current_root = bisect.bisect_right(currents_time, root) - 2
+        if index_current_root == -1:
+            index_current_root = index_current_root + 1
+        if len(currents_data[index_prev_root:index_current_root]) == 0:
+            continue
+        cvel_diff_cross = currents_data[index_current_root + 1] - currents_data[index_current_root - 1]
+        if cvel_diff_cross < 0:
+            times_horizontal_tidal_period.append([root, "Ebb Start"])
+            index_prev_root = index_current_root
+        elif cvel_diff_cross > 0:
+            times_horizontal_tidal_period.append([root, "Flood Start"])
+            index_prev_root = index_current_root
 
-        roots_cv = [
-            root for root in roots if root >= currents_time[0].astype(float) and root <= currents_time[-1].astype(float)
-        ]
-        times_horizontal_tidal_period = []
-        for root in roots_cv:
-            root = pd.Timestamp(root).to_datetime64()
-            index_current_root = bisect.bisect_right(currents_time, root) - 2
-            if index_current_root == -1:
-                index_current_root = index_current_root + 1
-            if len(currents_data[index_prev_root:index_current_root]) == 0:
-                continue
-            cvel_diff_cross = currents_data[index_current_root + 1] - currents_data[index_current_root - 1]
-            if cvel_diff_cross < 0:
-                times_horizontal_tidal_period.append([root, "Ebb Start"])
-                index_prev_root = index_current_root
-            elif cvel_diff_cross > 0:
-                times_horizontal_tidal_period.append([root, "Flood Start"])
-                index_prev_root = index_current_root
-
-        tidal_periods = [condition for condition in times_horizontal_tidal_period if condition[0] <= currents_time[-1]]
-        currents_time = np.append(
-            currents_time, np.array([tide[0] for tide in tidal_periods if tide[0] not in currents_time], dtype="datetime64[ns]")
+    tidal_periods = [condition for condition in times_horizontal_tidal_period if condition[0] <= currents_time[-1]]
+    currents_time = np.append(currents_time, np.array([tide[0] for tide in tidal_periods if tide[0] not in currents_time], dtype="datetime64[ns]"))
+    currents_data = [abs(value) for value in currents_data]
+    currents_data = np.append(currents_data, -999 * np.ones(len(tidal_periods)))
+    currents_time, currents_data = [np.array(data) for data in zip(*sorted(zip(currents_time, currents_data)))]
+    # Find the intersection points with critical current velocity
+    current_intersections = []
+    if isinstance(cross_current_limit_dataframe, pd.DataFrame) and not cross_current_limit_dataframe.empty:
+        critical_limit = np.interp(
+            currents_time.astype("float"),
+            cross_current_limit_dataframe.index.to_numpy().astype("float"),
+            cross_current_limit_dataframe.Limit.to_numpy(),
         )
-        currents_data = [abs(value) for value in currents_data]
-        currents_data = np.append(currents_data, -999 * np.ones(len(tidal_periods)))
-        currents_time, currents_data = [np.array(data) for data in zip(*sorted(zip(currents_time, currents_data)))]
-        # Find the intersection points with critical current velocity
-        current_intersections = []
-        if isinstance(cross_current_limit_dataframe, pd.DataFrame) and not cross_current_limit_dataframe.empty:
-            critical_limit = np.interp(
-                currents_time.astype("float"),
-                cross_current_limit_dataframe.index.to_numpy().astype("float"),
-                cross_current_limit_dataframe.Limit.to_numpy(),
-            )
-            idx = np.argwhere(np.diff(np.sign(critical_limit - currents_data))).flatten()
+        idx = np.argwhere(np.diff(np.sign(critical_limit - currents_data))).flatten()
+        roots = currents_time[idx]
+        current_intersections.extend(roots.astype(dtype="datetime64[ns]"))
+        critical_current_velocity = np.interp(
+            np.array(current_intersections).astype("float"), currents_time.astype("float"), critical_limit
+        )
+        horizontal_tidal_accessibility = pd.DataFrame(
+            data=critical_current_velocity, columns=["Limit"], index=current_intersections
+        )
+    elif isinstance(critical_limits, list):
+        critical_current_velocity = []
+        for critical_limit in critical_limits:
+            idx = np.argwhere(
+                np.diff(np.sign([current_velocity - critical_limit for current_velocity in currents_data]))
+            ).flatten()
             roots = currents_time[idx]
             current_intersections.extend(roots.astype(dtype="datetime64[ns]"))
-            critical_current_velocity = np.interp(
-                np.array(current_intersections).astype("float"), currents_time.astype("float"), critical_limit
-            )
-            horizontal_tidal_accessibility = pd.DataFrame(
-                data=critical_current_velocity, columns=["Limit"], index=current_intersections
-            )
-        elif isinstance(critical_limits, list):
-            critical_current_velocity = []
-            for critical_limit in critical_limits:
-                idx = np.argwhere(
-                    np.diff(np.sign([current_velocity - critical_limit for current_velocity in currents_data]))
-                ).flatten()
-                roots = currents_time[idx]
-                current_intersections.extend(roots.astype(dtype="datetime64[ns]"))
-                critical_current_velocity.extend(np.ones(len(roots)) * critical_limit)
-            horizontal_tidal_accessibility = pd.DataFrame(
-                data=critical_current_velocity, columns=["Limit"], index=current_intersections
-            )
-        horizontal_tidal_accessibility = horizontal_tidal_accessibility.sort_index()
+            critical_current_velocity.extend(np.ones(len(roots)) * critical_limit)
+        horizontal_tidal_accessibility = pd.DataFrame(
+            data=critical_current_velocity, columns=["Limit"], index=current_intersections
+        )
+    horizontal_tidal_accessibility = horizontal_tidal_accessibility.sort_index()
 
-        # Determine the tidal period of the found interpolation points
-        horizontal_tidal_accessibility["Period"] = ""
-        horizontal_tidal_accessibility["Period_nr"] = -999
-        for period_nr, (tidal_period_start, tidal_period_end) in enumerate(zip(tidal_periods[:-1], tidal_periods[1:])):
-            tidal_period = tidal_period_start[1].split(" ")[0]
-            if tidal_period == "Rising":
-                tidal_period = "Flood"
-            if tidal_period == "Falling":
-                tidal_period = "Ebb"
-            tidal_period_start = tidal_period_start[0]
-            tidal_period_end = tidal_period_end[0]
-            horizontal_tidal_accessibility.loc[
-                horizontal_tidal_accessibility[
-                    (horizontal_tidal_accessibility.index >= tidal_period_start)
-                    & (horizontal_tidal_accessibility.index <= tidal_period_end)
-                ].index,
-                "Period",
-            ] = tidal_period
-            horizontal_tidal_accessibility.loc[
-                horizontal_tidal_accessibility[
-                    (horizontal_tidal_accessibility.index >= tidal_period_start)
-                    & (horizontal_tidal_accessibility.index <= tidal_period_end)
-                ].index,
-                "Period_nr",
-            ] = period_nr
-        horizontal_tidal_accessibility["Period_nr"] = horizontal_tidal_accessibility["Period_nr"].astype(int)
+    # Determine the tidal period of the found interpolation points
+    horizontal_tidal_accessibility["Period"] = ""
+    horizontal_tidal_accessibility["Period_nr"] = -999
+    for period_nr, (tidal_period_start, tidal_period_end) in enumerate(zip(tidal_periods[:-1], tidal_periods[1:])):
+        tidal_period = tidal_period_start[1].split(" ")[0]
+        if tidal_period == "Rising":
+            tidal_period = "Flood"
+        if tidal_period == "Falling":
+            tidal_period = "Ebb"
+        tidal_period_start = tidal_period_start[0]
+        tidal_period_end = tidal_period_end[0]
+        horizontal_tidal_accessibility.loc[
+            horizontal_tidal_accessibility[
+                (horizontal_tidal_accessibility.index >= tidal_period_start)
+                & (horizontal_tidal_accessibility.index <= tidal_period_end)
+            ].index,
+            "Period",
+        ] = tidal_period
+        horizontal_tidal_accessibility.loc[
+            horizontal_tidal_accessibility[
+                (horizontal_tidal_accessibility.index >= tidal_period_start)
+                & (horizontal_tidal_accessibility.index <= tidal_period_end)
+            ].index,
+            "Period_nr",
+        ] = period_nr
+    horizontal_tidal_accessibility["Period_nr"] = horizontal_tidal_accessibility["Period_nr"].astype(int)
 
-        # Filter the found interpolation points: remove from errors
-        # (multiple interpolated numbers and flood/ebb values if not required)
-        if decreasing:
-            selected_horizontal_tidal_accessibility = pd.DataFrame(columns=horizontal_tidal_accessibility.columns)
-            if flood:
-                selected_horizontal_tidal_accessibility = pd.concat(
-                    [
-                        selected_horizontal_tidal_accessibility,
-                        horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period == "Flood"],
-                    ]
+    # Filter the found interpolation points: remove from errors
+    # (multiple interpolated numbers and flood/ebb values if not required)
+    if decreasing:
+        selected_horizontal_tidal_accessibility = pd.DataFrame(columns=horizontal_tidal_accessibility.columns)
+        if flood:
+            selected_horizontal_tidal_accessibility = pd.concat(
+                [
+                    selected_horizontal_tidal_accessibility,
+                    horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period == "Flood"],
+                ]
+            )
+        if ebb:
+            selected_horizontal_tidal_accessibility = pd.concat(
+                [
+                    selected_horizontal_tidal_accessibility,
+                    horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period == "Ebb"],
+                ]
+            )
+        horizontal_tidal_accessibility = selected_horizontal_tidal_accessibility.sort_index()
+        horizontal_tidal_accessibility = horizontal_tidal_accessibility.loc[
+            horizontal_tidal_accessibility.index.drop_duplicates(keep=False)
+        ]
+
+    # Correct the found interpolation points
+    if decreasing:
+        tide_number = horizontal_tidal_accessibility.iloc[0]["Period_nr"]
+        number_of_tidal_periods = horizontal_tidal_accessibility.iloc[-1]["Period_nr"]
+        end_time_windows = []
+        for period_nr in [
+            idx for idx, count in horizontal_tidal_accessibility.value_counts("Period_nr").items() if count == 2
+        ]:
+            sub_df = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr == period_nr]
+            end_time_windows.append(tidal_periods[period_nr + 1][0] - sub_df.iloc[-1].name)
+        mean_end_time_window = np.mean(end_time_windows)
+        missing_tides = set(list(np.arange(tide_number, number_of_tidal_periods, 2))) - set(
+            list(dict.fromkeys(horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period == "Flood"].Period_nr))
+        )
+        for tide_index in missing_tides:
+            starting_time = np.datetime64(tidal_periods[tide_index][0])
+            closing_time = np.datetime64(tidal_periods[tide_index + 1][0] - mean_end_time_window)
+            next_index = bisect.bisect_right(currents_time, closing_time)
+            previous_index = next_index - 1
+            current_velocity = np.interp(
+                closing_time,
+                [currents_time[previous_index], currents_time[next_index]],
+                [currents_data[previous_index], currents_data[next_index]],
+            )
+            horizontal_tidal_accessibility.loc[starting_time, :] = [0, "Flood", tide_index]
+            horizontal_tidal_accessibility.loc[closing_time, :] = [current_velocity, "Flood", tide_index]
+
+        for period_nr, count in [
+            (idx, count) for idx, count in horizontal_tidal_accessibility.value_counts("Period_nr").items() if count != 2
+        ]:
+            if count == 1:
+                for iloc, (loc, info) in enumerate(
+                    horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr == period_nr].iterrows()
+                ):
+                    if not iloc % 2 and info.Limit != np.max(critical_limits):
+                        starting_time = np.datetime64(tidal_periods[info.Period_nr][0])
+                        horizontal_tidal_accessibility.loc[starting_time] = info
+                        horizontal_tidal_accessibility.loc[starting_time, "Limit"] = np.max(critical_limits)
+                        break
+            else:
+                horizontal_tidal_accessibility = horizontal_tidal_accessibility.drop(
+                    horizontal_tidal_accessibility[
+                        (horizontal_tidal_accessibility.Period_nr == period_nr)
+                        & (horizontal_tidal_accessibility.Limit == np.max(critical_limits))
+                    ].index[:-1]
                 )
-            if ebb:
-                selected_horizontal_tidal_accessibility = pd.concat(
-                    [
-                        selected_horizontal_tidal_accessibility,
-                        horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period == "Ebb"],
-                    ]
+                horizontal_tidal_accessibility = horizontal_tidal_accessibility.drop(
+                    horizontal_tidal_accessibility[
+                        (horizontal_tidal_accessibility.Period_nr == period_nr)
+                        & (horizontal_tidal_accessibility.Limit == np.min(critical_limits))
+                    ].index[:-1]
                 )
-            horizontal_tidal_accessibility = selected_horizontal_tidal_accessibility.sort_index()
-            horizontal_tidal_accessibility = horizontal_tidal_accessibility.loc[
-                horizontal_tidal_accessibility.index.drop_duplicates(keep=False)
-            ]
-
-        # Correct the found interpolation points
-        if decreasing:
-            tide_number = horizontal_tidal_accessibility.iloc[0]["Period_nr"]
-            number_of_tidal_periods = horizontal_tidal_accessibility.iloc[-1]["Period_nr"]
-            end_time_windows = []
-            for period_nr in [
-                idx for idx, count in horizontal_tidal_accessibility.value_counts("Period_nr").items() if count == 2
-            ]:
-                sub_df = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr == period_nr]
-                end_time_windows.append(tidal_periods[period_nr + 1][0] - sub_df.iloc[-1].name)
-            mean_end_time_window = np.mean(end_time_windows)
-            missing_tides = set(list(np.arange(tide_number, number_of_tidal_periods, 2))) - set(
-                list(dict.fromkeys(horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period == "Flood"].Period_nr))
-            )
-            for tide_index in missing_tides:
-                starting_time = np.datetime64(tidal_periods[tide_index][0])
-                closing_time = np.datetime64(tidal_periods[tide_index + 1][0] - mean_end_time_window)
-                next_index = bisect.bisect_right(currents_time, closing_time)
-                previous_index = next_index - 1
-                current_velocity = np.interp(
-                    closing_time,
-                    [currents_time[previous_index], currents_time[next_index]],
-                    [currents_data[previous_index], currents_data[next_index]],
-                )
-                horizontal_tidal_accessibility.loc[starting_time, :] = [0, "Flood", tide_index]
-                horizontal_tidal_accessibility.loc[closing_time, :] = [current_velocity, "Flood", tide_index]
-
-            for period_nr, count in [
-                (idx, count) for idx, count in horizontal_tidal_accessibility.value_counts("Period_nr").items() if count != 2
-            ]:
-                if count == 1:
+                if len(horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr == period_nr]) < 2:
                     for iloc, (loc, info) in enumerate(
                         horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr == period_nr].iterrows()
                     ):
@@ -495,84 +510,63 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
                             horizontal_tidal_accessibility.loc[starting_time] = info
                             horizontal_tidal_accessibility.loc[starting_time, "Limit"] = np.max(critical_limits)
                             break
-                else:
-                    horizontal_tidal_accessibility = horizontal_tidal_accessibility.drop(
-                        horizontal_tidal_accessibility[
-                            (horizontal_tidal_accessibility.Period_nr == period_nr)
-                            & (horizontal_tidal_accessibility.Limit == np.max(critical_limits))
-                        ].index[:-1]
-                    )
-                    horizontal_tidal_accessibility = horizontal_tidal_accessibility.drop(
-                        horizontal_tidal_accessibility[
-                            (horizontal_tidal_accessibility.Period_nr == period_nr)
-                            & (horizontal_tidal_accessibility.Limit == np.min(critical_limits))
-                        ].index[:-1]
-                    )
-                    if len(horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr == period_nr]) < 2:
-                        for iloc, (loc, info) in enumerate(
-                            horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr == period_nr].iterrows()
-                        ):
-                            if not iloc % 2 and info.Limit != np.max(critical_limits):
-                                starting_time = np.datetime64(tidal_periods[info.Period_nr][0])
-                                horizontal_tidal_accessibility.loc[starting_time] = info
-                                horizontal_tidal_accessibility.loc[starting_time, "Limit"] = np.max(critical_limits)
-                                break
 
+    else:
+        for period_nr in [
+            idx for idx, count in horizontal_tidal_accessibility.value_counts("Period_nr").items() if count % 2
+        ]:
+            for loc, info in horizontal_tidal_accessibility[
+                horizontal_tidal_accessibility.Period_nr == period_nr
+            ].iterrows():
+                if (
+                    currents_data[list(currents_time).index(loc) - 1] < info.Limit
+                    and currents_data[list(currents_time).index(loc) + 1] < info.Limit
+                ):
+                    horizontal_tidal_accessibility[loc + np.timedelta64(1, "ns")] = info
+                    break
+
+    horizontal_tidal_accessibility = horizontal_tidal_accessibility.sort_index()
+    horizontal_tidal_accessibility = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr != -999]
+    # Add accessibility information to intersection points
+    if not horizontal_tidal_accessibility.empty:
+        if not decreasing:
+            horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
+                "Accessible"
+            )
+            horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
+                "Inaccessible"
+            )
+            limiting_currents = np.interp(
+                horizontal_tidal_accessibility.index.to_numpy().astype(float),
+                cross_current_limit_dataframe.index.to_numpy().astype(float),
+                cross_current_limit_dataframe.Limit.to_numpy(),
+            )
+            horizontal_tidal_accessibility["Accessibility"] = [
+                "Accessible" if interpcur < limit else accessibility
+                for accessibility, interpcur, limit in zip(
+                    horizontal_tidal_accessibility.Accessibility.to_numpy(),
+                    horizontal_tidal_accessibility.Limit.to_numpy(),
+                    limiting_currents,
+                )
+            ]
+            horizontal_tidal_accessibility["Limit"] = [
+                0 if interpcur < limit else limit
+                for interpcur, limit in zip(horizontal_tidal_accessibility.Limit.to_numpy(), limiting_currents)
+            ]
+            horizontal_tidal_accessibility = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Limit != -1.0]
         else:
-            for period_nr in [
-                idx for idx, count in horizontal_tidal_accessibility.value_counts("Period_nr").items() if count % 2
-            ]:
-                for loc, info in horizontal_tidal_accessibility[
-                    horizontal_tidal_accessibility.Period_nr == period_nr
-                ].iterrows():
-                    if (
-                        currents_data[list(currents_time).index(loc) - 1] < info.Limit
-                        and currents_data[list(currents_time).index(loc) + 1] < info.Limit
-                    ):
-                        horizontal_tidal_accessibility[loc + np.timedelta64(1, "ns")] = info
-                        break
+            horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
+                "Inaccessible"
+            )
+            horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
+                "Accessible"
+            )
+        horizontal_tidal_accessibility["Condition"] = "Current velocity"
+        horizontal_tidal_accessibility = horizontal_tidal_accessibility[["Limit", "Condition", "Accessibility"]]
 
-        horizontal_tidal_accessibility = horizontal_tidal_accessibility.sort_index()
-        horizontal_tidal_accessibility = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Period_nr != -999]
-        # Add accessibility information to intersection points
-        if not horizontal_tidal_accessibility.empty:
-            if not decreasing:
-                horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
-                    "Accessible"
-                )
-                horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
-                    "Inaccessible"
-                )
-                limiting_currents = np.interp(
-                    horizontal_tidal_accessibility.index.to_numpy().astype(float),
-                    cross_current_limit_dataframe.index.to_numpy().astype(float),
-                    cross_current_limit_dataframe.Limit.to_numpy(),
-                )
-                horizontal_tidal_accessibility["Accessibility"] = [
-                    "Accessible" if interpcur < limit else accessibility
-                    for accessibility, interpcur, limit in zip(
-                        horizontal_tidal_accessibility.Accessibility.to_numpy(),
-                        horizontal_tidal_accessibility.Limit.to_numpy(),
-                        limiting_currents,
-                    )
-                ]
-                horizontal_tidal_accessibility["Limit"] = [
-                    0 if interpcur < limit else limit
-                    for interpcur, limit in zip(horizontal_tidal_accessibility.Limit.to_numpy(), limiting_currents)
-                ]
-                horizontal_tidal_accessibility = horizontal_tidal_accessibility[horizontal_tidal_accessibility.Limit != -1.0]
-            else:
-                horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[1::2], "Accessibility"] = (
-                    "Inaccessible"
-                )
-                horizontal_tidal_accessibility.loc[list(horizontal_tidal_accessibility.index)[::2], "Accessibility"] = (
-                    "Accessible"
-                )
-            horizontal_tidal_accessibility["Condition"] = "Current velocity"
-            horizontal_tidal_accessibility = horizontal_tidal_accessibility[["Limit", "Condition", "Accessibility"]]
+    return horizontal_tidal_accessibility, station
 
-        return horizontal_tidal_accessibility, station
-
+def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, delay=0):
     # Start calculation
     horizontal_tidal_restriction_nodes = []
     horizontal_tidal_restriction_stations = []
@@ -582,31 +576,17 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
     for route_index, node_name in enumerate(route):
         if "Horizontal tidal restriction" in vessel.multidigraph.nodes[node_name].keys():
             horizontal_tidal_window = True
-            sailing_time_to_next_node = vessel.env.vessel_traffic_service.provide_sailing_time(vessel, route[: (route_index + 1)])
+            sailing_time_to_next_node, _ = get_sailing_time(vessel, route[: (route_index + 1)])
             specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Specification"]
             restriction_index, no_tidal_window = determine_tidal_window_restriction(
                 vessel, route, specifications, node_name, delay=delay
             )
             if no_tidal_window:
                 continue
-            hydrodynamic_data = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Data"][
-                restriction_index
-            ]
-            cross_current_limit = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Limit"][
-                restriction_index
-            ]
-            window_specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Type"][
-                restriction_index
-            ]
-            time_start_index = np.max(
-                [
-                    0,
-                    np.absolute(
-                        vessel.env.vessel_traffic_service.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))
-                    ).argmin()
-                    - 2,
-                ]
-            )
+            hydrodynamic_data = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Data"][restriction_index]
+            cross_current_limit = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Limit"][restriction_index]
+            window_specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Type"][restriction_index]
+            time_start_index = np.max([0, np.absolute(hydrodynamic_data.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
             time_end_index = np.absolute(hydrodynamic_data.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
             if window_specifications.window_method == "Maximum":
                 next_horizontal_tidal_accessibility, station = calculate_horizontal_tidal_window(
@@ -654,7 +634,7 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
             horizontal_tidal_restriction_nodes.append(node_name)
             horizontal_tidal_restriction_stations.append(station)
             next_horizontal_tidal_accessibility_time_correction = np.timedelta64(
-                int(sailing_time_to_next_node["Time"].sum()), "s"
+                int(sailing_time_to_next_node), "s"
             )
             next_horizontal_tidal_accessibility.index -= next_horizontal_tidal_accessibility_time_correction
             if horizontal_tidal_accessibility.empty:
@@ -742,7 +722,7 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
               subtracted with the difference between the gross ukc and net ukc
               (hence: subtracted with additional safety margins consisting of vessel-related factors
               and water level factors). The bottom-related factors are already accounted for in the
-              use of the MBL instead of the actual depth.
+              use of the Nautical depth instead of the actual depth.
 
     Input:
         - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
@@ -750,23 +730,24 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         to sail (can be different than vessel.route)
         - delay:
     """
-    hydrodynamic_information = vessel.env.vessel_traffic_service.hydrodynamic_information
-    time_start_index = np.max([0, np.absolute(hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
-    time_end_index = np.absolute(hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
+    hydromanager = HydrodynamicDataManager()
+    hydrodynamic_data = hydromanager.hydrodynamic_data
+    time_start_index = np.max([0, np.absolute(hydrodynamic_data.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
+    time_end_index = np.absolute(hydrodynamic_data.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
     net_ukc = pd.DataFrame()
-    times = hydrodynamic_information["TIME"].values[time_start_index:time_end_index]
+    times = hydrodynamic_data["TIME"].values[time_start_index:time_end_index]
     t_step = times[1] - times[0]
     t_boundaries = []
     # Start of calculation by looping over the nodes of the route
     for route_index, node_name in enumerate(route):
-        node_index = list(hydrodynamic_information["STATION"].values).index(node_name)
-        sailing_time_to_next_node = vessel.env.vessel_traffic_service.provide_sailing_time(vessel, route[: (route_index + 1)])
-        time_correction_index = int(np.round(sailing_time_to_next_node["Time"].sum() / (t_step / np.timedelta64(1, "s"))))
-        time_end_index = np.min([len(hydrodynamic_information["Water level"][node_index])-1,time_end_index + time_correction_index])
-        times = hydrodynamic_information["TIME"].values[time_start_index:time_end_index]
-        water_level = hydrodynamic_information["Water level"][node_index].values[time_start_index:time_end_index]
+        node_index = list(hydrodynamic_data["STATION"].values).index(node_name)
+        sailing_time_to_next_node, _ = get_sailing_time(vessel, route[: (route_index + 1)])
+        time_correction_index = int(np.round(sailing_time_to_next_node / (t_step / np.timedelta64(1, "s"))))
+        time_end_index = np.min([len(hydrodynamic_data["Water level"][node_index])-1,time_end_index + time_correction_index])
+        times = hydrodynamic_data["TIME"].values[time_start_index:time_end_index]
+        water_level = hydrodynamic_data["Water level"][node_index].values[time_start_index:time_end_index]
         _, _, _, required_water_depth, _, _ = calculate_ukc_clearance(vessel, node_name, delay)
-        MBL = hydrodynamic_information["MBL"][node_index].values[time_start_index:time_end_index]
+        MBL = hydrodynamic_data["Nautical depth"][node_index].values[time_start_index:time_end_index]
         water_depth = water_level + MBL
         net_ukc_node = pd.DataFrame([available_water_depth - required_water_depth for available_water_depth in water_depth],columns=[node_name],index=times)
         net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
@@ -812,7 +793,7 @@ def calculate_ukc_clearance(vessel, node, delay=0):
 
     """
     # ignore water_level
-    MBL, _, available_water_depth = vessel.env.vessel_traffic_service.provide_water_depth(vessel, node, delay)
+    MBL, _, available_water_depth = get_water_depth(vessel, node, delay)
 
     ukc_s, ukc_p, ukc_r, fwa = np.zeros(4)
     if "Vertical tidal restriction" in vessel.multidigraph.nodes[node].keys():
@@ -839,8 +820,10 @@ def calculate_ukc_clearance(vessel, node, delay=0):
 
 
 def calculate_tidal_windows(vessel, route, time_start, time_end, delay=0):
-    time_start_index = np.max([0, np.absolute(vessel.env.vessel_traffic_service.hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2, ])
-    time_end_index = np.absolute(vessel.env.vessel_traffic_service.hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
+    hydromanager = HydrodynamicDataManager()
+    hydrodynamic_data = hydromanager.hydrodynamic_data
+    time_start_index = np.max([0, np.absolute(hydrodynamic_data.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2, ])
+    time_end_index = np.absolute(hydrodynamic_data.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
 
     vertical_tidal_accessibility, \
     vertical_tidal_windows, \

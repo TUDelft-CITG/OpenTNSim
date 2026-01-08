@@ -1,6 +1,7 @@
 from opentnsim.core import  HasResource, Identifiable, Locatable, Log, HasLength, Movable, SimpyObject, PriorityFilterStore
 from opentnsim.output import HasOutput
 from opentnsim.graph.mixins import OnNode, OnEdge
+from opentnsim.graph.utils import get_sailing_time
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.mixins.berth import IsQuay, IsJetty, IsBerth
 from opentnsim.port.utils import determine_new_route_for_vessel, get_vessel_from_id
@@ -192,8 +193,7 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput
     def determine_sailing_time_to_berth(self, vessel, origin, berth):
         destination = berth.node
         route = nx.dijkstra_path(self.env.graph,origin,destination)
-        sailing_information = self.env.vessel_traffic_service.provide_sailing_time(vessel, route)
-        sailing_time = sailing_information["Time"].cumsum().values[0]
+        sailing_time, _ = get_sailing_time(vessel, route)
         return sailing_time
 
 
@@ -297,7 +297,6 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput
                 waiting_time = np.max([pd.Timedelta(seconds=0),waiting_time])
                 df_berth_time_slot.loc[berth_name,:] = [berth_availability_start_time,berth_availability_stop_time,waiting_time,berth.berth_length]
                 break
-
         return df_berth_time_slot
 
 
@@ -347,6 +346,7 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput
         berth_planning = berth_planning.sort_index()
         with pd.option_context("future.no_silent_downcasting", True):
             berth_planning = berth_planning.ffill().infer_objects(copy=False)
+            berth_planning = berth_planning.bfill().infer_objects(copy=False)
 
         if isinstance(berth, IsQuay):
             mask = (berth_planning.index >= time_start)&(berth_planning.index < time_stop)

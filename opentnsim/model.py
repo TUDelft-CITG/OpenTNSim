@@ -23,7 +23,6 @@ import networkx as nx
 
 # import core from self
 import opentnsim.core as core
-import opentnsim.vessel_traffic_service.vessel_traffic_service as vessel_traffic_service
 
 logger = logging.getLogger(__name__)
 
@@ -231,13 +230,6 @@ class Simulation(core.Identifiable):
 
         self.env.vessels = []
         self.output = {}
-
-        self.env.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(FG=graph,
-                                                                                      hydrodynamic_start_time = hydrodynamic_start_time,
-                                                                                      hydrodynamic_information_path = hydrodynamic_data_path,
-                                                                                      vessel_speed_data_path=vessel_speed_data_path)
-
-        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data, vessel_speed_data)
 
     def add_vessels(
         self,

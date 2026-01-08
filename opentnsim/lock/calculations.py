@@ -3,7 +3,7 @@
 import numpy as np
 from opentnsim.utils import time_to_numpy
 from opentnsim.constants import gravitational_acceleration
-from opentnsim.hydrodanamic_data_manager import HydrodynamicDataManager
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 
 
 def calculate_z(
@@ -13,7 +13,6 @@ def calculate_z(
     wlev_init,
     operation_index,
     operation_planning,
-    hydrodynamic_information_path,
     start_node,
     end_node,
     node_open,
@@ -27,10 +26,10 @@ def calculate_z(
 
     hydromanager = HydrodynamicDataManager()
     # determine the actual water levels
-    time_index = hydromanager._get_time_index_of_hydrodynamic_data(hydrodynamic_information_path, t_start)
+    time_index = hydromanager._get_time_index_of_hydrodynamic_data(t_start)
     t_simulation_start = np.datetime64(epoch)
-    H_A = hydromanager._get_hydrodynamic_data_series(hydrodynamic_information_path, t_simulation_start, start_node, "Water level")
-    H_B = hydromanager._get_hydrodynamic_data_series(hydrodynamic_information_path, t_simulation_start, end_node, "Water level")
+    H_A = hydromanager._get_hydrodynamic_data_series(t_simulation_start, start_node, "Water level")
+    H_B = hydromanager._get_hydrodynamic_data_series(t_simulation_start, end_node, "Water level")
     H_A_init = H_A[time_index]
     H_B_init = H_B[time_index]
 
@@ -92,7 +91,8 @@ def levelling_time_equation(
     T1 = gate_opening_time  # time to open the gate [s] (constant over time)
     A_s = np.linspace(0, opening_area, int(T1 / float(dt)))  # sluice opening area over time when opening [m^2] (time-dependent)
     A_s = np.append(A_s, [opening_area] * (len(z) - len(A_s)))  # sluice opening over full levelling process [m^2] (time-dependent)
-    H_time = HydrodynamicDataManager().hydrodynamic_times.astype(float)  # time series of the hydrodynamic data [s]
+    hydromanager = HydrodynamicDataManager()
+    H_time = hydromanager.hydrodynamic_data['TIME'].values.astype(float)  # time series of the hydrodynamic data [s]
 
     # time-integration by (self-coded) Euler's method TODO Checken of we een standaard solver kunnen gebruiken. En of we dit algoritme los kunnen maken van de klasse.
     for i in range(len(t) - 1):

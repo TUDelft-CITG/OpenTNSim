@@ -1,7 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass,field,fields
 
-import opentnsim.vessel_traffic_service as vessel_traffic_service
 import numpy as np
 import pandas as pd
 import typing

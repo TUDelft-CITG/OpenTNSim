@@ -9,6 +9,7 @@ import pandas as pd
 # OpenTNSim
 from opentnsim.graph.calculations import calculate_distance
 from plotly.offline import init_notebook_mode, iplot
+from opentnsim.port.visualizations import plot_anchorage_areas, plot_turning_basins, plot_berths
 
 def plot_graph(graph, static: bool = False):
     """method to plot a graph
@@ -114,101 +115,6 @@ def plot_graph(graph, static: bool = False):
         iplot(fig)
     else:
         return fig
-
-def plot_berths(berths, m = None, longitude = 0, latitude = 0, zoom_start = 5):
-    if not m:
-        m = folium.Map(location=[latitude, longitude], zoom_start=zoom_start, tiles="cartodbpositron")
-    style = {'fillColor': '#000000', 'color': '#000000', 'opacity': 0}
-    tooltip_berths = folium.GeoJsonTooltip(fields=["Port", "Company", "Berth"],
-                                           aliases=["City:", "Port/Company:", "Berth:"],
-                                           localize=True,
-                                           sticky=False,
-                                           labels=True,
-                                           style="""
-                                        background-color: #F0EFEF;
-                                        border: 2px solid black;
-                                        border-radius: 3px;
-                                        box-shadow: 3px;
-                                    """,
-                                           max_width=800, )
-    popup_berths = folium.GeoJsonPopup(
-        fields=["Port", "Company", "Berth", "Berth_type", "Cargo_type", "Maximum_vessel_length",
-                "Maximum_vessel_draught"],
-        aliases=["City:", "Port/Company:", "Berth:", "Berth type:", "Cargo type:", "Maximum vessel length:",
-                 "Maximum vessel draught"],
-        localize=True,
-        labels=True,
-        style="""
-                                        background-color: #F0EFEF;
-                                        border: 2px solid black;
-                                        border-radius: 3px;
-                                        box-shadow: 3px;
-                                    """,
-        max_width=800, )
-    folium.GeoJson(berths.set_crs('EPSG:4326'), style_function=lambda x: style, tooltip=tooltip_berths,
-                   popup=popup_berths).add_to(m)
-
-def plot_anchorage_areas(anchorage_areas, m = None, longitude = 0, latitude = 0, zoom_start = 5):
-    if not m:
-        m = folium.Map(location=[latitude, longitude], zoom_start=zoom_start, tiles="cartodbpositron")
-    style_anchorage = {'fillColor': '#4CFF00', 'color': '#4CFF00', 'fillOpacity': 0, 'dashArray': '4'}
-    tooltip_anchorage = folium.GeoJsonTooltip(fields=["Name", "Port"],
-                                              aliases=["Name:", "Port:"],
-                                              localize=True,
-                                              sticky=False,
-                                              labels=True,
-                                              style="""
-                                        background-color: #F0EFEF;
-                                        border: 2px solid black;
-                                        border-radius: 3px;
-                                        box-shadow: 3px;
-                                    """,
-                                              max_width=800, )
-    popup_anchorage = folium.GeoJsonPopup(fields=["Name", "Port", "Detail"],
-                                          aliases=["Name:", "Port:", "Detail:"],
-                                          localize=True,
-                                          labels=True,
-                                          style="""
-                                        background-color: #F0EFEF;
-                                        border: 2px solid black;
-                                        border-radius: 3px;
-                                        box-shadow: 3px;
-                                    """,
-                                          max_width=800, )
-    folium.GeoJson(anchorage_areas.set_crs('EPSG:4326'), style_function=lambda x: style_anchorage,
-                   tooltip=tooltip_anchorage, popup=popup_anchorage).add_to(m)
-
-def plot_turning_basins(turning_basins, m = None, longitude = 0, latitude = 0, zoom_start = 5):
-    if not m:
-        m = folium.Map(location=[latitude, longitude], zoom_start=zoom_start, tiles="cartodbpositron")
-
-    style_turning_basin = {'fillColor': '#FF0000', 'color': '#FF0000', 'fillOpacity':0,'dashArray':'4'}
-    tooltip_turning_basin = folium.GeoJsonTooltip(fields=["Name", "Port"],
-                                    aliases=["Name:","Port:"],
-                                    localize=True,
-                                    sticky=False,
-                                    labels=True,
-                                    style="""
-                                        background-color: #F0EFEF;
-                                        border: 2px solid black;
-                                        border-radius: 3px;
-                                        box-shadow: 3px;
-                                    """,
-                                    max_width=800,)
-    popup_turning_basin = folium.GeoJsonPopup(fields=["Name", "Port", "Diameter"],
-                                aliases=["Name:","Port:","Diameter:"],
-                                localize=True,
-                                labels=True,
-                                style="""
-                                        background-color: #F0EFEF;
-                                        border: 2px solid black;
-                                        border-radius: 3px;
-                                        box-shadow: 3px;
-                                    """,
-                                max_width=800,)
-
-    folium.GeoJson(turning_basins.set_crs('EPSG:4326'),style_function=lambda x:style_turning_basin,
-                   tooltip=tooltip_turning_basin,popup=popup_turning_basin).add_to(m)
 
 
 def plot_graph_folium(graph, longitude, latitude, zoom_start=5, berths = None, turning_basins = None, anchorage_areas = None):

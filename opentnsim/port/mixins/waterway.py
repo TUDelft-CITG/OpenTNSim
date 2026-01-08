@@ -8,7 +8,7 @@ from IPython.display import display
 #Imports from the port-module
 from opentnsim.port.mixins.rules import Expr, AggregateExpr, ComparisonExpr
 from opentnsim.port.utils import get_vessel_from_id
-
+from opentnsim.graph.utils import get_sailing_time
 
 class PassesWaterway:
     def __init__(self, *args, **kwargs):
@@ -54,8 +54,8 @@ class IsWaterway(SimpyObject, Identifiable):
             direction = 1
 
         current_time = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds=delay)
-        sailing_time_to_waterway = self.env.vessel_traffic_service.provide_sailing_time(vessel,route_to_waterway)["Time"].sum()
-        sailing_time_over_waterway = self.env.vessel_traffic_service.provide_sailing_time(vessel,route_over_waterway)["Time"].sum()
+        sailing_time_to_waterway, _ = get_sailing_time(vessel,route_to_waterway)
+        sailing_time_over_waterway, _ = get_sailing_time(vessel,route_over_waterway)
         time_passage_start = current_time + pd.Timedelta(seconds=sailing_time_to_waterway)
         time_passage_stop = time_passage_start + pd.Timedelta(seconds=sailing_time_over_waterway)
         waterway_available = True

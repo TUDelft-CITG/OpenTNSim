@@ -6,7 +6,9 @@ import pyproj
 import shapely
 from shapely.ops import transform
 from pyproj import Transformer
+from opentnsim.graph.utils import get_sailing_time
 from opentnsim.port.calculations import calculate_tidal_windows
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from IPython.display import display
 pd.options.mode.chained_assignment = None
 
@@ -63,15 +65,34 @@ def check_if_vessel_is_tide_bound(df_tidal_availability):
     return tide_bound
 
 
+def determine_nearest_anchorage_area(vessel, node):
+    # Loop over the nodes of the network and identify all the anchorage areas:
+    sailing_time_to_anchorages = []
+    capacity_of_anchorages = []
+    for anchorage_area in vessel.terminal.port.anchorage_areas:
+        # Determine if the anchorage area can be reached
+        route_to_anchorage = nx.dijkstra_path(vessel.env.graph, node, anchorage_area.node)
+        sailing_time_to_anchorage, _ = get_sailing_time(vessel, route_to_anchorage)
+        sailing_time_to_anchorages.append(sailing_time_to_anchorage)
+        capacity_of_anchorages.append(anchorage_area.resource.capacity > 0)
+
+    anchorage_selection_df = pd.DataFrame({'Sailing time': sailing_time_to_anchorages,
+                                           'Capacity': capacity_of_anchorages})
+
+    suitable_anchorage_areas = anchorage_selection_df[anchorage_selection_df.Capacity]
+    suitable_anchorage_areas = suitable_anchorage_areas.sort_values('Sailing time')
+    anchorage_area = vessel.terminal.port.anchorage_areas[suitable_anchorage_areas.iloc[0].name]
+    return anchorage_area
+
+
 def determine_if_vessel_needs_to_sail_to_the_anchorage_area(env, vessel, origin, waiting_time):
     sail_to_anchorage_area = False
-    vessel_traffic_service = env.vessel_traffic_service
-    nearest_anchorage_area = vessel.find_nearest_anchorage_area(origin)
+    nearest_anchorage_area = determine_nearest_anchorage_area(vessel, origin)
     route_to_anchorage_area = nx.dijkstra_path(env.graph, origin, nearest_anchorage_area.node)
     route_after_anchorage_area = nx.dijkstra_path(env.graph, nearest_anchorage_area.node, vessel.route[-1])
-    sailing_time_to_terminal = vessel_traffic_service.provide_sailing_time(vessel, vessel.route)["Time"].sum()
-    sailing_time_to_anchorage_area = vessel.determine_sailing_time_to_anchorage_area(route_to_anchorage_area)
-    new_sailing_time_to_terminal = vessel_traffic_service.provide_sailing_time(vessel, route_after_anchorage_area)["Time"].sum()
+    sailing_time_to_terminal, _ = get_sailing_time(vessel, vessel.route)
+    sailing_time_to_anchorage_area, _ = get_sailing_time(vessel, route_to_anchorage_area)
+    new_sailing_time_to_terminal, _ = get_sailing_time(vessel, route_after_anchorage_area)
     delay_of_sailing_to_terminal = new_sailing_time_to_terminal - sailing_time_to_terminal + sailing_time_to_anchorage_area
     if delay_of_sailing_to_terminal <= waiting_time:
         sail_to_anchorage_area = True
@@ -212,7 +233,7 @@ def get_tidal_availability_info(vessel):
     has_tidal_window_policy = check_if_route_contains_restrictions(vessel)
     route = vessel.route
     time_start = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now))
-    sailing_time = vessel.determine_sailing_time()
+    sailing_time, _ = get_sailing_time(vessel, route)
     sailing_time = np.max([pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=48)])
     time_end = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time)
     df_tidal_availability = pd.DataFrame(columns=['Accessibility'])
@@ -277,7 +298,9 @@ def provide_waiting_time_for_outbound_tidal_window(vessel, route, delay=0):
     vessel.bound = "inbound"
     return waiting_time
 
-def provide_nearest_anchorage_area(env, vessel, node):
+def provide_nearest_anchorage_area(vessel, node):
+    hydromanager = HydrodynamicDataManager()
+    hydrodynamic_information = hydromanager.hydrodynamic_data
     nodes_of_anchorages = []
     capacity_of_anchorages = []
     users_of_anchorages = []
@@ -289,8 +312,8 @@ def provide_nearest_anchorage_area(env, vessel, node):
             anchorage_reachable = True
             route_to_anchorage = nx.dijkstra_path(vessel.multidigraph, node, node_anchorage)
             for node_on_route in route_to_anchorage:
-                station_index = list(env.vessel_traffic_service.hydrodynamic_information["STATION"]).index(node_on_route)
-                min_water_level = np.min(env.vessel_traffic_service.hydrodynamic_information["Water level"][station_index].values)
+                station_index = list(hydrodynamic_information["STATION"]).index(node_on_route)
+                min_water_level = np.min(hydrodynamic_information["Water level"][station_index].values)
                 _, _, _, required_water_depth, _, MBL = provide_ukc_clearance(vessel, node)
                 if min_water_level + MBL < required_water_depth:
                     anchorage_reachable = False
@@ -306,7 +329,7 @@ def provide_nearest_anchorage_area(env, vessel, node):
             capacity_of_anchorages.append(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.capacity)
             users_of_anchorages.append(len(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.users))
             route_from_anchorage = nx.dijkstra_path(vessel.multidigraph, node_anchorage, vessel.route[-1])
-            sailing_time_to_anchorage = vessel.env.vessel_traffic_service.provide_sailing_time(vessel, route_from_anchorage)[
+            sailing_time_to_anchorage = get_sailing_time(vessel, route_from_anchorage)[
                 "Time"
             ].sum()
             sailing_times_to_anchorages.append(sailing_time_to_anchorage)

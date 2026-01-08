@@ -35,14 +35,6 @@ class HasPortAccess(Movable, Log):
         self.on_pass_node_functions.append(self.request_port_entry)
         self.env.vessels.append(self)
 
-
-    def determine_sailing_time(self):
-        route = self.route
-        sailing_information = self.env.vessel_traffic_service.provide_sailing_time(self, route)
-        sailing_time = sailing_information["Time"].cumsum().values[0]
-        return sailing_time
-
-
     def request_port_entry(self, origin, at_terminal = False, leaving_port = False, parallel_process = None, process_stop_time = pd.Timestamp('NaT')):
         if not at_terminal:
             if 'Port Entry' not in self.env.graph.nodes[origin].keys():
@@ -108,14 +100,12 @@ class IsPortAuthority:
 
     def communicate_port_accessibility_info(self, vessel, origin, berth = None, leaving_port = False, parallel_process = None, process_stop_time = pd.Timestamp('NaT')):
         port_availability_df, priority, waiting_events, total_waiting_time = self.plan_vessel_trip(vessel, origin, berth, leaving_port, process_stop_time)
-
         if not parallel_process is None:
             yield from self.communicate_vessel_to_hold_position(vessel, origin, parallel_process,leaving_port=leaving_port, process_stop_time = process_stop_time)
 
         # if trip is not possible: stop vessel
         if waiting_events is None:
             self.communicate_trip_not_possible(vessel, leaving_port)
-
 
         if not leaving_port:
             arrival_time_at_berth = vessel.terminal.assign_vessel_to_berth(vessel, origin, berth, delay=total_waiting_time)

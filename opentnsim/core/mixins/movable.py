@@ -30,7 +30,7 @@ import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
-from opentnsim.graph.mixins import get_length_of_edge
+from opentnsim.graph.utils import get_length_of_edge
 
 # get logger
 logger = logging.getLogger(__name__)

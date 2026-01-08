@@ -1,20 +1,23 @@
 """Contains the mixin for lock chambers. Also contains the parent class LockChamberOperatior."""
-import simpy
+import datetime
+import functools
+import math
 import numpy as np
 import pandas as pd
-import datetime
-import math
-import functools
+import simpy
 
+from opentnsim.constants import knots
 from opentnsim.core import HasResource, Identifiable, Log, HasLength, ExtraMetadata
-from opentnsim.utils import time_to_numpy
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
+from opentnsim.graph.mixins import HasMultiDiGraph
+from opentnsim.graph.utils import get_length_of_edge
 from opentnsim.lock.calculations import calculate_z, levelling_time_equation
 from opentnsim.lock.utils import _get_lock_operation_to_and_from_node
-from opentnsim.hydrodanamic_data_manager import HydrodynamicDataManager
 from opentnsim.output import HasOutput
-from opentnsim.graph.mixins import HasMultiDiGraph, get_length_of_edge
-from opentnsim.constants import knots
-
+from opentnsim.utils import time_to_numpy
+from opentnsim.graph.calculations import calculate_location_over_edges
+from opentnsim.graph.utils import check_if_geometry_is_aligned_with_edge, check_graph_is_multidigraph_type, get_edge
+from IPython.display import display
 
 class IsLockChamberOperator:
     """The lock chamber operator operates one chamber of the lock.
@@ -205,7 +208,6 @@ class IsLockChamberOperator:
 
         # determine the vessels that are assigned to the lock operation to which the vessel is assigned
         vessels = this_operation.vessels
-
         # initiate levelling if vessel is the last assigned vessel in the lock
         if vessel == vessels[-1]:
             # liberate the vessels that were requested to wait for the last vessel
@@ -570,7 +572,10 @@ class IsLockChamberOperator:
             distance_to_position_in_lock = lock.distance_from_start_node_to_lock_doors_A + vessel.distance_position_from_first_lock_doors
         else:
             distance_to_position_in_lock = lock.distance_from_end_node_to_lock_doors_B + vessel.distance_position_from_first_lock_doors
-        vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock_start_node, lock_end_node, distance_to_position_in_lock)
+        is_multidigraph = check_graph_is_multidigraph_type(self.env.graph)
+        edge = get_edge(self.env.graph, (lock_start_node, lock_end_node, k), is_multidigraph)
+
+        vessel.position_in_lock = calculate_location_over_edges(self.env.graph, edge, distance_to_position_in_lock, crs_m = self.crs_m)
 
         # let vessel sail to the assigned location in the lock chamber
         vessel_speed = lock.vessel_sailing_speed_in_lock(vessel)
@@ -692,12 +697,10 @@ class IsLockChamberOperator:
             node = self.start_node
         else:
             node = self.end_node
-        time_index = HydrodynamicDataManager()._get_time_index_of_hydrodynamic_data(
-            self.env.vessel_traffic_service.hydrodynamic_information_path, time
-        )
-        new_water_level = HydrodynamicDataManager()._get_hydrodynamic_data_value(
-            self.env.vessel_traffic_service.hydrodynamic_information_path, time, node, "Water level"
-        )
+
+        hydromanager = HydrodynamicDataManager()
+        time_index = hydromanager._get_time_index_of_hydrodynamic_data(time)
+        new_water_level = hydromanager._get_hydrodynamic_data_value(time, node, "Water level")
         self.water_level[time_index:] = new_water_level
 
         # log the end of the event
@@ -828,9 +831,7 @@ class IsLockChamberOperator:
 
         # determine the water level in the lock chamber
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        time_index = hydromanager._get_time_index_of_hydrodynamic_data(
-            self.env.vessel_traffic_service.hydrodynamic_information_path, time
-        )
+        time_index = hydromanager._get_time_index_of_hydrodynamic_data(time)
         wlev_chamber = self.water_level[time_index]
 
         # determine to_level
@@ -838,9 +839,7 @@ class IsLockChamberOperator:
             to_level = self.node_open
 
         # determine the water level in the harbour
-        wlev_harbour = hydromanager._get_hydrodynamic_data_value(
-            self.env.vessel_traffic_service.hydrodynamic_information_path, time, to_level, "Water level"
-        )
+        wlev_harbour = hydromanager._get_hydrodynamic_data_value(time, to_level, "Water level")
 
         # determine the direction to which the vessels are sailing out
         if to_level == self.start_node:
@@ -849,18 +848,14 @@ class IsLockChamberOperator:
             direction = 0
 
         # if the water levels in the chamber and harbour are not aligned -> level lock again
-        if not math.isnan(wlev_chamber) and not math.isnan(wlev_harbour) and np.abs(wlev_chamber - wlev_harbour) >= 0.1:
+        if wlev_chamber is not None and wlev_harbour is not None and np.abs(wlev_chamber - wlev_harbour) >= 0.1:
             yield from self.level_lock(to_level, direction=direction)
         else:
             self.node_open = to_level
 
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        time_index = hydromanager._get_time_index_of_hydrodynamic_data(
-            self.env.vessel_traffic_service.hydrodynamic_information_path, time
-        )
-        wlev_series_node_door_open = hydromanager._get_hydrodynamic_data_series(
-            self.env.vessel_traffic_service.hydrodynamic_information_path, time, self.node_open, "Water level"
-        )
+        time_index = hydromanager._get_time_index_of_hydrodynamic_data(time)
+        wlev_series_node_door_open = hydromanager._get_hydrodynamic_data_series(time, self.node_open, "Water level")
         self.water_level[time_index:] = wlev_series_node_door_open
 
         # make sure that all lock elements are requested, so only one process is occurring
@@ -1159,19 +1154,11 @@ class IsLockChamberOperator:
         t_start = np.datetime64(levelling_start)
         t_stop = np.datetime64(levelling_stop)
         if not direction:
-            wlev_A = hydromanager._get_hydrodynamic_data_value(
-                self.env.vessel_traffic_service.hydrodynamic_information_path, t_start, self.start_node, "Water level"
-            )
-            wlev_B = hydromanager._get_hydrodynamic_data_value(
-                self.env.vessel_traffic_service.hydrodynamic_information_path, t_stop, self.end_node, "Water level"
-            )
+            wlev_A = hydromanager._get_hydrodynamic_data_value(t_start, self.start_node, "Water level")
+            wlev_B = hydromanager._get_hydrodynamic_data_value(t_stop, self.end_node, "Water level")
         else:
-            wlev_A = hydromanager._get_hydrodynamic_data_value(
-                self.env.vessel_traffic_service.hydrodynamic_information_path, t_stop, self.start_node, "Water level"
-            )
-            wlev_B = hydromanager._get_hydrodynamic_data_value(
-                self.env.vessel_traffic_service.hydrodynamic_information_path, t_start, self.end_node, "Water level"
-            )
+            wlev_A = hydromanager._get_hydrodynamic_data_value(t_stop, self.start_node, "Water level")
+            wlev_B = hydromanager._get_hydrodynamic_data_value(t_start, self.end_node, "Water level")
 
         return wlev_A, wlev_B
 
@@ -1209,7 +1196,7 @@ class IsLockChamberOperator:
         t_start = time_to_numpy(t_start)
         # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
         # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is None:
+        if not hasattr(self.env,'hydrodynamics'):
             levelling_time = self.levelling_time
             z = np.zeros(len(t))
             return levelling_time, t, z
@@ -1221,7 +1208,6 @@ class IsLockChamberOperator:
             wlev_init=wlev_init,
             operation_index=operation_index,
             operation_planning=self.lock_master.operation_planning,
-            hydrodynamic_information_path=self.env.vessel_traffic_service.hydrodynamic_information_path,
             start_node=self.start_node,
             end_node=self.end_node,
             node_open=self.node_open,
@@ -1255,9 +1241,8 @@ class IsLockChamberOperator:
         if not prediction:
             # TODO: de self.water_level wordt niet gebruikt, maar is wel leuk om als logging terug te zien na een berekening. Nadenken of we dat zo willen laten, of anders willen bijhouden.
             t_final = t_start + np.timedelta64(int(levelling_time))
-            t_index_final = HydrodynamicDataManager()._get_time_index_of_hydrodynamic_data(
-                self.env.vessel_traffic_service.hydrodynamic_information_path, t_final
-            )
+            hydromanager = HydrodynamicDataManager()
+            t_index_final = hydromanager._get_time_index_of_hydrodynamic_data(t_final)
             if not direction:
                 self.water_level[t_index_final:] = H_B[t_index_final:].copy()
             else:
@@ -1329,6 +1314,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         priority_rules=None,  # maybe obsolete ???
         used_as_one_way_traffic_regulation=False,  # maybe obsolete ???
         seed_nr=None,  # a int for the seed to fix the determination of the node_open when node_open is None
+        crs_m = "EPSG:4087",
         *args,
         **kwargs,
     ):
@@ -1340,10 +1326,8 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # set input parameters as properties
         self.lock_length = lock_length
         self.lock_width = lock_width
-        # TODO: @Floor lock_depth wordt niet gebruikt... Willen we die houden?
         self.lock_depth = lock_depth
-        # TODO @Floor, is deze coefficient afhankelijk van de lock, of is dit een standaard coefficient die we ergens anders kunnen opslaan?
-        self.disch_coeff = disch_coeff #0.4
+        self.disch_coeff = disch_coeff
 
         self.opening_area = opening_area
         if opening_depth is None:
@@ -1368,6 +1352,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         self.start_node = start_node
         self.end_node = end_node
         self.k = k
+        self.crs_m = crs_m
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed
         self.node_open = node_open
         self.conditions = conditions
@@ -1392,7 +1377,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # TODO: capaciteit = 100. checken of deze info overbodig is doordat er al een lock_length is. En anders kijken of de capaciteit op oneindig kan.
         super().__init__(
             lock_master=lock_master,
-            capacity=100,
+            capacity=math.inf,
             length=lock_length,
             remaining_length=lock_length,
             *args,
@@ -1400,21 +1385,6 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         )
 
         self._verify_node_AB()
-
-        if self.env.vessel_traffic_service.hydrodynamic_information_path is not None:
-            hydro_manager = HydrodynamicDataManager()
-            if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path,str):
-                hydro_manager.hydrodynamic_data = Dataset(self.env.vessel_traffic_service.hydrodynamic_information_path)
-            else:
-                hydro_manager.hydrodynamic_data = self.env.vessel_traffic_service.hydrodynamic_information
-            if isinstance(self.env.vessel_traffic_service.hydrodynamic_information_path, str):
-                hydro_manager.hydrodynamic_times = (
-                    hydro_manager.hydrodynamic_data["TIME"][:].data.astype("timedelta64[m]")
-                    + self.env.vessel_traffic_service.hydrodynamic_start_time
-                )
-            else:
-                hydro_manager.hydrodynamic_times = hydro_manager.hydrodynamic_data["TIME"][:]
-
         if self.node_open is None:
             self.node_open = np.random.choice([start_node, end_node])
 
@@ -1427,13 +1397,12 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             self.door_A_open = False
 
         # Geometry on edge
-        edge = (start_node, end_node, 0)
-        edge_info = self.multidigraph.edges[edge]
+        edge = (start_node, end_node, k)
         # TODO Checken of de distance bepalen werkt, en misschien automatiseren op basis van geometrie
         # TODO: nodes verwijderen uit graaf als die precies op de sluis liggen. (wellicht als voorbewerking van de graaf)
         # TODO: losse klasse maken van de lock-doors die locatable, hasresource (capacity=1) en identifiable is en eigenschap open/dicht heeft.
 
-        edge_aligned_with_edge_geometry = self.env.vessel_traffic_service.check_if_geometry_is_aligned_with_edge(edge)
+        edge_aligned_with_edge_geometry = check_if_geometry_is_aligned_with_edge(self.env.graph, edge)
         start_node_geometry = start_node
         end_node_geometry = end_node
         distance_from_start_node_geometry_to_lock_doors_A = self.distance_from_start_node_to_lock_doors_A
@@ -1444,8 +1413,10 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             distance_from_start_node_geometry_to_lock_doors_B = self.distance_from_end_node_to_lock_doors_B
             distance_from_start_node_geometry_to_lock_doors_A = self.distance_from_end_node_to_lock_doors_B + lock_length
 
-        self.location_lock_doors_A = self.env.vessel_traffic_service.provide_location_over_edges(start_node_geometry, end_node_geometry, distance_from_start_node_geometry_to_lock_doors_A)
-        self.location_lock_doors_B = self.env.vessel_traffic_service.provide_location_over_edges(start_node_geometry, end_node_geometry, distance_from_start_node_geometry_to_lock_doors_B)
+        is_multidigraph = check_graph_is_multidigraph_type(self.env.graph)
+        edge = get_edge(self.env.graph, (start_node_geometry, end_node_geometry, k), is_multidigraph)
+        self.location_lock_doors_A = calculate_location_over_edges(self.env.graph, edge, distance_from_start_node_geometry_to_lock_doors_A, crs_m = self.crs_m)
+        self.location_lock_doors_B = calculate_location_over_edges(self.env.graph, edge, distance_from_start_node_geometry_to_lock_doors_B, crs_m = self.crs_m)
 
         self.lock_pos_length = simpy.Container(self.env, capacity=lock_length, init=lock_length)
         self.door_A= simpy.PriorityResource(self.env, capacity = 1)
@@ -1453,9 +1424,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         self.door_B = simpy.PriorityResource(self.env, capacity = 1)
 
         # TODO: kijken of onderstaande eigenschappen nodig zijn. en capacity op infinity zetten als mogelijk.
-        self.wait_for_other_vessel_to_arrive = simpy.FilterStore(self.env,capacity=100000000)
-        self.wait_for_levelling = simpy.FilterStore(self.env,capacity=100000000)
-        self.wait_for_other_vessels = simpy.FilterStore(self.env,capacity=100000000)
+        self.wait_for_other_vessel_to_arrive = simpy.FilterStore(self.env,capacity=math.inf)
+        self.wait_for_levelling = simpy.FilterStore(self.env,capacity=math.inf)
+        self.wait_for_other_vessels = simpy.FilterStore(self.env,capacity=math.inf)
 
         # Operating
         self.doors_opening_time = doors_opening_time
@@ -1466,9 +1437,8 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         assert start_node != end_node
 
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        wlev_series = HydrodynamicDataManager()._get_hydrodynamic_data_series(
-            self.env.vessel_traffic_service.hydrodynamic_information_path, time, self.node_open, "Water level"
-        )
+        hydromanager = HydrodynamicDataManager()
+        wlev_series = hydromanager._get_hydrodynamic_data_series(time, self.node_open, "Water level")
         self.water_level = wlev_series
 
         # TODO: in functie zetten.
@@ -1578,7 +1548,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
         # if there is an overruled speed on the edge, use this speed
         if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
-            speed = vessel.overruled_speed.loc[edge, "Speed"]
+            speed = vessel.overruled_speed.loc[edge, "speed"]
 
         return speed
 
@@ -1611,7 +1581,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
         # if there is an overruled speed on the edge, use this speed
         if 'overruled_speed' in dir(vessel) and edge in vessel.overruled_speed.index:
-            speed = vessel.overruled_speed.loc[edge, 'Speed']
+            speed = vessel.overruled_speed.loc[edge, 'speed']
 
         return speed
 

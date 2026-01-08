@@ -11,6 +11,10 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import copy
 
+from opentnsim.graph.utils import get_sailing_time
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
+from opentnsim.environment.utils import get_governing_current_velocity
+
 def lighten_color(color, alpha):
     """
     Lighten a Matplotlib color by blending it with white.
@@ -87,8 +91,8 @@ class HasDraughtRestrictions:
         draught = tidal_window_calculation_results['draught']
         vertical_tidal_windows = tidal_window_calculation_results['vertical_tidal_windows']
         net_ukcs = tidal_window_calculation_results['net_ukcs']
-        vessel_traffic_service = self.env.vessel_traffic_service
-        hydrodynamic_information = vessel_traffic_service.hydrodynamic_information
+        hydromanager = HydrodynamicDataManager()
+        hydrodynamic_information = hydromanager.hydrodynamic_data
 
         fig, ax = plt.subplots(figsize=[16 * 2 / 3, 6])
         ax.set_facecolor('none')
@@ -171,8 +175,8 @@ class HasDraughtRestrictions:
         horizontal_tidal_windows = tidal_window_calculation_results['horizontal_tidal_windows']
         horizontal_tidal_restriction_nodes = tidal_window_calculation_results['horizontal_tidal_restriction_nodes']
         horizontal_tidal_restriction_stations = tidal_window_calculation_results['horizontal_tidal_restriction_stations']
-        vessel_traffic_service = self.env.vessel_traffic_service
-        hydrodynamic_information = vessel_traffic_service.hydrodynamic_information
+        hydromanager = HydrodynamicDataManager()
+        hydrodynamic_information = hydromanager.hydrodynamic_data
 
         # Create figure
         fig, ax = plt.subplots(figsize=[16 * 2 / 3, 6])
@@ -192,12 +196,8 @@ class HasDraughtRestrictions:
         # Plot governing current velocity
         current_velocity = None
         for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
-
-            governing_current_velocity, _ = vessel_traffic_service.provide_governing_current_velocity(vessel,
-                                                                                                      station,
-                                                                                                      time_start_index,
-                                                                                                      time_end_index)
-            sailing_time = self.provide_sailing_time(vessel, route[: (route.index(node) + 1)])["Time"].sum() + delay
+            governing_current_velocity, _ = get_governing_current_velocity(vessel,station,time_start_index,time_end_index)
+            sailing_time, _ = get_sailing_time(vessel, route[: (route.index(node) + 1)]) + delay
             horizontal_tidal_accessibility_time_correction = np.timedelta64(int(sailing_time), "s")
             horizontal_tidal_accessibility_time = hydrodynamic_information.TIME.values[time_start_index:time_end_index]
             horizontal_tidal_accessibility_time -= horizontal_tidal_accessibility_time_correction

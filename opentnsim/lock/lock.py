@@ -24,9 +24,18 @@ from IPython.display import display
 
 from opentnsim.utils import inherit_docstring
 from opentnsim.core import HasResource, Identifiable, Log, Movable, HasLength, SimpyObject, ExtraMetadata
-from opentnsim.graph.mixins import HasMultiDiGraph, get_length_of_edge
+from opentnsim.graph.mixins import HasMultiDiGraph
+from opentnsim.graph.utils import (
+    get_length_of_edge,
+    get_trajectory,
+    get_edge,
+    get_sailing_time,
+    get_sailing_information_on_edge_to_distance_on_another_edge,
+    check_graph_is_multidigraph_type,
+    get_edge_at_distance_from_node)
+from opentnsim.graph.calculations import calculate_location_over_edges, transform_geometry
 from opentnsim.output import HasOutput
-from opentnsim.hydrodanamic_data_manager import HydrodynamicDataManager
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.lock.utils import (
     _get_lock_object_on_registration_node,
     _update_lock_operation_planning,
@@ -832,10 +841,8 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # Add attributes to the vessels movable functions
         self.on_pass_node_functions.append(self.register_to_lock_master)
         self.on_pass_edge_functions.append(self.sail_to_waiting_area)
-
-        # Save speeds that are calculated by vessel_traffic_service
         self.overruled_speed = pd.DataFrame(
-            data=[], columns=["Speed"], index=pd.MultiIndex.from_arrays([[], []], names=("node_start", "node_stop"))
+            data=[], columns=["speed"], index=pd.MultiIndex.from_arrays([[], []], names=("node_start", "node_stop"))
         )
 
     def _find_route_to_lock(self, lock):
@@ -857,7 +864,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             if edge == lock.edge or edge == lock.edge[::-1]:
                 index += 1
                 break
-        route_to_lock = route_to_come[:(index+1)]
+        route_to_lock = route_to_come[:(index)]
         return route_to_lock
 
     def _find_upcoming_lock_registration_nodes(self):
@@ -1079,15 +1086,12 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             lock.node_open = lock._directional_edge(direction)[0]
 
             # set the new water level for the lock if there is hydrodynamic data included in the simulation TODO: also this should preferably be included elsewhere and not here
-            if self.env.vessel_traffic_service.hydrodynamic_information_path:
-                hydromanager = HydrodynamicDataManager()
-                time_index = np.absolute(
-                    hydromanager.hydrodynamic_times
-                    - np.datetime64(doors_required_to_be_open)
-                    - np.timedelta64(int(lock.doors_opening_time), "s")
-                ).argmin()
-                station_index = np.where(np.array(list((hydromanager.hydrodynamic_data["STATION"]))) == lock.node_open)[0]
-                lock.water_level[time_index:] = hydromanager.hydrodynamic_data["Water level"][station_index, time_index:]
+            hydromanager = HydrodynamicDataManager()
+            time_of_door_opening = np.datetime64(doors_required_to_be_open) - np.timedelta64(int(lock.doors_opening_time))
+            time_index = hydromanager._get_time_index_of_hydrodynamic_data(time_of_door_opening)
+            water_level = hydromanager._get_hydrodynamic_data_series(time_of_door_opening, lock.node_open, "Water level")
+            if len(water_level):
+                lock.water_level[time_index:] = water_level
 
     def wait_in_waiting_area(self, waiting_area):
         """
@@ -1196,7 +1200,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             lock.overrule_vessel_speed(self,lock_end_node,waiting_time=waiting_time_while_sailing)
             self.process.interrupt()
 
-        self.overruled_speed.loc[waiting_area.edge, 'Speed'] = lock.vessel_sailing_in_speed(self, direction)
+        self.overruled_speed.loc[waiting_area.edge, 'speed'] = lock.vessel_sailing_in_speed(self, direction)
         self.distance_left_on_edge = distance_left_on_edge
 
 
@@ -1223,11 +1227,13 @@ class IsLockWaitingArea(HasResource, Identifiable, Log, HasOutput, HasMultiDiGra
         self.edge = edge
         self.lock = lock
         self.distance_from_edge_start = distance_from_edge_start
-        super().__init__(*args, **kwargs, nr_resources=1000000)
+        super().__init__(*args, **kwargs, nr_resources=math.inf)
         """Initialization"""
 
-        self.waiting_area = simpy.PriorityResource(self.env, capacity=1000000)
-        self.location = self.env.vessel_traffic_service.provide_location_over_edges(edge[0],edge[1],distance_from_edge_start)
+        self.waiting_area = simpy.PriorityResource(self.env, capacity=math.inf)
+        is_multidigraph = check_graph_is_multidigraph_type(self.env.graph)
+        edge = get_edge(self.env.graph, edge, is_multidigraph)
+        self.location = calculate_location_over_edges(self.env.graph,edge,distance_from_edge_start)
         # TODO: gebruik self.resource vanuit hasresource in plaats van self.waiting_area
         # TODO: checken of deze parents allemaal nodig zijn.
         # TODO: locatable mixin gebruiken in plaats van self.location
@@ -1347,7 +1353,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         self,
         lock_complex,
         min_vessels_in_operation=0,
-        max_vessels_in_operation=100,
+        max_vessels_in_operation=math.inf,
         clustering_time=0.5 * 60 * 60,
         water_level_difference_limit_to_open_doors=0.05,
         minimize_door_open_times=False,
@@ -1545,27 +1551,27 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         route_index_current_node = route_vessel.index(vessel.current_node)
         route_index_end_of_lock_complex = route_vessel.index(lock_end_node)
         route_vessel_to_pass_lock_complex = route_vessel[route_index_current_node:route_index_end_of_lock_complex]
-        sailing_information = self.env.vessel_traffic_service.provide_sailing_time(vessel, route_vessel_to_pass_lock_complex) #TODO: maybe rename this function in the VTS, because it provides a dataframe of the sailing information (i.e., time, speed, and distance) per edge over the route of the vessel
+        _, sailing_information = get_sailing_time(vessel, route_vessel_to_pass_lock_complex) #TODO: maybe rename this function in the VTS, because it provides a dataframe of the sailing information (i.e., time, speed, and distance) per edge over the route of the vessel
 
         # correct the sailing time at the lock complex edge to the distance on that edge from the node to the lock doors (depending on the direction of the vessel)
         last_sailing_index = sailing_information.iloc[-1].index
-        sailing_information.loc[last_sailing_index, 'Distance'] = distance
-        sailing_information.loc[last_sailing_index, 'Time'] = distance / sailing_information.loc[last_sailing_index, 'Speed']
+        sailing_information.loc[last_sailing_index, 'distance'] = distance
+        sailing_information.loc[last_sailing_index, 'time'] = distance / sailing_information.loc[last_sailing_index, 'speed']
 
         # if there are overruled speeds implemented, correct the above speeds and sailing times
         if not vessel.overruled_speed.empty:
             for edge, overruled_speed in vessel.overruled_speed.iterrows():
                 edge_index_mask = sailing_information.index == edge
-                sailing_information.loc[edge_index_mask, 'Speed'] = overruled_speed.Speed
-                sailing_information.loc[edge_index_mask, 'Time'] = sailing_information.loc[edge_index_mask, 'Distance'] / sailing_information.loc[edge_index_mask, 'Speed']
+                sailing_information.loc[edge_index_mask, 'speed'] = overruled_speed.speed
+                sailing_information.loc[edge_index_mask, 'time'] = sailing_information.loc[edge_index_mask, 'distance'] / sailing_information.loc[edge_index_mask, 'speed']
 
         # determine the index of the first edge in the sailing time dataframe to correct the sailing distance and sailing time of this edge with the already passed time and passed distance by this ship over this edge
         index_sailing_on_first_edge = (sailing_information[sailing_information.index.isin([(vessel.current_node, route_vessel_to_pass_lock_complex[1], 0)])].iloc[0].name)
         index_mask = sailing_information.index == index_sailing_on_first_edge
         interpolation = 1 - passed_time / sailing_information.loc[index_mask].Time
-        sailing_information.loc[sailing_information[index_mask].index, 'Distance'] = sailing_information.loc[sailing_information[index_mask].index, 'Distance'] * interpolation
-        sailing_information.loc[sailing_information[index_mask].index, 'Time'] = sailing_information.loc[sailing_information[index_mask].index, 'Time'] * interpolation
-        sailing_information['Speed'] = sailing_information['Speed'].astype(float)
+        sailing_information.loc[sailing_information[index_mask].index, 'distance'] = sailing_information.loc[sailing_information[index_mask].index, 'distance'] * interpolation
+        sailing_information.loc[sailing_information[index_mask].index, 'time'] = sailing_information.loc[sailing_information[index_mask].index, 'time'] * interpolation
+        sailing_information['speed'] = sailing_information['speed'].astype(float)
 
         return sailing_information
 
@@ -1591,8 +1597,8 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             return
 
         # determines the average speed of the vessel over its route and calculate the overruled speed of the vessel based on the waiting time
-        average_speed = sailing_information.loc[:, 'Distance'].sum()/sailing_information.loc[:, 'Time'].sum()
-        overruled_speed = np.max([self.minimum_manoeuvrability_speed, sailing_information.loc[:, 'Distance'].sum()/(sailing_information.loc[:, 'Time'].sum() + waiting_time)])
+        average_speed = sailing_information.loc[:, 'distance'].sum()/sailing_information.loc[:, 'time'].sum()
+        overruled_speed = np.max([self.minimum_manoeuvrability_speed, sailing_information.loc[:, 'distance'].sum()/(sailing_information.loc[:, 'time'].sum() + waiting_time)])
         reversed_sailing_information = sailing_information.iloc[::-1]
 
         # TODO: Dit lijkt me een goed algoritme om los te koppelen.
@@ -1600,7 +1606,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # loops over the sailing information of the edges to adhere to the overruled speed (averaged over the route), the stops if too much iterations are required or when the difference between the new average speed and the overruled speed are sufficiently close to each other or when there are no speeds to be reduced
         iteration = 0
-        speed_mask = reversed_sailing_information.Speed < self.minimum_manoeuvrability_speed
+        speed_mask = reversed_sailing_information.speed < self.minimum_manoeuvrability_speed
         while not np.abs(average_speed-overruled_speed) <= 0.01 and not reversed_sailing_information[speed_mask].empty:
             if iteration == 100:
                 break
@@ -1609,16 +1615,16 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             speed_difference = average_speed - overruled_speed
 
             # identifies all speeds that are still greater than the minimum required speed for manoevrability (safety), so that these speeds can be reduced -> adjust the speed and time
-            speed_mask = reversed_sailing_information.Speed > self.minimum_manoeuvrability_speed
-            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Speed'] -= speed_difference
-            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Time'] = reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Distance'] / \
-                                                                                                       reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Speed']
+            speed_mask = reversed_sailing_information.speed > self.minimum_manoeuvrability_speed
+            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'speed'] -= speed_difference
+            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'time'] = reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'distance'] / \
+                                                                                                       reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'speed']
 
             # if in the previous steps speeds have been reduced to less than the minimum manoevrability speed, then change these speeds to this minimum -> adjust again the speed and time
-            speed_mask = reversed_sailing_information.Speed < self.minimum_manoeuvrability_speed
-            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Speed'] = self.minimum_manoeuvrability_speed
-            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Time'] = reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Distance'] / \
-                                                                                                       reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'Speed']
+            speed_mask = reversed_sailing_information.speed < self.minimum_manoeuvrability_speed
+            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'speed'] = self.minimum_manoeuvrability_speed
+            reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'time'] = reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'distance'] / \
+                                                                                                       reversed_sailing_information.loc[reversed_sailing_information[speed_mask].index, 'speed']
 
             # calculate the new average speed and increase the iteration number by one
             average_speed = reversed_sailing_information.Distance.sum()/reversed_sailing_information.Time.sum()
@@ -1626,7 +1632,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # store the new sailing information info in an overruled speed dataframe object for the vessel
         for edge, reversed_sailing_information_info in reversed_sailing_information.iterrows():
-            vessel.overruled_speed.loc[edge] = reversed_sailing_information_info.Speed
+            vessel.overruled_speed.loc[edge] = reversed_sailing_information_info.speed
 
     def add_vessel_to_vessel_planning(self, vessel, direction, time_of_registration=None):
         """
@@ -1768,21 +1774,20 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         # unpack first encountered waiting area
         waiting_area_approach = self._get_appropriate_waiting_area(direction)
 
-        # unpack the function that calculates sailing time from distance on edge to distance on another edge
-        calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
-
         # determine the distance that the vessel has to sail on the edge at which the waiting area is located (from the start node of the edge)
         distance_to_waiting_area_on_last_edge = waiting_area_approach.distance_from_edge_start
 
         # calculation of the sailing information (time, distance, speed) per edge on route to the waiting area
-        sailing_to_waiting_area = calculate_sailing_time(vessel, route=route_to_waiting_area, distance_sailed_on_last_edge=distance_to_waiting_area_on_last_edge)
+        sailing_to_waiting_area = get_sailing_information_on_edge_to_distance_on_another_edge(vessel,
+                                                                                              route=route_to_waiting_area,
+                                                                                              distance_sailed_on_last_edge=distance_to_waiting_area_on_last_edge)
 
         # calculation of the sailing time, distance, and average speed to the waiting area
-        sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['Time'].sum())
-        sailing_distance = sailing_to_waiting_area['Distance'].sum()
-        average_sailing_speed = sailing_to_waiting_area['Speed']
+        sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['time'].sum())
+        sailing_distance = sailing_to_waiting_area['distance'].sum()
+        average_sailing_speed = sailing_to_waiting_area['speed']
         if sailing_to_waiting_area_time.total_seconds():
-            average_sailing_speed = sailing_distance / sailing_to_waiting_area['Time'].sum()
+            average_sailing_speed = sailing_distance / sailing_to_waiting_area['time'].sum()
 
         # calculate arrival time of vessel at the waiting area and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
@@ -1870,18 +1875,15 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         # unpack vessel planning
         vessel_planning = self.lock_complex.vessel_planning
 
-        # unpack the function that calculates sailing time from distance on edge to distance on another edge
-        calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
-
         # determine the distance that the vessel has to sail on the edge at which the line-up area is located (from the start node of the edge)
         distance_to_lineup_area_from_last_node = lineup_area_approach.distance_from_start_edge
 
         # calculation of the sailing information (time, distance, speed) per edge on route to the line-up area
-        sailing_to_lineup_area = calculate_sailing_time(vessel, route=route_to_lineup_area,
+        sailing_to_lineup_area = get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route=route_to_lineup_area,
                                                         distance_sailed_on_last_edge=distance_to_lineup_area_from_last_node)
 
         # calculation of the sailing time to the line-up area
-        sailing_to_lineup_area_time = pd.Timedelta(seconds=sailing_to_lineup_area['Time'].sum())
+        sailing_to_lineup_area_time = pd.Timedelta(seconds=sailing_to_lineup_area['time'].sum())
 
         # calculate arrival time of vessel at the line-up area and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
@@ -1983,13 +1985,10 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         # determine the route of the vessel to the end node of the lock complex from the perspective of the vessel
         route_to_lock_chamber = vessel._find_route_to_lock(lock=self)
 
-        # unpack the function that calculates sailing time from distance on edge to distance on another edge
-        calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
-
         # calculate sailing time to the start node of the edge of lock complex from the perspective of the vessel
-        sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
-        sailing_to_lock_chamber_distance = sailing_to_lock_chamber['Distance'].sum()
-        sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
+        _, sailing_to_lock_chamber = get_sailing_time(vessel, route_to_lock_chamber)
+        sailing_to_lock_chamber_distance = sailing_to_lock_chamber['distance'].sum()
+        sailing_to_lock_chamber_time = sailing_to_lock_chamber['time'].sum()
 
         # add sailing distance and time to the lock doors on the edge of the lock complex to sailing information to the start node of this edge
         sailing_to_lock_chamber_distance += distance_to_lock
@@ -2804,6 +2803,7 @@ class IsLockComplex(IsLockMaster):
                  P_used_to_accelerate_in_lock=None,             # a float that is the acceleration power used by the vessel to gradually accelerate inside the lock chamber [kW]
                  P_used_to_accelerate_after_lock=None,          # a float that is the acceleration power used by the vessel to gradually accelerate to sail way from the lock chamber [kW]
                  k = 0,                                         # a int that is the identifier of the edge between two nodes at which the lock complex is located on the multidigraph network
+                 crs_m = 'EPSG:4087',
                  *args,
                  **kwargs):
         """Initialization"""
@@ -2817,7 +2817,7 @@ class IsLockComplex(IsLockMaster):
 
         # initialization
         super().__init__(lock_complex=self, *args, **kwargs)
-        self.lock_chamber = IsLockChamber(lock_master=self, start_node=self.start_node, end_node=self.end_node, *args, **kwargs)
+        self.lock_chamber = IsLockChamber(lock_master=self, start_node=self.start_node, end_node=self.end_node, crs_m = crs_m, *args, **kwargs)
 
         # verify if nodes A and B are part of the graph, and have an edge between them
         self._verify_node_AB()
@@ -2832,6 +2832,7 @@ class IsLockComplex(IsLockMaster):
         self.P_used_to_accelerate_in_lock = P_used_to_accelerate_in_lock
         self.P_used_to_accelerate_after_lock = P_used_to_accelerate_after_lock
         self.k = k
+        self.crs_m = crs_m
 
         # create the waiting area objects
         if edge_waiting_area_A is None:
@@ -2839,8 +2840,9 @@ class IsLockComplex(IsLockMaster):
 
         self.distance_waiting_area_A_from_edge_start_waiting_area_A = self.distance_from_start_node_to_lock_doors_A - self.distance_lock_doors_A_to_waiting_area_A
         if edge_waiting_area_A != (node_A, node_B):
-            geometry_edge_start_waiting_area_A_to_lock_node_A = self.env.vessel_traffic_service.provide_trajectory(edge_waiting_area_A[0], node_A)
-            geometry_edge_start_waiting_area_A_to_lock_node_A_m = self.env.vessel_traffic_service.transform_geometry(geometry_edge_start_waiting_area_A_to_lock_node_A)
+            geometry_edge_start_waiting_area_A_to_lock_node_A = get_trajectory(self.env.graph,
+                                                                               edge_waiting_area_A[0], node_A)
+            geometry_edge_start_waiting_area_A_to_lock_node_A_m = transform_geometry(geometry_edge_start_waiting_area_A_to_lock_node_A, epsg_out=crs_m)
             self.distance_waiting_area_A_from_edge_start_waiting_area_A = geometry_edge_start_waiting_area_A_to_lock_node_A_m.length - self.distance_lock_doors_A_to_waiting_area_A
 
         self.waiting_area_A = IsLockWaitingArea(env=self.env,
@@ -2856,8 +2858,9 @@ class IsLockComplex(IsLockMaster):
 
         self.distance_waiting_area_B_from_start_edge_waiting_area_B = self.distance_from_end_node_to_lock_doors_B - self.distance_lock_doors_B_to_waiting_area_B
         if edge_waiting_area_B !=(node_B, node_A):
-            geometry_edge_start_waiting_area_B_to_lock_node_B = self.env.vessel_traffic_service.provide_trajectory(edge_waiting_area_B[0],node_B)
-            geometry_edge_start_waiting_area_B_to_lock_node_B_m = self.env.vessel_traffic_service.transform_geometry(geometry_edge_start_waiting_area_B_to_lock_node_B)
+            geometry_edge_start_waiting_area_B_to_lock_node_B = get_trajectory(self.env.graph,
+                                                                               edge_waiting_area_B[0],node_B)
+            geometry_edge_start_waiting_area_B_to_lock_node_B_m = transform_geometry(geometry_edge_start_waiting_area_B_to_lock_node_B, epsg_out=crs_m)
             self.distance_waiting_area_B_from_start_edge_waiting_area_B = geometry_edge_start_waiting_area_B_to_lock_node_B_m.length - self.distance_lock_doors_B_to_waiting_area_B
 
         self.waiting_area_B = IsLockWaitingArea(env=self.env,
@@ -2885,13 +2888,10 @@ class IsLockComplex(IsLockMaster):
 
             # get the edge at which the line-up area is located TODO: can a lock complex be located along multiple edges?
             distance_from_start_node_to_lineup_A = self.distance_lock_doors_A_to_lineup_area_A - self.distance_from_start_node_to_lock_doors_A
-            edge_lineup_area_A = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env,
-                                                                                                    self.start_node,
-                                                                                                    self.node_A,
-                                                                                                    distance_from_start_node_to_lineup_A)
-
+            edge_lineup_area_A = get_edge_at_distance_from_node(self.env, self.start_node, self.node_A,
+                                                                distance_from_start_node_to_lineup_A)
             route_to_lineup_area_A = nx.dijkstra_path(self.env.graph, self.start_node, edge_lineup_area_A[1]) # TODO: can a lock complex be located along multiple edges?
-            distance_start_node_to_node_waiting_area_A = self.env.vessel_traffic_service.provide_sailing_distance_over_route(route_to_lineup_area_A)["Distance"].sum()
+            distance_start_node_to_node_waiting_area_A, _ = get_sailing_distance(self.env.graph, route_to_lineup_area_A)
             self.distance_lineup_area_A_from_edge_lineup_area_A_start = distance_start_node_to_node_waiting_area_A - (self.distance_lock_doors_A_to_lineup_area_A - self.distance_from_start_node_to_lock_doors_A)
 
             # create lineup area A object
@@ -2922,13 +2922,11 @@ class IsLockComplex(IsLockMaster):
 
             # get the edge at which the line-up area is located TODO: can a lock complex be located along multiple edges?
             distance_from_end_node_to_lineup_B = self.distance_lock_doors_B_to_lineup_area_B - self.distance_from_end_node_to_lock_doors_B
-            edge_lineup_area_B = self.env.vessel_traffic_service.provide_edge_by_distance_from_node(self.env,
-                                                                                                    self.end_node,
-                                                                                                    self.node_B,
-                                                                                                    distance_from_end_node_to_lineup_B)
+            edge_lineup_area_B = get_edge_at_distance_from_node(self.env, self.end_node, self.node_B,
+                                                                distance_from_end_node_to_lineup_B)
 
             route_to_lineup_area_B = nx.dijkstra_path(self.env.graph, self.end_node, edge_lineup_area_B[1]) #TODO: can a lock complex be located along multiple edges?
-            distance_end_node_to_node_waiting_area_B = self.env.vessel_traffic_service.provide_sailing_distance_over_route(route_to_lineup_area_B)["Distance"].sum()
+            distance_end_node_to_node_waiting_area_B = provide_sailing_distance_over_route(route_to_lineup_area_B)["Distance"].sum()
             self.distance_lineup_area_B_from_edge_lineup_area_B_start = distance_end_node_to_node_waiting_area_B - (self.distance_lock_doors_B_to_lineup_area_B - self.distance_from_end_node_to_lock_doors_B)
 
             # create lineup area B object
@@ -3134,12 +3132,13 @@ class IsLockComplex(IsLockMaster):
 
         # create lock edge geometry in [m]
         route_between_nodes_of_registration = nx.dijkstra_path(self.env.graph, self.registration_nodes[0], self.registration_nodes[1])
-        lock_edge_geometry = self.env.vessel_traffic_service.provide_trajectory(route_between_nodes_of_registration[0],route_between_nodes_of_registration[-1])
-        lock_edge_geometry_m = self.env.vessel_traffic_service.transform_geometry(lock_edge_geometry)
+        lock_edge_geometry = get_trajectory(self.env.graph,route_between_nodes_of_registration[0],
+                                            route_between_nodes_of_registration[-1])
+        lock_edge_geometry_m = transform_geometry(lock_edge_geometry, epsg_out= self.crs_m)
 
         # plot the lock geometry over time
-        location_lock_doors_A_m = self.env.vessel_traffic_service.transform_geometry(self.location_lock_doors_A)
-        location_lock_doors_B_m = self.env.vessel_traffic_service.transform_geometry(self.location_lock_doors_B)
+        location_lock_doors_A_m = transform_geometry(self.location_lock_doors_A, epsg_out= self.crs_m)
+        location_lock_doors_B_m = transform_geometry(self.location_lock_doors_B, epsg_out= self.crs_m)
         x_lock_doorsA = (lock_edge_geometry_m.line_locate_point(location_lock_doors_A_m))
         x_lock_doorsB = (lock_edge_geometry_m.line_locate_point(location_lock_doors_B_m))
         x_correction_indirection = x_lock_doorsA + self.lock_length/2
@@ -3176,7 +3175,7 @@ class IsLockComplex(IsLockMaster):
             times = []
             distances = []
             vessel_df = pd.DataFrame(vessel.logbook)
-            vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: self.env.vessel_traffic_service.transform_geometry(x))
+            vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: transform_geometry(x, epsg_out = self.crs_m))
             x_correction = 0.0
             for index, message_info in vessel_df.iterrows():
                 time = message_info.Timestamp
