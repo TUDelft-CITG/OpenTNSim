@@ -22,7 +22,7 @@ import requests
 import shapely.geometry
 # package(s) related to the simulation
 import simpy
-from opentnsim.core import Identifiable, Locatable
+from opentnsim.core import Identifiable, Locatable, SimpyObject
 # OpenTNSim
 from opentnsim.graph import mixins as graph_module
 from opentnsim.graph import utils
@@ -37,16 +37,22 @@ logging.basicConfig(level=logging.INFO)
 # Determine the wgs84 geoid
 wgs84 = pyproj.Geod(ellps="WGS84")
 
-class OnNode:
+class OnNode(SimpyObject):
     def __init__(self, node, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.node = node
-
-
-class OnEdge:
-    def __init__(self, edge, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        if node not in self.env.graph.nodes:
+            raise ValueError(f"Node {node} does not exist in the graph.")
+
+
+class OnEdge(SimpyObject):
+    def __init__(self, edge, *args, **kwargs):
         self.edge = edge
+        super().__init__(*args, **kwargs)
+
+        if edge not in self.env.graph.edges:
+            raise ValueError(f"Node {node} does not exist in the graph.")
 
 
 class Node(Identifiable, Locatable):

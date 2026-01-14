@@ -775,7 +775,7 @@ def get_heading(vessel, graph, edge):
     return heading
 
 
-def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, distance_sailed_on_first_edge=0., distance_sailed_on_last_edge=0.):
+def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, distance_sailed_on_first_edge=0., distance_to_be_sailed_on_last_edge=0.):
     """
     Calculates the distance from a location along an edge A to another location along an edge B
 
@@ -787,7 +787,7 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, d
         str resemble node names that have to be in the graph
     distance_sailed_on_first_edge : float
         distance that is already covered on the edge at which the vessel is currently sailing
-    distance_sailed_on_last_edge : float
+    distance_to_be_sailed_on_last_edge : float
         distance on the last edge that the vessel has to sail to reach its location of interest
     edges : list of tuples
         tuples resemble edges with: a start_node [u] as str, end_node (v) as str, and identifier (k) as int
@@ -803,16 +803,17 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, d
     _, sailing_information_df = get_sailing_time(vessel=vessel, route=route)
 
     # determine indexes of first and last edges
-    index_first_edge = pd.Index([sailing_information_df.iloc[0].name])
-    index_last_edge = pd.Index([sailing_information_df.iloc[-1].name])
+    if not sailing_information_df.empty:
+        index_first_edge = pd.Index([sailing_information_df.iloc[0].name])
+        index_last_edge = pd.Index([sailing_information_df.iloc[-1].name])
 
-    # determine distance that must still be sailed on the current edge of the vessel
-    distance_to_sail_on_first_edge = (sailing_information_df.loc[index_first_edge, 'distance']-distance_sailed_on_first_edge)
+        # determine distance that must still be sailed on the current edge of the vessel
+        distance_to_sail_on_first_edge = (sailing_information_df.loc[index_first_edge, 'distance']-distance_sailed_on_first_edge)
 
-    # adjust information of the sailing distance and sailing time on the first and last edges
-    sailing_information_df.loc[index_first_edge, 'time'] = sailing_information_df.loc[index_first_edge, 'time']*(distance_to_sail_on_first_edge/sailing_information_df.loc[index_first_edge, 'distance'])
-    sailing_information_df.loc[index_first_edge, 'distance'] = distance_to_sail_on_first_edge
-    sailing_information_df.loc[index_last_edge, 'time'] = sailing_information_df.loc[index_last_edge, 'time']*(distance_sailed_on_last_edge/sailing_information_df.loc[index_last_edge, 'distance'])
-    sailing_information_df.loc[index_last_edge, 'distance'] = distance_sailed_on_last_edge
+        # adjust information of the sailing distance and sailing time on the first and last edges
+        sailing_information_df.loc[index_first_edge, 'time'] = sailing_information_df.loc[index_first_edge, 'time']*(distance_to_sail_on_first_edge/sailing_information_df.loc[index_first_edge, 'distance'])
+        sailing_information_df.loc[index_first_edge, 'distance'] = distance_to_sail_on_first_edge
+        sailing_information_df.loc[index_last_edge, 'time'] = sailing_information_df.loc[index_last_edge, 'time']*(distance_to_be_sailed_on_last_edge/sailing_information_df.loc[index_last_edge, 'distance'])
+        sailing_information_df.loc[index_last_edge, 'distance'] = distance_to_be_sailed_on_last_edge
 
     return sailing_information_df

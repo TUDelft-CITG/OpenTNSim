@@ -309,3 +309,6 @@ def calculate_detailed_cycle_time(lock, vessels, leveling_cycles):
         })
 
     return pd.DataFrame(results)
+
+
+
