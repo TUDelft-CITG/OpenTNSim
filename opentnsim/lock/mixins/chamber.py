@@ -22,6 +22,7 @@ from opentnsim.lock.calculations import (
 )
 from opentnsim.lock.mixins.operator import IsLockChamberOperator
 from opentnsim.lock.utils import (
+    _get_directional_edge,
     _get_lock_operation_to_and_from_node,
     _get_waiting_area,
     _get_distance_to_lock,
@@ -30,6 +31,7 @@ from opentnsim.lock.utils import (
     _verify_node_AB,
     check_lock_distances_to_nodes_of_edge,
 )
+from opentnsim.lock.visualizations import create_time_distance_plot
 from opentnsim.output import HasOutput
 
 
@@ -42,17 +44,6 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
     """Mixin class: lock complex has a lock chamber:
 
     creates a lock chamber with a resource which is requested when a vessels wants to enter the area with limited capacity
-
-    Attributes
-    ----------
-    vessel_sailing_speed_in_lock :
-        calculates the average speed in the lock when entering
-    vessel_sailing_speed_out_lock :
-        calculates the average speed in the lock when leaving
-    vessel_sailing_in_speed :
-        Calculates the average speed when sailing towards the lock chamber
-    vessel_sailing_out_speed :
-        Calculates the average speed when sailing away from the lock chamber
 
     """
 
@@ -73,15 +64,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         gate_opening_time=300.0,  # a float which contains the time it takes to open the gate [s]
         gate_closing_time=300.0,  # a float which contains the time it takes to close the gate [s]
         speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
-        start_sailing_out_time_after_gate_have_been_opened=0.0,  # a float that is the time that the vessel wait to start sailing out of the lock after the gate have been opened after levelling [s]
-        sailing_time_before_opening_lock_gate=600.0,  # a float that is the time that the gate are opened before a vessel arrives at the gate [s]
-        sailing_time_before_closing_lock_gate=120.0,  # a float that is the time that the gate are closed after a vessel has sailed through the gate [s]
-        minimum_time_between_operations_for_intermediate_gate_closure=0.0,  # a float that is the minimum required time between lock operations that the lock gate can be both closed (to reduce salt intrusion) [s]
         sailing_distance_to_crossing_point=500.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
-        sailing_in_time_gap_through_gate=180.0,  # a float that is the time gap after which the next vessel can sail into the lock through the lock gate (after another vessel has sailed through to enter the lock) [s]
-        sailing_out_time_gap_through_gate=180.0,  # a float that is the time gap after which the next vessel can sail out of the lock through the lock gate (after another vessel has sailed through to leave the lock)[s]
-        sailing_in_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail into the lock (after another vessel has berthed) [s]
-        sailing_out_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail out of the lock (after another vessel has deberthed) [s]
         sailing_in_speed_A=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
         sailing_out_speed_A=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
         sailing_in_speed_B=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
@@ -118,8 +101,10 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.start_node = self.edge[0]
         self.end_node = self.edge[1]
         self.k = 0
+        self.edge_reversed = (self.end_node, self.start_node)
         if isinstance(self.env.graph, nx.MultiDiGraph):
             self.k = self.edge[2]
+            self.edge_reversed = (self.end_node, self.start_node, self.k)
 
         # gate information
         geometry_gate_A = calculate_location_over_edges(self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A, crs_m = self.crs_m)
@@ -155,19 +140,11 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
 
         # operational information
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed
-        self.start_sailing_out_time_after_gate_have_been_opened = start_sailing_out_time_after_gate_have_been_opened
-        self.sailing_time_before_opening_lock_gate = sailing_time_before_opening_lock_gate
-        self.sailing_time_before_closing_lock_gate = sailing_time_before_closing_lock_gate
-        self.minimum_time_between_operations_for_intermediate_gate_closure = minimum_time_between_operations_for_intermediate_gate_closure
-        self.sailing_in_time_gap_after_berthing_previous_vessel = sailing_in_time_gap_after_berthing_previous_vessel
-        self.sailing_out_time_gap_after_berthing_previous_vessel = sailing_out_time_gap_after_berthing_previous_vessel
         self.sailing_in_speed_A = sailing_in_speed_A
         self.sailing_out_speed_A = sailing_out_speed_A
         self.sailing_in_speed_B = sailing_in_speed_B
         self.sailing_out_speed_B = sailing_out_speed_B
         self.sailing_distance_to_crossing_point = sailing_distance_to_crossing_point
-        self.sailing_in_time_gap_through_gate = sailing_in_time_gap_through_gate
-        self.sailing_out_time_gap_through_gate = sailing_out_time_gap_through_gate
         self.speed_reduction_factor = speed_reduction_factor_lock_chamber
         self.converting_chamber = False
 
@@ -186,134 +163,6 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         add_lock_to_graph(self)
 
 
-    def vessel_sailing_speed_in_lock(self, vessel):
-        """
-        Calculates the average speed in the lock when entering
-
-        Parameters
-        ----------
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-        x_location_lock : float
-            logintudinal coordinate in the lock to which the vessel is assigned [m]
-        P_used : float
-            the breaking power used by the vessel to gradually decelerate [kW]
-
-        Returns
-        -------
-        speed : float
-            the average speed in the lock from the lock gate to the location of berthing
-
-        """
-        # TODO: sailing_in_speed_B zou A of B moeten zijn. Checken of deze eigenschap vaker voorkomt.
-        speed = self.sailing_in_speed_B
-        if vessel.bound == 'inbound':
-            speed = self.sailing_in_speed_A
-
-        return speed
-
-    def vessel_sailing_speed_out_lock(self, vessel):
-        """
-        Calculates the average speed to in the lock when leaving
-
-        Parameters
-        ----------
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-        x_location_lock : float
-            logintudinal coordinate in the lock to which the vessel is assigned [m]
-        P_used : float
-            the breaking power used by the vessel to gradually decelerate [kW]
-
-        Returns
-        -------
-        speed : float
-            the average speed in the lock from the lock gate to the location of berthing
-
-        """
-        speed = self.sailing_out_speed_A
-        if vessel.bound == 'inbound':
-            speed = self.sailing_out_speed_B
-
-        return speed
-
-    def vessel_sailing_in_speed(self, vessel, direction):
-        """
-        Calculates the average speed when sailing towards the lock chamber
-
-        Parameters
-        ----------
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-        x_location_lock : float
-            logintudinal coordinate in the lock to which the vessel is assigned [m]
-        P_used : float
-            the breaking power used by the vessel to gradually decelerate [kW]
-
-        Returns
-        -------
-        speed : float
-            the average speed in the lock from the lock gate to the location of berthing
-
-        """
-        # determine the edge on which the vessel is sailing and the distance to the lock gate
-        if vessel is None:
-            return 0
-
-        edge = self._directional_edge(direction)
-
-        # determine the speed of the vessel over the edge
-        speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
-
-        # if there is an overruled speed on the edge, use this speed
-        if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
-            speed = vessel.overruled_speed.loc[edge, "speed"]
-
-        return speed
-
-    def vessel_sailing_out_speed(self, vessel, direction):
-        """
-        Calculates the average speed when sailing away from the lock chamber
-
-        Parameters
-        ----------
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
-        direction : int
-            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        P_used : float
-            the breaking power used by the vessel to gradually decelerate [kW]
-        until_crossing_point : bool
-
-
-        Returns
-        -------
-        speed : float
-            the average speed in the lock from the lock gate to the location of berthing
-
-        """
-        if vessel is None:
-            return 0
-
-        # determine the edge on which the vessel is sailing and the distance to the lock gate
-        edge = self._directional_edge(direction)
-
-        # determine the speed of the vessel over the edge
-        speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
-
-        # if there is an overruled speed on the edge, use this speed
-        if 'overruled_speed' in dir(vessel) and edge in vessel.overruled_speed.index:
-            speed = vessel.overruled_speed.loc[edge, 'speed']
-
-        return speed
-
-    def _directional_edge(self, direction):
-        """get the edge of the lock chamber in the correct direction"""
-        if not direction:
-            return (self.start_node, self.end_node)
-        else:
-            return (self.end_node, self.start_node)
-
-    def plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib'):
-        fig = create_time_distance_plot(self, vessels, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, method = method)
+    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib'):
+        fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, method = method)
         return fig

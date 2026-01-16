@@ -81,7 +81,6 @@ class IsLockMaster:
                 "time_arrival_at_waiting_area",
                 "time_arrival_at_lineup_area",
                 "time_arrival_at_approach_point",
-                "time_arrival_at_lock",
                 "time_lock_operation_start",
                 "time_lock_entry_start",
                 "time_lock_entry_stop",
@@ -89,6 +88,8 @@ class IsLockMaster:
                 "time_lock_departure_stop",
                 "time_lock_operation_stop",
                 "time_potential_lock_gate_closure_start",
+                "time_to_traverse_waterway_without_lock",
+                "delay",
             ],
         )
 
@@ -179,7 +180,6 @@ class IsLockMaster:
         self.vessel_planning.loc[vessel_planning_index, "time_arrival_at_waiting_area"] = pd.Timestamp('NaT')
         self.vessel_planning.loc[vessel_planning_index, "time_arrival_at_lineup_area"] = pd.Timestamp('NaT')
         self.vessel_planning.loc[vessel_planning_index, "time_arrival_at_approach_point"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_arrival_at_lock"] = pd.Timestamp('NaT')
         self.vessel_planning.loc[vessel_planning_index, "time_lock_operation_start"] = pd.Timestamp('NaT')
         self.vessel_planning.loc[vessel_planning_index, "time_lock_entry_start"] = pd.Timestamp('NaT')
         self.vessel_planning.loc[vessel_planning_index, "time_lock_entry_stop"] = pd.Timestamp('NaT')
@@ -187,6 +187,8 @@ class IsLockMaster:
         self.vessel_planning.loc[vessel_planning_index, "time_lock_departure_stop"] = pd.Timestamp('NaT')
         self.vessel_planning.loc[vessel_planning_index, "time_lock_operation_stop"] = pd.Timestamp('NaT')
         self.vessel_planning.loc[vessel_planning_index, "time_potential_lock_gate_closure_start"] = pd.Timestamp('NaT')
+        self.vessel_planning.loc[vessel_planning_index, "time_to_traverse_waterway_without_lock"] = pd.Timestamp('NaT')
+        self.vessel_planning.loc[vessel_planning_index, "delay"] = pd.Timedelta('NaT')
         vessel.registered_to_lock = True
         return vessel_planning_index
 
@@ -213,6 +215,7 @@ class IsLockMaster:
         # add vessel to vessel planning and operation planning
         vessel_planning_index = self.add_vessel_to_vessel_planning(vessel, direction)
         lock_chamber_name, operation_index, new_operation = _find_available_lock_operation(self, vessel, direction)
+        print(vessel.name, new_operation)
         lock_chamber = self.lock_complex.lock_chambers[lock_chamber_name]
         waiting_area_name = _find_available_waiting_area(vessel, lock_chamber, direction)
         self.vessel_planning.loc[vessel_planning_index, 'waiting_area'] = waiting_area_name
@@ -220,12 +223,13 @@ class IsLockMaster:
 
         vessel_information = calculate_vessel_approach_information(self, vessel, direction)
         _update_lock_vessel_planning(self, vessel_planning_index, vessel_information)
-
         if new_operation:
-            operation_index, empty_lock_operation_to_be_requested = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, direction)
+            new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, direction)
+            operation_index, empty_lock_operation_to_be_requested, lock_operation_to_be_executed = new_lockage_info
             if empty_lock_operation_to_be_requested:
-                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index, direction)
-                self.request_empty_levelling(lock_chamber, direction) #TODO: execute this later?
+                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1, direction)
+                if lock_operation_to_be_executed:
+                    self.request_empty_levelling(lock_chamber, direction)
 
         # information of lock chamber
         lock_operation_information = calculate_lock_operation_information_and_update_planning(lock_chamber, vessel, operation_index, direction)
@@ -240,13 +244,7 @@ class IsLockMaster:
         yield vessel.waiting_area_request
 
         sail_to_waiting_area = functools.partial(vessel.sail_to_waiting_area, waiting_area = waiting_area, lock_chamber = lock_chamber)
-        allow_vessel_to_sail_into_lock = functools.partial(lock_chamber.allow_vessel_to_sail_into_lock, vessel = vessel, waiting_area = waiting_area, lock_chamber = lock_chamber)
-        initiate_levelling = functools.partial(lock_chamber.initiate_levelling, vessel = vessel, lock_chamber = lock_chamber)
-        allow_vessel_to_sail_out_of_lock = functools.partial(lock_chamber.allow_vessel_to_sail_out_of_lock, vessel = vessel, lock_chamber = lock_chamber)
         vessel.on_pass_edge_functions.append(sail_to_waiting_area)
-        vessel.on_pass_edge_functions.append(allow_vessel_to_sail_into_lock)
-        vessel.on_pass_edge_functions.append(initiate_levelling)
-        vessel.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
 
 
     def optimize_arrival_time_previous_vessel(self, vessel, operation_index, lock_chamber):

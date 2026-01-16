@@ -30,7 +30,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     """
     lock_complex = lock_chamber.lock_complex
     vessel_ids = lock_complex.vessel_planning[lock_complex.vessel_planning.lock_chamber == lock_chamber.name].id
-    vessels = itemgetter(*vessel_ids)(lock_complex.env.vessels)
+    vessels = np.array([itemgetter(*vessel_ids)(lock_complex.env.vessels)]).flatten()
 
     # create lock edge geometry in [m]
     route_between_nodes_of_registration = nx.dijkstra_path(lock_complex.env.graph, lock_complex.registration_nodes[0],
