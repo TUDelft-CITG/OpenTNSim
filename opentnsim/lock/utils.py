@@ -245,7 +245,7 @@ def _get_lineup_area(lock_complex, direction):
     return lineup_area
 
 
-def _get_distance_to_lock(lock, direction):
+def _get_distance_to_lock(lock_chamber, direction):
     """get the distance from the start node of the lock to the lock gate from the perspective of the vessel
 
     Parameters
@@ -254,9 +254,9 @@ def _get_distance_to_lock(lock, direction):
         the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
     """
     if not direction:
-        return lock.distance_from_start_node_to_lock_gate_A
+        return lock_chamber.distance_from_start_node_to_lock_gate_A
     else:
-        return lock.distance_from_end_node_to_lock_gate_B
+        return lock_chamber.distance_from_end_node_to_lock_gate_B
 
 
 def _check_if_vessel_is_first_vessel(lock_complex, vessel, operation_index):
@@ -698,7 +698,7 @@ def _correct_lock_operation_start_time_if_outside_of_operational_hours(lock_cham
     return time_lock_operation_start
 
 
-def _update_future_lock_operations_by_lock_delay_previous_operation(lock_complex, operation_index, lock_departure_information):
+def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index, lock_departure_information):
     """Updates the lock operation and vessel plannings based on a delay in a previous planned operation
 
     Parameters
@@ -709,6 +709,9 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_complex
         information with start and stop times of events that make up the departure of vessels from the lock operation
         required keys: "time_lock_gate_closing_start", "time_lock_operation_stop"
     """
+    from opentnsim.lock.calculations import calculate_sailing_in_time_delay, calculate_lock_operation_times
+
+    lock_complex = lock_chamber.lock_complex
     operation_planning = lock_complex.operation_planning
     vessel_planning = lock_complex.vessel_planning
 
@@ -720,15 +723,17 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_complex
         sailing_in_delay = pd.Timedelta(seconds=0)
         if not len(next_operation_info) and lock_departure_information["time_lock_gate_closing_start"] > next_operation_info.time_potential_lock_gate_opening_stop:
             sailing_in_delay = lock_departure_information["time_lock_gate_closing_start"] - next_operation_info.time_potential_lock_gate_opening_stop
-        elif len(next_operation_info) and lock_departure_information["time_lock_operation_stop"] > next_operation_info.time_operation_start:
-            sailing_in_delay = lock_departure_information["time_lock_operation_stop"] - next_operation_info.time_operation_start
+        elif len(next_operation_info) and lock_departure_information["time_lock_operation_stop"] > next_operation_info.time_lock_operation_start:
+            sailing_in_delay = lock_departure_information["time_lock_operation_stop"] - next_operation_info.time_lock_operation_start
 
         # determine the new start time of the next operation (dependening on whether it will fall withing the operation hours)
-        new_operation_start = operation_planning.loc[next_operation_index, "time_operation_start"] + sailing_in_delay
-        # within_operation_hours = operational_hours[(new_operation_start >= operational_hours.start_time) & (new_operation_start <= operational_hours.stop_time)]
-        # if within_operation_hours.empty:
-        #     first_available_hour = operational_hours[operational_hours.start_time >= new_operation_start].iloc[0]
-        #     sailing_in_delay += first_available_hour.start_time - new_operation_start
+        new_operation_start = operation_planning.loc[next_operation_index, "time_lock_operation_start"] + sailing_in_delay
+        operational_hours = lock_chamber.operational_hours
+        within_operation_hours = operational_hours[(new_operation_start >= operational_hours.start_time) &
+                                                   (new_operation_start <= operational_hours.stop_time)]
+        if within_operation_hours.empty:
+            first_available_hour = operational_hours[operational_hours.start_time >= new_operation_start].iloc[0]
+            sailing_in_delay += first_available_hour.start_time - new_operation_start
 
         # break loop if there is no delay (next operations will then also not experience a delay)
         if not sailing_in_delay.total_seconds() > 0:
@@ -736,45 +741,28 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_complex
 
         # update the operation planning if there is a delay
         operation_planning.loc[next_operation_index, "time_potential_lock_gate_opening_stop"] += sailing_in_delay
-        operation_planning.loc[next_operation_index, "time_operation_start"] += sailing_in_delay
-        operation_planning.loc[next_operation_index, "time_entry_start"] += sailing_in_delay
-        operation_planning.loc[next_operation_index, "time_entry_stop"] += sailing_in_delay
+        operation_planning.loc[next_operation_index, "time_lock_operation_start"] += sailing_in_delay
+        operation_planning.loc[next_operation_index, "time_lock_entry_start"] += sailing_in_delay
+        operation_planning.loc[next_operation_index, "time_lock_entry_stop"] += sailing_in_delay
 
         # update the vessel planning
         next_vessel = None
         next_vessels = next_operation_info.vessels
         next_direction = next_operation_info.direction
-        last_vessel_entering_time = operation_planning.loc[next_operation_index, "time_entry_start"]
         for next_vessel_index, next_vessel in enumerate(next_vessels):
             next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
             vessel_planning.loc[next_vessel_planning_index, "time_potential_lock_gate_opening_stop"] += sailing_in_delay
             vessel_planning.loc[next_vessel_planning_index, "time_potential_lock_gate_closure_start"] += sailing_in_delay
+            vessel_planning.loc[next_vessel_planning_index, "time_arrival_at_approach_point"] += sailing_in_delay
             vessel_planning.loc[next_vessel_planning_index, "time_arrival_at_lineup_area"] += sailing_in_delay
             vessel_planning.loc[next_vessel_planning_index, "time_lock_operation_start"] += sailing_in_delay
             vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"] += sailing_in_delay
             vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_stop"] += sailing_in_delay
-            last_vessel_entering_time = vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"]
-            if next_vessel_index != len(next_vessels) - 1:
-                next_next_vessel = next_vessels[next_vessel_index + 1]
-                next_next_vessel_planning_index = vessel_planning[vessel_planning.id == next_next_vessel.id].iloc[-1].name
-
-                # determine sailing in delay for next vessel (it can be that there is some slack time between two vessel arrivals)
-                sailing_in_delay = pd.Timedelta(seconds=0)
-                entry_start_previous_vessel = vessel_planning.loc[next_vessel_planning_index, "time_lock_entry_start"]
-                entry_start_next_vessel = vessel_planning.loc[next_next_vessel_planning_index, "time_lock_entry_start"]
-                if entry_start_next_vessel < entry_start_previous_vessel:
-                    sailing_in_delay = entry_start_previous_vessel - entry_start_next_vessel
-                    extra_delay = calculate_sailing_in_time_delay(lock_complex.lock_complex, next_next_vessel, next_operation_index,
-                                                                       next_direction,
-                                                                       minimum_difference_with_previous_vessel=True,
-                                                                       overwrite=False)
-                    sailing_in_delay += extra_delay
 
         # determine the new start and stop times of the lock operation (i.e., gate-closing, levelling, gate-opening) as it can be that the levelling time is now changed due to the shift of this operation in time (i.e., due to tides)
-        time_gate_closing = operation_planning.loc[next_operation_index, "time_entry_stop"]
-        levelling_information = calculate_lock_operation_times(lock_complex.lock_complex.lock_chamber,
+        time_gate_closing = operation_planning.loc[next_operation_index, "time_lock_entry_stop"]
+        levelling_information = calculate_lock_operation_times(lock_chamber,
                                                                operation_index=next_operation_index,
-                                                               last_entering_time=last_vessel_entering_time,
                                                                start_time=time_gate_closing,
                                                                vessel=next_vessel,
                                                                direction=next_direction,)
@@ -787,9 +775,9 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_complex
         operation_planning.loc[next_operation_index, "time_gate_opening_start"] = levelling_information["time_gate_opening_start"]
         operation_planning.loc[next_operation_index, "time_gate_opening_stop"] = levelling_information["time_gate_opening_stop"]
         if delay_after_levelling > pd.Timedelta(seconds=0):
-            operation_planning.loc[next_operation_index, "time_departure_start"] += delay_after_levelling
-            operation_planning.loc[next_operation_index, "time_departure_stop"] += delay_after_levelling
-            operation_planning.loc[next_operation_index, "time_operation_stop"] += delay_after_levelling
+            operation_planning.loc[next_operation_index, "time_lock_departure_start"] += delay_after_levelling
+            operation_planning.loc[next_operation_index, "time_lock_departure_stop"] += delay_after_levelling
+            operation_planning.loc[next_operation_index, "time_lock_operation_stop"] += delay_after_levelling
             operation_planning.loc[next_operation_index, "time_potential_lock_gate_closure_start"] += delay_after_levelling
             operation_planning.loc[next_operation_index, "total_delay"] += delay_after_levelling * len(next_vessels)
             operation_planning.loc[next_operation_index, "maximum_individual_delay"] += delay_after_levelling
@@ -1250,3 +1238,25 @@ def _get_vessel_sailing_out_speed(lock_chamber, vessel, direction):
         speed = vessel.overruled_speed.loc[edge, 'speed']
 
     return speed
+
+
+def _get_vessel_departure_start_delay(lock_chamber, vessel, operation_index):
+    delay_to_departure = pd.Timedelta(seconds=0)
+    if vessel is None:
+        return delay_to_departure
+
+    lock_complex = lock_chamber.lock_complex
+    vessel_planning = lock_complex.vessel_planning
+    vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index)
+    vessel_index = vessels.index(vessel)
+
+    departure_start_delay = pd.Timedelta(seconds = 0)
+    previous_vessels = vessels[:(vessel_index)]
+    if not len(previous_vessels):
+        return departure_start_delay
+
+    index_vessel = vessel_planning[vessel_planning.id == vessel.id].iloc[0].name
+    current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+    sailing_out_start_v1 = vessel_planning.loc[index_vessel, 'time_lock_departure_start']
+    delay_sailing_through_gate = sailing_out_start_v1 - current_time
+    return delay_sailing_through_gate

@@ -9,11 +9,11 @@ from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.lock.calculations import (
     calculate_levelling_time,
     calculate_lock_operation_times,
-    calculate_vessel_departure_start_delay,
     calculate_time_to_open_gate,
     calculate_sailing_time_to_approach_point,
 )
 from opentnsim.lock.utils import (
+    _get_vessel_departure_start_delay,
     _check_if_vessel_is_first_vessel,
     _check_if_vessel_is_last_vessel,
     _get_vessel_sailing_in_speed,
@@ -300,8 +300,8 @@ class IsLockChamberOperator:
                     remaining_static_waiting_time -= self.env.now - waiting_start
 
             # log the stop of the waiting process
-            vessel.log_entry_v0("Waiting for lock operation stop",
-                              vessel.env.now, vessel.output.copy(), vessel.logbook[-1]['Geometry'],)
+            vessel.log_entry_v0("Waiting for lock operation stop", vessel.env.now, vessel.output.copy(),
+                                vessel.logbook[-1]['Geometry'],)
 
 
     def let_vessel_wait_for_other_vessels_in_waiting_area(self, vessel):
@@ -553,7 +553,7 @@ class IsLockChamberOperator:
             yield from self.wait_for_other_vessels_to_start_lock_operation(vessel, operation_index)
 
         # determine and yield sailing out delay
-        sailing_out_delay = calculate_vessel_departure_start_delay(self, vessel, operation_index).total_seconds()
+        sailing_out_delay = _get_vessel_departure_start_delay(self, vessel, operation_index).total_seconds()
         if sailing_out_delay:
             yield from self.instruct_vessel_to_wait_in_lock_chamber_before_sailing_out(vessel, sailing_out_delay)
 

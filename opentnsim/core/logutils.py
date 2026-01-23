@@ -144,7 +144,7 @@ def logbook2eventtable(objs):
         df = pd.DataFrame.from_dict(obj.logbook)
         if df.empty:
             continue
-        df.sort_values(by="Timestamp", inplace=True)
+        #df.sort_values(by="Timestamp", inplace=True)
 
         for i in range(0, len(df)):
             start_row = df.iloc[i]
@@ -152,8 +152,10 @@ def logbook2eventtable(objs):
                 activity = start_row["Message"].replace(" start", "")
             else:
                 continue  # skip non-start messages
-
-            stop_row = df[(df["Message"] == activity + " stop") & (df["Timestamp"] > df.iloc[i]["Timestamp"])].iloc[0]
+            try:
+                stop_row = df[(df["Message"] == activity + " stop") & (df["Timestamp"] > df.iloc[i]["Timestamp"])].iloc[0]
+            except:
+                continue
 
             start_time = start_row["Timestamp"]
             stop_time = stop_row["Timestamp"]

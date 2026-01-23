@@ -9,7 +9,6 @@ from IPython.display import display
 
 from opentnsim.core import SimpyObject
 from opentnsim.lock.calculations import (
-    calculate_sailing_in_time_delay,
     calculate_lock_operation_times,
     calculate_delay_previous_vessel_to_optimize_sailing_in_process,
     calculate_lock_operation_information_and_update_planning,
@@ -215,7 +214,6 @@ class IsLockMaster:
         # add vessel to vessel planning and operation planning
         vessel_planning_index = self.add_vessel_to_vessel_planning(vessel, direction)
         lock_chamber_name, operation_index, new_operation = _find_available_lock_operation(self, vessel, direction)
-        print(vessel.name, new_operation)
         lock_chamber = self.lock_complex.lock_chambers[lock_chamber_name]
         waiting_area_name = _find_available_waiting_area(vessel, lock_chamber, direction)
         self.vessel_planning.loc[vessel_planning_index, 'waiting_area'] = waiting_area_name
@@ -227,15 +225,20 @@ class IsLockMaster:
             new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, direction)
             operation_index, empty_lock_operation_to_be_requested, lock_operation_to_be_executed = new_lockage_info
             if empty_lock_operation_to_be_requested:
-                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1, direction)
+                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1,
+                                                                                   1 - direction)
                 if lock_operation_to_be_executed:
                     self.request_empty_levelling(lock_chamber, direction)
 
         # information of lock chamber
-        lock_operation_information = calculate_lock_operation_information_and_update_planning(lock_chamber, vessel, operation_index, direction)
+        lock_operation_information = calculate_lock_operation_information_and_update_planning(lock_chamber, vessel,
+                                                                                              operation_index,
+                                                                                              direction)
 
         # update the next lock operations if the previous lock operation caused a delay
-        _update_future_lock_operations_by_lock_delay_previous_operation(self, operation_index, lock_operation_information)
+        _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
+                                                                        lock_operation_information)
+
         return operation_index
 
 

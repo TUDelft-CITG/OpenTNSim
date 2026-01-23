@@ -58,7 +58,7 @@ def calculate_cycle_looptimes(leveling_cycles: list, vessels: list) -> pd.DataFr
 
     Looptime is defined as the time between:
     - the last vessel exiting the lock in the previous cycle ('Sailing to lock complex exit start')
-    - the first vessel entering the lock in the current cycle ('Sailing to first lock doors stop')
+    - the first vessel entering the lock in the current cycle ('Sailing to first lock gate stop')
 
     Parameters:
     - leveling_cycles: List of dicts from get_vessels_during_leveling, each with 'vessels_present'.
@@ -99,7 +99,7 @@ def calculate_cycle_looptimes(leveling_cycles: list, vessels: list) -> pd.DataFr
             event["Timestamp"]
             for v in curr_vessels
             for event in vessel_logs.get(v, [])
-            if event["Message"] == "Sailing to first lock doors stop"
+            if event["Message"] == "Sailing to first lock gate stop"
         ]
         first_entry = min(curr_entry_times) if curr_entry_times else None
 
@@ -122,7 +122,7 @@ def calculate_detailed_cycle_time(lock, vessels, leveling_cycles):
     The function computes:
     - Looptimes before each phase (t_l_up, t_l_down)
     - Entry and exit durations for vessels based on first and last movement timestamps
-    - Lock operation durations (door opening/closing, water level adjustment) per cycle
+    - Lock operation durations (gate opening/closing, water level adjustment) per cycle
     - Total cycle time (Tc)
     - Locking system intensity (I_s = 2 * n_max / (Tc / 3600))
 
@@ -179,9 +179,9 @@ def calculate_detailed_cycle_time(lock, vessels, leveling_cycles):
     lock_df["Timestamp"] = pd.to_datetime(lock_df["Timestamp"])
 
     # Extract per-cycle lock durations
-    T_close_list = get_duration(lock_df, "Lock doors closing start", "Lock doors closing stop")
+    T_close_list = get_duration(lock_df, "Lock gate closing start", "Lock gate closing stop")
     T_waterlevel_list = get_duration(lock_df, "Lock chamber converting start", "Lock chamber converting stop")
-    T_open_list = get_duration(lock_df, "Lock doors opening start", "Lock doors opening stop")
+    T_open_list = get_duration(lock_df, "Lock gate opening start", "Lock gate opening stop")
 
     vessel_logs = {
         getattr(v, "name", f"Vessel_{i + 1}"): v.logbook
@@ -202,12 +202,12 @@ def calculate_detailed_cycle_time(lock, vessels, leveling_cycles):
         else:
             prev_down_vessels = leveling_cycles[i - 1]["vessels_present"]
             last_exit_prev = max([
-                get_time_range(vessel_logs[v], "Sailing to second lock doors start",
-                               "Sailing to second lock doors stop")[1]
+                get_time_range(vessel_logs[v], "Sailing to second lock gate start",
+                               "Sailing to second lock gate stop")[1]
                 for v in prev_down_vessels if v in vessel_logs
             ], default=None)
             first_entry_up = min([
-                get_time_range(vessel_logs[v], "Sailing to first lock doors stop", "Sailing to first lock doors stop")[
+                get_time_range(vessel_logs[v], "Sailing to first lock gate stop", "Sailing to first lock gate stop")[
                     0]
                 for v in up_vessels if v in vessel_logs
             ], default=None)
@@ -215,11 +215,11 @@ def calculate_detailed_cycle_time(lock, vessels, leveling_cycles):
 
         # t_l_down
         last_exit_up = max([
-            get_time_range(vessel_logs[v], "Sailing to second lock doors start", "Sailing to second lock doors stop")[1]
+            get_time_range(vessel_logs[v], "Sailing to second lock gate start", "Sailing to second lock gate stop")[1]
             for v in up_vessels if v in vessel_logs
         ], default=None)
         first_entry_down = min([
-            get_time_range(vessel_logs[v], "Sailing to first lock doors stop", "Sailing to first lock doors stop")[0]
+            get_time_range(vessel_logs[v], "Sailing to first lock gate stop", "Sailing to first lock gate stop")[0]
             for v in down_vessels if v in vessel_logs
         ], default=None)
         t_l_down = (first_entry_down - last_exit_up).total_seconds() if first_entry_down and last_exit_up else 0
@@ -234,13 +234,13 @@ def calculate_detailed_cycle_time(lock, vessels, leveling_cycles):
             get_time_range(vessel_logs[v], "Sailing to position in lock start", "Sailing to position in lock stop") for
             v in up_vessels if v in vessel_logs]
         exit_times_up = [
-            get_time_range(vessel_logs[v], "Sailing to second lock doors start", "Sailing to second lock doors stop")
+            get_time_range(vessel_logs[v], "Sailing to second lock gate start", "Sailing to second lock gate stop")
             for v in up_vessels if v in vessel_logs]
         entry_times_down = [
             get_time_range(vessel_logs[v], "Sailing to position in lock start", "Sailing to position in lock stop") for
             v in down_vessels if v in vessel_logs]
         exit_times_down = [
-            get_time_range(vessel_logs[v], "Sailing to second lock doors start", "Sailing to second lock doors stop")
+            get_time_range(vessel_logs[v], "Sailing to second lock gate start", "Sailing to second lock gate stop")
             for v in down_vessels if v in vessel_logs]
 
         # Sum of entering times (up), - Part III, Ch 3, Eq. 3.2
