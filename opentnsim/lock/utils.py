@@ -520,11 +520,12 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
     """
     node_of_approach, to_node = _get_lock_operation_to_and_from_node(lock_chamber, direction)
     lock_complex = lock_chamber.lock_complex
-    previous_planned_operations = lock_complex.operation_planning[lock_complex.operation_planning.index < operation_index]
+    previous_planned_operations = lock_complex.operation_planning[(lock_complex.operation_planning.index < operation_index) &
+                                                                  (lock_complex.operation_planning.lock_chamber == lock_chamber.name)]
     empty_lock_operation_to_be_requested = False
     lock_operation_to_be_executed = False
     if not previous_planned_operations.empty:
-        previous_planned_operation = previous_planned_operations.iloc[-1]
+        previous_planned_operation = previous_planned_operations[previous_planned_operations.lock_chamber == lock_chamber.name].iloc[-1]
         if previous_planned_operation.direction == direction:
             empty_lock_operation_to_be_requested = True
             operation_index += 1  # the new operation index lies now one ahead
@@ -541,7 +542,6 @@ def _update_vessel_planning_for_delayed_arrival(lock_complex, vessel, delay):
     vessel_planning.loc[vessel_index, 'time_lock_entry_start'] += datetime.timedelta(seconds=delay)
     vessel_planning.loc[vessel_index, 'time_potential_lock_gate_opening_stop'] += datetime.timedelta(seconds=delay)
     vessel_planning.loc[vessel_index, 'time_lock_entry_stop'] += datetime.timedelta(seconds=delay)
-
 
 def _update_vessel_planning_for_delayed_deparature(lock_complex, vessel, delay):
     vessel_planning = lock_complex.vessel_planning
@@ -646,19 +646,20 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
         # TODO: include mask_capacity_B for 2D implementation
         # TODO: create a selection method that can pick the lock operation based on minimizing expected delay or freshwater loss/saltwater intrusion
 
+        current_time = datetime.datetime.fromtimestamp(vessel.env.now)
         if available_operations.empty:
             new_operation = True
             if not operation_planning_lock.empty:
                 last_operation = operation_planning_lock.iloc[-1]
-                operation_index = last_operation.name + 1
-                time_lock_operation_start = last_operation.time_lock_operation_start + sailing_time_to_lock
+                operation_index = len(operation_planning)
+                time_lock_operation_start = (last_operation.time_lock_operation_start - current_time) + sailing_time_to_lock
             else:
                 operation_index = 0
                 time_lock_operation_start = sailing_time_to_lock
         else:
             new_operation = False
             operation_index = available_operations.iloc[0].name
-            time_lock_operation_start = available_operations.iloc[0].time_lock_operation_start + sailing_time_to_lock
+            time_lock_operation_start = (available_operations.iloc[0].time_lock_operation_start - current_time) + sailing_time_to_lock
 
         most_suitable_lock_chamber.loc[lock_chamber.name] = [time_lock_operation_start, operation_index, new_operation]
 

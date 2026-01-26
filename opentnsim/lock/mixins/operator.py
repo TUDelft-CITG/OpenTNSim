@@ -554,7 +554,7 @@ class IsLockChamberOperator:
 
         # determine and yield sailing out delay
         sailing_out_delay = _get_vessel_departure_start_delay(self, vessel, operation_index).total_seconds()
-        if sailing_out_delay:
+        if sailing_out_delay > 0.: #TODO: delay should never be smaller than 0, but it still occurs
             yield from self.instruct_vessel_to_wait_in_lock_chamber_before_sailing_out(vessel, sailing_out_delay)
 
 

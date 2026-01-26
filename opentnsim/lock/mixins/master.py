@@ -234,7 +234,6 @@ class IsLockMaster:
         lock_operation_information = calculate_lock_operation_information_and_update_planning(lock_chamber, vessel,
                                                                                               operation_index,
                                                                                               direction)
-
         # update the next lock operations if the previous lock operation caused a delay
         _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                         lock_operation_information)
