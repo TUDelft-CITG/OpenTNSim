@@ -5,6 +5,7 @@ The following classes are provided:
 - Movable
 - ContainerDependentMovable
 """
+
 # package(s) for documentation, debugging, saving and loading
 import logging
 import warnings
@@ -283,7 +284,7 @@ class Movable(Locatable, Routable, Log):
 
         # Check if vessel has arrival time and let vessel wait to start moving
         if hasattr(self, "metadata") and "arrival_time" in self.metadata:
-            arrival_time = self.metadata['arrival_time']
+            arrival_time = self.metadata["arrival_time"]
             current_time = datetime.datetime.fromtimestamp(self.env.now)
             delay = (arrival_time - current_time).total_seconds()
             yield self.env.timeout(delay)
@@ -496,6 +497,7 @@ class Movable(Locatable, Routable, Log):
         for on_pass_edge_function in self.on_pass_edge_functions:
             yield from on_pass_edge_function(origin, destination)
 
+        self.distance_left_on_edge = np.clip(self.distance_left_on_edge, a_min=0, a_max=None)
         # default velocity based on current speed.
         timeout = self.distance_left_on_edge / (self.current_speed + current)
         yield self.env.timeout(timeout)
@@ -583,7 +585,7 @@ class Movable(Locatable, Routable, Log):
         """
 
         edge = (origin, destination)
-        if hasattr(self,'overruled_speed') and edge in self.overruled_speed.index:
+        if hasattr(self, "overruled_speed") and edge in self.overruled_speed.index:
             overruled_speed = self.overruled_speed.loc[edge]
             return overruled_speed
 
