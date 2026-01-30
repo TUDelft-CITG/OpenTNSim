@@ -118,6 +118,7 @@ testpaths = "tests"
 [dependency-groups]
 dev = [
     "black[jupyter]>=25.9.0",
+    "ipdb>=0.13.13",
     "ipykernel>=6.30.1",
     "ipython>=9.6.0",
     "nbformat>=5.10.4",
