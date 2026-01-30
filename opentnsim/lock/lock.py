@@ -485,8 +485,14 @@ class HasLockPlanning:
                 operation_planning.loc[next_operation_index, "time_departure_stop"] += delay_after_levelling
                 operation_planning.loc[next_operation_index, "time_operation_stop"] += delay_after_levelling
                 operation_planning.loc[next_operation_index, "time_potential_lock_door_closure_start"] += delay_after_levelling
-                operation_planning.loc[next_operation_index, "total_delay"] += delay_after_levelling * len(next_vessels)
-                operation_planning.loc[next_operation_index, "maximum_individual_delay"] += delay_after_levelling
+
+                total_delay = operation_planning.loc[next_operation_index, "total_delay"] + delay_after_levelling * len(next_vessels)
+                total_delay = total_delay.round("us")
+                operation_planning.loc[next_operation_index, "total_delay"] = total_delay
+
+                maximum_individual_delay = operation_planning.loc[next_operation_index, "maximum_individual_delay"] + delay_after_levelling
+                maximum_individual_delay = maximum_individual_delay.round("us")
+                operation_planning.loc[next_operation_index, "maximum_individual_delay"] = maximum_individual_delay
 
             # update also the departure information of the affected vessels
             for vessel_index, next_vessel in enumerate(next_vessels):
@@ -494,7 +500,10 @@ class HasLockPlanning:
                 vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_start"] += delay_after_levelling
                 vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_stop"] += delay_after_levelling
                 vessel_planning.loc[next_vessel_planning_index, "time_lock_passing_stop"] += delay_after_levelling
-                vessel_planning.loc[next_vessel_planning_index, "delay"] += delay_after_levelling
+
+                delay = vessel_planning.loc[next_vessel_planning_index, "delay"] + delay_after_levelling
+                delay = delay.round("us")
+                vessel_planning.loc[next_vessel_planning_index, "delay"] = delay
 
     def add_vessel_to_planned_lock_operation(self, vessel, operation_index, direction):
         """
@@ -593,7 +602,9 @@ class HasLockPlanning:
         # update the lock master's vessel and lock operation planning by adding the operation start and vessel entry delay
         operation_planning.loc[operation_index, "time_operation_start"] += operation_start_delay
         if vessel_entry_delay > pd.Timedelta(seconds=0):
-            vessel_planning.loc[vessel_planning_index, "delay"] += vessel_entry_delay
+            delay = vessel_planning.loc[vessel_planning_index, "delay"] + vessel_entry_delay
+            delay = delay.round("us")
+            vessel_planning.loc[vessel_planning_index, "delay"] = delay
         operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] += operation_start_delay
 
         # update the values of the entry start, and (if there are no other vessels) overwrite the operation start
@@ -626,7 +637,12 @@ class HasLockPlanning:
                 vessel_planning.loc[other_vessel_planning_index, "time_lock_departure_start"] += additional_sailing_out_delay
                 vessel_planning.loc[other_vessel_planning_index, "time_lock_departure_stop"] += additional_sailing_out_delay
                 vessel_planning.loc[other_vessel_planning_index, "time_lock_passing_stop"] += additional_sailing_out_delay
-                vessel_planning.loc[other_vessel_planning_index, "delay"] += additional_sailing_out_delay
+
+                # casting datetime to timedelta can give floating point issues
+                # explictly round to microseconds.
+                total_delay = vessel_planning.loc[other_vessel_planning_index, "delay"] + additional_sailing_out_delay
+                total_delay = total_delay.round('us')
+                vessel_planning.loc[other_vessel_planning_index, "delay"] = total_delay
 
         # update the operation planning with the above information
         operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] = potential_lock_door_opening_stop
