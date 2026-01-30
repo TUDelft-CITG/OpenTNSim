@@ -1,5 +1,12 @@
 """This module contains utility functions for lock operations in the OpenTNSim simulation environment."""
 
+import logging
+
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
 def _get_lock_operation_to_and_from_node(lock, direction):
     """Get the nodes from and to which the lock operation is directed based on the direction convention
 
@@ -73,7 +80,11 @@ def _update_lock_operation_planning(lock, operation_index, operation_information
         if key not in lock.operation_planning.columns:
             warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
             continue
-        lock.operation_planning.loc[int(operation_index), key] = value
+
+        # explictly set 1 value (so we can set a list as a value)
+        lock.operation_planning.at[int(operation_index), key] = value
+
+
 
 
 def _update_lock_vessel_planning(lock, vessel_index, passage_information):
@@ -92,8 +103,13 @@ def _update_lock_vessel_planning(lock, vessel_index, passage_information):
         if key not in lock.vessel_planning.columns:
             warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
             continue
-        lock.vessel_planning.loc[vessel_index, key] = value
 
+        if isinstance(value, pd.Timedelta):
+            # round to us
+            value = value.round('us')
+
+        lock.vessel_planning.at[int(vessel_index), key] = value
+        
 
 def determine_route_to_closest_waiting_area(vessel, waiting_area_A, waiting_area_B):
     """
