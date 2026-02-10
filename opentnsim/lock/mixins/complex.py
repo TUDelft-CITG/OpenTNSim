@@ -154,7 +154,7 @@ class LockComplexTraversable(Movable, HasMultiDiGraph):
                 sailing_time_to_waiting_area -= self.env.now - start_sailing
                 remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
                 sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
-            self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(), waiting_area.location)
+            self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(), waiting_area.geometry)
 
         yield from self.request_to_pass_waiting_area(lock_chamber, waiting_area)
 
