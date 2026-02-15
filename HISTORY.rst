@@ -7,7 +7,7 @@ History
 
 * Adding a new module for lock simulations.
 
-2.0.0 (2025-??-??)
+2.0.0 (Future)
 ------------------
 
 
@@ -22,6 +22,8 @@ History
   The git-history of the old file opentnsim/core.py can be found in github under tag 1.3.7
 
 * Update documentation
+
+* Update code of conduct and contributing guidelines
 
 
 1.3.7 (2024-05-30)
