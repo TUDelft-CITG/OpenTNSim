@@ -104,9 +104,9 @@ def _update_lock_operation_planning(lock_complex, operation_index, operation_inf
     """
     for key, value in operation_information.items():
         if key not in lock_complex.operation_planning.columns:
-            #warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
+            warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
             continue
-        lock_complex.operation_planning.loc[int(operation_index), key] = value
+        lock_complex.operation_planning.at[int(operation_index), key] = value
 
 
 def _update_lock_vessel_planning(lock_complex, vessel_index, passage_information):
@@ -123,10 +123,13 @@ def _update_lock_vessel_planning(lock_complex, vessel_index, passage_information
     """
     for key, value in passage_information.items():
         if key not in lock_complex.vessel_planning.columns:
-            #warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
+            warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
             continue
-        lock_complex.vessel_planning.loc[vessel_index, key] = value
 
+        if isinstance(value, pd.Timedelta):
+            value = value.round('us') # round to us
+
+        lock_complex.vessel_planning.at[int(vessel_index), key] = value
 
 def _find_available_waiting_area(vessel, lock_chamber, direction):
     lock_end_node = lock_chamber.end_node
@@ -538,28 +541,30 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
 def _update_vessel_planning_for_delayed_arrival(lock_complex, vessel, delay):
     vessel_planning = lock_complex.vessel_planning
     vessel_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-    vessel_planning.loc[vessel_index, 'time_arrival_at_approach_point'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_entry_start'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_potential_lock_gate_opening_stop'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_entry_stop'] += datetime.timedelta(seconds=delay)
+    delay = datetime.timedelta(seconds=delay).round("us")
+    vessel_planning.loc[vessel_index, 'time_arrival_at_approach_point'] += delay
+    vessel_planning.loc[vessel_index, 'time_lock_entry_start'] += delay
+    vessel_planning.loc[vessel_index, 'time_potential_lock_gate_opening_stop'] += delay
+    vessel_planning.loc[vessel_index, 'time_lock_entry_stop'] += delay
 
 def _update_vessel_planning_for_delayed_deparature(lock_complex, vessel, delay):
     vessel_planning = lock_complex.vessel_planning
     vessel_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-    vessel_planning.loc[vessel_index, 'time_lock_departure_start'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_departure_stop'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_operation_stop'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_potential_lock_gate_closure_start'] += datetime.timedelta(seconds=delay)
+    delay = datetime.timedelta(seconds=delay).round("us")
+    vessel_planning.loc[vessel_index, 'time_lock_departure_start'] += delay
+    vessel_planning.loc[vessel_index, 'time_lock_departure_stop'] += delay
+    vessel_planning.loc[vessel_index, 'time_lock_operation_stop'] += delay
+    vessel_planning.loc[vessel_index, 'time_potential_lock_gate_closure_start'] += delay
 
 
 def _update_operation_planning_for_delayed_arrival(lock_complex, vessel, operation_index, delay):
     first_vessel = _get_first_vessel_of_lock_operation(lock_complex, vessel, operation_index)
     if first_vessel.id != vessel.id:
         return
+    delay = datetime.timedelta(seconds=delay).round("us")
     operation_planning = lock_complex.operation_planning
-    operation_planning.loc[operation_index, 'time_lock_entry_start'] += datetime.timedelta(seconds=delay)
-    operation_planning.loc[operation_index, 'time_potential_lock_gate_opening_stop'] += datetime.timedelta(
-        seconds=delay)
+    operation_planning.loc[operation_index, 'time_lock_entry_start'] += delay
+    operation_planning.loc[operation_index, 'time_potential_lock_gate_opening_stop'] += delay
 
     
 def _find_available_lock_operation(lock_complex, vessel, direction):
@@ -728,6 +733,7 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
             sailing_in_delay = lock_departure_information["time_lock_operation_stop"] - next_operation_info.time_lock_operation_start
 
         # determine the new start time of the next operation (dependening on whether it will fall withing the operation hours)
+        sailing_in_delay = sailing_in_delay.round("us")
         new_operation_start = operation_planning.loc[next_operation_index, "time_lock_operation_start"] + sailing_in_delay
         operational_hours = lock_chamber.operational_hours
         within_operation_hours = operational_hours[(new_operation_start >= operational_hours.start_time) &
@@ -776,6 +782,7 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
         operation_planning.loc[next_operation_index, "time_gate_opening_start"] = levelling_information["time_gate_opening_start"]
         operation_planning.loc[next_operation_index, "time_gate_opening_stop"] = levelling_information["time_gate_opening_stop"]
         if delay_after_levelling > pd.Timedelta(seconds=0):
+            delay_after_levelling = delay_after_levelling.round("us")
             operation_planning.loc[next_operation_index, "time_lock_departure_start"] += delay_after_levelling
             operation_planning.loc[next_operation_index, "time_lock_departure_stop"] += delay_after_levelling
             operation_planning.loc[next_operation_index, "time_lock_operation_stop"] += delay_after_levelling
@@ -786,6 +793,7 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
         # update also the departure information of the affected vessels
         for vessel_index, next_vessel in enumerate(next_vessels):
             next_vessel_planning_index = vessel_planning[vessel_planning.id == next_vessel.id].iloc[-1].name
+            delay_after_levelling = delay_after_levelling.round("us")
             vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_start"] += delay_after_levelling
             vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_stop"] += delay_after_levelling
             vessel_planning.loc[next_vessel_planning_index, "time_lock_operation_stop"] += delay_after_levelling
@@ -896,7 +904,8 @@ def determine_if_gate_can_be_closed(lock_chamber, vessel, direction, operation_i
         last_time_gate_closed = operation_planning.loc[operation_index, "time_potential_lock_gate_closure_start"]
     else:
         last_time_gate_closed = pd.Timestamp(datetime.datetime.fromtimestamp(lock_chamber.env.now))
-    last_time_gate_closed += pd.Timedelta(seconds=lock_chamber.gate_closing_time)
+    gate_closing_time = pd.Timedelta(seconds=lock_chamber.gate_closing_time).round("us")
+    last_time_gate_closed += gate_closing_time
 
     next_operations = operation_planning[operation_planning.index > operation_index]
     vessel_index = operation_planning.loc[operation_index, "vessels"].index(vessel)
