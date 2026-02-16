@@ -10,6 +10,7 @@ from numpy.testing import assert_almost_equal
 from opentnsim.graph.utils import get_length_of_edge, get_edge, check_graph_is_multidigraph_type, get_sailing_information_on_edge_to_distance_on_another_edge
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from IPython.display import display
+import warnings
 
 
 def _get_lock_operation_to_and_from_node(lock, direction):
@@ -104,7 +105,7 @@ def _update_lock_operation_planning(lock_complex, operation_index, operation_inf
     """
     for key, value in operation_information.items():
         if key not in lock_complex.operation_planning.columns:
-            warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
+            #warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
             continue
         lock_complex.operation_planning.at[int(operation_index), key] = value
 
@@ -123,7 +124,7 @@ def _update_lock_vessel_planning(lock_complex, vessel_index, passage_information
     """
     for key, value in passage_information.items():
         if key not in lock_complex.vessel_planning.columns:
-            warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
+            #warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
             continue
 
         if isinstance(value, pd.Timedelta):
