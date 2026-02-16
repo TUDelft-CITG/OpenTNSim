@@ -15,6 +15,7 @@ import pyproj
 from shapely.geometry import LineString, Point, MultiLineString
 from opentnsim.graph.calculations import reverse_geometry, calculate_length_of_edge, calculate_length_of_edge
 
+
 class NetworkWarning(Warning):
     pass
 
@@ -597,7 +598,7 @@ def get_trajectory(graph, node_1, node_2):
     is_multidigraph = check_graph_is_multidigraph_type(graph)
     for edge in zip(route[:-1], route[1:]):
         edge = get_edge(graph, edge, is_multidigraph)
-        edge_geometry = graph.edges[edge]['geometry']
+        edge_geometry = graph.edges[edge]["geometry"]
         aligned = check_if_geometry_is_aligned_with_edge(graph, edge)
         if not aligned:
             edge_geometry = reverse_geometry(edge_geometry)
@@ -637,11 +638,11 @@ def get_edge_at_distance_from_node(graph, node_1, node_2, distance):
     is_multidigraph = check_graph_is_multidigraph_type(graph)
     for edge in zip(route[:-1], route[1:]):
         edge = get_edge(graph, edge, is_multidigraph)
-        edge_length = graph.edges[edge]['length_m']
+        edge_length = graph.edges[edge]["length_m"]
         total_length += edge_length
         if total_length < distance:
             continue
-        edge = (node_I,node_II,k)
+        edge = (node_I, node_II, k)
         break
     return edge
 
@@ -653,6 +654,7 @@ def get_edge(graph, edge, is_multidigraph=False):
         edge = (edge[0], edge[1], k)
     return edge
 
+
 def get_edges(graph, route):
     edges = []
     is_multidigraph = check_graph_is_multidigraph_type(graph)
@@ -660,6 +662,7 @@ def get_edges(graph, route):
         edge = get_edge(graph, edge, is_multidigraph)
         edges.append(edge)
     return edges
+
 
 def get_sailing_distance(graph, route):
     """
@@ -680,12 +683,12 @@ def get_sailing_distance(graph, route):
 
     # calculate sailing distance along route
     sailing_distance = 0
-    sailing_distance_df = pd.DataFrame(columns=['node_start','node_stop','distance'])
+    sailing_distance_df = pd.DataFrame(columns=["node_start", "node_stop", "distance"])
     edges = get_edges(graph, route)
     for edge in edges:
-        edge_distance = graph.edges[edge]['length_m']
+        edge_distance = graph.edges[edge]["length_m"]
         sailing_distance += edge_distance
-        sailing_distance_df.loc[len(sailing_distance_df),:] = [edge[0],edge[1],edge_distance]
+        sailing_distance_df.loc[len(sailing_distance_df), :] = [edge[0], edge[1], edge_distance]
 
     return sailing_distance, sailing_distance_df
 
@@ -693,12 +696,12 @@ def get_sailing_distance(graph, route):
 def get_edge_speed(vessel, graph, edge):
     edge_info = graph.edges[edge]
     sailing_speed = vessel.v
-    if 'restricted_speed' in edge_info.keys():
-        restricted_speed = edge_info['restricted_speed']
+    if "restricted_speed" in edge_info.keys():
+        restricted_speed = edge_info["restricted_speed"]
         if sailing_speed > restricted_speed:
             sailing_speed = restricted_speed
-    if 'overruled_speed' in edge_info.keys():
-        sailing_speed = edge_info['overruled_speed']
+    if "overruled_speed" in edge_info.keys():
+        sailing_speed = edge_info["overruled_speed"]
     return sailing_speed
 
 
@@ -719,22 +722,22 @@ def get_sailing_speed(vessel, graph, route):
     -------
     """
     # construct dataframe of speed information per edge
-    vessel_sailing_speed_df = pd.DataFrame(columns=['node_start','node_stop','speed'])
+    vessel_sailing_speed_df = pd.DataFrame(columns=["node_start", "node_stop", "speed"])
     edges = get_edges(graph, route)
-    total_sailing_distance = 0.
-    total_sailing_time = 0.
-    average_sailing_speed = 0.
+    total_sailing_distance = 0.0
+    total_sailing_time = 0.0
+    average_sailing_speed = 0.0
     for edge in edges:
         edge_info = graph.edges[edge]
         sailing_speed = get_edge_speed(vessel, graph, edge)
 
-        sailing_distance = edge_info['length_m']
+        sailing_distance = edge_info["length_m"]
         total_sailing_distance += sailing_distance
-        total_sailing_time += sailing_distance/sailing_speed
+        total_sailing_time += sailing_distance / sailing_speed
 
-        vessel_sailing_speed_df.loc[len(vessel_sailing_speed_df),:] = [edge[0],edge[1],sailing_speed]
+        vessel_sailing_speed_df.loc[len(vessel_sailing_speed_df), :] = [edge[0], edge[1], sailing_speed]
     if total_sailing_time:
-        average_sailing_speed = total_sailing_distance/total_sailing_time
+        average_sailing_speed = total_sailing_distance / total_sailing_time
     return average_sailing_speed, vessel_sailing_speed_df
 
 
@@ -760,9 +763,9 @@ def get_sailing_time(vessel, route):
     graph = vessel.env.graph
     sailing_distance, sailing_distance_df = get_sailing_distance(graph, route)
     average_sailing_speed, vessel_sailing_speed_df = get_sailing_speed(vessel, graph, route)
-    sailing_time_df = pd.merge(sailing_distance_df,vessel_sailing_speed_df)
-    sailing_time_df['time'] = sailing_time_df['distance'] / sailing_time_df['speed']
-    sailing_time = sailing_time_df['time'].sum()
+    sailing_time_df = pd.merge(sailing_distance_df, vessel_sailing_speed_df)
+    sailing_time_df["time"] = sailing_time_df["distance"] / sailing_time_df["speed"]
+    sailing_time = sailing_time_df["time"].sum()
     return sailing_time, sailing_time_df
 
 
@@ -770,12 +773,17 @@ def get_heading(vessel, graph, edge):
     is_multidigraph = check_graph_is_multidigraph_type(graph)
     edge = get_edge(graph, edge, is_multidigraph)
     edge_geometry = vessel.multidigraph.edges[edge[0], edge[1], k]["geometry"]
-    heading = np.degrees(math.atan2(edge_geometry.coords[0][0] - edge_geometry.coords[-1][0],
-                                    edge_geometry.coords[0][1] - edge_geometry.coords[-1][1]))
+    heading = np.degrees(
+        math.atan2(
+            edge_geometry.coords[0][0] - edge_geometry.coords[-1][0], edge_geometry.coords[0][1] - edge_geometry.coords[-1][1]
+        )
+    )
     return heading
 
 
-def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, distance_sailed_on_first_edge=0., distance_to_be_sailed_on_last_edge=0.):
+def get_sailing_information_on_edge_to_distance_on_another_edge(
+    vessel, route, distance_sailed_on_first_edge=0.0, distance_to_be_sailed_on_last_edge=0.0
+):
     """
     Calculates the distance from a location along an edge A to another location along an edge B
 
@@ -808,12 +816,25 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, d
         index_last_edge = pd.Index([sailing_information_df.iloc[-1].name])
 
         # determine distance that must still be sailed on the current edge of the vessel
-        distance_to_sail_on_first_edge = (sailing_information_df.loc[index_first_edge, 'distance']-distance_sailed_on_first_edge)
+        distance_to_sail_on_first_edge = sailing_information_df.loc[index_first_edge, "distance"] - distance_sailed_on_first_edge
 
-        # adjust information of the sailing distance and sailing time on the first and last edges
-        sailing_information_df.loc[index_first_edge, 'time'] = sailing_information_df.loc[index_first_edge, 'time']*(distance_to_sail_on_first_edge/sailing_information_df.loc[index_first_edge, 'distance'])
-        sailing_information_df.loc[index_first_edge, 'distance'] = distance_to_sail_on_first_edge
-        sailing_information_df.loc[index_last_edge, 'time'] = sailing_information_df.loc[index_last_edge, 'time']*(distance_to_be_sailed_on_last_edge/sailing_information_df.loc[index_last_edge, 'distance'])
-        sailing_information_df.loc[index_last_edge, 'distance'] = distance_to_be_sailed_on_last_edge
+        try:
+            # adjust information of the sailing distance and sailing time on the first and last edges
+            sailing_information_df.loc[index_first_edge, "time"] = sailing_information_df.loc[index_first_edge, "time"] * (
+                distance_to_sail_on_first_edge / sailing_information_df.loc[index_first_edge, "distance"]
+            )
+            sailing_information_df.loc[index_first_edge, "distance"] = distance_to_sail_on_first_edge
+        except ZeroDivisionError:
+            sailing_information_df.loc[index_first_edge, "time"] = 0
+            sailing_information_df.loc[index_first_edge, "distance"] = 0
+
+        try:
+            sailing_information_df.loc[index_last_edge, "time"] = sailing_information_df.loc[index_last_edge, "time"] * (
+                distance_to_be_sailed_on_last_edge / sailing_information_df.loc[index_last_edge, "distance"]
+            )
+            sailing_information_df.loc[index_last_edge, "distance"] = distance_to_be_sailed_on_last_edge
+        except ZeroDivisionError:
+            sailing_information_df.loc[index_last_edge, "time"] = 0
+            sailing_information_df.loc[index_last_edge, "distance"] = 0
 
     return sailing_information_df

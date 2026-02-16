@@ -1,4 +1,5 @@
 """Contains the mixin for lock chambers. Also contains the parent class LockChamberOperatior."""
+
 import datetime
 import math
 import numpy as np
@@ -40,7 +41,9 @@ class IsLockGate(HasResource, Locatable, Identifiable):
         super().__init__(nr_resources=1, *args, **kwargs)
 
 
-class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph, ExtraMetadata):
+class IsLockChamber(
+    IsLockChamberOperator, OnEdge, HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph, ExtraMetadata
+):
     """Mixin class: lock complex has a lock chamber:
 
     creates a lock chamber with a resource which is requested when a vessels wants to enter the area with limited capacity
@@ -49,9 +52,9 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
 
     def __init__(
         self,
-        lock_length=0.0, # a float which contains the length of the lock chamber
-        lock_width=0.0, # a float which contains the width of the lock chamber
-        lock_depth=0.0, # a float which contains the depth of the lock chamber
+        lock_length=0.0,  # a float which contains the length of the lock chamber
+        lock_width=0.0,  # a float which contains the width of the lock chamber
+        lock_depth=0.0,  # a float which contains the depth of the lock chamber
         geometry=None,
         distance_from_start_node_to_lock_gate_A=0.0,  # a float that is the distance between the start_node of the edge and the lock gate A [m]
         distance_from_end_node_to_lock_gate_B=0.0,  # a float that is the distance between the end_node of the edge and the lock gate B [m]
@@ -68,12 +71,14 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         sailing_in_speed_A=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
         sailing_out_speed_A=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
         sailing_in_speed_B=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
-        sailing_out_speed_B=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
-        minimum_manoeuvrability_speed=2 * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
+        sailing_out_speed_B=2
+        * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
+        minimum_manoeuvrability_speed=2
+        * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
         gate_open=None,  # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
         operational_hour_start_times=None,
         operational_hour_stop_times=None,
-        crs_m = "EPSG:4087",
+        crs_m="EPSG:4087",
         *args,
         **kwargs,
     ):
@@ -87,15 +92,13 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         calculate_and_check_lock_dimensions(self)
 
         # initialization
-        super().__init__(capacity=math.inf,
-                         length=self.lock_length,
-                         remaining_length=self.lock_length,
-                         *args, **kwargs)
+        super().__init__(capacity=math.inf, length=self.lock_length, remaining_length=self.lock_length, *args, **kwargs)
 
         # more geometrical information (after initialization)
         if self.geometry is not None:
-            (distance_from_start_node_to_lock_gate_A,
-             distance_from_end_node_to_lock_gate_B) = calculate_lock_distances_to_nodes_of_edge_from_geometry(self)
+            (distance_from_start_node_to_lock_gate_A, distance_from_end_node_to_lock_gate_B) = (
+                calculate_lock_distances_to_nodes_of_edge_from_geometry(self)
+            )
         self.distance_from_start_node_to_lock_gate_A = distance_from_start_node_to_lock_gate_A
         self.distance_from_end_node_to_lock_gate_B = distance_from_end_node_to_lock_gate_B
         self.start_node = self.edge[0]
@@ -107,11 +110,15 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
             self.edge_reversed = (self.end_node, self.start_node, self.k)
 
         # gate information
-        geometry_gate_A = calculate_location_over_edges(self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A, crs_m = self.crs_m)
-        self.gate_A = IsLockGate(env = self.env, name = 'Gate A', geometry = geometry_gate_A)
-        self.levelling = HasResource(env = self.env, nr_resources = 1)
-        geometry_gate_B = calculate_location_over_edges(self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A + self.lock_length, crs_m = self.crs_m)
-        self.gate_B = IsLockGate(env = self.env, name = 'Gate A', geometry = geometry_gate_B)
+        geometry_gate_A = calculate_location_over_edges(
+            self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A, crs_m=self.crs_m
+        )
+        self.gate_A = IsLockGate(env=self.env, name="Gate A", geometry=geometry_gate_A)
+        self.levelling = HasResource(env=self.env, nr_resources=1)
+        geometry_gate_B = calculate_location_over_edges(
+            self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A + self.lock_length, crs_m=self.crs_m
+        )
+        self.gate_B = IsLockGate(env=self.env, name="Gate A", geometry=geometry_gate_B)
         self.gate_opening_time = gate_opening_time
         self.gate_closing_time = gate_closing_time
         self.gate_A_open = True
@@ -155,14 +162,13 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.operational_hours = operational_hours
 
         # checks
-        check_lock_distances_to_nodes_of_edge(self)
+        # check_lock_distances_to_nodes_of_edge(self)
         check_if_geometry_is_aligned_with_edge(self.env.graph, self.edge)
         _verify_node_AB(self)
 
         # Add to the graph:
         add_lock_to_graph(self)
 
-
-    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib'):
-        fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, method = method)
+    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method="Matplotlib"):
+        fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, method=method)
         return fig

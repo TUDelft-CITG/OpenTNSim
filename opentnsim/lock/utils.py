@@ -1,4 +1,5 @@
 """This module contains utility functions for lock operations in the OpenTNSim simulation environment."""
+
 from collections import deque
 import datetime
 from itertools import permutations
@@ -7,7 +8,12 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from numpy.testing import assert_almost_equal
-from opentnsim.graph.utils import get_length_of_edge, get_edge, check_graph_is_multidigraph_type, get_sailing_information_on_edge_to_distance_on_another_edge
+from opentnsim.graph.utils import (
+    get_length_of_edge,
+    get_edge,
+    check_graph_is_multidigraph_type,
+    get_sailing_information_on_edge_to_distance_on_another_edge,
+)
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from IPython.display import display
 
@@ -63,7 +69,7 @@ def _get_lock_object_on_registration_node(graph, registration_node):
     return lock_complexes
 
 
-def _get_vessels_from_planned_operation(lock_complex, operation_index = None):
+def _get_vessels_from_planned_operation(lock_complex, operation_index=None):
     """
     Gets the vessels that are assigned to a certain lock operation in the operation planning of the lock master
 
@@ -104,7 +110,7 @@ def _update_lock_operation_planning(lock_complex, operation_index, operation_inf
     """
     for key, value in operation_information.items():
         if key not in lock_complex.operation_planning.columns:
-            #warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
+            # warnings.warn(f"Column name ({key}) not in the operation planning dataframe -> skipped.")
             continue
         lock_complex.operation_planning.loc[int(operation_index), key] = value
 
@@ -123,7 +129,7 @@ def _update_lock_vessel_planning(lock_complex, vessel_index, passage_information
     """
     for key, value in passage_information.items():
         if key not in lock_complex.vessel_planning.columns:
-            #warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
+            # warnings.warn(f"Column name ({key}) not in the vessel planning dataframe -> skipped.")
             continue
         lock_complex.vessel_planning.loc[vessel_index, key] = value
 
@@ -134,26 +140,29 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
     if direction:
         lock_end_node = lock_chamber.start_node
         distance_to_lock_on_edge = lock_chamber.distance_from_end_node_to_lock_gate_B
-    routes = nx.all_simple_paths(vessel.env.graph, vessel.current_node, lock_end_node)
-    suitable_waiting_areas = pd.DataFrame(columns=['sailing_time_waiting_area_to_lock','available'])
-    for route in routes:
-        for edge in zip(route[:-1],route[1:]):
-            if 'Waiting area' not in vessel.env.graph.edges[edge].keys():
-                continue
-            waiting_areas = vessel.env.graph.edges[edge]['Waiting area']
-            for waiting_area in waiting_areas:
+    lengths, routes = nx.single_source_dijkstra(vessel.env.graph, vessel.current_node)
+    # routes = nx.all_simple_paths(vessel.env.graph, vessel.current_node, lock_end_node)
+    suitable_waiting_areas = pd.DataFrame(columns=["sailing_time_waiting_area_to_lock", "available"])
+
+    for u, v, data in vessel.env.graph.edges(data=True):
+        if "Waiting area" in data:
+            for waiting_area in data["Waiting area"]:
+                # Check if this waiting area is even reachable from current position
+                if u not in routes:
+                    continue
+
                 distance_to_waiting_area_on_edge = waiting_area.distance_from_edge_start
                 get_sailing_info = get_sailing_information_on_edge_to_distance_on_another_edge
                 route_to_lock = nx.dijkstra_path(vessel.env.graph, waiting_area.edge[0], lock_end_node)
                 sailing_info = get_sailing_info(vessel, route_to_lock, distance_to_waiting_area_on_edge, distance_to_lock_on_edge)
                 sailing_time = pd.Timedelta(seconds=sailing_info.time.sum())
                 available = waiting_area.resource.capacity > len(waiting_area.resource.users)
-                suitable_waiting_areas.loc[waiting_area.name,:] = [sailing_time, available]
+                suitable_waiting_areas.loc[waiting_area.name, :] = [sailing_time, available]
 
     available_waiting_areas = suitable_waiting_areas[suitable_waiting_areas.available]
     waiting_area = None
     if not available_waiting_areas.empty:
-        waiting_area = available_waiting_areas.sort_values('sailing_time_waiting_area_to_lock').iloc[0].name
+        waiting_area = available_waiting_areas.sort_values("sailing_time_waiting_area_to_lock").iloc[0].name
 
     if waiting_area is None:
         raise ValueError(f"No route found to waiting area")
@@ -291,13 +300,17 @@ def _get_first_vessel_of_lock_operation(lock_complex, vessel, operation_index):
     first_vessel = vessel
 
     # unpack the vessels of the specified lock operation
-    vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index,)
+    vessels = _get_vessels_from_planned_operation(
+        lock_complex,
+        operation_index=operation_index,
+    )
 
     # determine the first vessel if vessels are already assigned to the lock operation
     if len(vessels):
         first_vessel = vessels[0]
 
     return first_vessel
+
 
 def _get_last_vessel_of_lock_operation(lock_complex, operation_index):
     """
@@ -316,14 +329,18 @@ def _get_last_vessel_of_lock_operation(lock_complex, operation_index):
         the last assigned vessel of the lock operation (the one that will enter and leave the lock chamber last)
     """
     # identify the vessels assigned the lock operation
-    vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index,)
+    vessels = _get_vessels_from_planned_operation(
+        lock_complex,
+        operation_index=operation_index,
+    )
 
     # determine the last vessel
     last_vessel = vessels[-1]
 
     return last_vessel
 
-def _get_route_to_lock(vessel, lock, last_node_included = False):
+
+def _get_route_to_lock(vessel, lock, last_node_included=False):
     """Determines the route of a vessel to the lock
 
     Parameters
@@ -355,13 +372,15 @@ def _get_information_for_lock_operation(lock_chamber, operation_index, direction
     capacity_B = lock_chamber.lock_width
     for vessel in vessels:
         capacity_L -= vessel.L
-    lock_operation_information = {"node_from": node_of_approach,
-                                  "node_to": to_node,
-                                  "direction": direction,
-                                  "lock_chamber": lock_chamber.name,
-                                  "vessels": vessels,
-                                  "capacity_L": capacity_L,
-                                  "capacity_B": capacity_B}
+    lock_operation_information = {
+        "node_from": node_of_approach,
+        "node_to": to_node,
+        "direction": direction,
+        "lock_chamber": lock_chamber.name,
+        "vessels": vessels,
+        "capacity_L": capacity_L,
+        "capacity_B": capacity_B,
+    }
     return lock_operation_information
 
 
@@ -384,12 +403,14 @@ def _get_upcoming_lock_registration_nodes(lock_complex):
         node_info = lock_complex.multidigraph.nodes[node]
 
         # check if the node has a registration node
-        if ("Lock_registration_node" not in node_info.keys()):
+        if "Lock_registration_node" not in node_info.keys():
             continue
 
         # unpack the lock complex information using the lock_edge stored in the registration node
         lock_edge = node_info["Lock_registration_node"]
-        lock = lock_complex.multidigraph.edges[lock_edge]["Lock"][0]  # TODO: write test to prevent that multiple lock complexes are located at the same registration node, also: maybe we need to change "Lock" to "Lock complex"
+        lock = lock_complex.multidigraph.edges[lock_edge]["Lock"][
+            0
+        ]  # TODO: write test to prevent that multiple lock complexes are located at the same registration node, also: maybe we need to change "Lock" to "Lock complex"
 
         # check if lock is already stored
         if lock in upcoming_locks.values():
@@ -398,7 +419,8 @@ def _get_upcoming_lock_registration_nodes(lock_complex):
         upcoming_locks[node] = lock
     return upcoming_locks
 
-def _get_upcoming_locks(vessel, object = 'Lock chamber'):
+
+def _get_upcoming_locks(vessel, object="Lock chamber"):
     """
     Find the upcoming locks that use long-term planning by looping over the vessel's route
 
@@ -439,11 +461,11 @@ def _get_upcoming_locks(vessel, object = 'Lock chamber'):
 
 
 def _get_upcoming_lock_complexes(vessel):
-    upcoming_lock_complexes = _get_upcoming_locks(vessel, object = 'Lock complex')
+    upcoming_lock_complexes = _get_upcoming_locks(vessel, object="Lock complex")
     return upcoming_lock_complexes
 
 
-def _create_operational_hours(start_times,stop_times):
+def _create_operational_hours(start_times, stop_times):
     """
     Creates an DataFrame with the operational hours of the lock complex
 
@@ -461,11 +483,11 @@ def _create_operational_hours(start_times,stop_times):
     """
     # TODO: this is more an utility function as it does not include the lock master (lock_complex)
     # creates default dataframe
-    operational_hours = pd.DataFrame(columns=['start_time', 'stop_time'])
+    operational_hours = pd.DataFrame(columns=["start_time", "stop_time"])
 
     # includes the start and stop times of the operation windows in the dataframe
-    for start_time,stop_time in zip(start_times,stop_times):
-        operational_hours.loc[len(operational_hours),:] = [start_time,stop_time]
+    for start_time, stop_time in zip(start_times, stop_times):
+        operational_hours.loc[len(operational_hours), :] = [start_time, stop_time]
 
     return operational_hours
 
@@ -503,6 +525,7 @@ def _get_water_levels_before_and_after_levelling(lock, levelling_start, levellin
 
     return wlev_A, wlev_B
 
+
 def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, direction):
     """Plans an empty lock operation if this is required and executes it if it is the first lock operation
 
@@ -520,12 +543,16 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
     """
     node_of_approach, to_node = _get_lock_operation_to_and_from_node(lock_chamber, direction)
     lock_complex = lock_chamber.lock_complex
-    previous_planned_operations = lock_complex.operation_planning[(lock_complex.operation_planning.index < operation_index) &
-                                                                  (lock_complex.operation_planning.lock_chamber == lock_chamber.name)]
+    previous_planned_operations = lock_complex.operation_planning[
+        (lock_complex.operation_planning.index < operation_index)
+        & (lock_complex.operation_planning.lock_chamber == lock_chamber.name)
+    ]
     empty_lock_operation_to_be_requested = False
     lock_operation_to_be_executed = False
     if not previous_planned_operations.empty:
-        previous_planned_operation = previous_planned_operations[previous_planned_operations.lock_chamber == lock_chamber.name].iloc[-1]
+        previous_planned_operation = previous_planned_operations[
+            previous_planned_operations.lock_chamber == lock_chamber.name
+        ].iloc[-1]
         if previous_planned_operation.direction == direction:
             empty_lock_operation_to_be_requested = True
             operation_index += 1  # the new operation index lies now one ahead
@@ -535,21 +562,23 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
         operation_index += 1
     return operation_index, empty_lock_operation_to_be_requested, lock_operation_to_be_executed
 
+
 def _update_vessel_planning_for_delayed_arrival(lock_complex, vessel, delay):
     vessel_planning = lock_complex.vessel_planning
     vessel_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-    vessel_planning.loc[vessel_index, 'time_arrival_at_approach_point'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_entry_start'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_potential_lock_gate_opening_stop'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_entry_stop'] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_arrival_at_approach_point"] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_lock_entry_start"] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_potential_lock_gate_opening_stop"] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_lock_entry_stop"] += datetime.timedelta(seconds=delay)
+
 
 def _update_vessel_planning_for_delayed_deparature(lock_complex, vessel, delay):
     vessel_planning = lock_complex.vessel_planning
     vessel_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-    vessel_planning.loc[vessel_index, 'time_lock_departure_start'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_departure_stop'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_lock_operation_stop'] += datetime.timedelta(seconds=delay)
-    vessel_planning.loc[vessel_index, 'time_potential_lock_gate_closure_start'] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_lock_departure_start"] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_lock_departure_stop"] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_lock_operation_stop"] += datetime.timedelta(seconds=delay)
+    vessel_planning.loc[vessel_index, "time_potential_lock_gate_closure_start"] += datetime.timedelta(seconds=delay)
 
 
 def _update_operation_planning_for_delayed_arrival(lock_complex, vessel, operation_index, delay):
@@ -557,11 +586,10 @@ def _update_operation_planning_for_delayed_arrival(lock_complex, vessel, operati
     if first_vessel.id != vessel.id:
         return
     operation_planning = lock_complex.operation_planning
-    operation_planning.loc[operation_index, 'time_lock_entry_start'] += datetime.timedelta(seconds=delay)
-    operation_planning.loc[operation_index, 'time_potential_lock_gate_opening_stop'] += datetime.timedelta(
-        seconds=delay)
+    operation_planning.loc[operation_index, "time_lock_entry_start"] += datetime.timedelta(seconds=delay)
+    operation_planning.loc[operation_index, "time_potential_lock_gate_opening_stop"] += datetime.timedelta(seconds=delay)
 
-    
+
 def _find_available_lock_operation(lock_complex, vessel, direction):
     """
     Function that adds a vessel to the lock operation planning
@@ -596,26 +624,35 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
             suitable_lock_chambers.append(lock_chamber)
 
     if not len(suitable_lock_chambers):
+        print(vessel, lock_complex.lock_chambers.values())
         raise ValueError("Vessel cannot pass lock complex")
 
-    most_suitable_lock_chamber = pd.DataFrame(columns=['time_lock_operation_start','operation_index','new_lock_operation'])
+    most_suitable_lock_chamber = pd.DataFrame(columns=["time_lock_operation_start", "operation_index", "new_lock_operation"])
     for lock_chamber in suitable_lock_chambers:
         route_to_lock_chamber = _get_route_to_lock(vessel, lock_chamber, last_node_included=True)
         lock_distance_last_edge = lock_chamber.distance_from_start_node_to_lock_gate_A
         if direction:
             lock_distance_last_edge = lock_chamber.distance_from_end_node_to_lock_gate_B
-        sailing_time_to_lock_df = get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route_to_lock_chamber, distance_to_be_sailed_on_last_edge = lock_distance_last_edge) #TODO: include registration node on edge (distance_sailed_on_first_edge)
-        sailing_time_to_lock = pd.Timedelta(seconds=sailing_time_to_lock_df['time'].sum())
+        sailing_time_to_lock_df = get_sailing_information_on_edge_to_distance_on_another_edge(
+            vessel, route_to_lock_chamber, distance_to_be_sailed_on_last_edge=lock_distance_last_edge
+        )  # TODO: include registration node on edge (distance_sailed_on_first_edge)
+        sailing_time_to_lock = pd.Timedelta(seconds=sailing_time_to_lock_df["time"].sum())
         time_lock_entry_start = datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time_to_lock
 
         # determine the maximum delay of an individual vessel in all the planned lock operation if the vessel is assigned to that operation
         operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
-        maximum_individual_delay = operation_planning_lock.maximum_individual_delay + (time_lock_entry_start - operation_planning_lock.time_lock_entry_stop)
+        maximum_individual_delay = operation_planning_lock.maximum_individual_delay + (
+            time_lock_entry_start - operation_planning_lock.time_lock_entry_stop
+        )
 
         # filter the planned lock operations based on the following criteria to select available operations to which the vessel can be assigned
         mask_direction = operation_planning_lock.direction == direction  # lock operations in the same direction as the vessel
-        mask_capacity_L = (operation_planning_lock.capacity_L >= vessel.L)  # lock operations that have a capacity in which the vessel fits longitudinally (based on the vessel's length)
-        mask_max_waiting_time = maximum_individual_delay < pd.Timedelta(seconds=lock_chamber.clustering_time)  # lock operations that will not exceed the maximum set waiting time for individual vessels
+        mask_capacity_L = (
+            operation_planning_lock.capacity_L >= vessel.L
+        )  # lock operations that have a capacity in which the vessel fits longitudinally (based on the vessel's length)
+        mask_max_waiting_time = maximum_individual_delay < pd.Timedelta(
+            seconds=lock_chamber.clustering_time
+        )  # lock operations that will not exceed the maximum set waiting time for individual vessels
         mask_empty_lock = operation_planning_lock.vessels.apply(len) == 0  # lock operations that are still empty
 
         # max vessels mask: lock operations that do not exceed a maximum number of vessels
@@ -627,7 +664,9 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
         mask_future_operations = operation_planning_lock.time_levelling_start >= time_lock_entry_start
 
         # combinations of the masks
-        mask_max_waiting_time = (mask_max_waiting_time & ~mask_empty_lock)  # non-empty lock operations with non-exceedance of the maximum waiting time
+        mask_max_waiting_time = (
+            mask_max_waiting_time & ~mask_empty_lock
+        )  # non-empty lock operations with non-exceedance of the maximum waiting time
         if lock_chamber.min_vessels_in_operation:
             mask_min_vessels = operation_planning_lock.vessels.apply(len) < lock_chamber.min_vessels_in_operation
         else:
@@ -659,18 +698,24 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
         else:
             new_operation = False
             operation_index = available_operations.iloc[0].name
-            time_lock_operation_start = (available_operations.iloc[0].time_lock_operation_start - current_time) + sailing_time_to_lock
+            time_lock_operation_start = (
+                available_operations.iloc[0].time_lock_operation_start - current_time
+            ) + sailing_time_to_lock
 
         most_suitable_lock_chamber.loc[lock_chamber.name] = [time_lock_operation_start, operation_index, new_operation]
 
     add_to_existing_operation_df = most_suitable_lock_chamber[most_suitable_lock_chamber.new_lock_operation == False]
     if not add_to_existing_operation_df.empty:
-        most_efficient_operation = add_to_existing_operation_df[add_to_existing_operation_df.time_lock_operation_start == add_to_existing_operation_df.time_lock_operation_start.min()].iloc[0]
+        most_efficient_operation = add_to_existing_operation_df[
+            add_to_existing_operation_df.time_lock_operation_start == add_to_existing_operation_df.time_lock_operation_start.min()
+        ].iloc[0]
         lock_chamber = most_efficient_operation.name
         operation_index = most_efficient_operation.operation_index
         new_operation = most_efficient_operation.new_lock_operation
     else:
-        most_efficient_operation = most_suitable_lock_chamber[most_suitable_lock_chamber.time_lock_operation_start == most_suitable_lock_chamber.time_lock_operation_start.min()].iloc[0]
+        most_efficient_operation = most_suitable_lock_chamber[
+            most_suitable_lock_chamber.time_lock_operation_start == most_suitable_lock_chamber.time_lock_operation_start.min()
+        ].iloc[0]
         lock_chamber = most_efficient_operation.name
         operation_index = most_efficient_operation.operation_index
         new_operation = most_efficient_operation.new_lock_operation
@@ -692,7 +737,9 @@ def _correct_lock_operation_start_time_if_outside_of_operational_hours(lock_cham
         the time when the operation will start
     """
     operational_hours = lock_chamber.operational_hours
-    within_operation_hours = operational_hours[(time_lock_operation_start >= operational_hours.start_time) & (time_lock_operation_start <= operational_hours.stop_time)]
+    within_operation_hours = operational_hours[
+        (time_lock_operation_start >= operational_hours.start_time) & (time_lock_operation_start <= operational_hours.stop_time)
+    ]
     if within_operation_hours.empty:
         first_available_hour = operational_hours[operational_hours.start_time >= time_lock_operation_start].iloc[0]
         time_lock_operation_start = first_available_hour.start_time
@@ -722,16 +769,29 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
 
         # determine time delay of the process of sailing into the lock if the next operation in the planning confict with the delayed operation
         sailing_in_delay = pd.Timedelta(seconds=0)
-        if not len(next_operation_info) and lock_departure_information["time_lock_gate_closing_start"] > next_operation_info.time_potential_lock_gate_opening_stop:
-            sailing_in_delay = lock_departure_information["time_lock_gate_closing_start"] - next_operation_info.time_potential_lock_gate_opening_stop
-        elif len(next_operation_info) and lock_departure_information["time_lock_operation_stop"] > next_operation_info.time_lock_operation_start:
-            sailing_in_delay = lock_departure_information["time_lock_operation_stop"] - next_operation_info.time_lock_operation_start
+        if (
+            not len(next_operation_info)
+            and lock_departure_information["time_lock_gate_closing_start"]
+            > next_operation_info.time_potential_lock_gate_opening_stop
+        ):
+            sailing_in_delay = (
+                lock_departure_information["time_lock_gate_closing_start"]
+                - next_operation_info.time_potential_lock_gate_opening_stop
+            )
+        elif (
+            len(next_operation_info)
+            and lock_departure_information["time_lock_operation_stop"] > next_operation_info.time_lock_operation_start
+        ):
+            sailing_in_delay = (
+                lock_departure_information["time_lock_operation_stop"] - next_operation_info.time_lock_operation_start
+            )
 
         # determine the new start time of the next operation (dependening on whether it will fall withing the operation hours)
         new_operation_start = operation_planning.loc[next_operation_index, "time_lock_operation_start"] + sailing_in_delay
         operational_hours = lock_chamber.operational_hours
-        within_operation_hours = operational_hours[(new_operation_start >= operational_hours.start_time) &
-                                                   (new_operation_start <= operational_hours.stop_time)]
+        within_operation_hours = operational_hours[
+            (new_operation_start >= operational_hours.start_time) & (new_operation_start <= operational_hours.stop_time)
+        ]
         if within_operation_hours.empty:
             first_available_hour = operational_hours[operational_hours.start_time >= new_operation_start].iloc[0]
             sailing_in_delay += first_available_hour.start_time - new_operation_start
@@ -762,16 +822,20 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
 
         # determine the new start and stop times of the lock operation (i.e., gate-closing, levelling, gate-opening) as it can be that the levelling time is now changed due to the shift of this operation in time (i.e., due to tides)
         time_gate_closing = operation_planning.loc[next_operation_index, "time_lock_entry_stop"]
-        levelling_information = calculate_lock_operation_times(lock_chamber,
-                                                               operation_index=next_operation_index,
-                                                               start_time=time_gate_closing,
-                                                               vessel=next_vessel,
-                                                               direction=next_direction,)
+        levelling_information = calculate_lock_operation_times(
+            lock_chamber,
+            operation_index=next_operation_index,
+            start_time=time_gate_closing,
+            vessel=next_vessel,
+            direction=next_direction,
+        )
         # update the operation planning accordingly
         operation_planning.loc[next_operation_index, "time_gate_closing_start"] = levelling_information["time_gate_closing_start"]
         operation_planning.loc[next_operation_index, "time_gate_closing_stop"] = levelling_information["time_gate_closing_stop"]
         operation_planning.loc[next_operation_index, "time_levelling_start"] = levelling_information["time_levelling_start"]
-        delay_after_levelling = levelling_information["time_levelling_stop"] - operation_planning.loc[next_operation_index, "time_levelling_stop"]
+        delay_after_levelling = (
+            levelling_information["time_levelling_stop"] - operation_planning.loc[next_operation_index, "time_levelling_stop"]
+        )
         operation_planning.loc[next_operation_index, "time_levelling_stop"] = levelling_information["time_levelling_stop"]
         operation_planning.loc[next_operation_index, "time_gate_opening_start"] = levelling_information["time_gate_opening_start"]
         operation_planning.loc[next_operation_index, "time_gate_opening_stop"] = levelling_information["time_gate_opening_stop"]
@@ -794,17 +858,21 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
 
 def check_lock_distances_to_nodes_of_edge(lock_chamber):
     edge_length = get_length_of_edge(lock_chamber.env.graph, lock_chamber.edge)
-    lock_edge_length = lock_chamber.distance_from_start_node_to_lock_gate_A + \
-                       lock_chamber.lock_length + \
-                       lock_chamber.distance_from_end_node_to_lock_gate_B
+    lock_edge_length = (
+        lock_chamber.distance_from_start_node_to_lock_gate_A
+        + lock_chamber.lock_length
+        + lock_chamber.distance_from_end_node_to_lock_gate_B
+    )
     try:
         assert_almost_equal(edge_length / 100, lock_edge_length / 100, decimal=1)
     except AssertionError as e:
-        raise ValueError(f'Invalid lock dimensions: geometrical edge length ({edge_length} m) is not equal to '
-                         f'the lock length and distances to the nodes of the lock edge ({lock_edge_length} m). '
-                         f'The distance from node A to lock gate A is {lock_chamber.distance_from_start_node_to_lock_gate_A} m, '
-                         f'the lock chamber length between the lock gates is  {lock_chamber.lock_length} m, and '
-                         f'the distance from node B to lock gate B is {lock_chamber.distance_from_end_node_to_lock_gate_B} m') from None
+        raise ValueError(
+            f"Invalid lock dimensions: geometrical edge length ({edge_length} m) is not equal to "
+            f"the lock length and distances to the nodes of the lock edge ({lock_edge_length} m). "
+            f"The distance from node A to lock gate A is {lock_chamber.distance_from_start_node_to_lock_gate_A} m, "
+            f"the lock chamber length between the lock gates is  {lock_chamber.lock_length} m, and "
+            f"the distance from node B to lock gate B is {lock_chamber.distance_from_end_node_to_lock_gate_B} m"
+        ) from None
 
 
 def _verify_node_AB(self):
@@ -836,10 +904,10 @@ def add_lock_to_graph(lock_chamber):
 def _check_if_lock_chamber_is_next_lock_complex_object(lock_chamber, origin, destination):
     is_multidigraph = check_graph_is_multidigraph_type(lock_chamber.env.graph)
     edge = get_edge(lock_chamber.env.graph, (origin, destination, lock_chamber.k), is_multidigraph)
-    if not 'Lock chamber' in lock_chamber.env.graph.edges[edge].keys():
+    if not "Lock chamber" in lock_chamber.env.graph.edges[edge].keys():
         return
 
-    lock_chambers_on_edge = lock_chamber.env.graph.edges[edge]['Lock chamber']
+    lock_chambers_on_edge = lock_chamber.env.graph.edges[edge]["Lock chamber"]
     lock_chamber_is_next_lock_complex_object = False
     for lock_chamber_on_edge in lock_chambers_on_edge:
         if lock_chamber == lock_chamber_on_edge:
@@ -878,6 +946,7 @@ def determine_if_gate_can_be_closed(lock_chamber, vessel, direction, operation_i
         gate can be closed (True) or not (False)
     """
     from opentnsim.lock.calculations import calculate_time_to_open_gate
+
     operation_planning = lock_chamber.lock_complex.operation_planning
     vessel_planning = lock_chamber.lock_complex.vessel_planning
 
@@ -921,19 +990,19 @@ def determine_if_gate_can_be_closed(lock_chamber, vessel, direction, operation_i
     if same_direction:
         direction = 1 - direction
 
-    gate_opening_time = calculate_time_to_open_gate(lock_chamber, operation_index + operation_step,
-                                                    direction, gate_required_to_be_open)
+    gate_opening_time = calculate_time_to_open_gate(
+        lock_chamber, operation_index + operation_step, direction, gate_required_to_be_open
+    )
 
     if (
         gate_required_to_be_open - gate_opening_time < last_time_gate_closed
-        or gate_required_to_be_open - last_time_gate_closed
-        < lock_chamber.minimum_time_between_operations
+        or gate_required_to_be_open - last_time_gate_closed < lock_chamber.minimum_time_between_operations
     ):
         gate_can_be_closed = False
     return gate_can_be_closed
 
 
-def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel = None, first_in_lock=False, between_arrivals=False):
+def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel=None, first_in_lock=False, between_arrivals=False):
     """
     Determines if the gate are closed
 
@@ -960,6 +1029,7 @@ def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel
         the time duration required to perform the lock operation
     """
     from opentnsim.lock.calculations import calculate_time_to_open_gate
+
     operation_planning = lock_chamber.lock_complex.operation_planning
     vessel_planning = lock_chamber.lock_complex.vessel_planning
     vessels = operation_planning.loc[operation_index, "vessels"]
@@ -993,9 +1063,9 @@ def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel
     elif operation_index == 0:
         last_time_gate_closed = datetime.datetime.fromtimestamp(lock_chamber.env.now)
     else:
-        last_time_gate_closed = operation_planning.loc[
-            operation_index - 1
-        ].time_potential_lock_gate_closure_start + pd.Timedelta(seconds=lock_chamber.gate_closing_time)
+        last_time_gate_closed = operation_planning.loc[operation_index - 1].time_potential_lock_gate_closure_start + pd.Timedelta(
+            seconds=lock_chamber.gate_closing_time
+        )
 
     if first_in_lock:
         gate_required_to_be_open = operation_planning.loc[operation_index, "time_potential_lock_gate_opening_stop"]
@@ -1008,8 +1078,7 @@ def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel
 
     if (
         gate_required_to_be_open - operation_time > last_time_gate_closed
-        and gate_required_to_be_open - last_time_gate_closed
-        > lock_chamber.minimum_time_between_operations
+        and gate_required_to_be_open - last_time_gate_closed > lock_chamber.minimum_time_between_operations
     ):
         gate_are_closed = True
 
@@ -1034,8 +1103,8 @@ def check_lock_complex_geometry(lock_complex):
                 edge_info = lock_complex.env.graph.edges[edge]
                 waiting_areas = []
                 locks = []
-                if not waiting_area_before_lock_chamber and 'Waiting area' in edge_info.keys():
-                    waiting_areas = lock_complex.env.graph.edges[edge]['Waiting area']
+                if not waiting_area_before_lock_chamber and "Waiting area" in edge_info.keys():
+                    waiting_areas = lock_complex.env.graph.edges[edge]["Waiting area"]
 
                 if not len(waiting_areas):
                     continue
@@ -1050,8 +1119,8 @@ def check_lock_complex_geometry(lock_complex):
                         distance_waiting_area_from_edge_start = waiting_area.distance_from_edge_start
 
                 lock_chambers = []
-                if waiting_area_before_lock_chamber and 'Lock chamber' in edge_info.keys():
-                    lock_chambers = lock_complex.env.graph.edges[edge]['Lock chamber']
+                if waiting_area_before_lock_chamber and "Lock chamber" in edge_info.keys():
+                    lock_chambers = lock_complex.env.graph.edges[edge]["Lock chamber"]
 
                 if not len(locks):
                     continue
@@ -1072,7 +1141,8 @@ def check_lock_complex_geometry(lock_complex):
             if lock_found:
                 for lock_chamber in lock_complex.lock_chambers.values():
                     if not locks_found[lock_chamber.name]:
-                        raise ValueError('Setup of lock complex is not correct')
+                        raise ValueError("Setup of lock complex is not correct")
+
 
 def check_all_paths_through_registration(lock_complex):
     """
@@ -1101,7 +1171,7 @@ def check_all_paths_through_registration(lock_complex):
                 # If this path reaches a leaf without registration
                 neighbors = set(graph.neighbors(node)) - {blocked}
                 if not neighbors and not passed_reg:
-                    raise ValueError('Setup of lock complex is not correct')
+                    raise ValueError("Setup of lock complex is not correct")
 
                 for nbr in neighbors:
                     queue.append((nbr, passed_reg or nbr in lock_complex.registration_nodes))
@@ -1139,10 +1209,11 @@ def _get_vessel_sailing_speed_in_lock(lock_chamber, vessel):
     """
     # TODO: sailing_in_speed_B zou A of B moeten zijn. Checken of deze eigenschap vaker voorkomt.
     speed = lock_chamber.sailing_in_speed_B
-    if vessel.bound == 'inbound':
+    if vessel.bound == "inbound":
         speed = lock_chamber.sailing_in_speed_A
 
     return speed
+
 
 def _get_vessel_sailing_speed_out_lock(lock_chamber, vessel):
     """
@@ -1164,10 +1235,11 @@ def _get_vessel_sailing_speed_out_lock(lock_chamber, vessel):
 
     """
     speed = lock_chamber.sailing_out_speed_A
-    if vessel.bound == 'inbound':
+    if vessel.bound == "inbound":
         speed = lock_chamber.sailing_out_speed_B
 
     return speed
+
 
 def _get_vessel_sailing_in_speed(lock_chamber, vessel, direction):
     """
@@ -1235,8 +1307,8 @@ def _get_vessel_sailing_out_speed(lock_chamber, vessel, direction):
     speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
 
     # if there is an overruled speed on the edge, use this speed
-    if 'overruled_speed' in dir(vessel) and edge in vessel.overruled_speed.index:
-        speed = vessel.overruled_speed.loc[edge, 'speed']
+    if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
+        speed = vessel.overruled_speed.loc[edge, "speed"]
 
     return speed
 
@@ -1251,13 +1323,13 @@ def _get_vessel_departure_start_delay(lock_chamber, vessel, operation_index):
     vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index)
     vessel_index = vessels.index(vessel)
 
-    departure_start_delay = pd.Timedelta(seconds = 0)
+    departure_start_delay = pd.Timedelta(seconds=0)
     previous_vessels = vessels[:(vessel_index)]
     if not len(previous_vessels):
         return departure_start_delay
 
     index_vessel = vessel_planning[vessel_planning.id == vessel.id].iloc[0].name
     current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-    sailing_out_start_v1 = vessel_planning.loc[index_vessel, 'time_lock_departure_start']
+    sailing_out_start_v1 = vessel_planning.loc[index_vessel, "time_lock_departure_start"]
     delay_sailing_through_gate = sailing_out_start_v1 - current_time
     return delay_sailing_through_gate
