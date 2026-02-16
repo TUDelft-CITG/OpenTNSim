@@ -342,6 +342,7 @@ class IsLockChamberOperator:
         delay = pd.Timedelta(seconds=waiting_stop - waiting_start)
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(waiting_stop))
         if current_time + sailing_to_approach > start_time_entering_lock:
+            delay = delay.round("us")
             passage_information['time_lock_operation_start'] += delay
             passage_information['time_lock_entry_start'] += delay
             passage_information['time_lock_entry_stop'] += delay
