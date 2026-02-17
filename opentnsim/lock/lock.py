@@ -485,8 +485,14 @@ class HasLockPlanning:
                 operation_planning.loc[next_operation_index, "time_departure_stop"] += delay_after_levelling
                 operation_planning.loc[next_operation_index, "time_operation_stop"] += delay_after_levelling
                 operation_planning.loc[next_operation_index, "time_potential_lock_door_closure_start"] += delay_after_levelling
-                operation_planning.loc[next_operation_index, "total_delay"] += delay_after_levelling * len(next_vessels)
-                operation_planning.loc[next_operation_index, "maximum_individual_delay"] += delay_after_levelling
+
+                total_delay = operation_planning.loc[next_operation_index, "total_delay"] + delay_after_levelling * len(next_vessels)
+                total_delay = total_delay.round("us")
+                operation_planning.loc[next_operation_index, "total_delay"] = total_delay
+
+                maximum_individual_delay = operation_planning.loc[next_operation_index, "maximum_individual_delay"] + delay_after_levelling
+                maximum_individual_delay = maximum_individual_delay.round("us")
+                operation_planning.loc[next_operation_index, "maximum_individual_delay"] = maximum_individual_delay
 
             # update also the departure information of the affected vessels
             for vessel_index, next_vessel in enumerate(next_vessels):
@@ -494,7 +500,10 @@ class HasLockPlanning:
                 vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_start"] += delay_after_levelling
                 vessel_planning.loc[next_vessel_planning_index, "time_lock_departure_stop"] += delay_after_levelling
                 vessel_planning.loc[next_vessel_planning_index, "time_lock_passing_stop"] += delay_after_levelling
-                vessel_planning.loc[next_vessel_planning_index, "delay"] += delay_after_levelling
+
+                delay = vessel_planning.loc[next_vessel_planning_index, "delay"] + delay_after_levelling
+                delay = delay.round("us")
+                vessel_planning.loc[next_vessel_planning_index, "delay"] = delay
 
     def add_vessel_to_planned_lock_operation(self, vessel, operation_index, direction):
         """
@@ -593,7 +602,9 @@ class HasLockPlanning:
         # update the lock master's vessel and lock operation planning by adding the operation start and vessel entry delay
         operation_planning.loc[operation_index, "time_operation_start"] += operation_start_delay
         if vessel_entry_delay > pd.Timedelta(seconds=0):
-            vessel_planning.loc[vessel_planning_index, "delay"] += vessel_entry_delay
+            delay = vessel_planning.loc[vessel_planning_index, "delay"] + vessel_entry_delay
+            delay = delay.round("us")
+            vessel_planning.loc[vessel_planning_index, "delay"] = delay
         operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] += operation_start_delay
 
         # update the values of the entry start, and (if there are no other vessels) overwrite the operation start
@@ -626,7 +637,12 @@ class HasLockPlanning:
                 vessel_planning.loc[other_vessel_planning_index, "time_lock_departure_start"] += additional_sailing_out_delay
                 vessel_planning.loc[other_vessel_planning_index, "time_lock_departure_stop"] += additional_sailing_out_delay
                 vessel_planning.loc[other_vessel_planning_index, "time_lock_passing_stop"] += additional_sailing_out_delay
-                vessel_planning.loc[other_vessel_planning_index, "delay"] += additional_sailing_out_delay
+
+                # casting datetime to timedelta can give floating point issues
+                # explictly round to microseconds.
+                total_delay = vessel_planning.loc[other_vessel_planning_index, "delay"] + additional_sailing_out_delay
+                total_delay = total_delay.round('us')
+                vessel_planning.loc[other_vessel_planning_index, "delay"] = total_delay
 
         # update the operation planning with the above information
         operation_planning.loc[operation_index, "time_potential_lock_door_opening_stop"] = potential_lock_door_opening_stop
@@ -1006,12 +1022,43 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
 
             # calculate the sailing duration left to the waiting area
-            sailing_time_to_waiting_area, sailing_distance_to_waiting_area, vessel_speed = lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)
+            sailing_time_to_waiting_area, sailing_distance_to_waiting_area, vessel_speed,_ = lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)
             sailing_time_to_waiting_area = sailing_time_to_waiting_area.total_seconds()
 
             # if there is still sailing time left to the waiting area then continue sailing and log this process (here the locking module takes over the function of the movable)
             if sailing_time_to_waiting_area:
-                self.log_entry_v0("Sailing to waiting area start", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'],)
+                speed_reduction_length = waiting_area.speed_reduction_length
+                non_speed_reduction_length = sailing_distance_to_waiting_area - speed_reduction_length
+                speed = self._compute_velocity_on_edge(*waiting_area.edge)
+                if non_speed_reduction_length:
+                    self.log_entry_v0("Sailing to waiting area start", self.env.now, self.output.copy(), self.logbook[-1]['Geometry'],)
+                    start_sailing = self.env.now
+                    try:
+                        yield self.env.timeout(non_speed_reduction_length/speed)
+                        sailing_time_to_waiting_area = 0.
+                    except simpy.Interrupt as e:
+                        sailing_time_to_waiting_area -= self.env.now - start_sailing
+                        remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
+                        sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
+                    if not speed_reduction_length:
+                        geometry = waiting_area.location
+                    else:
+                        geometry = self.env.vessel_traffic_service.provide_location_over_edges(waiting_area.edge[0], waiting_area.edge[1], non_speed_reduction_length)
+                    self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),geometry,)
+
+                if speed_reduction_length:
+                    self.log_entry_v0("Sailing to waiting area start (with reduced speed)", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'], )
+                    start_sailing = self.env.now
+                    reduced_speed = speed*waiting_area.speed_reduction_factor
+                    try:
+                        yield self.env.timeout(speed_reduction_length / reduced_speed)
+                        sailing_time_to_waiting_area = 0.
+                    except simpy.Interrupt as e:
+                        sailing_time_to_waiting_area -= self.env.now - start_sailing
+                        remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
+                        sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
+                    self.log_entry_v0("Sailing to waiting area stop (with reduced speed)", self.env.now, self.output.copy(),waiting_area.location, )
+
 
             # the sailing process can be interrupted, as vessel can be subject to changes in its speed, then the remaining sailing time is determined and continued with the changed speed -> when sailing to the waiting area has been completed: log the process
             while sailing_time_to_waiting_area:
@@ -1026,7 +1073,9 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),waiting_area.location,)
 
             # let vessel wait in the waiting area TODO: can we decouple this?
+            start_waiting = self.env.now
             yield from self.wait_in_waiting_area(waiting_area=waiting_area)
+            stop_waiting = self.env.now
 
             # if done waiting -> release vessel from waiting area and let vessel continue
             yield waiting_area.resource.release(self.waiting_area_request)
@@ -1173,6 +1222,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         remaining_static_waiting_time = waiting_time.total_seconds()
         waiting_time_while_sailing = 0.
 
+        remaining_static_waiting_time += lock.mandatory_waiting_time_before_lock
         # if there is stationary waiting time -> let vessel wait (longer) in the waiting area
         if remaining_static_waiting_time > 0.:
             # log the start of the waiting process
@@ -1216,12 +1266,14 @@ class IsLockWaitingArea(HasResource, Identifiable, Log, HasOutput, HasMultiDiGra
     """
 
     def __init__(
-        self, edge, lock, distance_from_edge_start, *args, **kwargs  # a string which indicates the location of the start of the waiting area
+        self, edge, lock, distance_from_edge_start, speed_reduction_length, speed_reduction_factor, *args, **kwargs  # a string which indicates the location of the start of the waiting area
     ):
         node = edge[0]
         self.node = node
         self.edge = edge
         self.lock = lock
+        self.speed_reduction_length = speed_reduction_length
+        self.speed_reduction_factor = speed_reduction_factor
         self.distance_from_edge_start = distance_from_edge_start
         super().__init__(*args, **kwargs, nr_resources=1000000)
         """Initialization"""
@@ -1777,6 +1829,35 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         # calculation of the sailing information (time, distance, speed) per edge on route to the waiting area
         sailing_to_waiting_area = calculate_sailing_time(vessel, route=route_to_waiting_area, distance_sailed_on_last_edge=distance_to_waiting_area_on_last_edge)
 
+        sailing_to_waiting_area['cum_distance'] = sailing_to_waiting_area['Distance'].cumsum()
+        total_distance = sailing_to_waiting_area['Distance'].sum()
+
+        if waiting_area_approach.speed_reduction_length and self.lock_complex.mandatory_waiting_time_before_lock:
+            speed_reduction_start = total_distance - waiting_area_approach.speed_reduction_length
+            df = sailing_to_waiting_area.copy()
+            df['cum_end'] = df['Distance'].cumsum()
+            df['cum_start'] = df['cum_end'] - df['Distance']
+            new_rows = []
+
+            for idx, row in df.iterrows():
+                if row['cum_end'] <= speed_reduction_start:
+                    pass
+                else:
+                    slow_distance = max(0, row['cum_end'] - speed_reduction_start)
+                    normal_distance = row['Distance'] - slow_distance
+                    effective_speed = (normal_distance * row['Speed'] + slow_distance * row['Speed']*waiting_area_approach.speed_reduction_factor) / row['Distance']
+                    new_rows.append((idx[0], idx[1], 0, effective_speed, row['Distance']))
+
+            # Create new dataframe for slow edges
+            slow_df = pd.DataFrame(new_rows, columns=['From', 'To', 'Segment', 'Speed', 'Distance'])
+            slow_df['Time'] = slow_df['Distance'] / slow_df['Speed']
+            slow_df.set_index(['From', 'To', 'Segment'], inplace=True)
+
+            normal_df = df[df['cum_end'] <= speed_reduction_start][['Speed', 'Distance', 'Time']]
+            corrected_df = pd.concat([normal_df, slow_df])
+
+            sailing_to_waiting_area = corrected_df.copy()
+
         # calculation of the sailing time, distance, and average speed to the waiting area
         sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['Time'].sum())
         sailing_distance = sailing_to_waiting_area['Distance'].sum()
@@ -1790,7 +1871,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
             vessel_planning.loc[vessel_planning_index, 'time_arrival_at_waiting_area'] = current_time + sailing_to_waiting_area_time
 
-        return sailing_to_waiting_area_time, sailing_distance, average_sailing_speed
+        return sailing_to_waiting_area_time, sailing_distance, average_sailing_speed, sailing_to_waiting_area
 
     def _get_appropriate_waiting_area(self, direction):
         """
@@ -1882,7 +1963,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # calculation of the sailing time to the line-up area
         sailing_to_lineup_area_time = pd.Timedelta(seconds=sailing_to_lineup_area['Time'].sum())
-
+        sailing_to_lineup_area_time += pd.Timedelta(seconds = self.mandatory_waiting_time_before_lock)
         # calculate arrival time of vessel at the line-up area and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -1937,7 +2018,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # determine the sailing time to the approach point
         sailing_time_to_start_approach = sailing_time_to_lock_door - sailing_time_entry - sailing_time_to_waiting_area #- sailing_time_to_waiting_area TODO: later check if we indeed can get rid of the sailing time to waiting area
-
         # calculate arrival time of vessel at the approach point and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -1980,6 +2060,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         # determine the end node of the lock complex from the perspective of the vessel and the distance from the start node of the lock complex to the lock doors
         distance_to_lock = self._distance_to_lock(direction)
 
+        # unpack first encountered waiting area
+        waiting_area_approach = self._get_appropriate_waiting_area(direction)
+
         # determine the route of the vessel to the end node of the lock complex from the perspective of the vessel
         route_to_lock_chamber = vessel._find_route_to_lock(lock=self)
 
@@ -1991,11 +2074,31 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         sailing_to_lock_chamber_distance = sailing_to_lock_chamber['Distance'].sum()
         sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
 
+        if self.mandatory_waiting_time_before_lock:
+            _,_,_,sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, overwrite=False)
+            common_indexes = sailing_to_lock_chamber.index.intersection(sailing_time_to_waiting_area.index)
+            sailing_to_lock_chamber.loc[common_indexes] = sailing_time_to_waiting_area.loc[common_indexes]
+            speed_to_waiting_area = sailing_time_to_waiting_area.at[common_indexes[-1],'Speed']
+            distance_to_waiting_area = sailing_time_to_waiting_area.at[common_indexes[-1],'Distance']
+            edge_distance = vessel.multidigraph.edges[common_indexes[-1]]['length_m']
+            remaining_distance = edge_distance - distance_to_waiting_area
+            speed_after_waiting_time = vessel.v*waiting_area_approach.speed_reduction_factor
+            sailing_time = remaining_distance/speed_after_waiting_time + distance_to_waiting_area/speed_to_waiting_area
+            sailing_to_lock_chamber.at[common_indexes[-1],'Time'] = sailing_time
+            sailing_to_lock_chamber.at[common_indexes[-1],'Distance'] = edge_distance
+            sailing_to_lock_chamber.at[common_indexes[-1],'Speed'] = edge_distance/sailing_time
+            other_indexes = sailing_to_lock_chamber.loc[common_indexes[-1]:].index[1:]
+            for index in other_indexes:
+                edge_distance = sailing_to_lock_chamber.loc[index, 'Distance']
+                new_sailing_time = edge_distance / speed_after_waiting_time
+                sailing_to_lock_chamber.loc[index, 'Speed'] = new_sailing_time
+                sailing_to_lock_chamber.loc[index, 'Time'] = edge_distance/new_sailing_time
+
         # add sailing distance and time to the lock doors on the edge of the lock complex to sailing information to the start node of this edge
         sailing_to_lock_chamber_distance += distance_to_lock
         sailing_to_lock_chamber_time += distance_to_lock / self.vessel_sailing_in_speed(vessel, direction)
         sailing_to_lock_chamber_time = pd.Timedelta(seconds=sailing_to_lock_chamber_time)
-
+        sailing_to_lock_chamber_time += pd.Timedelta(seconds=self.mandatory_waiting_time_before_lock)
         # calculate arrival time of vessel at the first to be encountered lock doors and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -2797,6 +2900,8 @@ class IsLockComplex(IsLockMaster):
                  effective_lineup_area_B_length=None,           # a float that is the effective length of line-up area B that can be requested by a vessel [m]
                  passing_allowed_in_lineup_area_A=False,        # a bool to indicate that ... ?
                  passing_allowed_in_lineup_area_B=False,        # a bool to indicate that ... ?
+                 speed_reduction_factor_waiting_area_A=0.75,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
+                 speed_reduction_factor_waiting_area_B=0.75,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
                  speed_reduction_factor_lineup_area_A=0.75,     # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
                  speed_reduction_factor_lineup_area_B=0.75,     # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
                  P_used_to_break_before_lock=None,              # a float that is the breaking power used by the vessel to gradually decelerate in front of the lock [kW]
@@ -2804,6 +2909,8 @@ class IsLockComplex(IsLockMaster):
                  P_used_to_accelerate_in_lock=None,             # a float that is the acceleration power used by the vessel to gradually accelerate inside the lock chamber [kW]
                  P_used_to_accelerate_after_lock=None,          # a float that is the acceleration power used by the vessel to gradually accelerate to sail way from the lock chamber [kW]
                  k = 0,                                         # a int that is the identifier of the edge between two nodes at which the lock complex is located on the multidigraph network
+                 mandatory_waiting_time_before_lock = 0,
+                 speed_reduction_length_before_waiting_area = 0,
                  *args,
                  **kwargs):
         """Initialization"""
@@ -2832,6 +2939,10 @@ class IsLockComplex(IsLockMaster):
         self.P_used_to_accelerate_in_lock = P_used_to_accelerate_in_lock
         self.P_used_to_accelerate_after_lock = P_used_to_accelerate_after_lock
         self.k = k
+        self.mandatory_waiting_time_before_lock = mandatory_waiting_time_before_lock
+        self.speed_reduction_length_before_waiting_area = speed_reduction_length_before_waiting_area
+        self.speed_reduction_factor_waiting_area_A = speed_reduction_factor_waiting_area_A
+        self.speed_reduction_factor_waiting_area_B = speed_reduction_factor_waiting_area_B
 
         # create the waiting area objects
         if edge_waiting_area_A is None:
@@ -2846,6 +2957,8 @@ class IsLockComplex(IsLockMaster):
         self.waiting_area_A = IsLockWaitingArea(env=self.env,
                                                 name="waiting_area_A",
                                                 lock=self,
+                                                speed_reduction_length=self.speed_reduction_length_before_waiting_area,
+                                                speed_reduction_factor=self.speed_reduction_factor_waiting_area_A,
                                                 edge=edge_waiting_area_A,
                                                 distance_from_edge_start=self.distance_waiting_area_A_from_edge_start_waiting_area_A)
         self.distance_waiting_area_A_to_end_edge_waiting_area_A = get_length_of_edge(self.env.graph, edge_waiting_area_A)
@@ -2864,6 +2977,8 @@ class IsLockComplex(IsLockMaster):
                                                 name="waiting_area_B",
                                                 lock=self,
                                                 edge=edge_waiting_area_B,
+                                                speed_reduction_length = self.speed_reduction_length_before_waiting_area,
+                                                speed_reduction_factor = self.speed_reduction_factor_waiting_area_B,
                                                 distance_from_edge_start=self.distance_waiting_area_B_from_start_edge_waiting_area_B)
         self.distance_waiting_area_B_to_end_edge_waiting_area_B = get_length_of_edge(self.env.graph, edge_waiting_area_B)
         self.distance_waiting_area_B_to_end_edge_waiting_area_B -= self.distance_waiting_area_B_from_start_edge_waiting_area_B
@@ -3110,7 +3225,7 @@ class IsLockComplex(IsLockMaster):
                 f"LockComplex {self.name} does not have an edge between node A {self.node_A} and node B {self.node_B}."
             )
 
-    def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib'):
+    def create_time_distance_plot(self, vessels, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, ax=None, label=None, method = 'Matplotlib'):
         """Create a time-distance plot of vessels passing a lock complex
 
         Parameters
@@ -3153,7 +3268,11 @@ class IsLockComplex(IsLockMaster):
                                       f"Sailing from node {node_start} to node {node_end} stop",
                                       f"Sailing from node {node_end} to node {node_start} stop"])
 
-        accepted_messages.extend(["Waiting for other vessel in lock operation start",
+        accepted_messages.extend(["Sailing to waiting area start",
+                                  "Sailing to waiting area stop",
+                                  "Sailing to waiting area start (with reduced speed)",
+                                  "Sailing to waiting area stop (with reduced speed)",
+                                  "Waiting for other vessel in lock operation start",
                                   "Waiting for other vessel in lock operation stop",
                                   "Waiting for lock operation start",
                                   "Waiting for lock operation stop",
@@ -3201,7 +3320,18 @@ class IsLockComplex(IsLockMaster):
             if method == 'Plotly':
                 traces.append(go.Scatter(x=distances, y=times, mode='lines', name=vessel.name))
 
-        if method == 'Matplotlib':
+        if ax is not None:
+            for index, (distances, times) in enumerate(zip(all_distances, all_times)):
+                if index == 0:
+                    if label is not None:
+                        line, = ax.plot(distances, times, label=label)
+                    else:
+                        line, = ax.plot(distances, times)
+                    color = line.get_color()
+                else:
+                    ax.plot(distances, times, color=color)
+
+        elif method == 'Matplotlib':
             fig, ax = plt.subplots()
             for distances, times in zip(all_distances, all_times):
                 ax.plot(distances, times)
@@ -3223,8 +3353,10 @@ class IsLockComplex(IsLockMaster):
         if xlimmax is None:
             xlimmax = 2 * sailing_distance_to_crossing_point
 
-        if method == 'Matplotlib':
-            lock_extend_x = np.array([x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]) - x_correction_indirection
+        lock_extend_x = np.array([x_lock_doorsA, x_lock_doorsA, x_lock_doorsB, x_lock_doorsB]) - x_correction_indirection
+        if ax is not None:
+            ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
+        elif method == 'Matplotlib':
             ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
         elif method == 'Plotly':
             fig.add_shape(type="rect",
@@ -3257,9 +3389,14 @@ class IsLockComplex(IsLockMaster):
                 name = "Lock chamber converting"
                 message_found = True
 
-            if method == 'Matplotlib' and message_found:
+            if not message_found:
+                continue
+
+            if ax is not None:
                 ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color=color, zorder=0)
-            elif method == 'Plotly' and message_found:
+            elif method == 'Matplotlib':
+                ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color=color, zorder=0)
+            elif method == 'Plotly':
                 fig.add_shape(type="rect",
                               x0=x_lock_doorsA - x_correction_indirection, x1=x_lock_doorsB - x_correction_indirection,
                               y0=time_start, y1=time_stop,
@@ -3272,7 +3409,9 @@ class IsLockComplex(IsLockMaster):
         xlabel = "Distance from Lock Complex [m]"
         ylabel = "Timestamp"
         title = "Time-Distance Plot of Vessel Movements"
-        if method == 'Matplotlib':
+        if ax is not None:
+            pass
+        elif method == 'Matplotlib':
             ax.axvline(-sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
             ax.axvline(sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
             ax.set_xlim([xlimmin,xlimmax])
@@ -3290,5 +3429,5 @@ class IsLockComplex(IsLockMaster):
                               xaxis_range=[xlimmin, xlimmax],
                               yaxis_range=[ylimmin, ylimmax],
                               showlegend=True)
-
-        return fig
+        if ax is None:
+            return fig

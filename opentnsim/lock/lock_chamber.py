@@ -584,7 +584,6 @@ class IsLockChamberOperator:
 
         # log the stop of the sailing event to the assigned locaiton in the lock chamber
         vessel.log_entry_v0("Sailing to position in lock stop", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
-
         # close doors if doors can be closed between vessel arrivals and doors have not already been closed before
         doors_can_be_closed_between_vessel_arrivals = lock.determine_if_door_can_be_closed(vessel, direction, operation_index, between_arrivals=True)
         if not lock.close_doors_before_vessel_is_laying_still and doors_can_be_closed_between_vessel_arrivals:
@@ -1303,13 +1302,13 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         disch_coeff=0.4,  # a float which contains the discharge coefficient of filling system
         opening_area=12.0,  # a float which contains the cross-sectional area of filling system [m^2]
         opening_depth=None,  # a float which contains the depth at which filling system is located [m^2]
-        speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
         start_sailing_out_time_after_doors_have_been_opened=0.0,  # a float that is the time that the vessel wait to start sailing out of the lock after the doors have been opened after levelling [s]
         sailing_time_before_opening_lock_doors=600.0,  # a float that is the time that the doors are opened before a vessel arrives at the doors [s]
         sailing_time_before_closing_lock_doors=120.0,  # a float that is the time that the doors are closed after a vessel has sailed through the doors [s]
         minimum_time_between_operations_for_intermediate_door_closure=0.0,  # a float that is the minimum required time between lock operations that the lock doors can be both closed (to reduce salt intrusion) [s]
         sailing_distance_to_crossing_point=500.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
         passage_time_door=300.0,  # a float [s] ?
+        speed_reduction_factor = 0.5,
         sailing_in_time_gap_through_doors=180.0,  # a float that is the time gap after which the next vessel can sail into the lock through the lock doors (after another vessel has sailed through to enter the lock) [s]
         sailing_out_time_gap_through_doors=180.0,  # a float that is the time gap after which the next vessel can sail out of the lock through the lock doors (after another vessel has sailed through to leave the lock)[s]
         sailing_in_time_gap_after_berthing_previous_vessel=0.0,  # a float that is the time gap after which the next vessel can sail into the lock (after another vessel has berthed) [s]
@@ -1363,11 +1362,11 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         self.sailing_distance_to_crossing_point = sailing_distance_to_crossing_point
         self.sailing_in_time_gap_through_doors = sailing_in_time_gap_through_doors
         self.sailing_out_time_gap_through_doors = sailing_out_time_gap_through_doors
-        self.speed_reduction_factor = speed_reduction_factor_lock_chamber
         self.passage_time_door = passage_time_door
         self.start_node = start_node
         self.end_node = end_node
         self.k = k
+        self.speed_reduction_factor = speed_reduction_factor
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed
         self.node_open = node_open
         self.conditions = conditions
@@ -1576,6 +1575,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # determine the speed of the vessel over the edge
         speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
 
+        speed = speed*self.speed_reduction_factor
         # if there is an overruled speed on the edge, use this speed
         if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
             speed = vessel.overruled_speed.loc[edge, "Speed"]
