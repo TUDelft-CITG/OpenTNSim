@@ -1833,7 +1833,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         total_distance = sailing_to_waiting_area['Distance'].sum()
 
         if waiting_area_approach.speed_reduction_length and self.lock_complex.mandatory_waiting_time_before_lock:
-            speed_reduction_start = total_distance - waiting_area_approach.speed_reduction_length
+            speed_reduction_start = waiting_area_approach.speed_reduction_length
             df = sailing_to_waiting_area.copy()
             df['cum_end'] = df['Distance'].cumsum()
             df['cum_start'] = df['cum_end'] - df['Distance']
@@ -1843,9 +1843,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
                 if row['cum_end'] <= speed_reduction_start:
                     pass
                 else:
-                    slow_distance = max(0, row['cum_end'] - speed_reduction_start)
-                    normal_distance = row['Distance'] - slow_distance
-                    effective_speed = (normal_distance * row['Speed'] + slow_distance * row['Speed']*waiting_area_approach.speed_reduction_factor) / row['Distance']
+                    slow_distance = speed_reduction_start
+                    normal_distance = row['Distance'] - speed_reduction_start
+                    effective_speed = row['Distance']/((normal_distance/row['Speed'] + slow_distance/(row['Speed']*waiting_area_approach.speed_reduction_factor)))
                     new_rows.append((idx[0], idx[1], 0, effective_speed, row['Distance']))
 
             # Create new dataframe for slow edges
@@ -1854,6 +1854,8 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             slow_df.set_index(['From', 'To', 'Segment'], inplace=True)
 
             normal_df = df[df['cum_end'] <= speed_reduction_start][['Speed', 'Distance', 'Time']]
+            print(normal_df)
+            print(slow_df)
             corrected_df = pd.concat([normal_df, slow_df])
 
             sailing_to_waiting_area = corrected_df.copy()
@@ -2060,9 +2062,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         # determine the end node of the lock complex from the perspective of the vessel and the distance from the start node of the lock complex to the lock doors
         distance_to_lock = self._distance_to_lock(direction)
 
-        # unpack first encountered waiting area
-        waiting_area_approach = self._get_appropriate_waiting_area(direction)
-
         # determine the route of the vessel to the end node of the lock complex from the perspective of the vessel
         route_to_lock_chamber = vessel._find_route_to_lock(lock=self)
 
@@ -2071,8 +2070,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # calculate sailing time to the start node of the edge of lock complex from the perspective of the vessel
         sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
-        sailing_to_lock_chamber_distance = sailing_to_lock_chamber['Distance'].sum()
-        sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
 
         if self.mandatory_waiting_time_before_lock:
             _,_,_,sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, overwrite=False)
@@ -2080,13 +2077,12 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             sailing_to_lock_chamber.loc[common_indexes] = sailing_time_to_waiting_area.loc[common_indexes]
             speed_to_waiting_area = sailing_time_to_waiting_area.at[common_indexes[-1],'Speed']
             distance_to_waiting_area = sailing_time_to_waiting_area.at[common_indexes[-1],'Distance']
-            edge_distance = vessel.multidigraph.edges[common_indexes[-1]]['length_m']
-            remaining_distance = edge_distance - distance_to_waiting_area
-            speed_after_waiting_time = vessel.v*waiting_area_approach.speed_reduction_factor
+            remaining_distance = distance_to_lock - distance_to_waiting_area
+            speed_after_waiting_time = vessel.v*self.lock_chamber.speed_reduction_factor
             sailing_time = remaining_distance/speed_after_waiting_time + distance_to_waiting_area/speed_to_waiting_area
             sailing_to_lock_chamber.at[common_indexes[-1],'Time'] = sailing_time
-            sailing_to_lock_chamber.at[common_indexes[-1],'Distance'] = edge_distance
-            sailing_to_lock_chamber.at[common_indexes[-1],'Speed'] = edge_distance/sailing_time
+            sailing_to_lock_chamber.at[common_indexes[-1],'Distance'] = distance_to_lock
+            sailing_to_lock_chamber.at[common_indexes[-1],'Speed'] = distance_to_lock/sailing_time
             other_indexes = sailing_to_lock_chamber.loc[common_indexes[-1]:].index[1:]
             for index in other_indexes:
                 edge_distance = sailing_to_lock_chamber.loc[index, 'Distance']
@@ -2095,10 +2091,9 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
                 sailing_to_lock_chamber.loc[index, 'Time'] = edge_distance/new_sailing_time
 
         # add sailing distance and time to the lock doors on the edge of the lock complex to sailing information to the start node of this edge
-        sailing_to_lock_chamber_distance += distance_to_lock
-        sailing_to_lock_chamber_time += distance_to_lock / self.vessel_sailing_in_speed(vessel, direction)
+        sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
+        sailing_to_lock_chamber_time += self.mandatory_waiting_time_before_lock
         sailing_to_lock_chamber_time = pd.Timedelta(seconds=sailing_to_lock_chamber_time)
-        sailing_to_lock_chamber_time += pd.Timedelta(seconds=self.mandatory_waiting_time_before_lock)
         # calculate arrival time of vessel at the first to be encountered lock doors and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
