@@ -30,6 +30,8 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     """
     lock_complex = lock_chamber.lock_complex
     vessel_ids = lock_complex.vessel_planning[lock_complex.vessel_planning.lock_chamber == lock_chamber.name].id
+    if not len(vessel_ids):
+        return None
     vessels = np.array([itemgetter(*vessel_ids)(lock_complex.env.vessels)]).flatten()
 
     # create lock edge geometry in [m]

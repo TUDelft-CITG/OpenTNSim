@@ -46,7 +46,7 @@ def _get_lock_object_on_registration_node(graph, registration_node):
 
     Parameters
     ----------
-    multidigraph : nx.MultiDiGraph
+    m_find_available_lock_operationultidigraph : nx.MultiDiGraph
         the graph of the simulation as MultiDiGraph-version (to allow for parallel locks between the same node pair)
     registration_node : str
         node name (that has to be in the graph) on which the vessel is currently starting to navigate an edge

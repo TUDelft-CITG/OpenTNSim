@@ -189,7 +189,7 @@ def levelling_time_equation(
     return levelling_time, t, z
 
 
-def calculate_levelling_time(lock, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
+def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
     """
     Calculates the levelling time of a lock operation
 
@@ -217,14 +217,14 @@ def calculate_levelling_time(lock, t_start, direction, wlev_init=None, operation
     """
     # TODO: functie maken om tstart om te zetten (met _to_array)
     # TODO: Bij andere klasses altijd checken of iets een datetime.datetime is. En als dit niet zo is een error inbouwen of hem gelijk omzetten.
-    dt = lock.time_step
+    dt = lock_chamber.time_step
     t_final = 3600  # maximum levelling time has been set to an hour
     t = np.arange(0, t_final + float(dt), float(dt))
     t_start = time_to_numpy(t_start)
     # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
     # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
-    if not hasattr(lock.env,'hydrodynamics'):
-        levelling_time = lock.levelling_time
+    if not hasattr(lock_chamber.env,'hydrodynamics'):
+        levelling_time = lock_chamber.levelling_time
         z = np.zeros(len(t))
         return levelling_time, t, z
 
@@ -234,32 +234,31 @@ def calculate_levelling_time(lock, t_start, direction, wlev_init=None, operation
         direction=direction,
         wlev_init=wlev_init,
         operation_index=operation_index,
-        operation_planning=lock.lock_master.operation_planning,
-        start_node=lock.start_node,
-        end_node=lock.end_node,
-        node_open=lock.node_open,
-        epoch=lock.env.epoch,
+        operation_planning=lock_chamber.lock_complex.operation_planning,
+        start_node=lock_chamber.start_node,
+        end_node=lock_chamber.end_node,
+        node_open=lock_chamber.gate_open,
+        epoch=lock_chamber.env.epoch,
     )
 
     # if a function has been included to predict the levelling time based on the water level difference: calculate the levelling time based on the initial water level difference
-    if callable(lock.levelling_time):
-        levelling_time = lock.levelling_time(z[0])
+    if callable(lock_chamber.levelling_time):
+        levelling_time = lock_chamber.levelling_time(z[0])
         return levelling_time, t, z
 
     # if no function has been included: compute the levelling time based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
     levelling_time, t, z = levelling_time_equation(
         t=t,
         z=z,
-        lock_length=lock.lock_length,
-        lock_width=lock.lock_width,
-        disch_coeff=lock.disch_coeff,
-        gate_opening_time=lock.gate_opening_time,
-        opening_area=lock.opening_area,
+        lock_length=lock_chamber.lock_length,
+        lock_width=lock_chamber.lock_width,
+        disch_coeff=lock_chamber.disch_coeff,
+        gate_opening_time=lock_chamber.gate_opening_time,
+        opening_area=lock_chamber.opening_area,
         t_start=t_start,
         dt=dt,
         direction=direction,
-        water_level_difference_limit_to_open_gate=lock.lock_master.water_level_difference_limit_to_open_gate,
-        prediction=prediction,
+        water_level_difference_limit_to_open_gate=lock_chamber.water_level_difference_limit_to_open_gate,
         H_A=H_A,
         H_B=H_B,
     )
@@ -271,9 +270,9 @@ def calculate_levelling_time(lock, t_start, direction, wlev_init=None, operation
         hydromanager = HydrodynamicDataManager()
         t_index_final = hydromanager._get_time_index_of_hydrodynamic_data(t_final)
         if not direction:
-            lock.water_level[t_index_final:] = H_B[t_index_final:].copy()
+            lock_chamber.water_level[t_index_final:] = H_B[t_index_final:].copy()
         else:
-            lock.water_level[t_index_final:] = H_A[t_index_final:].copy()
+            lock_chamber.water_level[t_index_final:] = H_A[t_index_final:].copy()
 
     return levelling_time, t, z
 
