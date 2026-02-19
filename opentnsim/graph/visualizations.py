@@ -156,3 +156,25 @@ def plot_graph_folium(graph, longitude, latitude, zoom_start=5, berths = None, t
                               popup=node[0]).add_to(m)
 
     return m
+
+
+def create_real_world_graph(graph, lat_start=52.24, lon_start=5.75, zoom_start=6):
+    # Create a map centered between the two points
+    m = folium.Map(location=[lat_start, lon_start], zoom_start=zoom_start, tiles="cartodb positron")
+
+    for edge in graph.edges(data=True):
+        points_x = list(edge[2]["geometry"].coords.xy[0])
+        points_y = list(edge[2]["geometry"].coords.xy[1])
+
+        line = []
+        for i, _ in enumerate(points_x):
+            line.append((points_y[i], points_x[i]))
+
+        folium.PolyLine(line, color="darkgrey", weight=3, popup=edge[2]["Name"]).add_to(m)
+
+    for node in graph.nodes(data=True):
+        point = list(node[1]["geometry"].coords.xy)
+        folium.CircleMarker(location=[point[1][0], point[0][0]], color='grey', fill_color="grey", fill=True, radius=2,
+                            popup=node[0]).add_to(m)
+
+    return m

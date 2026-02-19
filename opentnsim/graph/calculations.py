@@ -1,7 +1,15 @@
-import pyproj
+import math
+import numpy as np
 import networkx as nx
+import pyproj
+from scipy.ndimage import rotate
+from scipy.spatial import ConvexHull
 from shapely import reverse
-from shapely.ops import transform
+from shapely.geometry import Point, Polygon
+from shapely.ops import transform, linemerge, split
+from opentnsim.graph.utils import find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network
+import warnings
+
 
 def calculate_depth(geom_start, geom_stop, graph):
     """method to calculate the depth of the waterway in meters between two geometries.
@@ -261,3 +269,225 @@ def calculate_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EP
     geometry_m = transform(wgs84_to_wgs84_m, geometry)
     length_m = geometry_m.length
     return length_m
+
+
+def calculate_distance_along_geometry_to_nodes_of_edge(graph, edge, point):
+    edge_geometry = graph.edges[edge]["geometry"]
+    return distance_to_start_node, distance_to_end_node
+
+
+def calculate_length_of_splitted_edge_geometries(graph, edge, edge_geometries):
+    edge_geometry_lengths = [edge_geometry.length for edge_geometry in edge_geometries]
+    sum_edge_length = np.sum(edge_geometry_lengths)
+    fractive_edge_parts_lengths = edge_geometry_lengths / sum_edge_length
+    edge_parts_lenghts_m = fractive_edge_parts_lengths * graph.edges[edge]["length_m"]
+    return edge_parts_lenghts_m
+
+
+def transform_geometry(geometry, epsg_in="EPSG:4326", epsg_out="EPSG:8857"):
+    # EPSG:8857 is equal earth projection
+    crs_in = pyproj.CRS(epsg_in)
+    crs_out = pyproj.CRS(epsg_out)
+    crs_in_to_crs_out = pyproj.transformer.Transformer.from_crs(crs_in, crs_out, always_xy=True).transform
+    geometry_transformed = transform(crs_in_to_crs_out, geometry)
+    return geometry_transformed
+
+
+def merge_two_consecutive_edges_based_on_shared_node(graph, node):
+    if node not in graph.nodes:
+        warnings.warn(f"Node ({node}) does not exist in graph, merging aborted.")
+        return
+
+    edges = find_edges_based_on_shared_node(graph, node)
+    number_of_edges = len(edges)
+    if number_of_edges != 2:
+        if number_of_edges > 2:
+            warnings.warn(f"Node ({node}) has multiple ({number_of_edges}) edges, merging aborted.")
+        else:
+            warnings.warn(f"Node ({node}) has only one edge, merging aborted.")
+        return
+
+    edge_A, edge_B = edges
+    start_junction_id = list(set(edge_A) - set(edge_B))[0]
+    end_junction_id = list(set(edge_B) - set(edge_A))[0]
+
+    edge_info_A = graph.edges[edge_A]
+    edge_info_B = graph.edges[edge_B]
+    edge_geometry_A = graph.edges[edge_A]["geometry"]
+    edge_geometry_B = graph.edges[edge_B]["geometry"]
+    new_edge_geometry = linemerge([edge_geometry_A, edge_geometry_B])
+
+    shared_items, missing_items_A, missing_items_B = compare_two_edge_info(graph, edge_A, edge_B)
+    new_edge_data = shared_items
+
+    new_edge_data['StartJunctionId'] = start_junction_id
+    new_edge_data['EndJunctionId'] = end_junction_id
+    new_edge_data['GeoType'] = np.nan
+    new_edge_data['Wkt'] = str(new_edge_geometry)
+    new_edge_data['geometry'] = new_edge_geometry
+    new_edge_data['length'] = edge_info_A['length'] + edge_info_B['length']
+    new_edge_data['length_m'] = edge_info_A['length_m'] + edge_info_B['length_m']
+
+    if (start_junction_id, end_junction_id) in graph.edges:
+        warnings.warn(f"Edge ({start_junction_id},{end_junction_id}) is already part of the network, merging aborted.")
+        return
+
+    graph.add_edge(start_junction_id, end_junction_id, **new_edge_data)
+    remove_node_from_network(graph, node)
+    return
+
+
+def calculate_bounding_rectangle(geometry):
+    """
+    Find the smallest bounding rectangle for a set of points.
+    Returns a set of points representing the corners of the bounding box.
+
+    Parameters
+    ----------
+    geometry : shapely.geometry.Poylgon
+        polygon of the object
+
+    Returns
+    -------
+    rval : shapely.geometry.Poylgon
+        polygon of the bounding rectangle
+    """
+
+    geometry_coordinates = geometry.exterior.coords
+    points = np.array(geometry_coordinates)
+
+    pi2 = np.pi / 2.
+
+    # get the convex hull for the points
+    hull_points = points[ConvexHull(points).vertices]
+
+    # calculate edge angles
+    edges = np.zeros((len(hull_points) - 1, 2))
+    edges = hull_points[1:] - hull_points[:-1]
+
+    angles = np.zeros((len(edges)))
+    angles = np.arctan2(edges[:, 1], edges[:, 0])
+
+    angles = np.abs(np.mod(angles, pi2))
+    angles = np.unique(angles)
+
+    # find rotation matrices
+    rotations = np.vstack([
+        np.cos(angles),
+        np.cos(angles - pi2),
+        np.cos(angles + pi2),
+        np.cos(angles)]).T
+
+    rotations = rotations.reshape((-1, 2, 2))
+
+    # apply rotations to the hull
+    rot_points = np.dot(rotations, hull_points.T)
+
+    # find the bounding points
+    min_x = np.nanmin(rot_points[:, 0], axis=1)
+    max_x = np.nanmax(rot_points[:, 0], axis=1)
+    min_y = np.nanmin(rot_points[:, 1], axis=1)
+    max_y = np.nanmax(rot_points[:, 1], axis=1)
+
+    # find the box with the best area
+    areas = (max_x - min_x) * (max_y - min_y)
+    best_idx = np.argmin(areas)
+
+    # return the best box
+    x1 = max_x[best_idx]
+    x2 = min_x[best_idx]
+    y1 = max_y[best_idx]
+    y2 = min_y[best_idx]
+    r = rotations[best_idx]
+
+    rval = np.zeros((4, 2))
+    rval[0] = np.dot([x1, y2], r)
+    rval[1] = np.dot([x2, y2], r)
+    rval[2] = np.dot([x2, y1], r)
+    rval[3] = np.dot([x1, y1], r)
+
+    bounding_rectangle = Polygon([Point(y, x) for x, y in rval])
+    return bounding_rectangle
+
+
+def calculate_object_dimensions_and_alignment(geometry):
+    exterior_coords = geometry.exterior.coords
+    side_lengths = []
+    for i in range(len(exterior_coords) - 1):
+        p1 = exterior_coords[i]
+        p2 = exterior_coords[i + 1]
+        length = ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+        side_lengths.append(length)
+    length = np.max(side_lengths)
+    width = np.min(side_lengths)
+
+    length_index = int(np.argmax(side_lengths))
+    p1 = exterior_coords[length_index]
+    p2 = exterior_coords[length_index + 1]
+
+    # Calculate angle in radians
+    angle_rad = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+
+    # Convert to degrees
+    angle_deg = math.degrees(angle_rad)
+    return length, width, angle_deg
+
+
+def flip_coordinates(geometry):
+    flipped_geometry = transform(lambda x, y: (y, x), geometry)
+    return flipped_geometry
+
+
+def reverse_geometry(geometry):
+    reversed_geometry = reverse(geometry)
+    return reversed_geometry
+
+
+def split_edge_based_on_point_along_edge(graph, edge, point):
+    edge_geometry = graph.edges[edge]["geometry"]
+    split_point = point.buffer(1e-9)
+    if not edge_geometry.intersects(split_point):
+        warnings.warn(f"Point is not located along the edge, returned the edge and None.")
+        return edge_geometry, None
+    splitted_edge_geometries = split(edge_geometry, split_point).geoms
+    first_edge_geometry = splitted_edge_geometries[0]
+    second_edge_geometry = splitted_edge_geometries[2]
+    return first_edge_geometry, second_edge_geometry
+
+
+def split_edge_based_on_geometry_along_edge(graph, edge, geometry):
+    edge_geometry = graph.edges[edge]["geometry"]
+    if not edge_geometry.intersects(geometry):
+        warnings.warn(f"Geometry is not located along the edge, returned the edge, geometry, and None.")
+        return edge_geometry, geometry, None
+    splitted_edge_geometries = split(edge_geometry, geometry).geoms
+    first_edge_geometry = splitted_edge_geometries[0]
+    edge_in_geometry = splitted_edge_geometries[1]
+    second_edge_geometry = splitted_edge_geometries[2]
+    return first_edge_geometry, edge_in_geometry, second_edge_geometry
+
+
+def calculate_the_distances_from_doors_to_edge_nodes(graph, lock_edge, lock_edge_geometries, lock_edge_lengths):
+    distance_from_start_node_to_lock_doors_A = None
+    distance_from_end_node_to_lock_doors_B = None
+    for geometry_index, geometry in enumerate(lock_edge_geometries):
+        distances_to_node = {}
+        for lock_node in lock_edge:
+            distances_to_node[lock_node] = geometry.distance(graph.nodes[lock_node]["geometry"])
+        closest_node = min(distances_to_node, key=distances_to_node.get)
+        if distances_to_node[closest_node] > 0.0001:
+            geometry_index_name = 'First'
+            if geometry_index:
+                geometry_index_name = 'Second'
+            warnings.warn(f"{geometry_index_name} lock edge geometry does not touch any node")
+        lock_node_index = list(distances_to_node.keys()).index(closest_node)
+        if not lock_node_index:
+            distance_from_start_node_to_lock_doors_A = lock_edge_lengths[geometry_index]
+        else:
+            distance_from_end_node_to_lock_doors_B = lock_edge_lengths[geometry_index]
+    if distance_from_start_node_to_lock_doors_A is None:
+        warnings.warn(f"Distance_from_start_node_to_lock_doors_A not found")
+    if distance_from_end_node_to_lock_doors_B is None:
+        warnings.warn(f"Distance_from_end_node_to_lock_doors_B not found")
+    return distance_from_start_node_to_lock_doors_A, distance_from_end_node_to_lock_doors_B
+

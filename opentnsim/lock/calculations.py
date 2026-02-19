@@ -3,6 +3,7 @@ import math
 import networkx as nx
 import numpy as np
 import pandas as pd
+import pyzsf
 from shapely.geometry import Point, Polygon
 import datetime
 from opentnsim.utils import time_to_numpy
@@ -1427,17 +1428,21 @@ def calculate_vessel_approach_information(lock_complex, vessel, direction):
     return vessel_information
 
 
-def calculate_lock_distances_to_nodes_of_edge_from_geometry(lock_chamber):
-    if not isinstance(lock_chamber.geometry, Polygon):
+def calculate_lock_distances_to_nodes_of_edge_from_geometry(lock_chamber, m = False):
+    if not m and not isinstance(lock_chamber.geometry, Polygon):
+        raise ValueError('Given lock geometry is not a Polygon')
+    if m and not isinstance(lock_chamber.geometry_m, Polygon):
         raise ValueError('Given lock geometry is not a Polygon')
 
     edge_geometry = get_geometry_of_edge(lock_chamber.env.graph,lock_chamber.edge)
     edge_geometry_m = transform_geometry(edge_geometry, epsg_out = lock_chamber.crs_m)
-    intersected_edge = edge_geometry_m.intersection(lock_chamber.geometry)
+    if not m:
+        lock_chamber.geometry_m = transform_geometry(lock_chamber.geometry, epsg_out = lock_chamber.crs_m)
+    intersected_edge = edge_geometry_m.intersection(lock_chamber.geometry_m)
     locations_of_lock_gate = [Point(coords) for coords in intersected_edge.coords]
-    if len(locations_of_lock_gate) != 2:
-        raise ValueError(f'Given lock geometry is not valid -> leads to {len(locations_of_lock_gate)} intersection points (which should be 2).')
-
+    if len(locations_of_lock_gate) < 2:
+        raise ValueError(f'Given lock geometry is not valid -> leads to {len(locations_of_lock_gate)} intersection points (which should be 2 at minimum).')
+    locations_of_lock_gate = [locations_of_lock_gate[0],locations_of_lock_gate[-1]]
     distance_from_start_node_to_lock_gate_A = 0
     distance_from_end_node_to_lock_gate_B = 0
     for index, location_of_lock_gate in enumerate(locations_of_lock_gate):
@@ -1449,9 +1454,11 @@ def calculate_lock_distances_to_nodes_of_edge_from_geometry(lock_chamber):
     return distance_from_start_node_to_lock_gate_A, distance_from_end_node_to_lock_gate_B
 
 
-def calculate_lock_dimensions_from_geometry(lock_chamber):
-    coords = list(lock_chamber.geometry.exterior.coords)[:-1]
-
+def calculate_lock_dimensions_from_geometry(lock_chamber, m = False):
+    if not m:
+        lock_chamber.geometry_m = transform_geometry(lock_chamber.geometry, epsg_out=lock_chamber.crs_m)
+    lock_chamber.geometry_m_rectangle = lock_chamber.geometry_m.minimum_rotated_rectangle
+    coords = list(lock_chamber.geometry_m_rectangle.exterior.coords)[:-1]
     edges = []
     for i in range(len(coords)):
         x1, y1 = coords[i]
@@ -1462,19 +1469,23 @@ def calculate_lock_dimensions_from_geometry(lock_chamber):
 
     length = unique[0]
     width = unique[1]
-
     return length, width
 
 
 def calculate_and_check_lock_dimensions(lock_chamber):
     if not lock_chamber.lock_depth:
         raise ValueError(f'Invalid lock depth: {lock_chamber.lock_depth} (should be > 0).')
-    if not lock_chamber.lock_length and lock_chamber.geometry is None:
+    if not lock_chamber.lock_length and not (lock_chamber.geometry is None or lock_chamber.geometry_m is None):
         raise ValueError(f'Invalid lock length: {lock_chamber.lock_length} (should be > 0).')
-    if not lock_chamber.lock_width and lock_chamber.geometry is None:
+    if not lock_chamber.lock_width and not (lock_chamber.geometry is None or lock_chamber.geometry_m is None):
         raise ValueError(f'Invalid lock length: {lock_chamber.lock_width} (should be > 0).')
-    if (not lock_chamber.lock_length or not lock_chamber.lock_width) and lock_chamber.geometry is not None:
-        lock_length, lock_width = calculate_lock_dimensions_from_geometry(lock_chamber)
+    if (not lock_chamber.lock_length or not lock_chamber.lock_width) and \
+            (lock_chamber.geometry is not None or lock_chamber.geometry_m is not None):
+        if lock_chamber.geometry is not None:
+            m = False
+        else:
+            m = True
+        lock_length, lock_width = calculate_lock_dimensions_from_geometry(lock_chamber, m=m)
         if not lock_chamber.lock_length:
             lock_chamber.lock_length = lock_length
         if not lock_chamber.lock_width:
@@ -1519,3 +1530,182 @@ def calculate_time_to_open_gate(lock_chamber, operation_index, direction, gate_r
 
     operation_time = levelling_time + pd.Timedelta(seconds=lock_chamber.gate_opening_time)
     return operation_time
+
+
+def calculate_ZSF_event_table(lock_chamber):
+    lock_df = pd.DataFrame(lock_chamber.logbook)
+
+    zsf_events = pd.DataFrame(
+        columns=['time', 'head_sea', 'head_lake', 'routine', 'salinity_sea', 'salinity_lake', 'ship_volume_lake_to_sea',
+                 'ship_volume_sea_to_lake', 't_level', 't_open_lake', 't_open_sea', 'temperature_lake',
+                 'temperature_sea'])
+
+    head_sea = np.nan
+    head_lake = np.nan
+    salinity_sea = np.nan
+    salinity_lake = np.nan
+    temperature_sea = np.nan
+    temperature_lake = np.nan
+    for index, info in lock_df.iterrows():
+        t_level = 0
+        t_open_lake = 0
+        t_open_sea = 0
+        if not index and info.Message == "Lock gate closing start":
+            time = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
+            duration = duration = (time - lock_chamber.env.simulation_start).total_seconds()
+            if info.Geometry == lock_chamber.start_node:
+                routine = 4
+                t_open_sea = duration
+            else:
+                routine = 2
+                t_open_lake = duration
+
+        elif info.Message == "Lock gate opening start":
+            future_lock_df = lock_df.loc[index:]
+            future_gate_closing_df = future_lock_df[future_lock_df.Message == "Lock gate closing stop"]
+            time = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
+            if future_gate_closing_df.empty:
+                duration = (lock_chamber.env.simulation_stop - time).total_seconds()
+            else:
+                time_stop = future_gate_closing_df.iloc[0].Timestamp - pd.Timedelta(
+                    seconds=lock_chamber.gate_closing_time) / 2
+                duration = (time_stop - time).total_seconds()
+            if info.Geometry == lock_chamber.start_node:
+                routine = 4
+                t_open_sea = duration
+            else:
+                routine = 2
+                t_open_lake = duration
+
+        elif info.Message == "Lock chamber converting stop":
+            past_lock_df = lock_df.loc[:index]
+            levelling_start_info = past_lock_df[past_lock_df.Message == "Lock chamber converting start"].iloc[-1]
+            time = levelling_start_info.Timestamp
+            time_stop = info.Timestamp
+            duration = (time_stop - time).total_seconds()
+            if info.Geometry == lock_chamber.start_node:
+                routine = 3
+                t_level = duration
+            else:
+                routine = 1
+                t_level = duration
+
+        else:
+            continue
+
+        event_idx = len(zsf_events)
+        hydromanager = HydrodynamicDataManager()
+        time = np.datetime64(time)
+        head_sea = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.start_node, 'Water level')
+        head_lake = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.end_node, 'Water level')
+        salinity_sea = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.start_node, 'Salinity')
+        salinity_lake = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.end_node, 'Salinity')
+        temperature_sea = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.start_node, 'Temperature')
+        temperature_lake = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.end_node, 'Temperature')
+        ship_volume_lake_to_sea = 0.
+        ship_volume_sea_to_lake = 0.
+        zsf_events.loc[event_idx, :] = [time, head_sea, head_lake, routine, salinity_sea, salinity_lake,
+                                        ship_volume_lake_to_sea,
+                                        ship_volume_sea_to_lake, t_level, t_open_lake, t_open_sea, temperature_lake,
+                                        temperature_sea]
+
+    # #Correcting events for varying water levels
+    for index in zsf_events[zsf_events.routine == 3].index:
+        iloc = zsf_events.index.get_loc(index)
+        zsf_events.loc[index, 'head_sea'] = zsf_events.iloc[iloc + 1]['head_sea']
+
+    for index in zsf_events[zsf_events.routine == 1].index:
+        iloc = zsf_events.index.get_loc(index)
+        zsf_events.loc[index, 'head_lake'] = zsf_events.iloc[iloc + 1]['head_lake']
+
+    zsf_events = zsf_events.set_index('time')
+    return zsf_events
+
+
+def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, init_head_lock = 0.0):
+    zsf_events = calculate_ZSF_event_table(lock_chamber)
+
+    lock_parameters = {
+        "lock_length": lock_chamber.lock_length,
+        "lock_width": lock_chamber.lock_width,
+        "lock_bottom": -lock_chamber.lock_depth, }
+
+    mitigation_parameters = {
+        "density_current_factor_lake": 1.0,
+        "density_current_factor_sea": 1.0,
+        "distance_door_bubble_screen_lake": 0.0,
+        "distance_door_bubble_screen_sea": 0.0,
+        "flushing_discharge_high_tide": 0.0,
+        "flushing_discharge_low_tide": 0.0,
+        "sill_height_lake": 0.0,
+        "sill_height_sea": 0.0,
+    }
+
+    first_event = zsf_events.iloc[0]
+    if first_event.routine == 2:
+        head_lock = first_event.head_lake
+    elif first_event.routine == 4:
+        head_lock = first_event.head_sea
+    ZSF = pyzsf.ZSFUnsteady(sal_lock=init_salinity_lock, head_lock=head_lock, **lock_parameters, **mitigation_parameters)
+    lockages = list(zsf_events.to_dict("records"))
+
+    all_results = []
+    for parameters in lockages:
+        routine = int(parameters.pop("routine"))
+        t_open_lake = parameters.pop("t_open_lake")
+        t_open_sea = parameters.pop("t_open_sea")
+        t_level = parameters.pop("t_level")
+
+        parameters["ship_volume_sea_to_lake"] = 0.0
+        parameters["ship_volume_lake_to_sea"] = 0.0
+
+        if routine == 1:
+            assert t_level > 0
+            results = ZSF.step_phase_1(t_level, **parameters)
+        elif routine == 2:
+            ZSF.state["head_lock"] = parameters['head_lake']
+            results = ZSF.step_phase_2(t_open_lake, **parameters)
+        elif routine == 3:
+            assert t_level > 0
+            results = ZSF.step_phase_3(t_level, **parameters)
+        elif routine == 4:
+            ZSF.state["head_lock"] = parameters['head_sea']
+            results = ZSF.step_phase_4(t_open_sea, **parameters)
+        elif routine in {-2, -4}:
+            results = ZSF.step_flush_doors_closed(t_flushing, **parameters)
+        else:
+            raise Exception(f"Unknown routine '{routine}'")
+
+        all_results.append(results)
+
+    ZSF_results = pd.concat([zsf_events,pd.DataFrame(all_results, index=zsf_events.index)],axis=1)
+    return ZSF_results
+
+
+def calculate_aggregated_water_exchange_fluxes(lock_chamber, ZSF_results):
+    # Aggregate results
+    duration_ts = (lock_chamber.env.simulation_stop - lock_chamber.env.simulation_start)
+    duration = duration_ts.total_seconds()
+
+    overall_results = {}
+    overall_mass_to_sea = 0.0
+    overall_mass_to_lake = 0.0
+
+    for results in ZSF_results.to_dict("records"):
+        for k, v in results.items():
+            if k.startswith(("volume_", "mass_")):
+                overall_results[k] = overall_results.get(k, 0.0) + v
+
+        overall_mass_to_sea += results["volume_to_sea"] * results["salinity_to_sea"]
+        overall_mass_to_lake += results["volume_to_lake"] * results["salinity_to_lake"]
+
+    overall_results["salinity_to_sea"] = overall_mass_to_sea / overall_results["volume_to_sea"]
+    overall_results["salinity_to_lake"] = overall_mass_to_lake / overall_results["volume_to_lake"]
+
+    overall_discharges = {}
+    for k, v in overall_results.items():
+        if k.startswith("volume_"):
+            overall_discharges[f"discharge_{k[7:]}"] = v / duration
+    overall_results.update(overall_discharges)
+
+    return overall_results

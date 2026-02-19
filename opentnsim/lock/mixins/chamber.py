@@ -53,6 +53,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         lock_width=0.0, # a float which contains the width of the lock chamber
         lock_depth=0.0, # a float which contains the depth of the lock chamber
         geometry=None,
+        geometry_m=None,
         distance_from_start_node_to_lock_gate_A=0.0,  # a float that is the distance between the start_node of the edge and the lock gate A [m]
         distance_from_end_node_to_lock_gate_B=0.0,  # a float that is the distance between the end_node of the edge and the lock gate B [m]
         disch_coeff=0.4,  # a float which contains the discharge coefficient of filling system
@@ -83,6 +84,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.lock_width = lock_width
         self.lock_depth = lock_depth
         self.geometry = geometry
+        self.geometry_m = geometry_m
         self.crs_m = crs_m
         calculate_and_check_lock_dimensions(self)
 
@@ -93,9 +95,14 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
                          *args, **kwargs)
 
         # more geometrical information (after initialization)
+        m = None
         if self.geometry is not None:
+            m = False
+        elif self.geometry_m is not None:
+            m = True
+        if m is not None:
             (distance_from_start_node_to_lock_gate_A,
-             distance_from_end_node_to_lock_gate_B) = calculate_lock_distances_to_nodes_of_edge_from_geometry(self)
+             distance_from_end_node_to_lock_gate_B) = calculate_lock_distances_to_nodes_of_edge_from_geometry(self, m=m)
         self.distance_from_start_node_to_lock_gate_A = distance_from_start_node_to_lock_gate_A
         self.distance_from_end_node_to_lock_gate_B = distance_from_end_node_to_lock_gate_B
         self.start_node = self.edge[0]

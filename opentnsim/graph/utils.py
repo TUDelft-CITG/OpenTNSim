@@ -13,7 +13,6 @@ import networkx as nx
 import shapely
 import pyproj
 from shapely.geometry import LineString, Point, MultiLineString
-from opentnsim.graph.calculations import reverse_geometry, calculate_length_of_edge, calculate_length_of_edge
 
 class NetworkWarning(Warning):
     pass
@@ -84,7 +83,7 @@ def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:408
     float
         The length of the edge in meters.
     """
-
+    from opentnsim.graph.calculations import calculate_length_of_edge
     edge_info = graph.edges[edge]
     if "length_m" in edge_info:
         pass
@@ -592,6 +591,7 @@ def gdf_to_nx(gdf):
 
 
 def get_trajectory(graph, node_1, node_2):
+    from opentnsim.graph.calculations import reverse_geometry
     geometry = None
     route = nx.dijkstra_path(graph, node_1, node_2)
     is_multidigraph = check_graph_is_multidigraph_type(graph)
@@ -817,3 +817,126 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, d
         sailing_information_df.loc[index_last_edge, 'distance'] = distance_to_be_sailed_on_last_edge
 
     return sailing_information_df
+
+
+def get_closest_edge_to_point(graph, point):
+    distance_to_edge = {}
+    point_transformed = point  # flip_coordinates(point)
+    for edge in graph.edges(data=True):
+        edge_name = (edge[0], edge[1])
+        edge_info = edge[2]
+        edge_geometry = edge_info["geometry"]
+        distance_to_edge[edge_name] = point_transformed.distance(edge_geometry)
+
+    closest_edge = list(distance_to_edge.keys())[np.argmin(list(distance_to_edge.values()))]
+    return closest_edge
+
+
+def get_closest_node_to_point(graph, point):
+    closest_edge = get_closest_edge_to_point(graph, point)
+    distance_to_node = {}
+    point_transformed = point  # flip_coordinates(point)
+    for node in closest_edge:
+        node_geometry = graph.nodes[node]["geometry"]
+        distance_to_node[node] = point_transformed.distance(node_geometry)
+
+    closest_node = list(distance_to_node.keys())[np.argmin(list(distance_to_node.values()))]
+    return closest_node
+
+
+def get_closest_location_on_edge_to_point(graph, edge, point):
+    edge_geometry = graph.edges[edge]["geometry"]
+    point_on_edge = edge_geometry.interpolate(edge_geometry.project(point))
+    return point_on_edge
+
+
+def find_nodes_in_a_polygon(graph, lock_polygon):
+    nodes = []
+    for node in graph.nodes(data=True):
+        node_info = node[1]
+        node_geometry = node_info["geometry"]
+        if lock_polygon.intersects(node_geometry):
+            nodes.append(node[0])
+    return nodes
+
+
+def find_edges_in_a_polygon(graph, lock_polygon):
+    edges = []
+    for edge in graph.edges(data=True):
+        start_node = edge[0]
+        end_node = edge[1]
+        edge_info = edge[2]
+        edge_geometry = edge_info["geometry"]
+        if lock_polygon.intersects(edge_geometry):
+            edges.append((start_node, end_node))
+    return edges
+
+
+def find_edges_based_on_shared_node(graph, node):
+    edges = []
+    for edge in graph.edges:
+        if node in edge:
+            edges.append(edge)
+    return edges
+
+
+def remove_node_from_network(graph, node):
+    graph.remove_node(node)
+    return
+
+
+def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge):
+    if edge == target_edge or edge == (target_edge[1], target_edge[0]):
+        warnings.warn(f"Edges are the same, start_node of target_edge is returned.")
+        return target_edge[0]
+
+    routes = {}
+    for target_node in target_edge:
+        for node in edge:
+            length_route = len(nx.dijkstra_path(graph, node, target_node))
+            if waiting_area_node not in routes.keys() or length_route < routes[waiting_area_node]:
+                routes[node] = len(nx.dijkstra_path(graph, node, target_node))
+    closest_node_to_lock = min(routes, key=routes.get)
+    return closest_node_to_lock
+
+
+def find_closest_node_of_target_edge_to_geometry(graph, geometry, target_edge):
+    distances_to_node = {}
+    for node in target_edge:
+        node_geometry = graph.nodes[node]["geometry"]
+        distances_to_node[node] = node_geometry.distance(geometry)
+    closest_node_to_geometry = min(distances_to_node, key=distances_to_node.get)
+    return closest_node_to_geometry
+
+
+def align_network_geometries_with_edge_directions(graph):
+    from opentnsim.graph.calculations import reverse_geometry
+    for edge in graph.edges:
+        start_node = edge[0]
+        end_node = edge[1]
+        edge = (start_node, end_node)
+        start_node_geometry = graph.nodes[start_node]["geometry"]
+        end_node_geometry = graph.nodes[end_node]["geometry"]
+        edge_geometry = graph.edges[edge]["geometry"]
+        edge_geometry_coordinates_x, edge_geometry_coordinates_y = edge_geometry.coords.xy
+        starting_point_edge_geometry = Point(edge_geometry_coordinates_x[0], edge_geometry_coordinates_y[0])
+        distance_starting_point_edge_geometry_with_start_node_geometry = starting_point_edge_geometry.distance(
+            start_node_geometry)
+        distance_starting_point_edge_geometry_with_end_node_geometry = starting_point_edge_geometry.distance(
+            end_node_geometry)
+        if distance_starting_point_edge_geometry_with_start_node_geometry > distance_starting_point_edge_geometry_with_end_node_geometry:
+            reversed_edge_geometry = reverse_geometry(edge_geometry)
+            graph.edges[edge]["geometry"] = reversed_edge_geometry
+            graph.edges[edge]["Wkt"] = str(reversed_edge_geometry)
+        graph.edges[edge]["weight"] = 1
+    return graph
+
+
+def compare_two_edge_info(graph, edge_A, edge_B):
+    edge_info_A = graph.edges[edge_A]
+    edge_info_B = graph.edges[edge_B]
+    shared_items = {k: edge_info_A[k] for k in edge_info_A if
+                    k in edge_info_B and str(edge_info_A[k]) == str(edge_info_B[k])}
+    missing_items_A = edge_info_A.keys() - shared_items.keys()
+    missing_items_B = edge_info_B.keys() - shared_items.keys()
+    return shared_items, missing_items_A, missing_items_B

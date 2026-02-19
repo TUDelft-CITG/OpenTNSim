@@ -17,7 +17,7 @@ def check_hydrodynamic_data_coordinates(hydrodynamic_data):
 
 
 def check_hydrodynamic_data_variables(hydrodynamic_data):
-    accepted_data_variables = ['Water level', 'Current velocity', 'Current direction', 'Nautical depth']
+    accepted_data_variables = ['Water level', 'Current velocity', 'Current direction', 'Nautical depth', 'Salinity', 'Temperature']
     for data_variable in list(hydrodynamic_data.data_vars):
         if data_variable not in accepted_data_variables:
             warnings.warn(f"Data column {data_variable} is not used in the simulation, only {accepted_data_variables} are supported")
