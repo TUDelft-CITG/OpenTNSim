@@ -77,6 +77,7 @@ class Routable(SimpyObject):
         # initialization
         super().__init__(*args, **kwargs)
         self.route = route
+        self.target_node = self.route[-1]
         # start at start of route
         self.position_on_route = 0
         self.complete_path = complete_path
@@ -296,14 +297,14 @@ class Movable(Locatable, Routable, Log):
         self.position_on_route = 0
         yield from self.look_ahead_to_node(self.route[0])
 
-        # Move over the path and log every step
-        for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
-            # update current position
-            self.update_position(index)
+        index = 0
+        while self.current_node != self.target_node and self.next_node is not None:
+
+            # self.update_position(0)
 
             yield from self.pass_node(self.current_node)
+            self.update_position(index)
 
-            # are we already at destination?
             if self.next_node == self.current_node:
                 warnings.warn(
                     "Route passes node {} twice consecutively..".format(self.current_node),
@@ -311,15 +312,42 @@ class Movable(Locatable, Routable, Log):
                 )
                 continue
 
+            if self.current_node == 8106:
+                ___ = 5
+
             yield from self.pass_edge(self.current_node, self.next_node)
             yield from self.complete_pass_edge(self.next_node)
 
-            # we arrived at destination
-            # update to new position
-            self.update_position(index + 1)
+            # After completing edge traversal, you may update the route here
+            yield from self.look_ahead_to_node(self.next_node)
 
-            # look ahead to next node
-            yield from self.look_ahead_to_node(self.current_node)
+            self.update_position(index + 1)
+            index += 1
+
+        # # Move over the path and log every step
+        # for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
+        #     # update current position
+        #     self.update_position(index)
+
+        #     yield from self.pass_node(self.current_node)
+
+        #     # are we already at destination?
+        #     if self.next_node == self.current_node:
+        #         warnings.warn(
+        #             "Route passes node {} twice consecutively..".format(self.current_node),
+        #             UserWarning,
+        #         )
+        #         continue
+
+        #     yield from self.pass_edge(self.current_node, self.next_node)
+        #     yield from self.complete_pass_edge(self.next_node)
+
+        #     # we arrived at destination
+        #     # update to new position
+        #     self.update_position(index + 1)
+
+        #     # look ahead to next node
+        #     yield from self.look_ahead_to_node(self.current_node)
 
         # arrived at end of route. release resource if needed
         if self.req is not None:
