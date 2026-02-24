@@ -138,9 +138,9 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
     if direction:
         lock_end_node = lock_chamber.start_node
         distance_to_lock_on_edge = lock_chamber.distance_from_end_node_to_lock_gate_B
-    routes = nx.all_simple_paths(vessel.env.graph, vessel.current_node, lock_end_node)
+    routes = nx.dijkstra_path(vessel.env.graph, vessel.current_node, lock_end_node) #all_simple_paths not working for large networks
     suitable_waiting_areas = pd.DataFrame(columns=['sailing_time_waiting_area_to_lock','available'])
-    for route in routes:
+    for route in [routes]:
         for edge in zip(route[:-1],route[1:]):
             if 'Waiting area' not in vessel.env.graph.edges[edge].keys():
                 continue
@@ -402,7 +402,7 @@ def _get_upcoming_lock_registration_nodes(lock_complex):
         upcoming_locks[node] = lock
     return upcoming_locks
 
-def _get_upcoming_locks(vessel, object = 'Lock chamber'):
+def _get_upcoming_lock_complexes(vessel):
     """
     Find the upcoming locks that use long-term planning by looping over the vessel's route
 
@@ -411,12 +411,12 @@ def _get_upcoming_locks(vessel, object = 'Lock chamber'):
 
     Returns
     -------
-    upcoming_locks : dict
+    upcoming_lock_complexes : dict
         dictionary of lock objects that are to be encountered on the vessel's route
         mapping from node (key) to lock object (value)
     """
     # initiate empty lists
-    upcoming_locks = {}
+    upcoming_lock_complexes = {}
 
     # loop over all edges on the route ahead.
     route_to_come = vessel.route_ahead
@@ -425,25 +425,15 @@ def _get_upcoming_locks(vessel, object = 'Lock chamber'):
         edge = get_edge(vessel.env.graph, edge, is_multidigraph)
         if "Lock chamber" not in vessel.env.graph.edges[edge].keys():
             continue
-        lock = vessel.env.graph.edges[edge]["Lock chamber"][0]
+        lock_chamber = vessel.env.graph.edges[edge]["Lock chamber"][0]
+        lock_complex = lock_chamber.lock_complex
 
         # check if lock is already stored
-        if lock in upcoming_locks.values():
+        if lock_complex in upcoming_lock_complexes.values():
             continue
 
-        # store the lock object in the list of locks with long_term_planning enabled
-        if object == "Lock chamber":
-            object = lock
-        elif object == "Lock complex":
-            object = lock.lock_complex
+        upcoming_lock_complexes[edge[0]] = lock_complex
 
-        upcoming_locks[edge[0]] = object
-
-    return upcoming_locks
-
-
-def _get_upcoming_lock_complexes(vessel):
-    upcoming_lock_complexes = _get_upcoming_locks(vessel, object = 'Lock complex')
     return upcoming_lock_complexes
 
 
@@ -1035,8 +1025,8 @@ def check_lock_complex_geometry(lock_complex):
         for lock_chamber in lock_complex.lock_chambers.values():
             locks_found[lock_chamber.name] = False
 
-        routes = nx.all_simple_paths(lock_complex.env.graph, node_start, node_stop)
-        for path in routes:
+        routes = nx.dijkstra_path(lock_chamber.env.graph, node_start, node_stop)
+        for path in [routes]:
             lock_found = False
             waiting_area_before_lock_chamber = False
             distance_waiting_area_from_edge_start = math.inf

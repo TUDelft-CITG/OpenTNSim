@@ -7,9 +7,9 @@ from scipy.spatial import ConvexHull
 from shapely import reverse
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform, linemerge, split
-from opentnsim.graph.utils import find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network
+from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
+                                   create_transformer)
 import warnings
-
 
 def calculate_depth(geom_start, geom_stop, graph):
     """method to calculate the depth of the waterway in meters between two geometries.
@@ -173,11 +173,10 @@ def compute_distance(edge, orig, dest):
     return distance
 
 
-def transform_geometry(geometry, epsg_in="EPSG:4326", epsg_out='EPSG:4087'):
-    crs_in = pyproj.CRS(epsg_in)
-    crs_out = pyproj.CRS(epsg_out)
-    crs_in_to_crs_out = pyproj.transformer.Transformer.from_crs(crs_in, crs_out, always_xy=True).transform
-    geometry_transformed = transform(crs_in_to_crs_out, geometry)
+def transform_geometry(geometry, epsg_in = "EPSG:4326", epsg_out = 'EPSG:4087', transformer = None):
+    if transformer is None:
+        transformer = create_transformer(epsg_in, epsg_out)
+    geometry_transformed = transform(transformer, geometry)
     return geometry_transformed
 
 
@@ -271,9 +270,12 @@ def calculate_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EP
     return length_m
 
 
-def calculate_distance_along_geometry_to_nodes_of_edge(graph, edge, point):
-    edge_geometry = graph.edges[edge]["geometry"]
-    return distance_to_start_node, distance_to_end_node
+def calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_node):
+    route = nx.dijkstra_path(graph,start_node,end_node)
+    length = 0
+    for edge in zip(route[:-1],route[1:]):
+        length += graph.edges[edge]['length_m']
+    return length
 
 
 def calculate_length_of_splitted_edge_geometries(graph, edge, edge_geometries):
@@ -284,30 +286,7 @@ def calculate_length_of_splitted_edge_geometries(graph, edge, edge_geometries):
     return edge_parts_lenghts_m
 
 
-def transform_geometry(geometry, epsg_in="EPSG:4326", epsg_out="EPSG:8857"):
-    # EPSG:8857 is equal earth projection
-    crs_in = pyproj.CRS(epsg_in)
-    crs_out = pyproj.CRS(epsg_out)
-    crs_in_to_crs_out = pyproj.transformer.Transformer.from_crs(crs_in, crs_out, always_xy=True).transform
-    geometry_transformed = transform(crs_in_to_crs_out, geometry)
-    return geometry_transformed
-
-
-def merge_two_consecutive_edges_based_on_shared_node(graph, node):
-    if node not in graph.nodes:
-        warnings.warn(f"Node ({node}) does not exist in graph, merging aborted.")
-        return
-
-    edges = find_edges_based_on_shared_node(graph, node)
-    number_of_edges = len(edges)
-    if number_of_edges != 2:
-        if number_of_edges > 2:
-            warnings.warn(f"Node ({node}) has multiple ({number_of_edges}) edges, merging aborted.")
-        else:
-            warnings.warn(f"Node ({node}) has only one edge, merging aborted.")
-        return
-
-    edge_A, edge_B = edges
+def merge_edges(graph, edge_A, edge_B):
     start_junction_id = list(set(edge_A) - set(edge_B))[0]
     end_junction_id = list(set(edge_B) - set(edge_A))[0]
 
@@ -330,11 +309,40 @@ def merge_two_consecutive_edges_based_on_shared_node(graph, node):
 
     if (start_junction_id, end_junction_id) in graph.edges:
         warnings.warn(f"Edge ({start_junction_id},{end_junction_id}) is already part of the network, merging aborted.")
-        return
+        return graph
 
     graph.add_edge(start_junction_id, end_junction_id, **new_edge_data)
-    remove_node_from_network(graph, node)
-    return
+    return graph
+
+
+def merge_two_consecutive_edges_based_on_shared_node(graph, node):
+    if node not in graph.nodes:
+        warnings.warn(f"Node ({node}) does not exist in graph, merging aborted.")
+        return graph
+
+    edges = find_edges_based_on_shared_node(graph, node)
+    number_of_edges = len(edges)
+    number_of_allowed_edges = 2
+    if graph.is_directed():
+        number_of_allowed_edges = 4
+    if number_of_edges != number_of_allowed_edges:
+        if number_of_edges > number_of_allowed_edges:
+            warnings.warn(f"Node ({node}) has multiple ({number_of_edges}) edges, merging aborted.")
+        else:
+            warnings.warn(f"Node ({node}) has only one edge, merging aborted.")
+        return graph
+
+    if graph.is_directed():
+        edge_AA, edge_AB = edges[0],edges[2]
+        graph = merge_edges(graph, edge_AA, edge_AB)
+        edge_BA, edge_BB = (edge_AB[1],edge_AB[0]), (edge_AA[1],edge_AA[0])
+        graph = merge_edges(graph, edge_BA, edge_BB)
+    else:
+        edge_A, edge_B = edges
+        graph = merge_edges(edges, edge_A, edge_B)
+
+    graph = remove_node_from_network(graph, node)
+    return graph
 
 
 def calculate_bounding_rectangle(geometry):

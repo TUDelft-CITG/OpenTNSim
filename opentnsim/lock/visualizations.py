@@ -1,11 +1,61 @@
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import networkx as nx
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from opentnsim.graph.utils import get_trajectory
 from opentnsim.graph.calculations import transform_geometry
+from opentnsim.graph.visualizations import (visualize_node_in_folium_plot, visualize_edge_in_folium_plot,
+                                            visualize_geometry_point_in_folium_plot,
+                                            visualize_geometry_polygon_in_folium_plot)
 from operator import itemgetter
+import folium
+
+def add_locking_phases_to_plot(lock_chamber, fig, extend, time_axis = 'x', method='Matplotlib'):
+    lock_df = pd.DataFrame(lock_chamber.logbook)
+    for index, message_info in lock_df.iterrows():
+        message_found = False
+        if message_info.Message == "Lock gate opening stop" and index != 0:
+            time_start = lock_df.loc[index - 1, "Timestamp"]
+            time_stop = message_info.Timestamp
+            color = "darkgrey"
+            name = "Lock gate opening"
+            message_found = True
+        if message_info.Message == "Lock gate closing stop" and index != 0:
+            time_start = lock_df.loc[index - 1, "Timestamp"]
+            time_stop = message_info.Timestamp
+            color = "darkgrey"
+            name = "Lock gate closing"
+            message_found = True
+        if message_info.Message == "Lock chamber converting stop" and index != 0:
+            time_start = lock_df.loc[index - 1, "Timestamp"]
+            time_stop = message_info.Timestamp
+            color = "grey"
+            name = "Lock chamber converting"
+            message_found = True
+
+        if method == 'Matplotlib' and message_found:
+            extend = [extend[0],extend[0],extend[-1],extend[-1]]
+            if time_axis == 'y':
+                fig.fill(extend, [time_start, time_stop, time_stop, time_start], color=color, zorder=-1)
+            else:
+                fig.fill([time_start, time_stop, time_stop, time_start], extend, color=color, zorder=-1)
+        elif method == 'Plotly' and message_found:
+            x_data = [time_start,time_stop]
+            y_data = extend
+            if time_axis == 'y':
+                x_data = extend
+                y_data = [time_start,time_stop]
+            fig.add_shape(type="rect",
+                          x0=x_data[0],
+                          x1=x_data[-1],
+                          y0=y_data[0],
+                          y1=y_data[-1],
+                          fillcolor=color, opacity=0.5,
+                          layer="below", line_width=0,
+                          name=name)
+
 
 def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method='Matplotlib'):
     """Create a time-distance plot of vessels passing a lock complex
@@ -127,50 +177,22 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     if xlimmax is None:
         xlimmax = 2 * sailing_distance_to_crossing_point
 
+    lock_extend_x = np.array([x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection
     if method == 'Matplotlib':
-        lock_extend_x = np.array(
-            [x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection
-        ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=0)
+        ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=-2)
     elif method == 'Plotly':
         fig.add_shape(type="rect",
-                      x0=x_lock_gateA - x_correction_indirection, x1=x_lock_gateB - x_correction_indirection,
+                      x0=lock_extend_x[0], x1=lock_extend_x[-1],
                       y0=ylimmin, y1=ylimmax,
                       fillcolor="lightgrey", opacity=0.5,
                       layer="below", line_width=0,
                       name="Lock Geometry")
 
     # plot the lock phases
-    lock_df = pd.DataFrame(lock_chamber.logbook)
-    for index, message_info in lock_df.iterrows():
-        message_found = False
-        if message_info.Message == "Lock gate opening stop" and index != 0:
-            time_start = lock_df.loc[index - 1, "Timestamp"]
-            time_stop = message_info.Timestamp
-            color = "darkgrey"
-            name = "Lock gate opening"
-            message_found = True
-        if message_info.Message == "Lock gate closing stop" and index != 0:
-            time_start = lock_df.loc[index - 1, "Timestamp"]
-            time_stop = message_info.Timestamp
-            color = "darkgrey"
-            name = "Lock gate closing"
-            message_found = True
-        if message_info.Message == "Lock chamber converting stop" and index != 0:
-            time_start = lock_df.loc[index - 1, "Timestamp"]
-            time_stop = message_info.Timestamp
-            color = "grey"
-            name = "Lock chamber converting"
-            message_found = True
-
-        if method == 'Matplotlib' and message_found:
-            ax.fill(lock_extend_x, [time_start, time_stop, time_stop, time_start], color=color, zorder=0)
-        elif method == 'Plotly' and message_found:
-            fig.add_shape(type="rect",
-                          x0=x_lock_gateA - x_correction_indirection, x1=x_lock_gateB - x_correction_indirection,
-                          y0=time_start, y1=time_stop,
-                          fillcolor=color, opacity=0.5,
-                          layer="below", line_width=0,
-                          name=name)
+    if method == 'Matplotlib':
+        add_locking_phases_to_plot(lock_chamber, ax,lock_extend_x,time_axis='y',method=method)
+    elif method == 'Plotly':
+        add_locking_phases_to_plot(lock_chamber, fig, lock_extend_x, time_axis='y', method=method)
 
     # plot the approach points
     sailing_distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point + lock_chamber.lock_length / 2
@@ -197,3 +219,70 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
                           showlegend=True)
 
     return fig
+
+def plot_saltwater_intrusion(lock_chamber, ZSF_results):
+    fig, axes = plt.subplots(2, 1, figsize=[11,6])
+
+    stacked_salinity_lock = pd.DataFrame({
+        "time": pd.concat([ZSF_results["time_start"], ZSF_results["time_stop"]], ignore_index=True),
+        "salinity": pd.concat([ZSF_results["salinity_lock_start"], ZSF_results["salinity_lock_stop"]], ignore_index=True)
+    }).sort_values("time").reset_index(drop=True)
+
+    ax = axes[0]
+    ax.plot(ZSF_results.time_start.values,ZSF_results['salinity_sea'].values, color='lightblue', label='Sea')
+    ax.plot(ZSF_results.time_start.values,ZSF_results['salinity_lake'].values, color='C0', label='Lake')
+    ax.plot(stacked_salinity_lock.time.values,stacked_salinity_lock.salinity.values,color='k',label='Lock')
+    xlim = [stacked_salinity_lock.time.values[1],stacked_salinity_lock.time.values[-2]]
+    ax.set_xticklabels([])
+    ax.set_xlabel('')
+    ylim = ax.get_ylim()
+    add_locking_phases_to_plot(lock_chamber, ax, ylim, time_axis='x', method='Matplotlib')
+    ax.set_ylabel('Salt\nconcentration\n'+r'[kgm$^{-3}$]')
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.legend(loc='upper right',frameon=False, bbox_to_anchor = [1.11,1.0])
+
+    ax = axes[1]
+    ax.plot(ZSF_results.time_stop.values,ZSF_results['mass_transport_lake'].cumsum().apply(lambda x: x * -1),color='gold')
+    ylim = ax.get_ylim()
+    add_locking_phases_to_plot(lock_chamber, ax, ylim, time_axis='x', method='Matplotlib')
+    ax.set_ylabel('Salt mass\n[kg]')
+    ax.set_xlabel('Time')
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b %Y\n%H:%M"))
+    plt.xticks(rotation=45);
+
+
+def spatially_visualize_lock_complex(lock_complex):
+    m = folium.Map(tiles="cartodbpositron")
+
+    graph = lock_complex.env.graph
+    # Plotting the nearby graph
+    for registration_node_1, registration_node_2 in zip(lock_complex.registration_nodes[:-1],
+                                                        lock_complex.registration_nodes[1:]):
+        route = nx.dijkstra_path(graph, registration_node_1, registration_node_2)
+        edges = []
+        for edge in zip(route[:-1], route[1:]):
+            edges.append(edge)
+
+        for edge in zip(route[:-1], route[1:]):
+            visualize_edge_in_folium_plot(m, graph, edge)
+            visualize_node_in_folium_plot(m, graph, edge[0], color='darkviolet', size=10)
+            visualize_node_in_folium_plot(m, graph, edge[1], color='darkviolet', size=10)
+
+    for name, lock_chamber in lock_complex.lock_chambers.items():
+        if lock_chamber.geometry is not None:
+            visualize_geometry_polygon_in_folium_plot(m, lock_chamber.geometry)
+
+        visualize_geometry_point_in_folium_plot(m, lock_chamber.gate_A.geometry, color='green', size=10,
+                                                label = name + ' - Gate A')
+        visualize_geometry_point_in_folium_plot(m, lock_chamber.gate_B.geometry, color='red', size=10 ,
+                                                label = name + ' - Gate B')
+
+    for name, waiting_area in lock_complex.waiting_areas.items():
+        visualize_geometry_point_in_folium_plot(m, waiting_area.geometry, color='black', size=10, label = name)
+
+    m.fit_bounds(m.get_bounds())
+
+    return m

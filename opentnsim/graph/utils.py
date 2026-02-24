@@ -653,6 +653,17 @@ def get_edge(graph, edge, is_multidigraph=False):
         edge = (edge[0], edge[1], k)
     return edge
 
+
+def _get_edges_from_geometry(graph, geometry, crs_m, m=False):
+    if m:
+        geometry = transform_geometry(geometry, epsg_in = crs_m, epsg_out = "EPSG:4326")
+    edges = []
+    for edge in graph.edges:
+        if geometry.intersects(graph.edges[edge]["geometry"]):
+            edges.append(edge)
+    return edges
+
+
 def get_edges(graph, route):
     edges = []
     is_multidigraph = check_graph_is_multidigraph_type(graph)
@@ -660,6 +671,47 @@ def get_edges(graph, route):
         edge = get_edge(graph, edge, is_multidigraph)
         edges.append(edge)
     return edges
+
+
+def create_transformer(crs_in = "EPSG:4326", crs_out = "EPSG:4087"):
+    transformer = pyproj.Transformer.from_crs(crs_in, crs_out, always_xy=True).transform
+    return transformer
+
+def get_edges_at_a_distance(graph, start_node, end_node, threshold):
+    """
+    Returns all edges (u, v) where the shortest-path distance
+    from end_node to u and v lie on opposite sides of threshold.
+    """
+
+    # Copy graph to prevent backward traversal
+    graph2 = graph.copy()
+
+    # Block the input edge so we only move "forward"
+    if graph2.has_edge(start_node, end_node):
+        graph2.remove_edge(start_node, end_node)
+    if graph2.has_edge(end_node, start_node):
+        graph2.remove_edge(end_node, start_node)
+
+    # Compute shortest-path distances from end_node
+    distances = nx.single_source_dijkstra_path_length(graph2, source=end_node, weight='length_m')
+
+    crossing_edges = []
+    for u, v in graph2.edges():
+        if u not in distances or v not in distances:
+            continue
+        du = distances[u]
+        dv = distances[v]
+
+        if du > dv:
+            continue
+
+        # Check if threshold lies strictly between them
+        if (du < threshold and dv > threshold) or \
+           (dv < threshold and du > threshold):
+            crossing_edges.append((u, v))
+
+    return crossing_edges
+
 
 def get_sailing_distance(graph, route):
     """
@@ -882,7 +934,7 @@ def find_edges_based_on_shared_node(graph, node):
 
 def remove_node_from_network(graph, node):
     graph.remove_node(node)
-    return
+    return graph
 
 
 def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge):

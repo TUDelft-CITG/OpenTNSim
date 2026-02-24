@@ -14,6 +14,7 @@ from opentnsim.graph.calculations import calculate_location_over_edges
 from opentnsim.graph.mixins import HasMultiDiGraph, OnEdge
 from opentnsim.graph.utils import (
     check_if_geometry_is_aligned_with_edge,
+    _get_edges_from_geometry,
 )
 from opentnsim.lock.calculations import (
     calculate_lock_dimensions_from_geometry,
@@ -49,6 +50,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
 
     def __init__(
         self,
+        env,
+        edge = None,
         lock_length=0.0, # a float which contains the length of the lock chamber
         lock_width=0.0, # a float which contains the width of the lock chamber
         lock_depth=0.0, # a float which contains the depth of the lock chamber
@@ -65,7 +68,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         gate_opening_time=300.0,  # a float which contains the time it takes to open the gate [s]
         gate_closing_time=300.0,  # a float which contains the time it takes to close the gate [s]
         speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
-        sailing_distance_to_crossing_point=500.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
+        sailing_distance_to_crossing_point=370.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
         sailing_in_speed_A=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
         sailing_out_speed_A=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
         sailing_in_speed_B=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
@@ -87,9 +90,25 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.geometry_m = geometry_m
         self.crs_m = crs_m
         calculate_and_check_lock_dimensions(self)
+        if edge is None and geometry is None and geometry_m is None:
+            raise ValueError("User did not specify an edge for the lock complex, and could not be computed based on a geometry")
+        elif edge is None:
+            if geometry_m is not None:
+                edges = _get_edges_from_geometry(env.graph, geometry_m, crs_m, m=True)
+            else:
+                edges = _get_edges_from_geometry(env.graph, geometry, crs_m)
+
+        allowed_nr_edges = 1
+        if env.graph.is_directed():
+            allowed_nr_edges = 2
+        if len(edges) != allowed_nr_edges:
+            raise ValueError(f"Lock geometry does not cover a single geometry, but {len(edges)} edges.")
+        edge = edges[0]
 
         # initialization
-        super().__init__(capacity=math.inf,
+        super().__init__(env=env,
+                         edge=edge,
+                         capacity=math.inf,
                          length=self.lock_length,
                          remaining_length=self.lock_length,
                          *args, **kwargs)

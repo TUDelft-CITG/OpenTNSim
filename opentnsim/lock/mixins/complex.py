@@ -10,13 +10,16 @@ import simpy
 
 from opentnsim.core import HasResource, Identifiable, Log, Movable, ExtraMetadata, SimpyObject, Locatable
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.graph.calculations import calculate_location_over_edges, transform_geometry
+from opentnsim.graph.calculations import (calculate_location_over_edges,
+                                          transform_geometry,
+                                          calculate_distance_along_geometry_to_nodes_of_edge)
 from opentnsim.graph.mixins import HasMultiDiGraph, OnEdge
 from opentnsim.graph.utils import (
     get_length_of_edge,
     get_trajectory,
     get_edge,
     check_graph_is_multidigraph_type,
+    get_edges_at_a_distance,
     get_edge_at_distance_from_node,)
 from opentnsim.lock.calculations import calculate_sailing_time_to_waiting_area, calculate_sailing_time_to_approach_point
 from opentnsim.lock.mixins.chamber import IsLockChamber
@@ -32,7 +35,6 @@ from opentnsim.lock.utils import (
     _get_distance_to_lock,
     _get_lock_object_on_registration_node,
     _get_upcoming_lock_complexes,
-    _get_upcoming_locks,
     determine_if_gate_is_closed,
     check_all_paths_through_registration,
     check_lock_complex_geometry,
@@ -305,16 +307,88 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
 
     def __init__(
             self,
-            distance_from_edge_start,
+            edge=None,
+            lock_chamber=None,
+            distance_from_lock_gate_A=None,
+            distance_from_lock_gate_B=None,
+            distance_from_edge_start=None,
             geometry = None,
             capacity = math.inf,
-            crs_m = 'EPSG:4087',
+            crs_m = None,
             *args,
             **kwargs,
     ):
         """Initialization"""
-        self.distance_from_edge_start = distance_from_edge_start
-        super().__init__(geometry = geometry, nr_resources=capacity, *args, **kwargs)
+        if edge is None and distance_from_edge_start is None and distance_from_lock_gate_A is None and distance_from_lock_gate_B is None and geometry is None and lock_chamber is None:
+            raise ValueError("Waiting area does not have any input to determine its location.")
+        elif edge is not None and distance_from_edge_start is None:
+            raise ValueError("Waiting area does have an edge, but not an distance_from_edge_start.")
+        elif edge is None and distance_from_edge_start is not None:
+            raise ValueError("Waiting area does have a distance_from_edge_start, but not an edge.")
+        elif lock_chamber is not None and distance_from_lock_gate_A is None and distance_from_lock_gate_B is None:
+            raise ValueError("Waiting area is attached to a lock_chamber, but does not have a distance to a lock gate.")
+        elif lock_chamber is None and (distance_from_lock_gate_A is not None or distance_from_lock_gate_B is not None):
+            raise ValueError("Waiting area is not attached to a lock chamber, but has a distance to a lock gate.")
+        elif (distance_from_lock_gate_A is not None or distance_from_lock_gate_B is not None) and distance_from_edge_start is not None:
+            raise ValueError("Multiple distances are defined that can be conflicting, please only specify one distance")
+
+        if crs_m is None:
+            if lock_chamber is not None:
+                crs_m = lock_chamber.crs_m
+            else:
+                crs_m = 'EPSG:4087'
+
+        if distance_from_lock_gate_A is not None:
+            distance_from_start_node_to_lock_gate_A = lock_chamber.distance_from_start_node_to_lock_gate_A
+            if distance_from_lock_gate_A <= distance_from_start_node_to_lock_gate_A:
+                edge = lock_chamber.edge
+            else:
+                remaining_distance = distance_from_lock_gate_A - distance_from_start_node_to_lock_gate_A
+                edges = get_edges_at_a_distance(lock_chamber.env.graph, lock_chamber.edge[1], lock_chamber.edge[0], remaining_distance)
+                if len(edges) != 1:
+                    raise ValueError("There are multiple edges at the defined distance from the lock gate: set an edge and distance_from_edge_start.")
+                edge = edges[0]
+                edge_stop, edge_start = edge
+                edge = (edge_start, edge_stop)
+
+        if distance_from_lock_gate_B is not None:
+            distance_from_start_node_to_lock_gate_B = lock_chamber.distance_from_end_node_to_lock_gate_B
+            if distance_from_lock_gate_B <= distance_from_start_node_to_lock_gate_B:
+                edge = lock_chamber.edge
+            else:
+                remaining_distance = distance_from_lock_gate_B - distance_from_start_node_to_lock_gate_B
+                edges = get_edges_at_a_distance(lock_chamber.env.graph, lock_chamber.edge[0], lock_chamber.edge[1], remaining_distance)
+                if len(edges) != 1:
+                    raise ValueError("There are multiple edges at the defined distance from the lock gate: set an edge and distance_from_edge_start.")
+                edge = edges[0]
+                edge_stop, edge_start = edge
+                edge = (edge_start, edge_stop)
+
+
+        if distance_from_edge_start is not None:
+            self.distance_from_edge_start = distance_from_edge_start
+        elif distance_from_lock_gate_A is not None:
+            edge_start, edge_stop = edge
+            edge_length = lock_chamber.env.graph.edges[edge]["length_m"]
+            if edge == lock_chamber.edge:
+                distance_from_edge_start = lock_chamber.distance_from_start_node_to_lock_gate_A - distance_from_lock_gate_A
+            else:
+                length = calculate_distance_along_geometry_to_nodes_of_edge(lock_chamber.env.graph, lock_chamber.edge[0], edge_stop)
+                remaining_length = distance_from_lock_gate_A - length - distance_from_start_node_to_lock_gate_A
+                distance_from_edge_start = edge_length - remaining_length
+            self.distance_from_edge_start = distance_from_edge_start
+        elif distance_from_lock_gate_B is not None:
+            edge_start, edge_stop = edge
+            edge_length = lock_chamber.env.graph.edges[edge]["length_m"]
+            if edge == lock_chamber.edge:
+                distance_from_edge_start = lock_chamber.distance_from_end_node_to_lock_gate_B - distance_from_lock_gate_B
+            else:
+                length = calculate_distance_along_geometry_to_nodes_of_edge(lock_chamber.env.graph, lock_chamber.edge[1], edge_stop)
+                remaining_length = distance_from_lock_gate_B - length - distance_from_start_node_to_lock_gate_B
+                distance_from_edge_start = edge_length - remaining_length
+            self.distance_from_edge_start = distance_from_edge_start
+
+        super().__init__(edge=edge,geometry = geometry, nr_resources=capacity, *args, **kwargs)
         if geometry is None:
             self.geometry = calculate_location_over_edges(self.env.graph, self.edge, self.distance_from_edge_start, crs_m=crs_m)
         if 'Waiting area' not in self.env.graph.edges[self.edge].keys():

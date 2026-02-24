@@ -11,6 +11,7 @@ from opentnsim.lock.calculations import (
     calculate_lock_operation_times,
     calculate_time_to_open_gate,
     calculate_sailing_time_to_approach_point,
+    calculate_sailing_time_to_waiting_area
 )
 from opentnsim.lock.utils import (
     _get_vessel_departure_start_delay,
@@ -70,6 +71,7 @@ class IsLockChamberOperator:
         self.wait_for_other_vessels = simpy.FilterStore(env=self.env)
         self.wait_for_levelling = simpy.FilterStore(env=self.env)
 
+
     def communicate_vessel_to_start_approaching_lock_chamber(self, vessel, waiting_area, direction):
         yield waiting_area.resource.release(vessel.waiting_area_request)
 
@@ -90,7 +92,6 @@ class IsLockChamberOperator:
         vessel.overruled_speed.loc[waiting_area.edge, 'speed'] = _get_vessel_sailing_in_speed(self, vessel, direction)
         distance_left_on_edge = waiting_area.distance_waiting_area_to_end_edge
         vessel.distance_left_on_edge = distance_left_on_edge
-        vessel.distance_left_on_edge -= waiting_area.distance_from_edge_start
 
 
     def communicate_vessel_to_sail_to_lock_chamber(self, waiting_area, vessel, direction):
@@ -253,14 +254,14 @@ class IsLockChamberOperator:
         # determine the waiting time that a vessel can do by decreasing it sailing speed and the waiting time that the vessel has to wait stationary in the waiting area (due to a minimum required speed for safe manoeuvrability)
         remaining_static_waiting_time = waiting_time.total_seconds()
         if remaining_static_waiting_time > 0.:
-            yield from self.let_vessel_wait_for_available_lock_operation_in_waiting_area(vessel)
+            yield from self.let_vessel_wait_for_available_lock_operation_in_waiting_area(vessel, waiting_area)
 
         # release vessel from waiting area and let vessel continue
         yield from self.communicate_vessel_to_start_approaching_lock_chamber(vessel, waiting_area, direction)
         self.prepare_lock_operation(vessel)
 
 
-    def let_vessel_wait_for_available_lock_operation_in_waiting_area(self, vessel):
+    def let_vessel_wait_for_available_lock_operation_in_waiting_area(self, vessel, waiting_area):
         # unpacks the lock complex master's vessel planning and the vessel index in this planning
         vessel_planning = self.lock_complex.vessel_planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -268,13 +269,14 @@ class IsLockChamberOperator:
 
         # determines the sailing time to reach the approach point of the lock complex
         sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction)
+        sailing_to_waiting_area, _, _ = calculate_sailing_time_to_waiting_area(waiting_area, vessel)
 
         # set the moment in time that the waiting in the waiting area has started
         waiting_start = vessel.env.now
 
         # determine the current time (after waiting for another vessel, or not) and the time that the vessel will be at the approach point if it will continue and what was planned before
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
-        time_at_approach = current_time + sailing_to_approach
+        time_at_approach = current_time + sailing_to_approach - sailing_to_waiting_area
         planned_start_time_entering_lock = vessel_planning.loc[vessel_planning_index, 'time_lock_operation_start']
 
         # determine (additional) waiting time for the vessel

@@ -433,8 +433,7 @@ def calculate_sailing_time_to_waiting_area(waiting_area, vessel):
     if vessel is None:
         return 0., _, _
     # determine route to the start node of the edge at which the waiting area is located
-    route_to_waiting_area = nx.dijkstra_path(vessel.env.graph, vessel.current_node, waiting_area.edge[0]) #TODO: check this -> waiting area should be assigned to vessel
-
+    route_to_waiting_area = nx.dijkstra_path(vessel.env.graph, vessel.current_node, waiting_area.edge[1]) #TODO: check this -> waiting area should be assigned to vessel
 
     # determine the distance that the vessel has to sail on the edge at which the waiting area is located (from the start node of the edge)
     distance_to_waiting_area_on_last_edge = waiting_area.distance_from_edge_start
@@ -1532,13 +1531,13 @@ def calculate_time_to_open_gate(lock_chamber, operation_index, direction, gate_r
     return operation_time
 
 
-def calculate_ZSF_event_table(lock_chamber):
+def calculate_ZSF_eventttable(lock_chamber):
     lock_df = pd.DataFrame(lock_chamber.logbook)
 
     zsf_events = pd.DataFrame(
-        columns=['time', 'head_sea', 'head_lake', 'routine', 'salinity_sea', 'salinity_lake', 'ship_volume_lake_to_sea',
-                 'ship_volume_sea_to_lake', 't_level', 't_open_lake', 't_open_sea', 'temperature_lake',
-                 'temperature_sea'])
+        columns=['time_start', 'time_stop', 'head_sea', 'head_lake', 'routine', 'salinity_sea', 'salinity_lake',
+                 'ship_volume_lake_to_sea', 'ship_volume_sea_to_lake', 't_level', 't_open_lake', 't_open_sea',
+                 'temperature_lake', 'temperature_sea'])
 
     head_sea = np.nan
     head_lake = np.nan
@@ -1551,25 +1550,28 @@ def calculate_ZSF_event_table(lock_chamber):
         t_open_lake = 0
         t_open_sea = 0
         if not index and info.Message == "Lock gate closing start":
-            time = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
-            duration = duration = (time - lock_chamber.env.simulation_start).total_seconds()
+            time_stop = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
+            duration = (time_stop - lock_chamber.env.simulation_start).total_seconds()
             if info.Geometry == lock_chamber.start_node:
                 routine = 4
                 t_open_sea = duration
             else:
                 routine = 2
                 t_open_lake = duration
+            time_start = lock_chamber.env.simulation_start
 
         elif info.Message == "Lock gate opening start":
             future_lock_df = lock_df.loc[index:]
             future_gate_closing_df = future_lock_df[future_lock_df.Message == "Lock gate closing stop"]
-            time = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
+            time_start = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
             if future_gate_closing_df.empty:
-                duration = (lock_chamber.env.simulation_stop - time).total_seconds()
+                duration = (lock_chamber.env.simulation_stop - time_start).total_seconds()
+                time_stop = lock_chamber.env.simulation_stop
             else:
                 time_stop = future_gate_closing_df.iloc[0].Timestamp - pd.Timedelta(
                     seconds=lock_chamber.gate_closing_time) / 2
-                duration = (time_stop - time).total_seconds()
+                duration = (time_stop - time_start).total_seconds()
+
             if info.Geometry == lock_chamber.start_node:
                 routine = 4
                 t_open_sea = duration
@@ -1580,9 +1582,9 @@ def calculate_ZSF_event_table(lock_chamber):
         elif info.Message == "Lock chamber converting stop":
             past_lock_df = lock_df.loc[:index]
             levelling_start_info = past_lock_df[past_lock_df.Message == "Lock chamber converting start"].iloc[-1]
-            time = levelling_start_info.Timestamp
+            time_start = levelling_start_info.Timestamp
             time_stop = info.Timestamp
-            duration = (time_stop - time).total_seconds()
+            duration = (time_stop - time_start).total_seconds()
             if info.Geometry == lock_chamber.start_node:
                 routine = 3
                 t_level = duration
@@ -1595,19 +1597,19 @@ def calculate_ZSF_event_table(lock_chamber):
 
         event_idx = len(zsf_events)
         hydromanager = HydrodynamicDataManager()
-        time = np.datetime64(time)
-        head_sea = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.start_node, 'Water level')
-        head_lake = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.end_node, 'Water level')
-        salinity_sea = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.start_node, 'Salinity')
-        salinity_lake = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.end_node, 'Salinity')
-        temperature_sea = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.start_node, 'Temperature')
-        temperature_lake = hydromanager._get_hydrodynamic_data_value(time, lock_chamber.end_node, 'Temperature')
+        time_start = np.datetime64(time_start)
+        time_stop = np.datetime64(time_stop)
+        head_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.start_node, 'Water level')
+        head_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.end_node, 'Water level')
+        salinity_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.start_node, 'Salinity')
+        salinity_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.end_node, 'Salinity')
+        temperature_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.start_node, 'Temperature')
+        temperature_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.end_node, 'Temperature')
         ship_volume_lake_to_sea = 0.
         ship_volume_sea_to_lake = 0.
-        zsf_events.loc[event_idx, :] = [time, head_sea, head_lake, routine, salinity_sea, salinity_lake,
-                                        ship_volume_lake_to_sea,
-                                        ship_volume_sea_to_lake, t_level, t_open_lake, t_open_sea, temperature_lake,
-                                        temperature_sea]
+        zsf_events.loc[event_idx, :] = [time_start, time_stop, head_sea, head_lake, routine, salinity_sea,
+                                        salinity_lake, ship_volume_lake_to_sea, ship_volume_sea_to_lake, t_level,
+                                        t_open_lake, t_open_sea, temperature_lake, temperature_sea]
 
     # #Correcting events for varying water levels
     for index in zsf_events[zsf_events.routine == 3].index:
@@ -1618,12 +1620,12 @@ def calculate_ZSF_event_table(lock_chamber):
         iloc = zsf_events.index.get_loc(index)
         zsf_events.loc[index, 'head_lake'] = zsf_events.iloc[iloc + 1]['head_lake']
 
-    zsf_events = zsf_events.set_index('time')
+    zsf_events = zsf_events.set_index(['time_start','time_stop'])
     return zsf_events
 
 
 def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, init_head_lock = 0.0):
-    zsf_events = calculate_ZSF_event_table(lock_chamber)
+    zsf_events = calculate_ZSF_eventttable(lock_chamber)
 
     lock_parameters = {
         "lock_length": lock_chamber.lock_length,
@@ -1655,9 +1657,14 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, ini
         t_open_lake = parameters.pop("t_open_lake")
         t_open_sea = parameters.pop("t_open_sea")
         t_level = parameters.pop("t_level")
-
         parameters["ship_volume_sea_to_lake"] = 0.0
         parameters["ship_volume_lake_to_sea"] = 0.0
+
+        initial_ZSF_state = ZSF.state.copy()
+        initial_ZSF_state = {'salinity_lock_start': initial_ZSF_state['salinity_lock'],
+                             'saltmass_lock_start': initial_ZSF_state['saltmass_lock'],
+                             'volume_ship_in_lock_start': initial_ZSF_state['volume_ship_in_lock'],
+                             'head_lock_start': initial_ZSF_state['head_lock']}
 
         if routine == 1:
             assert t_level > 0
@@ -1676,9 +1683,18 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, ini
         else:
             raise Exception(f"Unknown routine '{routine}'")
 
+        for key,value in initial_ZSF_state.items():
+            results[key] = value
+
+        results['salinity_lock_stop'] = ZSF.state['salinity_lock']
+        results['saltmass_lock_stop'] = ZSF.state['saltmass_lock']
+        results['volume_ship_in_lock_stop'] = ZSF.state['volume_ship_in_lock']
+        results['head_lock_stop'] = ZSF.state['head_lock']
         all_results.append(results)
 
     ZSF_results = pd.concat([zsf_events,pd.DataFrame(all_results, index=zsf_events.index)],axis=1)
+    ZSF_results = ZSF_results.astype(float)
+    ZSF_results = ZSF_results.reset_index()
     return ZSF_results
 
 

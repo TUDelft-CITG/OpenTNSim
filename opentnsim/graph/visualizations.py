@@ -117,6 +117,44 @@ def plot_graph(graph, static: bool = False):
         return fig
 
 
+def visualize_geometry_point_in_folium_plot(m, geometry, size=25, color='black', label=''):
+    point_x = geometry.coords.xy[0][0]
+    point_y = geometry.coords.xy[1][0]
+    folium.Circle((point_y, point_x), color=color, fill_color=color, radius=size, popup=label, tooltip=label).add_to(m)
+
+
+def visualize_geometry_polygon_in_folium_plot(m, geometry):
+    points_x = list(geometry.exterior.coords.xy[0])
+    points_y = list(geometry.exterior.coords.xy[1])
+    polyline = []
+    for i, _ in enumerate(points_x):
+        polyline.append((points_y[i], points_x[i]))
+    folium.Polygon(polyline).add_to(m)
+
+
+def visualize_node_in_folium_plot(m, graph, node, size=25, color='black', label=''):
+    node_info = graph.nodes[node]
+    point_x = node_info["geometry"].coords.xy[0][0]
+    point_y = node_info["geometry"].coords.xy[1][0]
+    folium.Circle((point_y, point_x), color=color, fill_color=color, radius=size, popup=label, tooltip=label).add_to(m)
+
+
+def visualize_edge_in_folium_plot(m, graph, edge, color = 'violet', weight = 3,
+                                  label = None, popup_width = 500, popup_height = 300):
+    edge_info = graph.edges[edge]
+    points_x = list(edge_info["geometry"].coords.xy[0])
+    points_y = list(edge_info["geometry"].coords.xy[1])
+    line = []
+    for i, _ in enumerate(points_x):
+        line.append((points_y[i], points_x[i]))
+
+    else:
+        popup = folium.Popup(width=popup_width, height=popup_height)
+        if label is None:
+            label = edge
+        folium.PolyLine(line, weight=weight, color=color, tooltip=label, popup=label).add_to(m)
+
+
 def plot_graph_folium(graph, longitude, latitude, zoom_start=5, berths = None, turning_basins = None, anchorage_areas = None):
     m = folium.Map(location=[latitude, longitude], zoom_start=zoom_start, tiles="cartodbpositron")
 
@@ -128,16 +166,7 @@ def plot_graph_folium(graph, longitude, latitude, zoom_start=5, berths = None, t
         plot_berths(berths, m=m)
 
     for edge in graph.edges(data=True):
-        points_x = list(edge[2]["geometry"].coords.xy[0])
-        points_y = list(edge[2]["geometry"].coords.xy[1])
-        line = []
-        for i, _ in enumerate(points_x):
-            line.append((points_y[i], points_x[i]))
-
-        else:
-            popup = folium.Popup(width=500, height=300)
-            folium.PolyLine(line, weight=3, color='violet', tooltip=[edge[0], edge[1]],
-                            popup=[edge[0], edge[1]]).add_to(m)
+        visualize_edge_in_folium_plot(graph, edge)
 
     for node in graph.nodes(data=True):
         points_x = list(node[1]["geometry"].coords.xy[0])
