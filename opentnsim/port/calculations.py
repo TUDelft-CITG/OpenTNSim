@@ -8,10 +8,14 @@ import pyproj
 from scipy.interpolate import interp1d
 from shapely.ops import linemerge, transform
 from shapely.geometry import LineString, MultiLineString
+from pyproj.transformer import Transformer
+
 import xarray as xr
 
 
 def provide_trajectory(graph, node_1, node_2):
+    print(node_1, node_2)
+    print(graph.nodes)
     nodes = nx.dijkstra_path(graph, node_1, node_2)
     final_geometry = LineString()
     multigraph = False
@@ -22,7 +26,7 @@ def provide_trajectory(graph, node_1, node_2):
             k = sorted(multidigraph[edge[0]][edge[1]], key=lambda x: multidigraph[edge[0]][edge[1]][x]["geometry"].length)[0]
             geom = multidigraph.edges[edge[0], edge[1], k]["geometry"]
         else:
-            geom = multidigraph.edges[edge[0], edge[1]]["geometry"]
+            geom = graph.edges[edge[0], edge[1]]["geometry"]
 
         if not loc:
             final_geometry = geom
@@ -43,7 +47,7 @@ def transform_geometry(geometry, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
 
 
 def transform_route_geometry(env, node_start, node_stop, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
-    route_geometry = provide_trajectory(env, node_start, node_stop)
+    route_geometry = provide_trajectory(env.graph, node_start, node_stop)
     route_geometry_transformed = transform_geometry(route_geometry, crs_in, crs_out)
     return route_geometry_transformed
 

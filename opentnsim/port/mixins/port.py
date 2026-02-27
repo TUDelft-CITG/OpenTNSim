@@ -116,7 +116,6 @@ class IsPortAuthority:
         if waiting_events is None:
             self.communicate_trip_not_possible(vessel, leaving_port)
 
-
         if not leaving_port:
             arrival_time_at_berth = vessel.terminal.assign_vessel_to_berth(vessel, origin, berth, delay=total_waiting_time)
             vessel.terminal.assign_vessel_to_queue(vessel, arrival_time_at_berth, waiting_time=total_waiting_time, berth=berth)

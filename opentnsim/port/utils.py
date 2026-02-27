@@ -52,7 +52,7 @@ def update_terminal_planning(vessel, delay=0.):
     vessel.terminal.replan_vessels_terminal_berths(vessel,delay)
     for queued_vessel_id,vessel_info in vessel.terminal.queue.iterrows():
         queued_vessel = get_vessel_from_id(vessel.env, [queued_vessel_id])[0]
-        if queued_vessel.waiting_event.is_alive:
+        if hasattr(queued_vessel,'waiting_event') and queued_vessel.waiting_event.is_alive:
             queued_vessel.waiting_event.interrupt()
 
 
@@ -222,6 +222,7 @@ def get_tidal_availability_info(vessel):
         tidal_window_results = calculate_tidal_windows(vessel, route, time_start, time_end)
         df_tidal_availability = tidal_window_results['tidal_accessibility']
         vessel.tidal_window_calculations[vessel.trip_index] = tidal_window_results
+        vessel.test = tidal_window_results
     df_tidal_availability['Tide'] = df_tidal_availability['Accessibility'] == 'Accessible'
     return df_tidal_availability[['Tide']]
 
