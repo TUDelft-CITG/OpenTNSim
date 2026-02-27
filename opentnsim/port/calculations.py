@@ -14,8 +14,6 @@ import xarray as xr
 
 
 def provide_trajectory(graph, node_1, node_2):
-    print(node_1, node_2)
-    print(graph.nodes)
     nodes = nx.dijkstra_path(graph, node_1, node_2)
     final_geometry = LineString()
     multigraph = False
@@ -775,7 +773,6 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
         t_boundaries.append(time_correction_index)
 
-    display(net_ukc)
     min_net_ukc = net_ukc.min(axis=1).min()
     net_ukc_corrected = net_ukc.copy()
     window = False
