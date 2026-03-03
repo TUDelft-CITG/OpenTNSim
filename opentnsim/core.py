@@ -179,10 +179,19 @@ class Routable(SimpyObject):
         return graph
 
 
+
 class WithCurrent:
 
     def get_edge_current(self, edge):
-        return edge.get("current_ms", 0.0)
+
+        if hasattr(self.env, "get_current"):
+            u = edge.get("u", None)
+            v = edge.get("v", None)
+            if u is not None and v is not None:
+                return float(self.env.get_current(u, v, self.env.now))
+
+        return float(edge.get("current_ms", 0.0))
+
 
     def compute_speeds_on_edge(self, edge):
         """
@@ -192,7 +201,7 @@ class WithCurrent:
         """
         v_w = getattr(self, "v", 0.0)
         v_c = self.get_edge_current(edge)
-        v_g  = v_w + v_c
+        v_g = v_w + v_c
 
         self.v_w = v_w
         self.v_c = v_c
@@ -200,6 +209,9 @@ class WithCurrent:
 
         return v_w, v_c, v_g
 
+
+
+    
 
 class Movable(Locatable, Routable, Log):
     """Mixin class: Something can move.
@@ -406,7 +418,11 @@ class Movable(Locatable, Routable, Log):
                     )
 
         # default velocity based on current speed.
-        v_w, v_c, v_g = self.compute_speeds_on_edge(edge)
+        e = dict(edge)
+        e["u"] = origin
+        e["v"] = destination
+        v_w, v_c, v_g = self.compute_speeds_on_edge(e)
+        #v_w, v_c, v_g = self.compute_speeds_on_edge(edge)
         timeout = self.distance / v_g
         yield self.env.timeout(timeout)
         if next_node:

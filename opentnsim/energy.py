@@ -1418,8 +1418,10 @@ class EnergyCalculation:
                     # discharge (if stored on edge)
                     Q = e_data.get("discharge", None)
 
-                    info = e_data.get("Info", {})
-                    v_c = e_data.get("current_ms", info.get("Current", 0.0))
+                    #info = e_data.get("Info", {})
+                    #v_c = e_data.get("current_ms", info.get("Current", 0.0))
+                    now_s = pd.Timestamp(times[i]).timestamp()  # seconds since unix epoch
+                    v_c = float(self.vessel.env.get_current(node_start, node_stop, now_s))
 
                 else:
                     distance = calculate_distance(geometries[i], geometries[i + 1])

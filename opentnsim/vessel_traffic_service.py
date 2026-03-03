@@ -167,13 +167,31 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
         if distance is None:
             sailing_distance_over_route = self.provide_sailing_distance_over_route(vessel,route)
         else:
-            sailing_distance_over_route = pd.DataFrame(columns=['edge','distance'])
+            sailing_distance_over_route = pd.DataFrame(columns=['edge','Distance'])
             sailing_distance_over_route.loc[0,'edge'] = (route[0], route[1])
-            sailing_distance_over_route.loc[0,'distance'] = distance
+            sailing_distance_over_route.loc[0,'Distance'] = distance
             sailing_distance_over_route = sailing_distance_over_route.set_index('edge')
         vessel_speed_over_route = self.provide_speed_over_route(vessel,route)
         sailing_time_over_route = pd.concat([sailing_distance_over_route,vessel_speed_over_route],axis=1)
-        sailing_time_over_route['Time'] = sailing_time_over_route['distance']/sailing_time_over_route['Speed']
+        #sailing_time_over_route['Time'] = sailing_time_over_route['distance']/sailing_time_over_route['Speed']
+        # NEW---------------------
+        sailing_time_over_route["SOG"] = sailing_time_over_route["Speed"].astype(float)
+
+        if hasattr(vessel.env, "get_current"):
+            t_offset = 0.0  
+            for (u, v) in sailing_time_over_route.index:
+                cur = float(vessel.env.get_current(u, v, vessel.env.now + t_offset))
+
+                sog = float(sailing_time_over_route.loc[(u, v), "Speed"]) + cur
+                if sog <= 0.1:
+                    sog = 0.1
+
+                sailing_time_over_route.loc[(u, v), "SOG"] = sog
+                dist = float(sailing_time_over_route.loc[(u, v), "Distance"])
+                t_offset += dist / sog
+
+        sailing_time_over_route["Time"] = sailing_time_over_route["Distance"] / sailing_time_over_route["SOG"]
+        #-------------------------------------
         return sailing_time_over_route
 
     def provide_nearest_anchorage_area(self,vessel,node):
@@ -222,6 +240,13 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
 
     def provide_governing_current_velocity(self,vessel,node,time_start_index,time_end_index):
         station_index = list(self.hydrodynamic_information['STATION'].values).index(node)
+        #NEW------
+        if 'LAYER' not in self.hydrodynamic_information.dims or 'MBL' not in self.hydrodynamic_information:
+            cur = self.hydrodynamic_information['Primary current velocity'].values
+            current_velocity = cur[station_index, time_start_index:time_end_index]
+            current_governing_current_velocity = current_velocity[2] if len(current_velocity) > 2 else current_velocity[-1]
+            return current_velocity, float(current_governing_current_velocity)
+        #_____
         times = self.hydrodynamic_information['TIME'].values[time_start_index:time_end_index]
         relative_layer_height = self.hydrodynamic_information['LAYER'].values
         current_velocity = self.hydrodynamic_information['Primary current velocity'][station_index].transpose().values[time_start_index:time_end_index]
@@ -252,7 +277,8 @@ class VesselTrafficService(core.SimpyObject,graph.HasMultiDiGraph):
 
             return average_current_velocity
 
-        if 'LAYER' in list(self.hydrodynamic_information['Current velocity'].dims):
+        #if 'LAYER' in list(self.hydrodynamic_information['Current velocity'].dims):
+        if 'LAYER' in list(self.hydrodynamic_information['Primary current velocity'].dims):    
             if vessel._T <= 5:
                 current_velocity = depth_averaged_current_velocity(5,times,relative_layer_height,current_velocity,station_index)
             elif vessel._T <= 15:
