@@ -53,8 +53,8 @@ class HasTerminal(Movable):
         yield from self.berthing(destination)
         yield from self.loading(destination)
         yield from self.request_port_exit(destination)
-        yield from self.release_berth_access(destination)
         yield from self.deberthing(destination)
+        yield from self.release_berth_access(destination)
         self.env.process(self.move())
         raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 

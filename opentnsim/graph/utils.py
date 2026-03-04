@@ -94,6 +94,22 @@ def get_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EPSG:408
     return edge_info["length_m"]
 
 
+def get_longest_common_subroute(route1, route2):
+    n, m = len(route1), len(route2)
+    dp = [[[] for _ in range(m + 1)] for _ in range(n + 1)]
+    for i in range(n):
+        for j in range(m):
+            if route1[i] == route2[j]:
+                dp[i + 1][j + 1] = dp[i][j] + [route1[i]]
+            else:
+                dp[i + 1][j + 1] = max(
+                    dp[i][j + 1],
+                    dp[i + 1][j],
+                    key=len
+                )
+    return dp[n][m]
+
+
 def find_closest_node(G, point):
     """find the closest node on the graph from a given point"""
 

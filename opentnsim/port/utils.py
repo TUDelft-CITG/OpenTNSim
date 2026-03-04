@@ -1,12 +1,15 @@
 import datetime
 import pandas as pd
+import geopandas as gpd
 import numpy as np
 import networkx as nx
 import pyproj
 import shapely
+import re
 from shapely.ops import transform
 from pyproj import Transformer
-from opentnsim.graph.utils import get_sailing_time
+from opentnsim.graph.utils import get_sailing_time, get_trajectory
+from opentnsim.graph.calculations import transform_geometry
 from opentnsim.port.calculations import calculate_tidal_windows
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from IPython.display import display
@@ -22,28 +25,25 @@ def get_vessel_from_id(env, vessel_ids):
     return vessels
 
 
-def create_logbook_with_directed_distances(vessel):
+def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
     first_index = 0
     df = pd.DataFrame(vessel.logbook)
     corrected_df = pd.DataFrame()
-
-    for index, route in enumerate(vessel.routes_sailed):
+    for index, route_sailed in enumerate(vessel.routes_sailed):
+        selected_route = [node for node in route_sailed if node in route]
+        route_geometry = get_trajectory(vessel.env.graph,route[0],route[-1])
+        route_geometry_m = transform_geometry(route_geometry, epsg_out = epsg_out)
         mask = df.index > first_index
-        mask2 = df[mask].Message.apply(lambda x: route[-1] in x and 'stop' in x)
+        mask2 = df[mask].Message.apply(lambda x: bool(re.search(rf'\b{selected_route[-1]}\b', x)) and 'stop' in x)
         last_index_df = df[mask][mask2]
         if last_index_df.empty:
             continue
         last_index = last_index_df.iloc[0].name
         df_route = df[(df.index >= first_index) & (df.index <= last_index)]
+        gdf_route = gpd.GeoDataFrame(df_route,geometry='Geometry',crs="EPSG:4326")
+        gdf_route = gdf_route.to_crs(epsg_out)
+        df_route['Value'] = gdf_route['Geometry'].apply(lambda x: route_geometry_m.project(x))
         maximum_sailed_distance = df_route.Value.max()
-        if index == 1:
-            df_route.loc[:, "delta_distance"] = df_route["Value"].diff()
-            df_route.loc[:, "delta_distance"] = np.where(df_route["delta_distance"] >= 0,
-                                                         df_route["delta_distance"],
-                                                         (maximum_sailed_distance - df_route["Value"].shift()) + df_route["Value"])
-
-            df_route.loc[:, "delta_distance"] = df_route["delta_distance"].ffill()
-            df_route.loc[:, 'Value'] = df_route.Value.shift(1) - df_route.delta_distance
         first_index = last_index + 1
         corrected_df = pd.concat([corrected_df, df_route])
     corrected_df = corrected_df.ffill()
@@ -54,7 +54,7 @@ def update_terminal_planning(vessel, delay=0.):
     vessel.terminal.replan_vessels_terminal_berths(vessel,delay)
     for queued_vessel_id,vessel_info in vessel.terminal.queue.iterrows():
         queued_vessel = get_vessel_from_id(vessel.env, [queued_vessel_id])[0]
-        if queued_vessel.waiting_event.is_alive:
+        if hasattr(queued_vessel,'waiting_event') and queued_vessel.waiting_event.is_alive:
             queued_vessel.waiting_event.interrupt()
 
 

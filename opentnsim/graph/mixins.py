@@ -39,9 +39,8 @@ wgs84 = pyproj.Geod(ellps="WGS84")
 
 class OnNode(SimpyObject):
     def __init__(self, node, *args, **kwargs):
-        self.node = node
         super().__init__(*args, **kwargs)
-
+        self.node = node
         if node not in self.env.graph.nodes:
             raise ValueError(f"Node {node} does not exist in the graph.")
 

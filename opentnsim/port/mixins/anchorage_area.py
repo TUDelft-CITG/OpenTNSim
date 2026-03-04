@@ -57,9 +57,12 @@ class IsAnchorage(IsWaitingArea, IsPortComponent, HasOutput):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
             creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
 
-    def __init__(self,depth,*args,**kwargs):
+    def __init__(self, depth, *args, **kwargs):
         self.depth = depth
         super().__init__(*args, **kwargs)
+
+        self.register_waiting_area()
+
         self.port.anchorage_areas.append(self)
         self.env.graph.nodes[self.node]['Anchorage'] = self
 

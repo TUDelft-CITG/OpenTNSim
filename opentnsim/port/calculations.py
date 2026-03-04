@@ -7,49 +7,15 @@ import pandas as pd
 import pyproj
 from pyproj.transformer import Transformer
 from scipy.interpolate import interp1d
+from scipy.signal import find_peaks
 from shapely.ops import linemerge, transform
 from shapely.geometry import LineString, MultiLineString
 import xarray as xr
 
-from opentnsim.graph.utils import get_sailing_time
+from opentnsim.graph.utils import get_sailing_time, get_longest_common_subroute
+from opentnsim.graph.calculations import transform_geometry, transform_route_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity
-
-def provide_trajectory(graph, node_1, node_2):
-    nodes = nx.dijkstra_path(graph, node_1, node_2)
-    final_geometry = LineString()
-    multigraph = False
-    if isinstance(graph, nx.MultiDiGraph):
-        multigraph = True
-    for loc, edge in enumerate(zip(nodes[:-1], nodes[1:])):
-        if multigraph:
-            k = sorted(graph[edge[0]][edge[1]], key=lambda x: graph[edge[0]][edge[1]][x]["geometry"].length)[0]
-            geom = graph.edges[edge[0], edge[1], k]["geometry"]
-        else:
-            geom = graph.edges[edge[0], edge[1]]["geometry"]
-
-        if not loc:
-            final_geometry = geom
-            continue
-
-        multi_line = MultiLineString([final_geometry, geom])
-        final_geometry = linemerge(multi_line)
-
-    return final_geometry
-
-
-def transform_geometry(geometry, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
-    proj_in = pyproj.CRS(crs_in)
-    proj_out = pyproj.CRS(crs_out)
-    transformer = Transformer.from_crs(proj_in, proj_out, always_xy=True).transform
-    geometry_transformed = transform(transformer,geometry)
-    return geometry_transformed
-
-
-def transform_route_geometry(env, node_start, node_stop, crs_in = "EPSG:4326", crs_out = "EPSG:3857"):
-    route_geometry = provide_trajectory(env.graph, node_start, node_stop)
-    route_geometry_transformed = transform_geometry(route_geometry, crs_in, crs_out)
-    return route_geometry_transformed
 
 
 def calculate_total_waiting_time(waiting_events):
@@ -142,9 +108,11 @@ def calculate_depth_values_over_route(env, node_start, node_stop, offset = 500):
             boundary_offsets = np.array([-offset, offset]) + 0.001
 
         for boundary,boundary_offset in enumerate(boundary_offsets):
-            node_water_depths[node + str(boundary)] = hydrodynamic_data['Water level'].sel({'STATION': node}).values + infrastructure.depth
-            node_distances[node + str(boundary)] = np.ones(len(node_water_depths[node + str(boundary)])) * distance_to_node + boundary_offset
-            node_times[node + str(boundary)] = water_depth.TIME.values
+            if isinstance(node, str):
+                boundary = str(boundary)
+            node_water_depths[node + boundary] = hydrodynamic_data['Water level'].sel({'STATION': node}).values + infrastructure.depth
+            node_distances[node + boundary] = np.ones(len(node_water_depths[node + boundary])) * distance_to_node + boundary_offset
+            node_times[node + boundary] = water_depth.TIME.values
 
     return node_distances, node_times, node_water_depths
 
@@ -226,7 +194,6 @@ def calculate_vertical_tidal_windows(vessel, route, time_start, time_end, delay=
     vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
     vertical_tidal_accessibility["Condition"] = "Water level"
     vertical_tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(vertical_tidal_accessibility.iloc[:-1].iterrows(), vertical_tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == "Accessible"]
-
     return vertical_tidal_accessibility, vertical_tidal_windows, net_ukcs
 
 
@@ -854,3 +821,297 @@ def calculate_tidal_windows(vessel, route, time_start, time_end, delay=0):
                             'tidal_accessibility':tidal_accessibility,
                             'tidal_windows':tidal_windows}
     return tidal_window_results
+
+
+def calculate_ukc_per_tidal_period(vessel, trip_index=0, duration=pd.Timedelta(days=2)):
+    net_ukc = vessel.tidal_window_calculations[trip_index]['net_ukcs']['min_net_ukc']
+    tidal_signal = net_ukc.values
+    time = net_ukc.index
+
+    # Detect peaks (high tides)
+    peaks, _ = find_peaks(tidal_signal)
+
+    # Detect troughs (low tides)
+    troughs, _ = find_peaks(-tidal_signal)
+
+    # Calculate tidal periods (high-to-high)
+    time_stop = net_ukc.index[0] + duration
+    net_ukc[net_ukc.index <= time_stop]
+    tidal_periods = pd.DataFrame(columns=['Time_start', 'Time_end', 'Duration', 'Peak', 'Through'])
+    for index, through_index in enumerate(troughs):
+        if not index:
+            time_start = time[through_index]
+            continue
+        time_end = time[through_index]
+        tidal_periods.loc[index - 1, 'Time_start'] = time_start
+        tidal_periods.loc[index - 1, 'Time_end'] = time_end
+        time_start = time_end
+
+    for index, period in tidal_periods.iterrows():
+        net_ukc_period = net_ukc[(net_ukc.index > period.Time_start) & (net_ukc.index < period.Time_end)]
+        tidal_periods.loc[index, 'Duration'] = period.Time_end - period.Time_start
+        tidal_periods.loc[index, 'Peak'] = net_ukc_period.max()
+        tidal_periods.loc[index, 'Through'] = net_ukc_period.min()
+    return tidal_periods
+
+
+def calculate_accessibility(vessel, trip_index=0, duration=pd.Timedelta(days=2)):
+    # tidal calculation results
+    tidal_accessibility_df = vessel.tidal_window_calculations[trip_index]['tidal_accessibility']
+    net_ukc = vessel.tidal_window_calculations[trip_index]['net_ukcs']['min_net_ukc']
+    tidal_accessibility_df = tidal_accessibility_df[tidal_accessibility_df.index >= net_ukc.index[0]]
+
+    # set end time
+    end_time = tidal_accessibility_df.index[0] + duration
+
+    # reset index
+    df = tidal_accessibility_df.copy()
+    df.index.name = "Time_start"
+    df = df.reset_index()
+    df["Time_start"] = pd.to_datetime(df["Time_start"])
+
+    # only considering duration
+    df = df[df["Time_start"] <= end_time]
+
+    # add window end time and window_id
+    df['Time_end'] = df['Time_start'].shift(-1)
+    df.loc[df.index[-1], 'Time_end'] = end_time
+
+    # determine windows
+    df['Change'] = df['Accessibility'].ne(df['Accessibility'].shift())
+    df['Window_id'] = df['Change'].cumsum()
+
+    window_summary = df.groupby('Window_id').agg(
+        Time_start=('Time_start', 'min'),
+        Time_end=('Time_end', 'max'),
+        Accessibility=('Accessibility', 'first'),
+        Condition=('Condition', lambda x: x.value_counts(normalize=True).to_dict())
+    ).reset_index()
+
+    # add duration
+    window_summary['Duration'] = window_summary['Time_end'] - window_summary['Time_start']
+
+    # calculate duration
+    window_summary['Duration'] = window_summary['Duration'].dt.total_seconds()
+    windows_summary_accessible = window_summary[window_summary['Accessibility'] == 'Accessible']
+
+    # determine shortest, longest, and average window
+    df = windows_summary_accessible.copy()
+    shortest_window_id = df.loc[df['Duration'].idxmin(), 'Window_id']
+    shortest_window_duration = df['Duration'].min()
+    longest_window_id = df.loc[df['Duration'].idxmax(), 'Window_id']
+    longest_window_duration = df['Duration'].max()
+    mean_window_duration = df['Duration'].mean()
+
+    # determine accessibility percentage
+    total_seconds = duration.total_seconds()
+    accessible_seconds = df.loc[df['Accessibility'] == 'Accessible', 'Duration'].sum()
+    accessibility_percentage_time = (accessible_seconds / total_seconds) * 100
+
+    # determine accessibility per tide
+    tidal_periods = calculate_ukc_per_tidal_period(vessel, trip_index, duration)
+    tidal_periods["key"] = 1
+    df["key"] = 1
+    merged = tidal_periods.merge(df, on="key", suffixes=("_window", "_tide")).drop("key", axis=1)
+
+    # Overlap condition
+    overlap = ((merged["Time_start_window"] <= merged["Time_end_tide"]) &
+               (merged["Time_end_window"] >= merged["Time_start_tide"]))
+    overlapping_windows = merged[overlap].copy()
+    accessibility_percentage_tide = len(tidal_periods)/len(overlapping_windows)*100
+
+    # determine normative conditions
+    condition_totals = {}
+    for _, row in df.iterrows():
+        duration_sec = row['Duration']
+        for cond, pct in row['Condition'].items():
+            condition_totals[cond] = condition_totals.get(cond, 0) + duration_sec * (pct / 100)
+
+    total_seconds = sum(condition_totals.values())
+    condition_percent_total = {k: v / total_seconds * 100 for k, v in condition_totals.items()}
+
+    # store results of analysis
+    results = pd.Series({
+        'number_of_tidal_windows': len(df),
+        'shortest_tidal_window_id': shortest_window_id,
+        'shortest_tidal_window_duration (s)': pd.Timedelta(seconds=shortest_window_duration),
+        'longest_tidal_window_id': longest_window_id,
+        'longest_tidal_window_duration (s)': pd.Timedelta(seconds=longest_window_duration),
+        'mean_tidal_window_duration (s)': pd.Timedelta(seconds=mean_window_duration),
+        'accessibility_percentage (time %)': accessibility_percentage_time,
+        'accessibility_percentage (tide %)': accessibility_percentage_tide,
+        'causes_tidal_window (cause %)': condition_percent_total
+    })
+
+    return results
+
+
+def calculate_berth_planning_information(berth, time_start = None, time_stop = None):
+    berth_planning_df = berth.historic_berth_planning.copy()
+    if time_start is None:
+        time_start = berth_planning_df.index[0]
+    if time_stop is None:
+        time_stop = berth_planning_df.index[-1]
+    berth_planning_df = berth_planning_df[(berth_planning_df.index >= time_start) &
+                                          (berth_planning_df.index <= time_stop)]
+    df = berth_planning_df.copy()
+
+    results = []
+    for timestamp in df.index:
+        row = df.loc[timestamp].dropna()
+        row = row.sort_index()
+
+        vessel_segments = []
+        current_vessel = None
+        start_segment = None
+        prev_segment = None
+        for segment, vessel in row.items():
+            if vessel != current_vessel:
+                if current_vessel is not None:
+                    vessel_segments.append((current_vessel, start_segment, prev_segment))
+                current_vessel = vessel
+                start_segment = segment
+            prev_segment = segment
+
+        if current_vessel is not None:
+            vessel_segments.append((current_vessel, start_segment, prev_segment))
+
+        # save results with timestamp
+        for vessel, start_seg, end_seg in vessel_segments:
+            results.append((vessel, timestamp, start_seg, end_seg))
+
+    occupied_df = pd.DataFrame(results, columns=['vessel_id', 'timestamp', 'start_berth', 'end_berth'])
+    occupied_df.sort_values(['vessel_id', 'timestamp'], inplace=True)
+    occupied_df.reset_index(drop=True, inplace=True)
+    occupied_summary = occupied_df.groupby(['vessel_id', 'start_berth', 'end_berth']).agg(
+        start_time=('timestamp', 'min'),
+        end_time=('timestamp', 'max')
+    ).reset_index()
+    occupied_summary['duration'] = occupied_summary['end_time'] - occupied_summary['start_time']
+    return occupied_summary
+
+
+def calculate_berth_performance(berth, time_start = None, time_stop = None):
+    from opentnsim.port.mixins.berth import IsQuay, IsJetty
+    berth_planning_df = berth.historic_berth_planning.copy()
+    if time_start is None:
+        time_start = berth_planning_df.index[0]
+    if time_stop is None:
+        time_stop = berth_planning_df.index[-1]
+    berth_planning_df = berth_planning_df[(berth_planning_df.index >= time_start) &
+                                          (berth_planning_df.index <= time_stop)]
+    duration = berth_planning_df.index[-1] - berth_planning_df.index[0]
+    occupied_df = calculate_berth_planning_information(berth, time_start, time_stop)
+    occupied_df = occupied_df.sort_values('start_time')
+
+    total_vessels_handled = len(occupied_df)
+    shortest_occupation = occupied_df.duration.min()
+    shortest_occupation_id = occupied_df.duration.idxmin()
+    mean_occupation = occupied_df.duration.mean()
+    longest_occupation = occupied_df.duration.max()
+    longest_occupation_id = occupied_df.duration.idxmax()
+    total_occupied_duration = occupied_df.duration.sum()
+    berth_occupancy = np.nan
+    vessels_at_berth = {}
+    for vessel_id in occupied_df.vessel_id:
+        for vessel in berth.env.vessels:
+            if vessel.id == vessel_id:
+                vessels_at_berth[vessel.id] = vessel
+
+    routes_to_terminal = []
+    for port_entry_node in berth.terminal.port.port_entry_nodes:
+        routes_to_terminal.append(nx.dijkstra_path(berth.env.graph,port_entry_node,berth.node))
+
+    routes = []
+    berth_waiting_time_causes = {}
+    total_waiting_time_at_berth = pd.Timedelta(seconds=0)
+    for _,vessel_berth_info in occupied_df.iterrows():
+        berthing_start_time = vessel_berth_info.start_time
+        vessel = vessels_at_berth[vessel_berth_info.vessel_id]
+        vessel_df = pd.DataFrame(vessel.logbook)
+        vessel_df = vessel_df[vessel_df.Timestamp <= berthing_start_time]
+        df_sailing = vessel_df[vessel_df["Message"].str.contains("Sailing", case=False, na=False)].copy()
+        sailing_message = r"Sailing from node (.*?) to node (.*?) (start|stop)"
+        df_sailing[["node_start", "node_stop", "event"]] = (df_sailing["Message"].str.extract(sailing_message))
+        edges = df_sailing[df_sailing["event"] == "start"][["node_start", "node_stop"]]
+        route = [edges.iloc[0]["node_start"]] + edges["node_stop"].tolist()
+
+        final_route_to_terminal = []
+        for route_to_terminal in routes_to_terminal:
+            final_route = get_longest_common_subroute(route,route_to_terminal)
+            if len(final_route) > len(final_route_to_terminal):
+                final_route_to_terminal = final_route
+
+        edges = list(zip(final_route_to_terminal[:-1], final_route_to_terminal[1:]))
+        df_to_terminal = df_sailing[df_sailing.apply(lambda x: (x["node_start"], x["node_stop"]) in edges, axis=1)]
+        df_to_terminal = df_to_terminal[df_to_terminal["event"].isin(["start", "stop"])]
+        first_index_sailing = df_to_terminal.index[0]
+        last_index_sailing = df_to_terminal.index[-1]
+        df_sailing = vessel_df[(vessel_df.index >= first_index_sailing)& (vessel_df.index <= last_index_sailing)]
+        df_sailing = df_sailing[df_sailing["Message"].str.contains("Waiting", case=False, na=False)]
+        vessel_waiting_causes = {}
+        vessel_total_waiting_time= pd.Timedelta(seconds=0)
+        if not df_sailing.empty:
+            waiting_message = r"Waiting for (.*?) (start|stop)"
+            df_sailing[["waiting_type", "event"]] = df_sailing["Message"].str.extract(waiting_message)
+            waiting_df = df_sailing[df_sailing["waiting_type"].notna()].copy()
+            waiting_durations = (waiting_df.pivot(index="waiting_type", columns="event", values="Timestamp"))
+            waiting_durations["duration"] = (waiting_durations["stop"] - waiting_durations["start"])
+            for waiting_cause, waiting_event in waiting_durations.iterrows():
+                if waiting_cause not in vessel_waiting_causes.keys():
+                    vessel_waiting_causes[waiting_cause] = pd.Timedelta(seconds=0)
+                vessel_waiting_causes[waiting_cause] += waiting_event.duration
+                vessel_total_waiting_time += waiting_event.duration
+
+        last_index_before_sailing = first_index_sailing - 1
+        df_before_sailing = vessel_df[(vessel_df.index <= last_index_before_sailing)]
+        if not df_before_sailing.empty:
+            waiting_message = r"Waiting for (.*?) (start|stop)"
+            df_before_sailing[["waiting_type", "event"]] = df_before_sailing["Message"].str.extract(waiting_message)
+            waiting_df = df_before_sailing[df_before_sailing["waiting_type"].notna()].copy()
+            waiting_df = waiting_df.iloc[::-1]
+            consecutive_indices = [i for i in range(last_index_before_sailing, min(waiting_df.index) - 1, -1) if
+                                   all(j in waiting_df.index for j in range(i, last_index_before_sailing + 1))]
+            waiting_df = waiting_df[waiting_df.index.isin(consecutive_indices)]
+            waiting_durations = (waiting_df.pivot(index="waiting_type", columns="event", values="Timestamp"))
+            waiting_durations["duration"] = (waiting_durations["stop"] - waiting_durations["start"])
+            for waiting_cause, waiting_event in waiting_durations.iterrows():
+                if waiting_cause not in vessel_waiting_causes.keys():
+                    vessel_waiting_causes[waiting_cause] = pd.Timedelta(seconds=0)
+                vessel_waiting_causes[waiting_cause] += waiting_event.duration
+                vessel_total_waiting_time += waiting_event.duration
+
+        for waiting_cause, waiting_time in vessel_waiting_causes.items():
+            if waiting_cause not in berth_waiting_time_causes.keys():
+                berth_waiting_time_causes[waiting_cause] = pd.Timedelta(seconds=0)
+            berth_waiting_time_causes[waiting_cause] += waiting_time
+        total_waiting_time_at_berth += vessel_total_waiting_time
+
+    average_vessel_length = np.mean([vessel.L for vessel in vessels_at_berth.values()])
+    average_waiting_time = total_waiting_time_at_berth/len(vessels_at_berth)
+    waiting_cause_reasons = {waiting_cause: np.round((waiting_time / total_waiting_time_at_berth)*100,1)
+                             for waiting_cause, waiting_time in berth_waiting_time_causes.items()}
+    waiting_time_rate = total_waiting_time_at_berth
+
+    if not len(vessels_at_berth):
+        berth_occupancy = 0.
+    elif isinstance(berth, IsQuay):
+        number_of_berths = berth.berth_length/(average_vessel_length)
+        berth_occupancy = total_occupied_duration/(number_of_berths*duration)*100
+    elif isinstance(berth, IsJetty):
+        berth_occupancy = total_occupied_duration/duration*100
+
+    results = pd.Series({'Total vessels handled':total_vessels_handled,
+                         'Average vessel length': average_vessel_length,
+                         'Shortest service time':shortest_occupation,
+                         'Vessel_id shortest service time': shortest_occupation_id,
+                         'Average service time': mean_occupation,
+                         'Longest service time': longest_occupation,
+                         'Vessel_id longest service time': longest_occupation_id,
+                         'Total service time':total_occupied_duration,
+                         'Berth occupancy (%)':berth_occupancy,
+                         'Average waiting time':average_waiting_time,
+                         'Total waiting time':total_waiting_time_at_berth,
+                         'Waiting time rate':total_waiting_time_at_berth/total_occupied_duration,
+                         'Causes waiting time': waiting_cause_reasons})
+    return results

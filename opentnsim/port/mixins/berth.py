@@ -1,13 +1,12 @@
 from opentnsim.core import  HasResource, Identifiable, Log, HasLength, Movable
 from opentnsim.graph.mixins import OnNode, OnEdge
+from opentnsim.port.visualizations import plot_berth_planning
+from opentnsim.port.calculations import calculate_berth_performance
 
 import numpy as np
 import pandas as pd
 import datetime
-import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from scipy.spatial import ConvexHull
+
 
 def add_berth_to_graph(berth):
     node_info = berth.env.graph.nodes[berth.node]
@@ -98,34 +97,13 @@ class IsBerth(OnNode, Identifiable, Log):
         self.add_vessel_to_queue(vessel, time_waiting_start, time_waiting_stop, arrival_time_at_berth)
         self.queue = self.queue.sort_values('Waiting_start_time')
 
-    def plot_historic_berth_planning(self):
-        fig, ax = plt.subplots()
-        historic_quay_planning_plot = self.historic_berth_planning.stack().reset_index()
-        historic_quay_planning_plot.columns = ['timestamp', 'column', 'id']
-        historic_quay_planning_plot = historic_quay_planning_plot[historic_quay_planning_plot['id'].notna()]
-        historic_quay_planning_plot_id_mapping = {id_: list(zip(sub_df['timestamp'], sub_df['column'])) for id_, sub_df
-                                                  in historic_quay_planning_plot.groupby('id', sort=False)}
-        for vessel_id in historic_quay_planning_plot_id_mapping.keys():
-            vessel_occupancy = historic_quay_planning_plot_id_mapping[vessel_id]
-            timestamps, quay_position = zip(*vessel_occupancy)
-            quay_position = list(quay_position)
-            quay_position = np.array(quay_position, dtype=float)
-            timestamps = list(timestamps)
-            timestamps = mdates.date2num(timestamps)
-            quay_position_over_time = np.column_stack((quay_position, timestamps))
-            quay_position_over_time_polygons = ConvexHull(quay_position_over_time)
-            ax.fill(quay_position_over_time[quay_position_over_time_polygons.vertices, 0],
-                    quay_position_over_time[quay_position_over_time_polygons.vertices, 1], )
-
-        plt.gca().yaxis_date()
-        plt.xlim(0,self.berth_length)
-        plt.ylabel("Time")
-        if isinstance(self, IsQuay):
-            plt.xlabel("Quay length [m]")
-        elif isinstance(self, IsBerth):
-            plt.xlabel("Berth length [m]")
-        plt.close()
+    def plot_berth_planning(self):
+        fig = plot_berth_planning(self)
         return fig
+
+    def get_berth_performance(self, time_start = None, time_stop = None):
+        results = calculate_berth_performance(self, time_start, time_stop)
+        return results
 
 
 class IsJetty(IsBerth, HasResource):
@@ -133,14 +111,16 @@ class IsJetty(IsBerth, HasResource):
         self.capacity = capacity
         super().__init__(berth_length=length,nr_resources=capacity, *args, **kwargs)
 
+
     def request_access(self, vessel):
+        vessel.request_berth = self.resource.request()
+        yield vessel.request_berth
         self.add_berth_position_to_historic_planning(vessel, delay = vessel.berthing_time)
-        yield from []
 
 
     def release_access(self, vessel):
         self.add_berth_position_to_historic_planning(vessel, leaving = True)
-        yield from []
+        yield self.resource.release(vessel.request_berth)
 
 
     def update_planning(self, vessel, new_release_time):
@@ -155,6 +135,8 @@ class IsQuay(IsBerth, HasLength):
                                                         columns=['Distance_start','Distance_stop','Length_available','Occupant','Time_start','Time_stop'])
 
     def request_access(self, vessel):
+        yield self.length.get(vessel.L)
+        yield self.length.put(vessel.L)
         quay_position = self.select_quay_position(vessel)
         time_start = datetime.datetime.fromtimestamp(vessel.env.now)
         time_stop = time_start + pd.Timedelta(seconds = vessel.berthing_time*60 +

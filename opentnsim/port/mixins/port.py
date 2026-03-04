@@ -68,8 +68,8 @@ class HasPortAccess(Movable, Log):
         except simpy.Interrupt:
             return
 
-    def plot_time_distance_diagram(self):
-        fig = plot_time_distance_diagram(self)
+    def plot_time_distance_diagram(self, route):
+        fig = plot_time_distance_diagram(self, route)
         return fig
 
 
@@ -236,7 +236,7 @@ class IsPort(IsPortAuthority, SimpyObject, Identifiable):
         return fig
 
 
-class IsPortEntry(SimpyObject, OnNode, IsPortComponent):
+class IsPortEntry(OnNode, IsPortComponent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env.graph.nodes[self.node]['Port Entry'] = self

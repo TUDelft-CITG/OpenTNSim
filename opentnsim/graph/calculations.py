@@ -8,8 +8,9 @@ from shapely import reverse
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform, linemerge, split
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
-                                   create_transformer)
+                                   create_transformer, get_trajectory)
 import warnings
+
 
 def calculate_depth(geom_start, geom_stop, graph):
     """method to calculate the depth of the waterway in meters between two geometries.
@@ -65,6 +66,7 @@ def calculate_depth(geom_start, geom_stop, graph):
 
     # depth of waterway between two points
     return h_0
+
 
 def calculate_distance(geom_start, geom_stop):
     """method to calculate the distance (as the bird flies) in meters between two geometries
@@ -178,6 +180,12 @@ def transform_geometry(geometry, epsg_in = "EPSG:4326", epsg_out = 'EPSG:4087', 
         transformer = create_transformer(epsg_in, epsg_out)
     geometry_transformed = transform(transformer, geometry)
     return geometry_transformed
+
+
+def transform_route_geometry(env, node_start, node_stop, crs_in = "EPSG:4326", crs_out = "EPSG:4087"):
+    route_geometry = get_trajectory(env.graph, node_start, node_stop)
+    route_geometry_transformed = transform_geometry(route_geometry, crs_in, crs_out)
+    return route_geometry_transformed
 
 
 def calculate_location_over_edges(graph, edge, interpolation_length, crs_m = 'EPSG:4087'):
