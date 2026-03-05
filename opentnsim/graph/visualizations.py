@@ -5,6 +5,7 @@
 import plotly.graph_objects as go
 import folium
 import pandas as pd
+import geopandas as gpd
 
 # OpenTNSim
 from opentnsim.graph.calculations import calculate_distance
@@ -155,34 +156,55 @@ def visualize_edge_in_folium_plot(m, graph, edge, color = 'violet', weight = 3,
         folium.PolyLine(line, weight=weight, color=color, tooltip=label, popup=label).add_to(m)
 
 
-def plot_graph_folium(graph, longitude, latitude, zoom_start=5, berths = None, turning_basins = None, anchorage_areas = None):
-    m = folium.Map(location=[latitude, longitude], zoom_start=zoom_start, tiles="cartodbpositron")
+def plot_graph_folium(graph, longitude, latitude, zoom_start=5,
+                     berths=None, turning_basins=None, anchorage_areas=None):
 
-    if isinstance(anchorage_areas,pd.DataFrame):
+    m = folium.Map(location=[latitude, longitude],
+                   zoom_start=zoom_start,
+                   tiles="cartodbpositron")
+
+    if isinstance(anchorage_areas, pd.DataFrame):
         plot_anchorage_areas(anchorage_areas, m=m)
-    if isinstance(turning_basins,pd.DataFrame):
+
+    if isinstance(turning_basins, pd.DataFrame):
         plot_turning_basins(turning_basins, m=m)
-    if isinstance(berths,pd.DataFrame):
+
+    if isinstance(berths, pd.DataFrame):
         plot_berths(berths, m=m)
 
-    for edge in graph.edges(data=True):
-        visualize_edge_in_folium_plot(graph, edge)
+    edges = []
+    for u, v, data in graph.edges(data=True):
+        geom = data["geometry"]
+        edges.append({
+            "geometry": data["geometry"],
+            "u": u,
+            "v": v
+        })
 
-    for node in graph.nodes(data=True):
-        points_x = list(node[1]["geometry"].coords.xy[0])
-        points_y = list(node[1]["geometry"].coords.xy[1])
+    gdf_edges = gpd.GeoDataFrame(edges,geometry="geometry", crs='EPSG:4326')
 
-        point = []
-        for i, _ in enumerate(points_x):
-            point.append((points_y[i], points_x[i]))
-        else:
-            if 'terminal' in node[1]:
-                terminal = node[1]['terminal']
-                folium.Circle(point[0], radius=5, color='black', fill=False, fill_opacity=1, tooltip=terminal,
-                              popup=node[0]).add_to(m)
-            else:
-                folium.Circle(point[0], radius=5, color='black', fill=False, fill_opacity=1, tooltip=node[0],
-                              popup=node[0]).add_to(m)
+    folium.GeoJson(
+        gdf_edges,
+        style_function=lambda x: {"color": "violet", "weight": 2},
+        popup=folium.GeoJsonPopup(fields=["u", "v"]),
+        tooltip=folium.GeoJsonTooltip(fields=["u", "v"]),
+    ).add_to(m)
+
+    nodes = []
+    for node, data in graph.nodes(data=True):
+        nodes.append({
+            "geometry": data["geometry"],
+            "name": node
+        })
+
+    gdf_nodes = gpd.GeoDataFrame(nodes, geometry="geometry", crs='EPSG:4326')
+
+    folium.GeoJson(
+        gdf_nodes,
+        marker=folium.CircleMarker(radius=3, color='purple', fill=True, fill_opacity=1.0, opacity=1.0),
+        popup=folium.GeoJsonPopup(fields=["name"]),
+        tooltip=folium.GeoJsonTooltip(fields=["name"]),
+    ).add_to(m)
 
     return m
 

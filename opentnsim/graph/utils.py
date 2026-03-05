@@ -887,26 +887,25 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route, d
     return sailing_information_df
 
 
-def get_closest_edge_to_point(graph, point):
+def get_closest_edge_to_geometry(graph, geometry):
     distance_to_edge = {}
-    point_transformed = point  # flip_coordinates(point)
     for edge in graph.edges(data=True):
         edge_name = (edge[0], edge[1])
         edge_info = edge[2]
         edge_geometry = edge_info["geometry"]
-        distance_to_edge[edge_name] = point_transformed.distance(edge_geometry)
+        if not edge_geometry.is_empty and edge_geometry.is_valid:
+            distance_to_edge[edge_name] = geometry.distance(edge_geometry)
 
     closest_edge = list(distance_to_edge.keys())[np.argmin(list(distance_to_edge.values()))]
     return closest_edge
 
 
-def get_closest_node_to_point(graph, point):
-    closest_edge = get_closest_edge_to_point(graph, point)
+def get_closest_node_to_geometry(graph, geometry):
+    closest_edge = get_closest_edge_to_geometry(graph, geometry)
     distance_to_node = {}
-    point_transformed = point  # flip_coordinates(point)
     for node in closest_edge:
         node_geometry = graph.nodes[node]["geometry"]
-        distance_to_node[node] = point_transformed.distance(node_geometry)
+        distance_to_node[node] = geometry.distance(node_geometry)
 
     closest_node = list(distance_to_node.keys())[np.argmin(list(distance_to_node.values()))]
     return closest_node

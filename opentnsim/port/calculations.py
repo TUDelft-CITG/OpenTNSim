@@ -1069,17 +1069,29 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
             waiting_message = r"Waiting for (.*?) (start|stop)"
             df_before_sailing[["waiting_type", "event"]] = df_before_sailing["Message"].str.extract(waiting_message)
             waiting_df = df_before_sailing[df_before_sailing["waiting_type"].notna()].copy()
-            waiting_df = waiting_df.iloc[::-1]
             consecutive_indices = [i for i in range(last_index_before_sailing, min(waiting_df.index) - 1, -1) if
                                    all(j in waiting_df.index for j in range(i, last_index_before_sailing + 1))]
             waiting_df = waiting_df[waiting_df.index.isin(consecutive_indices)]
-            waiting_durations = (waiting_df.pivot(index="waiting_type", columns="event", values="Timestamp"))
+            waiting_df = waiting_df.rename(columns={"Timestamp":"start"})
+            waiting_df["next_timestamp"] = waiting_df["start"].shift(-1)
+            waiting_df["next_event"] = waiting_df["event"].shift(-1)
+            waiting_df["next_type"] = waiting_df["waiting_type"].shift(-1)
+            waiting_events = waiting_df[
+                (waiting_df["event"] == "start") &
+                (waiting_df["next_event"] == "stop") &
+                (waiting_df["waiting_type"] == waiting_df["next_type"])
+                ].copy()
+            waiting_events["stop"] = waiting_events["next_timestamp"]
+            waiting_events["duration"] = waiting_events["stop"] - waiting_events["start"]
+            waiting_durations = waiting_events[["waiting_type", "start", "stop", "duration"]]
             waiting_durations["duration"] = (waiting_durations["stop"] - waiting_durations["start"])
-            for waiting_cause, waiting_event in waiting_durations.iterrows():
+            waiting_durations = waiting_durations.groupby("waiting_type")["duration"].sum()
+
+            for waiting_cause, waiting_duration in waiting_durations.items():
                 if waiting_cause not in vessel_waiting_causes.keys():
                     vessel_waiting_causes[waiting_cause] = pd.Timedelta(seconds=0)
-                vessel_waiting_causes[waiting_cause] += waiting_event.duration
-                vessel_total_waiting_time += waiting_event.duration
+                vessel_waiting_causes[waiting_cause] += waiting_duration
+                vessel_total_waiting_time += waiting_duration
 
         for waiting_cause, waiting_time in vessel_waiting_causes.items():
             if waiting_cause not in berth_waiting_time_causes.keys():
