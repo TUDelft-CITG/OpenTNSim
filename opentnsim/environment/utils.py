@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import datetime
+import xarray as xr
 
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 
@@ -69,5 +70,14 @@ def get_governing_current_velocity(vessel, node, time_start_index, time_end_inde
     return current_velocity, current_governing_current_velocity
 
 
-
-
+def create_default_hydrodynamic_dataset(env,properties = ['Water level', 'Nautical depth']):
+    default_values = {'Water level': 999., 'Nautical depth': -999.}
+    stations = list(env.graph.nodes)
+    times = pd.date_range(env.simulation_start,env.simulation_stop, freq=pd.Timedelta(minutes=5))
+    hydrodynamic_data = xr.Dataset()
+    for property_ in properties:
+        default_value = default_values[property_]
+        property_data = np.ones([len(stations),len(times)])*default_value
+        property_da = xr.DataArray(property_data,coords={'STATION':stations, 'TIME':times})
+        hydrodynamic_data[property_] = property_da
+    return hydrodynamic_data
