@@ -2,8 +2,12 @@ import pandas as pd
 import numpy as np
 import datetime
 import xarray as xr
+from pyproj import Transformer
+from shapely.geometry import Point
+import warnings
 
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
+from opentnsim.graph.utils import get_length_of_edge, get_closest_node_to_geometry
 
 def get_water_depth(vessel, node, delay=0):
     hydromanager = HydrodynamicDataManager()
@@ -81,3 +85,116 @@ def create_default_hydrodynamic_dataset(env,properties = ['Water level', 'Nautic
         property_da = xr.DataArray(property_data,coords={'STATION':stations, 'TIME':times})
         hydrodynamic_data[property_] = property_da
     return hydrodynamic_data
+
+
+def add_specific_environmental_data_on_node(hydrodynamic_dataset, node, environmental_property, times, values):
+    hydro_times = hydrodynamic_dataset.TIME.values
+    if not isinstance(times[0],np.datetime64):
+        times = [np.datetime64(time) for time in times]
+
+    times_align = (times[0] <= hydro_times[0]) & (times[-1] >= hydro_times[-1])
+    if not times_align:
+        raise ValueError("Times do not cover the spectrum of the dataset")
+
+    times_in_common, values_in_times, _ = np.intersect1d(np.array(times), np.array(hydro_times), return_indices=True)
+    values = values[values_in_times]
+    dataarray = xr.DataArray([values], coords={"STATION":[node], "TIME":times_in_common})
+    dataarray = dataarray.interp(TIME=hydrodynamic_dataset.TIME)
+    dataarray = dataarray.squeeze("STATION")
+
+    hydrodynamic_dataset[environmental_property].loc[dict(STATION=node, TIME=dataarray.TIME)] = dataarray.values
+    return hydrodynamic_dataset
+
+
+def add_specific_environmental_data(hydrodynamic_dataset, new_dataset):
+    for environmental_property in list(new_dataset.data_vars):
+        if environmental_property not in hydrodynamic_dataset.data_vars:
+            continue
+
+        data_interp = new_dataset[environmental_property].interp(TIME=hydrodynamic_dataset.TIME)
+
+        # check if interpolation produced valid values
+        if data_interp.isnull().all():
+            warnings.warn(f"No matching TIME overlap for '{environmental_property}'. "
+                          "Original hydrodynamic values retained.")
+            continue
+
+        hydro_var = hydrodynamic_dataset[environmental_property]
+
+        hydrodynamic_dataset[environmental_property].loc[
+            dict(STATION=data_interp.STATION, TIME=data_interp.TIME)
+        ] = np.where(
+            np.isnan(data_interp.values),
+            hydro_var.loc[dict(STATION=data_interp.STATION, TIME=data_interp.TIME)].values,
+            data_interp.values
+        )
+
+    return hydrodynamic_dataset
+
+
+def interpolate_data_on_route(hydrodynamic_data, route, graph, environmental_properties=None):
+    if environmental_properties is None:
+        environmental_properties = list(hydrodynamic_data.data_vars)
+
+    node_start = route[0]
+    node_end = route[-1]
+    total_distance_along_route = 0
+    distances_along_route = [total_distance_along_route]
+    for edge in zip(route[:-1], route[1:]):
+        total_distance_along_route += get_length_of_edge(graph, edge)
+        distances_along_route.append(total_distance_along_route)
+
+    distances = np.array(distances_along_route)
+    fraction_distances = distances / distances[-1]
+    fraction_distances_da = xr.DataArray(fraction_distances, dims="route")
+
+    for environmental_property in environmental_properties:
+        data_start = hydrodynamic_data[environmental_property].sel({'STATION': node_start})
+        data_end = hydrodynamic_data[environmental_property].sel({'STATION': node_end})
+        interpolated_data = data_start + (data_end - data_start) * fraction_distances_da
+        for i, node in enumerate(route):
+            hydrodynamic_data[environmental_property].loc[dict(STATION=node)] = interpolated_data.isel(route=i)
+
+    return hydrodynamic_data
+
+
+def add_lonlat_to_xr_dataset(ds, x="X", y="Y", epsg_in=None):
+    if "STATION" not in list(ds.coords):
+        raise ValueError('The dataset does not have a "STATION"-coordinate')
+    epgs_in_ds = ("EPSG" in list(ds.coords))
+    if epsg_in is None and not epgs_in_ds:
+        raise ValueError('The dataset does not have a "EPSG"-coordinate, while no epsg_in-parameter has been given to the function')
+
+    lon = np.empty(ds.sizes["STATION"])
+    lat = np.empty(ds.sizes["STATION"])
+
+    for i in range(ds.sizes["STATION"]):
+        if epgs_in_ds:
+            epsg_code = ds["EPSG"].isel(STATION=i).item()
+            if not isinstance(epsg_code, str):
+                epsg_in = f"EPSG:{epsg_code}"
+            elif "EPSG" not in epsg_code:
+                epsg_in = "EPSG:"+epsg_code
+            else:
+                epsg_in = epsg_code
+
+        transformer = Transformer.from_crs(epsg_in, "EPSG:4326", always_xy=True)
+        x_val = ds[x].isel(STATION=i).item()
+        y_val = ds[y].isel(STATION=i).item()
+        lon[i], lat[i] = transformer.transform(x_val, y_val)
+
+    ds = ds.assign_coords(LON=("STATION", lon),LAT=("STATION", lat))
+    return ds
+
+
+def add_closest_node_to_xr_dataset(ds, graph, lon="LON", lat="LAT"):
+    closest_node_per_location = []
+    for i in range(ds.sizes["STATION"]):
+        lon_val = ds[lon].isel(STATION=i).item()
+        lat_val = ds[lat].isel(STATION=i).item()
+        point = Point(lon_val,lat_val)
+        closest_node_per_location.append(get_closest_node_to_geometry(graph, point))
+    stations = ds["STATION"].values
+    ds = ds.assign_coords(NAME=("STATION", stations))
+    ds["STATION"] = closest_node_per_location
+    return ds

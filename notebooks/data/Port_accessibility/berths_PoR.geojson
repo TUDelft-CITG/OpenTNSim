@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "berths_PoR1",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "terminal_name": "Chane", "berth_name": "Steiger 6 Buiten", "length": 228.0, "depth": 15.15 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 4.309498565257232, 51.884621145473353 ], [ 4.310126315151212, 51.884550496702474 ], [ 4.30947682123592, 51.882315272825664 ], [ 4.308847670927743, 51.882385006198632 ], [ 4.309498565257232, 51.884621145473353 ] ] ] } },
+{ "type": "Feature", "properties": { "terminal_name": "Chane", "berth_name": "Steiger 10 Buiten", "length": 275.0, "depth": 16.25 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 4.309627732287379, 51.878076554175493 ], [ 4.310083339644307, 51.878155341699646 ], [ 4.311637713656379, 51.874738490163935 ], [ 4.311185063442828, 51.874658836626423 ], [ 4.309627732287379, 51.878076554175493 ] ] ] } }
+]
+}
