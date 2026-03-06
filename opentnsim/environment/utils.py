@@ -132,9 +132,9 @@ def add_specific_environmental_data(hydrodynamic_dataset, new_dataset):
     return hydrodynamic_dataset
 
 
-def interpolate_data_on_route(hydrodynamic_data, route, graph, environmental_properties=None):
-    if environmental_properties is None:
-        environmental_properties = list(hydrodynamic_data.data_vars)
+def interpolate_data_on_route(hydrodynamic_data, route, graph, variables=None):
+    if variables is None:
+        variables = list(hydrodynamic_data.data_vars)
 
     node_start = route[0]
     node_end = route[-1]
@@ -148,7 +148,7 @@ def interpolate_data_on_route(hydrodynamic_data, route, graph, environmental_pro
     fraction_distances = distances / distances[-1]
     fraction_distances_da = xr.DataArray(fraction_distances, dims="route")
 
-    for environmental_property in environmental_properties:
+    for environmental_property in variables:
         data_start = hydrodynamic_data[environmental_property].sel({'STATION': node_start})
         data_end = hydrodynamic_data[environmental_property].sel({'STATION': node_end})
         interpolated_data = data_start + (data_end - data_start) * fraction_distances_da
@@ -197,4 +197,74 @@ def add_closest_node_to_xr_dataset(ds, graph, lon="LON", lat="LAT"):
     stations = ds["STATION"].values
     ds = ds.assign_coords(NAME=("STATION", stations))
     ds["STATION"] = closest_node_per_location
+    return ds
+
+
+def overwrite_data_on_node_with_data_from_another_node(ds, source_station, target_station, variables=None):
+    """
+    Copy data from one station to another in an xarray Dataset.
+
+    Parameters:
+    -----------
+    ds : xr.Dataset
+        The dataset containing station data.
+    source_station : str
+        Name of the station to copy data from.
+    target_station : str
+        Name of the station to overwrite.
+    variables : list of str, optional
+        List of variables to copy. If None, all variables are copied.
+
+    Returns:
+    --------
+    xr.Dataset
+        Dataset with updated target station data.
+    """
+    # Determine which variables to copy
+    if variables is None:
+        variables = list(ds.data_vars)
+
+    # Check if the stations exist
+    if source_station not in ds.STATION.values:
+        raise ValueError(f"Source station '{source_station}' not found in dataset.")
+    if target_station not in ds.STATION.values:
+        raise ValueError(f"Target station '{target_station}' not found in dataset.")
+
+    # Copy data
+    for var in variables:
+        if var not in ds.data_vars:
+            raise ValueError(f"Variable '{var}' not found in dataset.")
+        ds[var].loc[dict(STATION=target_station)] = ds[var].sel(STATION=source_station)
+
+    return ds
+
+
+def set_station_value(ds, station, variable, value):
+    """
+    Replace all data of a variable at a specific station with a single value.
+
+    Parameters:
+    -----------
+    ds : xr.Dataset
+        The xarray Dataset.
+    station : str
+        The station name where the data should be replaced.
+    variable : str
+        The variable name to modify.
+    value : numeric or str
+        The value to set.
+
+    Returns:
+    --------
+    xr.Dataset
+        Dataset with updated values.
+    """
+    if variable not in ds.data_vars:
+        raise ValueError(f"Variable '{variable}' not found in dataset.")
+    if station not in ds.STATION.values:
+        raise ValueError(f"Station '{station}' not found in dataset.")
+
+    # Set the value
+    ds[variable].loc[dict(STATION=station)] = value
+
     return ds
