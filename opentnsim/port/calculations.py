@@ -710,16 +710,18 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         node_index = list(hydrodynamic_data["STATION"].values).index(node_name)
         sailing_time_to_next_node, _ = get_sailing_time(vessel, route[: (route_index + 1)])
         time_correction_index = int(np.round(sailing_time_to_next_node / (t_step / np.timedelta64(1, "s"))))
-        time_end_index = np.min([len(hydrodynamic_data["Water level"][node_index])-1,time_end_index + time_correction_index])
-        times = hydrodynamic_data["TIME"].values[time_start_index:time_end_index]
-        water_level = hydrodynamic_data["Water level"][node_index].values[time_start_index:time_end_index]
+        time_end_index_node = np.min([len(hydrodynamic_data["Water level"][node_index])-1,
+                                      time_end_index + time_correction_index])
+        times = hydrodynamic_data["TIME"].values[time_start_index:time_end_index_node]
+        water_level = hydrodynamic_data["Water level"][node_index].values[time_start_index:time_end_index_node]
         _, _, _, required_water_depth, _, _ = calculate_ukc_clearance(vessel, node_name, delay)
-        MBL = hydrodynamic_data["Nautical depth"][node_index].values[time_start_index:time_end_index]
+        MBL = hydrodynamic_data["Nautical depth"][node_index].values[time_start_index:time_end_index_node]
         water_depth = water_level + MBL
         net_ukc_node = pd.DataFrame([available_water_depth - required_water_depth for available_water_depth in water_depth],columns=[node_name],index=times)
         net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
         t_boundaries.append(time_correction_index)
 
+    from IPython.display import display
     min_net_ukc = net_ukc.min(axis=1).min()
     net_ukc_corrected = net_ukc.copy()
     window = False
@@ -730,11 +732,13 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         window_stop = int(np.ceil(np.mean([boundary_start,boundary_stop])))
         window = window_stop - window_start
         net_UKC_node_start = net_ukc.iloc[:, column_index]
+
         if window:
             net_UKC_node_start = net_ukc.iloc[:, column_index].rolling(window=window, center=False).min().shift(-window_start-window)
         window_start = int(np.floor(np.mean([boundary_start,boundary_stop])))
         window_stop = boundary_stop
         window = window_stop - window_start
+
         net_UKC_node_stop = net_ukc.iloc[:, column_index]
         if window:
             net_UKC_node_stop = net_ukc.iloc[:, column_index].rolling(window=window,center=False).min().shift(-window_start)
@@ -759,9 +763,7 @@ def calculate_ukc_clearance(vessel, node, delay=0):
         - components_calc:
 
     """
-    # ignore water_level
     MBL, _, available_water_depth = get_water_depth(vessel, node, delay)
-
     ukc_s, ukc_p, ukc_r, fwa = np.zeros(4)
     if "Vertical tidal restriction" in vessel.multidigraph.nodes[node].keys():
         ukcs_s, ukcs_p, ukcs_r, fwas = vessel.multidigraph.nodes[node]["Vertical tidal restriction"]["Type"]
@@ -775,7 +777,6 @@ def calculate_ukc_clearance(vessel, node, delay=0):
         ukc_p = ukcs_p[restriction_index] * vessel.T
         ukc_r = ukcs_r[restriction_index][0] * (vessel.T - ukcs_r[restriction_index][1])
         fwa = fwas[restriction_index] * vessel.T
-
     extra_ukc = 0.
     if 'metadata' in dir(vessel) and "ukc" in vessel.metadata.keys():
         extra_ukc = vessel.metadata["ukc"]
