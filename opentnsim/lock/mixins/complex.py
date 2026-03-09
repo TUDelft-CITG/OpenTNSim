@@ -217,6 +217,9 @@ class LockComplexTraversable(Movable, HasMultiDiGraph):
         else:
             distance_to_position_in_lock = lock_chamber.distance_from_end_node_to_lock_gate_B + \
                                            self.distance_position_from_first_lock_gate
+            if not self.env.graph.is_directed():
+                distance_to_position_in_lock = lock_chamber.distance_from_start_node_to_lock_gate_A + \
+                                               lock_chamber.lock_length - self.distance_position_from_first_lock_gate
 
         self.position_in_lock = calculate_location_over_edges(self.env.graph, edge,
                                                               distance_to_position_in_lock, crs_m=lock_chamber.crs_m)

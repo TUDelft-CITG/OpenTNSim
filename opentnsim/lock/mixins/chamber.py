@@ -101,9 +101,12 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         allowed_nr_edges = 1
         if env.graph.is_directed():
             allowed_nr_edges = 2
-        if len(edges) != allowed_nr_edges:
-            raise ValueError(f"Lock geometry does not cover a single geometry, but {len(edges)} edges.")
-        edge = edges[0]
+
+        if edge is None:
+            if len(edges) != allowed_nr_edges:
+                raise ValueError(f"Lock geometry does not cover a single geometry, but {len(edges)} edges.")
+            else:
+                edge = edges[0]
 
         # initialization
         super().__init__(env=env,

@@ -672,6 +672,7 @@ def get_edge(graph, edge, is_multidigraph=False):
 
 def _get_edges_from_geometry(graph, geometry, crs_m, m=False):
     if m:
+        from opentnsim.graph.calculations import transform_geometry
         geometry = transform_geometry(geometry, epsg_in = crs_m, epsg_out = "EPSG:4326")
     edges = []
     for edge in graph.edges:

@@ -10,8 +10,11 @@ from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.graph.utils import get_length_of_edge, get_closest_node_to_geometry
 
 def get_water_depth(vessel, node, delay=0):
+
     hydromanager = HydrodynamicDataManager()
-    node_index = list(hydromanager.hydrodynamic_data["STATION"][:]).index(node)
+    stations = hydromanager.hydrodynamic_data["STATION"].values
+    station_index = {s: i for i, s in enumerate(stations)}
+    node_index = station_index[node]
     current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + delay)).to_datetime64()
     time_index = np.absolute(hydromanager.hydrodynamic_data['TIME'].values - current_time).argmin()
     water_level = hydromanager.hydrodynamic_data["Water level"][node_index, time_index].values
@@ -23,6 +26,8 @@ def depth_averaged_current_velocity(interpolation_depth, times, relative_layer_h
     layer_boundaries = []
     average_current_velocity = []
     number_of_layers = len(relative_layer_height)
+
+    hydromanager = HydrodynamicDataManager()
     water_level = hydromanager.hydrodynamic_data["Water level"][:, station_index].data
     MBL = hydromanager.hydrodynamic_data["Nautical depth"][:, station_index].data
     water_depth = water_level - MBL
@@ -51,17 +56,19 @@ def depth_averaged_current_velocity(interpolation_depth, times, relative_layer_h
 def get_governing_current_velocity(vessel, node, time_start_index, time_end_index):
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_data = hydromanager.hydrodynamic_data
-    station_index = list(hydrodynamic_data["STATION"][:]).index(node)
+    stations = hydromanager.hydrodynamic_data["STATION"].values
+    station_index = {s: i for i, s in enumerate(stations)}
+    node_index = station_index[node]
     times = hydrodynamic_data['TIME'].values[time_start_index:time_end_index]
     relative_layer_height = hydrodynamic_data["LAYER"][:].data
-    current_velocity = hydrodynamic_data["Current velocity"][time_start_index:time_end_index, station_index].data
+    current_velocity = hydrodynamic_data["Current velocity"][time_start_index:time_end_index, node_index].data
 
     if "LAYER" in list(hydromanager.hydrodynamic_data["Current velocity"].dimensions):
         if vessel._T <= 5:
-            current_velocity = depth_averaged_current_velocity(5, times, relative_layer_height, current_velocity, station_index)
+            current_velocity = depth_averaged_current_velocity(5, times, relative_layer_height, current_velocity, node_index)
         elif vessel._T <= 15:
             current_velocity = depth_averaged_current_velocity(
-                vessel._T, times, relative_layer_height, current_velocity, station_index
+                vessel._T, times, relative_layer_height, current_velocity, node_index
             )
         else:
             current_velocity = [np.average(current_velocity[t], weights=relative_layer_height) for t in range(len(times))]
