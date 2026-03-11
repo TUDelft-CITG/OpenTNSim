@@ -3241,7 +3241,6 @@ class IsLockComplex(IsLockMaster):
         nothing, but creates a plot
 
         """
-
         # create lock edge geometry in [m]
         route_between_nodes_of_registration = nx.dijkstra_path(self.env.graph, self.registration_nodes[0], self.registration_nodes[1])
         lock_edge_geometry = self.env.vessel_traffic_service.provide_trajectory(route_between_nodes_of_registration[0],route_between_nodes_of_registration[-1])
