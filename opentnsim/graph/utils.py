@@ -122,6 +122,39 @@ def find_closest_node(G, point):
     return name_node, distance_node
 
 
+def find_closest_edge(G, point: Point):
+    """
+    Find the closest edge on the graph from a given point.
+
+    Parameters
+    ----------
+    G : networkx.Graph
+        Graph with edges that have a 'geometry' attribute (LineString).
+    point : shapely.geometry.Point
+        The point to measure distance from.
+
+    Returns
+    -------
+    edge : tuple
+        The edge (u, v) closest to the point.
+    distance_edge : float
+        Distance from the point to the closest edge.
+    """
+    distances = []
+    edges_list = list(G.edges(data=True))
+
+    for u, v, data in edges_list:
+        geom = data.get("geometry")  # shapely LineString
+        if geom is not None and not geom.is_empty and geom.is_valid:
+            distances.append(point.distance(geom))
+
+    min_idx = np.argmin(distances)
+    closest_edge = (edges_list[min_idx][0], edges_list[min_idx][1])
+    distance_edge = distances[min_idx]
+
+    return closest_edge, distance_edge
+
+
 def network_check(graph):
     """Assertions about the graphs used in OpenTNSim"""
     # TODO Determine where we should save this function. This function is not called by any mixins.

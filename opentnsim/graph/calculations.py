@@ -8,7 +8,7 @@ from shapely import reverse
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
-                                   create_transformer, get_trajectory)
+                                   create_transformer, get_trajectory, find_closest_node, find_closest_edge)
 import warnings
 
 
@@ -38,24 +38,14 @@ def calculate_depth(geom_start, geom_stop, graph):
         If there is no edge between the two nodes in the graph graph.
         If the depth data is not available for the edge between the two nodes.
     """
-
-    depth = 0
-
     # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
 
-    node_start = find_closest_node(graph, geom_start)[0]
-    node_stop = find_closest_node(graph, geom_stop)[0]
+    edge = find_closest_edge(graph, geom_start)[0]
+    node_start, node_stop = edge[:2]
 
     # Read from the graph data from vaarweginformatie.nl the General depth of each edge
-    # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
-    if node_start == node_stop:
-        return np.nan  # if the start and stop nodes are the same, return 0 depth
-
     try:
-        if "Info" in graph.get_edge_data(node_start, node_stop).keys():
-            depth = graph.get_edge_data(node_start, node_stop)["Info"]["GeneralDepth"]
-
-        elif "GeneralDepth" in graph.get_edge_data(node_start, node_stop).keys():
+        if "GeneralDepth" in graph.get_edge_data(node_start, node_stop).keys():
             depth = graph.get_edge_data(node_start, node_stop)["GeneralDepth"]
         else:
             return np.nan  # if no depth data is available, return NaN

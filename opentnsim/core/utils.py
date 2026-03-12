@@ -1,7 +1,7 @@
 """Component to inspect a class constructed from mixins."""
 
 import pandas as pd
-
+import itertools
 import inspect
 from typing import Any, Dict, List, Tuple, Type, Optional, get_origin, get_args, Union
 
@@ -118,3 +118,13 @@ def inits_to_dataframe(cls, include_types: bool = False, include_kind: bool = Fa
     df.drop(columns="__mixin_order", inplace=True)
 
     return df
+
+
+def create_object(name, classes):
+    for perm in itertools.permutations(classes):
+        try:
+            object = type(name, perm, {})
+            return object
+        except TypeError:
+            pass
+    raise TypeError("No valid base class order exists")

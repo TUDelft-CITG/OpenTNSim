@@ -44,7 +44,7 @@ from opentnsim.utils import inherit_docstring
 from IPython.display import display
 
 @inherit_docstring
-class LockComplexTraversable(Movable, HasMultiDiGraph):
+class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
     """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
 
     Pre-requisites
