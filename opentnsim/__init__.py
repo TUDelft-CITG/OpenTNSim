@@ -8,6 +8,7 @@ import opentnsim.lock as lock
 import opentnsim.model as model
 import opentnsim.plot as plot
 import opentnsim.strategy as strategy
+import opentnsim.displacement as displacement
 
 
 """Top-level package for OpenTNSim."""
