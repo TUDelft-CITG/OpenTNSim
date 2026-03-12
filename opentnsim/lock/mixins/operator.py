@@ -122,12 +122,22 @@ class IsLockChamberOperator:
 
     def instruct_vessel_to_wait_in_lock_chamber_before_sailing_out(self, vessel, sailing_out_delay):
         delay_start = vessel.env.now
+        had_delay = False
+        if sailing_out_delay:
+            had_delay = True
+            location_of_vessel = pd.DataFrame(vessel.logbook).iloc[-1]['Geometry']
+            vessel.log_entry_v0(
+                "Waiting for other vessels to leave lock start", self.env.now, vessel.output.copy(), location_of_vessel)
         while sailing_out_delay:
             try:
                 yield vessel.env.timeout(sailing_out_delay)
                 sailing_out_delay = 0
             except simpy.Interrupt as e:
                 sailing_out_delay -= vessel.env.now - delay_start
+        if had_delay:
+            location_of_vessel = pd.DataFrame(vessel.logbook).iloc[-1]['Geometry']
+            vessel.log_entry_v0(
+                "Waiting for other vessels to leave lock stop", self.env.now, vessel.output.copy(), location_of_vessel)
 
 
     def instruct_vessel_to_wait_in_waiting_area(self, vessel, sailing_out_delay):
@@ -172,6 +182,9 @@ class IsLockChamberOperator:
         yield from self.communicate_vessel_to_sail_to_lock_chamber(waiting_area, vessel, direction)
         if self.close_gate_before_vessel_is_laying_still:
             self.close_gate_between_arrivals_if_necessary(vessel, direction, operation_index)
+        vessel.request_to_enter_lock = self.resource.request()
+        vessel.request_to_enter_lock.vessel = vessel
+        yield vessel.request_to_enter_lock
         yield self.length.get(vessel.L)
         yield from self.communicate_vessel_to_sail_to_position_in_lock_chamber(vessel, direction)
         if not self.close_gate_before_vessel_is_laying_still:
@@ -205,6 +218,7 @@ class IsLockChamberOperator:
         direction = vessel_planning.loc[vessel_planning_index, "direction"]
         yield from self.communicate_vessel_to_sail_out_of_lock_chamber(vessel, direction)
         yield self.length.put(vessel.L)
+        yield self.resource.release(vessel.request_to_enter_lock)
 
         # determine if the lock has to be levelled
         self.prepare_next_lock_operation(operation_index, direction, vessel)
@@ -360,26 +374,20 @@ class IsLockChamberOperator:
                           vessel.env.now, vessel.output.copy(),vessel.logbook[-1]['Geometry'],)
 
 
-    def wait_for_other_vessels_to_start_lock_operation(self,  vessel, operation_index):
+    def wait_for_other_vessels_to_start_lock_operation(self,  vessel):
         # Wait for last assigned vessel of lock operation
         waiting_for_other_vessels = True
-        is_first_vessel = _check_if_vessel_is_first_vessel(self.lock_complex, vessel, operation_index)
         lock_position = vessel.position_in_lock
-        if is_first_vessel:
-            self.log_entry_v0("Waiting for other vessels in lock start", self.env.now, self.output.copy(), self.gate_open)
-        vessel.log_entry_v0("Waiting for other vessels in lock start", self.env.now, self.output.copy(), lock_position)
+        vessel.log_entry_v0("Waiting for other vessels to enter lock start", self.env.now, vessel.output.copy(), lock_position)
         while waiting_for_other_vessels:
             try:
                 yield self.wait_for_other_vessels.get(filter=(lambda request: request.id == vessel.id))
                 waiting_for_other_vessels = False
             except simpy.Interrupt as e:
                 waiting_for_other_vessels = True
-        vessel.log_entry_v0("Waiting for other vessels in lock stop", self.env.now, self.output.copy(), lock_position)
-        if is_first_vessel:
-            self.log_entry_v0("Waiting for other vessels in lock stop", self.env.now, self.output.copy(), self.gate_open)
+        vessel.log_entry_v0("Waiting for other vessels to enter lock stop", self.env.now, vessel.output.copy(), lock_position)
 
         # Follow the converting lock chamber
-        vessel.log_entry_v0("Levelling start", vessel.env.now, vessel.output.copy(), lock_position, )
         waiting_for_levelling = True
         while waiting_for_levelling:
             try:
@@ -387,7 +395,6 @@ class IsLockChamberOperator:
                 waiting_for_levelling = False
             except simpy.Interrupt as e:
                 waiting_for_levelling = True
-        vessel.log_entry_v0("Levelling stop", vessel.env.now, vessel.output.copy(), lock_position, )
 
 
     def prepare_lock_operation(self, vessel):
@@ -451,6 +458,7 @@ class IsLockChamberOperator:
         last_operation = operation_planning.loc[operation_index]
         vessels_in_last_operation = last_operation.vessels
         is_last_vessel_sailing_out = vessels_in_last_operation[-1] == vessel
+
         if not is_last_vessel_sailing_out:
             return
 
@@ -465,6 +473,7 @@ class IsLockChamberOperator:
         # determine if the next operation is empty
         next_lockage_is_empty = False
         next_operation = None
+
         if not next_operations.empty:
             next_operation = next_operations.iloc[0]
             if not len(next_operation.vessels):
@@ -540,7 +549,7 @@ class IsLockChamberOperator:
         operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
 
         # determine the direction to the lock chamber is currently levelled to, and to which node the lock chamber will level
-        current_node = self.gate_open
+        current_node = self.gate_open_at_node
         if current_node == self.start_node:
             direction = 0
             next_node = self.end_node
@@ -553,7 +562,7 @@ class IsLockChamberOperator:
         if is_last_vessel:
             yield from self.convert_chamber(next_node, direction, operation_index=operation_index, vessel=vessel)
         else:
-            yield from self.wait_for_other_vessels_to_start_lock_operation(vessel, operation_index)
+            yield from self.wait_for_other_vessels_to_start_lock_operation(vessel)
 
         # determine and yield sailing out delay
         sailing_out_delay = _get_vessel_departure_start_delay(self, vessel, operation_index).total_seconds()
@@ -574,14 +583,14 @@ class IsLockChamberOperator:
         close_gate : bool
             if the gate have to be closed: yes (True) or no (False)
         delay : float
-            a delay before lock conversion [s]
+            a delay before lock levelling [s]
 
         direction : int
             the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
 
         Yields
         ------
-        The conversion of the lock chamber
+        The levelling of the lock chamber
         """
         vessels = []
         this_operation = None
@@ -645,7 +654,7 @@ class IsLockChamberOperator:
             self.gate_B.resource.release(hold_gate_B)
 
         # level lock and open the gate afterwards
-        yield from self.level_lock(new_level, direction, operation_index=operation_index, vessel=vessel)
+        yield from self.level_lock(new_level, direction, operation_index=operation_index)
         yield from self.open_gate()
 
         # Liberate waiting vessels in lock chamber
@@ -691,7 +700,11 @@ class IsLockChamberOperator:
         yield hold_gate_B
 
         # log the start of the event
-        self.log_entry_v0("Lock gate closing start", self.env.now, self.output.copy(), self.gate_open)
+        self.log_entry_v0("Lock gate closing start", self.env.now, self.output.copy(), self.gate_open_at_node)
+        for request in self.resource.users:
+            user = request.vessel
+            location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
+            user.log_entry_v0("Waiting for lock gate closing start", self.env.now, user.output.copy(), location_of_vessel)
 
         # timeout event of the gate closing
         remaining_gate_closing_time = self.gate_closing_time
@@ -705,7 +718,7 @@ class IsLockChamberOperator:
 
         # set water level to the side at which the gate has been closed
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        if self.gate_open == self.start_node:
+        if self.gate_open_at_node == self.start_node:
             node = self.start_node
         else:
             node = self.end_node
@@ -716,8 +729,13 @@ class IsLockChamberOperator:
         self.water_level[time_index:] = new_water_level
 
         # log the end of the event
-        self.log_entry_v0("Lock gate closing stop", self.env.now, self.output.copy(), self.gate_open)
-        if self.gate_open == self.start_node:
+        self.log_entry_v0("Lock gate closing stop", self.env.now, self.output.copy(), self.gate_open_at_node)
+        for request in self.resource.users:
+            user = request.vessel
+            location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
+            user.log_entry_v0("Waiting for lock gate closing stop", self.env.now, user.output.copy(), location_of_vessel)
+
+        if self.gate_open_at_node == self.start_node:
             self.gate_A_open = False
         else:
             self.gate_B_open = False
@@ -744,7 +762,7 @@ class IsLockChamberOperator:
             vessel.env.process(self.close_gate(delay=delay_to_close_gate.total_seconds()))
 
 
-    def level_lock(self, new_level, direction, operation_index=None, vessel=None):
+    def level_lock(self, new_level, direction, operation_index=None):
         """
         Lock operator levels the water level of the lock chamber to the harbour side of the direction of the lock operation
 
@@ -773,12 +791,14 @@ class IsLockChamberOperator:
         levelling_time, _, _ = calculate_levelling_time(self, self.env.now, direction, operation_index=operation_index)
 
         # log the start of the event
-        if vessel is not None:
-            vessel.log_entry_v0("Levelling start", vessel.env.now, vessel.output.copy(), vessel.position_in_lock, )
-        self.log_entry_v0("Lock chamber converting start", self.env.now, self.output.copy(), self.gate_open, )
+        self.log_entry_v0("Lock levelling start", self.env.now, self.output.copy(), self.gate_open_at_node, )
+        for request in self.resource.users:
+            user = request.vessel
+            location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
+            user.log_entry_v0("Waiting for lock levelling start", self.env.now, user.output.copy(), location_of_vessel)
 
         # set new node to which the gate will be opened
-        self.gate_open = new_level
+        self.gate_open_at_node = new_level
 
         # timeout
         remaining_levelling_time = levelling_time
@@ -791,9 +811,11 @@ class IsLockChamberOperator:
                 remaining_levelling_time -= self.env.now - start_levelling
 
         # log the end of the event
-        self.log_entry_v0("Lock chamber converting stop", self.env.now, self.output.copy(), self.gate_open, )
-        if vessel is not None:
-            vessel.log_entry_v0("Levelling stop", vessel.env.now, vessel.output.copy(), vessel.position_in_lock,)
+        self.log_entry_v0("Lock levelling stop", self.env.now, self.output.copy(), self.gate_open_at_node, )
+        for request in self.resource.users:
+            user = request.vessel
+            location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
+            user.log_entry_v0("Waiting for lock levelling stop", self.env.now, user.output.copy(), location_of_vessel)
 
         # release all lock elements that were requested, so the next process can start
         self.gate_A.resource.release(hold_gate_A)
@@ -842,7 +864,7 @@ class IsLockChamberOperator:
 
         # determine to_level
         if to_level is None:
-            to_level = self.gate_open
+            to_level = self.gate_open_at_node
 
         # determine the water level in the harbour
         wlev_harbour = hydromanager._get_hydrodynamic_data_value(time, to_level, "Water level")
@@ -857,11 +879,11 @@ class IsLockChamberOperator:
         if wlev_chamber is not None and wlev_harbour is not None and np.abs(wlev_chamber - wlev_harbour) >= 0.1:
             yield from self.level_lock(to_level, direction=direction)
         else:
-            self.gate_open = to_level
+            self.gate_open_at_node = to_level
 
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
         time_index = hydromanager._get_time_index_of_hydrodynamic_data(time)
-        wlev_series_node_gate_open = hydromanager._get_hydrodynamic_data_series(time, self.gate_open, "Water level")
+        wlev_series_node_gate_open = hydromanager._get_hydrodynamic_data_series(time, self.gate_open_at_node, "Water level")
         self.water_level[time_index:] = wlev_series_node_gate_open
 
         # make sure that all lock elements are requested, so only one process is occurring
@@ -873,7 +895,11 @@ class IsLockChamberOperator:
         yield hold_gate_B
 
         # log the process start
-        self.log_entry_v0("Lock gate opening start", self.env.now, self.output.copy(), self.gate_open)
+        self.log_entry_v0("Lock gate opening start", self.env.now, self.output.copy(), self.gate_open_at_node)
+        for request in self.resource.users:
+            user = request.vessel
+            location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
+            user.log_entry_v0("Waiting for lock gate opening start", self.env.now, user.output.copy(), location_of_vessel)
 
         # timeout
         remaining_gate_opening_time = self.gate_opening_time
@@ -886,10 +912,14 @@ class IsLockChamberOperator:
                 remaining_gate_opening_time -= self.env.now - start_time_opening
 
         # log the process stop
-        self.log_entry_v0("Lock gate opening stop", self.env.now, self.output.copy(), self.gate_open,)
+        self.log_entry_v0("Lock gate opening stop", self.env.now, self.output.copy(), self.gate_open_at_node,)
+        for request in self.resource.users:
+            user = request.vessel
+            location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
+            user.log_entry_v0("Waiting for lock gate opening stop", self.env.now, user.output.copy(), location_of_vessel)
 
         # determine which side the gate is open to
-        if self.gate_open == self.start_node:
+        if self.gate_open_at_node == self.start_node:
             self.gate_A_open = True
         else:
             self.gate_B_open = True

@@ -199,9 +199,7 @@ class Simulation(core.Identifiable):
                  simulation_start=datetime.datetime.now(),
                  simulation_duration=None,
                  simulation_stop=None,
-                 hydrodynamic_start_time=datetime.datetime.now(),
-                 hydrodynamic_data_path=None,
-                 vessel_speed_data_path=None, scenario=None):
+                 scenario=None):
         """ 
         Initialization 
         
@@ -290,7 +288,7 @@ class Simulation(core.Identifiable):
                 )
             )
 
-    def run(self, duration=24 * 60 * 60):
+    def run(self):
         """
         Run the simulation
 

@@ -5,6 +5,7 @@ from itertools import permutations
 import math
 import networkx as nx
 import numpy as np
+from operator import itemgetter
 import pandas as pd
 from numpy.testing import assert_almost_equal
 from opentnsim.graph.utils import get_length_of_edge, get_edge, check_graph_is_multidigraph_type, get_sailing_information_on_edge_to_distance_on_another_edge
@@ -512,18 +513,29 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
     operation_index : int
         index of the lock operation (+1 if an empty lock operation was required)
     """
+    current_time = datetime.datetime.fromtimestamp(lock_chamber.env.now)
     node_of_approach, to_node = _get_lock_operation_to_and_from_node(lock_chamber, direction)
     lock_complex = lock_chamber.lock_complex
-    previous_planned_operations = lock_complex.operation_planning[(lock_complex.operation_planning.index < operation_index) &
-                                                                  (lock_complex.operation_planning.lock_chamber == lock_chamber.name)]
+    from IPython.display import display
+    #display(lock_complex.operation_planning)
+    previous_planned_operations = lock_complex.operation_planning[
+        (lock_complex.operation_planning.index < operation_index) &
+        (lock_complex.operation_planning.lock_chamber == lock_chamber.name)
+    ]
+    operations_yet_to_be_processed = lock_complex.operation_planning[
+        (lock_complex.operation_planning.time_lock_operation_stop > current_time) &
+        (lock_complex.operation_planning.lock_chamber == lock_chamber.name)
+    ]
     empty_lock_operation_to_be_requested = False
     lock_operation_to_be_executed = False
     if not previous_planned_operations.empty:
         previous_planned_operation = previous_planned_operations[previous_planned_operations.lock_chamber == lock_chamber.name].iloc[-1]
         if previous_planned_operation.direction == direction:
             empty_lock_operation_to_be_requested = True
-            operation_index += 1  # the new operation index lies now one ahead
-    elif lock_chamber.gate_open != node_of_approach:
+            operation_index += 1
+            if operations_yet_to_be_processed.empty:
+                lock_operation_to_be_executed = True
+    elif lock_chamber.gate_open_at_node != node_of_approach:
         lock_operation_to_be_executed = True
         empty_lock_operation_to_be_requested = True
         operation_index += 1
@@ -1261,3 +1273,13 @@ def _get_vessel_departure_start_delay(lock_chamber, vessel, operation_index):
     sailing_out_start_v1 = vessel_planning.loc[index_vessel, 'time_lock_departure_start']
     delay_sailing_through_gate = sailing_out_start_v1 - current_time
     return delay_sailing_through_gate
+
+
+def _get_vessels_that_passed_the_lock_chamber(lock_chamber):
+    lock_complex = lock_chamber.lock_complex
+    vessel_ids = lock_complex.vessel_planning[lock_complex.vessel_planning.lock_chamber == lock_chamber.name].id
+    if not len(vessel_ids):
+        return None
+    vessels = np.array([itemgetter(*vessel_ids)(lock_complex.env.vessels)]).flatten()
+    return vessels
+

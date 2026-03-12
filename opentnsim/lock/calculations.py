@@ -18,7 +18,9 @@ from opentnsim.graph.utils import (
     get_length_of_edge,
     get_geometry_of_edge,
 )
+from opentnsim.lock.logutils import get_vessels_per_cycle, get_levelling_cycles
 from opentnsim.lock.utils import (
+    _get_vessels_that_passed_the_lock_chamber,
     _get_waiting_area,
     _get_lineup_area,
     _check_if_vessel_is_first_vessel,
@@ -1725,3 +1727,220 @@ def calculate_aggregated_water_exchange_fluxes(lock_chamber, ZSF_results):
     overall_results.update(overall_discharges)
 
     return overall_results
+
+
+def estimate_lock_capacity(lock_chamber):
+    vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
+    average_length = np.mean([vessel.L for vessel in vessels])
+    n_max = lock_chamber.lock_length / average_length
+    vessel_speed_outside_of_lock = vessels[0]._compute_velocity_on_edge(*lock_chamber.edge)
+    lock_length = lock_chamber.lock_length
+    distance_last_ship_to_sail_in = lock_length/n_max/2
+    distance_last_ship_to_sail_out = lock_length/n_max/2
+    sailing_in_speed = np.mean([lock_chamber.sailing_in_speed_A, lock_chamber.sailing_in_speed_B])
+    sailing_out_speed = np.mean([lock_chamber.sailing_out_speed_A, lock_chamber.sailing_out_speed_B])
+
+    # Part III, Ch3, Eq. 3.2 (NB: de helft van de looptime wordt hier effectief geimplementeerd door de sailing to lock te berekenen)
+    t_sailing_to_lock = lock_chamber.sailing_distance_to_crossing_point / vessel_speed_outside_of_lock
+    t_sailing_to_position = distance_last_ship_to_sail_in / sailing_in_speed
+    T_entering = t_sailing_to_lock + \
+                 np.max([(n_max - 1),0]) * lock_chamber.sailing_in_time_gap_through_gate.total_seconds() + \
+                 t_sailing_to_position
+
+    # Part III, Ch3, Eq. 3.3
+    T_operation = lock_chamber.gate_closing_time + lock_chamber.levelling_time + lock_chamber.gate_opening_time
+
+    # Part III, Ch3, Eq. 3.4 (NB: de helft van de looptime wordt hier effectief geimplementeerd door de sailing out of lock te berekenen)
+    t_sailing_out_of_lock = lock_chamber.sailing_distance_to_crossing_point / vessel_speed_outside_of_lock
+    t_sailing_to_crossing_point = distance_last_ship_to_sail_out / sailing_out_speed
+    T_exiting = t_sailing_out_of_lock + \
+                np.max([(n_max - 1),0]) * lock_chamber.sailing_out_time_gap_through_gate.total_seconds() + \
+                t_sailing_to_crossing_point
+
+    # Part III, Ch3, Eq. 3.1
+    T_locking = T_entering + T_operation + T_exiting
+    T_c = 2 * T_locking
+
+    C_s = 2 * n_max / (T_c / 3600)
+
+    intermediate_results = {
+        'Number of vessels in lock': n_max,
+        'Sailing distance from crossing point to first gate (first vessel)':
+            lock_chamber.sailing_distance_to_crossing_point,
+        'Sailing speed from crossing point to first gate (first vessel)':
+            vessel_speed_outside_of_lock,
+        'Sailing time from crossing point to first gate (first vessel)':
+            pd.Timedelta(seconds=round(t_sailing_to_lock)),
+        'Time gap between vessels sailing in':
+            pd.Timedelta(seconds=round(lock_chamber.sailing_in_time_gap_through_gate.total_seconds())),
+        'Total time of vessels sailing in from first vessel until last vessel':
+            pd.Timedelta(seconds=round((n_max-1)*lock_chamber.sailing_in_time_gap_through_gate.total_seconds())),
+        'Distance from first lock gate to position in lock (last vessel)':
+            distance_last_ship_to_sail_in,
+        'Sailing-in speed in lock (last vessel)':
+            sailing_in_speed,
+        'Sailing time from first lock gate to position in lock (last vessel)':
+            pd.Timedelta(seconds=round(t_sailing_to_position)),
+        'Closing gate time': lock_chamber.gate_closing_time,
+        'Levelling time': lock_chamber.levelling_time,
+        'Opening gate time': lock_chamber.gate_opening_time,
+        'Sailing distance from position in lock to second gate (first vessel)':
+            lock_chamber.sailing_distance_to_crossing_point,
+        'Sailing-out speed in lock (first vessel)':
+            sailing_out_speed,
+        'Sailing time from position in lock to second gate (first vessel)':
+            pd.Timedelta(seconds=round(t_sailing_out_of_lock)),
+        'Time gap between vessels sailing out':
+            pd.Timedelta(seconds=round(lock_chamber.sailing_out_time_gap_through_gate.total_seconds())),
+        'Total time of vessels sailing out from first vessel until last vessel':
+            pd.Timedelta(seconds=round((n_max - 1) * lock_chamber.sailing_out_time_gap_through_gate.total_seconds())),
+        'Distance from second lock gate to crossing point (last vessel)':
+            lock_chamber.sailing_distance_to_crossing_point,
+        'Sailing speed from second lock gate to crossing point (last vessel)':
+            sailing_in_speed,
+        'Sailing time from second lock gate to crossing point (last vessel)':
+            pd.Timedelta(seconds=round(t_sailing_to_crossing_point)),
+    }
+
+    intermediate_results_summary = {
+        'Cycle duration': pd.Timedelta(seconds=round(T_c)),
+        'Entering time (%)': np.round(T_entering*2/T_c, 4)*100,
+        'Operation time (%)': np.round(T_operation*2/T_c, 4)*100,
+        'Exiting time (%)': np.round(T_exiting*2/T_c, 4)*100,
+    }
+
+    return C_s, pd.Series(intermediate_results_summary), pd.Series(intermediate_results)
+
+
+def calculate_cycle_event_durations(Tc_df):
+    if Tc_df.empty:
+        return pd.Series(), pd.Series()
+
+    timedelta_columns = Tc_df.select_dtypes(include="timedelta64[ns]").columns
+    Tc_df[timedelta_columns] = Tc_df[timedelta_columns].apply(lambda col: col.dt.total_seconds().astype("int64"))
+
+    Tc_df_down = Tc_df[Tc_df.Direction == 1]
+    Tc_df_up = Tc_df[Tc_df.Direction == 0]
+    total_loop_times_down = \
+        Tc_df_down['Loop time start side'].sum() + Tc_df_up['Loop time opposing side'].sum()
+    total_sailing_in_times_down = \
+        Tc_df_down['Sailing-in time start side'].sum() + Tc_df_up['Sailing-in time opposing side'].sum()
+    total_closing_door_times_down = \
+        Tc_df_down['Closing gate time start side'].sum() + Tc_df_up['Closing gate time opposing side'].sum()
+    total_levelling_times_to_up = \
+        Tc_df_down['Levelling time to opposing side'].sum() + Tc_df_up['Levelling time to start side'].sum()
+    total_opening_door_times_up = \
+        Tc_df_down['Opening gate time opposing side'].sum() + Tc_df_up['Opening gate time start side'].sum()
+    total_sailing_out_times_up = \
+        Tc_df_down['Sailing-out time opposing side'].sum() + Tc_df_up['Sailing-out time start side'].sum()
+    total_loop_times_up = \
+        Tc_df_up['Loop time start side'].sum() + Tc_df_down['Loop time opposing side'].sum()
+    total_sailing_in_times_up = \
+        Tc_df_up['Sailing-in time start side'].sum() + Tc_df_down['Sailing-in time opposing side'].sum()
+    total_closing_door_times_up = \
+        Tc_df_up['Closing gate time start side'].sum() + Tc_df_down['Closing gate time opposing side'].sum()
+    total_levelling_times_to_down = \
+        Tc_df_up['Levelling time to opposing side'].sum() + Tc_df_down['Levelling time to start side'].sum()
+    total_opening_door_times_down = \
+        Tc_df_up['Opening gate time opposing side'].sum() + Tc_df_down['Opening gate time start side'].sum()
+    total_sailing_out_times_down = \
+        Tc_df_up['Sailing-out time opposing side'].sum() + Tc_df_down['Sailing-out time start side'].sum()
+    loop_times_down = Tc_df_down['Loop time start side']
+    sailing_in_times_down = Tc_df_down['Sailing-in time start side']
+    closing_door_times_down = Tc_df_down['Closing gate time start side']
+    levelling_times_down = Tc_df_down['Levelling time to opposing side']
+    opening_door_times_down = Tc_df_down['Opening gate time opposing side']
+    sailing_out_times_down = Tc_df_down['Sailing-out time opposing side']
+    loop_times_up = Tc_df_up['Loop time start side']
+    sailing_in_times_up = Tc_df_up['Sailing-in time start side']
+    closing_door_times_up = Tc_df_up['Closing gate time start side']
+    levelling_times_up = Tc_df_up['Levelling time to opposing side']
+    opening_door_times_up = Tc_df_up['Opening gate time opposing side']
+    sailing_out_times_up = Tc_df_up['Sailing-out time opposing side']
+    total_cycle_time = Tc_df['Cycle duration'].sum()
+    results = {
+        'Number of cycles': int(np.floor(len(Tc_df_down))),
+        'Number of vessels': int(Tc_df['Number of downstream vessels'].sum()),
+        'Minimum cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].min())),
+        'Average cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].mean())),
+        'Maximum cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].max())),
+        'Total cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].sum())),
+        'Average duration loop time upstream': pd.Timedelta(seconds=round(loop_times_up.mean())),
+        'Average fraction loop time upstream (%)': np.round(total_loop_times_up/total_cycle_time*100, 2),
+        'Average duration sailing in time upstream': pd.Timedelta(seconds=round(sailing_in_times_up.mean())),
+        'Average fraction sailing in time upstream (%)': np.round(total_sailing_in_times_up/total_cycle_time*100, 2),
+        'Average duration gate closing time upstream': pd.Timedelta(seconds=round(closing_door_times_up.mean())),
+        'Average fraction gate closing time upstream (%)': np.round(total_closing_door_times_up/total_cycle_time*100, 2),
+        'Average duration levelling time to downstream': pd.Timedelta(seconds=round(levelling_times_up.mean())),
+        'Average fraction levelling time to downstream (%)': np.round(total_levelling_times_to_up/total_cycle_time*100, 2),
+        'Average duration gate opening time downstream': pd.Timedelta(seconds=round(opening_door_times_down.mean())),
+        'Average fraction gate opening time downstream (%)': np.round(total_opening_door_times_down/total_cycle_time*100, 2),
+        'Average duration sailing out time downstream': pd.Timedelta(seconds=round(sailing_out_times_down.mean())),
+        'Average fraction sailing out time downstream (%)': np.round(total_sailing_out_times_down/total_cycle_time*100, 2),
+        'Average duration loop time downstream': pd.Timedelta(seconds=round(loop_times_down.mean())),
+        'Average fraction loop time downstream (%)': np.round(total_loop_times_down/total_cycle_time*100, 2),
+        'Average duration sailing in time downstream': pd.Timedelta(seconds=round(sailing_in_times_down.mean())),
+        'Average fraction sailing in time downstream (%)': np.round(total_sailing_in_times_down/total_cycle_time*100, 2),
+        'Average duration gate closing time downstream': pd.Timedelta(seconds=round(closing_door_times_down.mean())),
+        'Average fraction gate closing time downstream (%)': np.round(total_closing_door_times_down/total_cycle_time*100, 2),
+        'Average duration levelling time downstream': pd.Timedelta(seconds=round(levelling_times_down.mean())),
+        'Average fraction levelling time to upstream (%)': np.round(total_levelling_times_to_down/total_cycle_time*100, 2),
+        'Average duration gate opening time upstream': pd.Timedelta(seconds=round(opening_door_times_up.mean())),
+        'Average fraction gate opening time upstream (%)': np.round(total_opening_door_times_up/total_cycle_time*100, 2),
+        'Average duration sailing out time upstream': pd.Timedelta(seconds=round(sailing_out_times_up.mean())),
+        'Average fraction sailing out time upstream (%)': np.round(total_sailing_out_times_up/total_cycle_time*100, 2),
+        'Cycle-averaged traffic intensity (I_s_avg)': np.round(Tc_df['Intensity (I_s)'].sum()/len(Tc_df),2)
+    }
+
+    sailing_in = (results['Average fraction sailing in time downstream (%)'] +
+                  results['Average fraction sailing in time upstream (%)'])
+    sailing_out = (results['Average fraction sailing out time downstream (%)'] +
+                   results['Average fraction sailing out time upstream (%)'])
+    gate_movement = (results['Average fraction gate closing time downstream (%)'] +
+                     results['Average fraction gate closing time upstream (%)'] +
+                     results['Average fraction gate opening time downstream (%)'] +
+                     results['Average fraction gate opening time upstream (%)'])
+    levelling = (results['Average fraction levelling time to downstream (%)'] +
+                 results['Average fraction levelling time to upstream (%)'])
+    loop_time = (results['Average fraction loop time upstream (%)'] +
+                 results['Average fraction loop time downstream (%)'])
+
+    results_summary = {
+        'Sailing in (%)': np.round(sailing_in,2),
+        'Gate movements (%)': np.round(gate_movement,2),
+        'Levelling (%)': np.round(levelling,2),
+        'Sailing out (%)': np.round(sailing_out,2),
+        'Loop time (%)': np.round(loop_time,2)}
+    results_summary = dict(sorted(results_summary.items(), key=lambda item: item[1], reverse=True))
+
+    return pd.Series(results), pd.Series(results_summary)
+
+
+def calculate_lock_occupancy(lock_chamber):
+    df_levelling = get_levelling_cycles(lock_chamber)
+    df_vessels = get_vessels_per_cycle(lock_chamber)
+    occupancy_df = df_levelling[['leveling_start','leveling_stop']]
+    lock_length = lock_chamber.lock_length
+    occupancies = []
+    nr_vessels = []
+    lock_length_claimed = []
+    for cycle_nr, cycle_info in df_levelling.iterrows():
+        length_claimed = 0.
+        for vessel_id in df_vessels[df_vessels.cycle_nr == cycle_nr]["vessel_id"]:
+            length_claimed += lock_chamber.env.vessels[vessel_id].L
+        occupancy = length_claimed/lock_length
+        lock_length_claimed.extend([length_claimed])
+        occupancies.extend([occupancy])
+        nr_vessels.extend([len(df_vessels[df_vessels.cycle_nr == cycle_nr])])
+    occupancy_df['Number of vessels'] = nr_vessels
+    occupancy_df['Lock length'] = lock_length
+    occupancy_df['Lock length claimed by vessels'] = lock_length_claimed
+    occupancy_df['Lock occupancy'] = occupancies
+    occupancy = np.round(np.mean(occupancies)*100,2)
+    return occupancy, occupancy_df
+
+
+def calculate_ic_ratio(lock_chamber, Tc_df):
+    C_s, _, _ = estimate_lock_capacity(lock_chamber)
+    I_s_avg = Tc_df['Intensity (I_s)'].sum()/len(Tc_df)
+    return I_s_avg / C_s, C_s

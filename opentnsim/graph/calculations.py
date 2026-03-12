@@ -6,7 +6,7 @@ from scipy.ndimage import rotate
 from scipy.spatial import ConvexHull
 from shapely import reverse
 from shapely.geometry import Point, Polygon
-from shapely.ops import transform, linemerge, split
+from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
                                    create_transformer, get_trajectory)
 import warnings
@@ -226,8 +226,8 @@ def reverse_geometry(geometry):
 
 def calculate_distance_over_network_to_location(graph, node_1, node_2, location,tolerance=0.0001):
     geod = pyproj.Geod(ellps="WGS84")
-    geometry = get_trajectory(node_1,node_2)
-    geometries = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance=tolerance), location).geoms
+    geometry = get_trajectory(graph, node_1,node_2)
+    geometries = split(snap(geometry, location, tolerance=tolerance), location).geoms
     distance_sailed = 0
     distance_to_go = 0
     if len(geometries) < 2:
@@ -251,11 +251,11 @@ def calculate_distance_from_location_over_edge(graph,edge,location,tolerance=0.0
     distance_sailed = 0
     distance_to_go = 0
     if geometry.coords[0] == location.coords[0]:
-        distance_to_go = graph.edges[(edge[0],edge[1],edge[2])]['length']
+        distance_to_go = graph.edges[(edge[0],edge[1],edge[2])]['length_m']
     elif geometry.coords[-1] == location.coords[0]:
-        distance_sailed = graph.edges[(edge[0],edge[1],edge[2])]['length']
+        distance_sailed = graph.edges[(edge[0],edge[1],edge[2])]['length_m']
     else:
-        lines = shapely.ops.split(shapely.ops.snap(geometry, location, tolerance), location).geoms
+        lines = split(snap(geometry, location, tolerance), location).geoms
         for index, line in enumerate(lines):
             distance = 0
             for point_I, point_II in zip(line.coords[:-1], line.coords[1:]):

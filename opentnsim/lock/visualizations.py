@@ -9,8 +9,9 @@ from opentnsim.graph.calculations import transform_geometry
 from opentnsim.graph.visualizations import (visualize_node_in_folium_plot, visualize_edge_in_folium_plot,
                                             visualize_geometry_point_in_folium_plot,
                                             visualize_geometry_polygon_in_folium_plot)
-from operator import itemgetter
+from opentnsim.lock.utils import _get_vessels_that_passed_the_lock_chamber
 import folium
+from IPython.display import display, HTML
 
 def add_locking_phases_to_plot(lock_chamber, fig, extend, time_axis = 'x', method='Matplotlib'):
     lock_df = pd.DataFrame(lock_chamber.logbook)
@@ -28,11 +29,11 @@ def add_locking_phases_to_plot(lock_chamber, fig, extend, time_axis = 'x', metho
             color = "darkgrey"
             name = "Lock gate closing"
             message_found = True
-        if message_info.Message == "Lock chamber converting stop" and index != 0:
+        if message_info.Message == "Lock levelling stop" and index != 0:
             time_start = lock_df.loc[index - 1, "Timestamp"]
             time_stop = message_info.Timestamp
             color = "grey"
-            name = "Lock chamber converting"
+            name = "Lock levelling"
             message_found = True
 
         if method == 'Matplotlib' and message_found:
@@ -79,10 +80,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     """
     lock_complex = lock_chamber.lock_complex
-    vessel_ids = lock_complex.vessel_planning[lock_complex.vessel_planning.lock_chamber == lock_chamber.name].id
-    if not len(vessel_ids):
-        return None
-    vessels = np.array([itemgetter(*vessel_ids)(lock_complex.env.vessels)]).flatten()
+    vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
 
     # create lock edge geometry in [m]
     route_between_nodes_of_registration = nx.dijkstra_path(lock_complex.env.graph, lock_complex.registration_nodes[0],
@@ -115,8 +113,16 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
                               "Sailing to first lock gate stop",
                               "Sailing to position in lock start",
                               "Sailing to position in lock stop",
-                              "Levelling start",
-                              "Levelling stop",
+                              "Waiting for lock gate closing start",
+                              "Waiting for lock gate closing stop",
+                              "Waiting for other vessels in lock start",
+                              "Waiting for other vessels in lock stop",
+                              "Waiting for lock levelling start",
+                              "Waiting for lock levelling stop",
+                              "Waiting for lock gate opening start",
+                              "Waiting for lock gate opening stop",
+                              "Waiting for other vessels to leave lock start",
+                              "Waiting for other vessels to leave lock stop",
                               "Sailing to second lock gate start",
                               "Sailing to second lock gate stop",
                               "Sailing to lock complex exit start",
@@ -286,3 +292,39 @@ def spatially_visualize_lock_complex(lock_complex):
     m.fit_bounds(m.get_bounds())
 
     return m
+
+
+def show_results(summary: pd.Series):
+    def dict_table(d):
+        rows = "".join(
+            f"""
+            <tr>
+                <td style="text-align:left;padding-right:20px;">{k}</td>
+                <td style="text-align:right;width:80px;">{v:.2f}</td>
+            </tr>
+            """
+            for k, v in d.items()
+        )
+        return f"<table style='border-collapse:collapse;width:100%'>{rows}</table>"
+
+    rows = ""
+    for k, v in summary.items():
+        if isinstance(v, dict):
+            value = dict_table(v)
+        else:
+            value = f"<span style='float:right'>{v}</span>"
+
+        rows += f"""
+        <tr>
+            <th style="text-align:left;padding-right:30px;vertical-align:middle">{k}</th>
+            <td style="width:300px">{value}</td>
+        </tr>
+        """
+
+    html = f"""
+    <table style="border-collapse:collapse;width:500px">
+    {rows}
+    </table>
+    """
+
+    display(HTML(html))

@@ -17,11 +17,15 @@ from opentnsim.graph.utils import (
     _get_edges_from_geometry,
 )
 from opentnsim.lock.calculations import (
+    calculate_ic_ratio,
     calculate_lock_dimensions_from_geometry,
     calculate_and_check_lock_dimensions,
     calculate_lock_distances_to_nodes_of_edge_from_geometry,
+    calculate_lock_occupancy,
+    calculate_cycle_event_durations
 )
 from opentnsim.lock.mixins.operator import IsLockChamberOperator
+from opentnsim.lock.logutils import get_vessel_delays, calculate_cycle_information
 from opentnsim.lock.utils import (
     _get_directional_edge,
     _get_lock_operation_to_and_from_node,
@@ -32,7 +36,7 @@ from opentnsim.lock.utils import (
     _verify_node_AB,
     check_lock_distances_to_nodes_of_edge,
 )
-from opentnsim.lock.visualizations import create_time_distance_plot
+from opentnsim.lock.visualizations import create_time_distance_plot, show_results
 from opentnsim.output import HasOutput
 
 
@@ -74,7 +78,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         sailing_in_speed_B=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
         sailing_out_speed_B=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
         minimum_manoeuvrability_speed=2 * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
-        gate_open=None,  # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
+        gate_open_at_node=None,  # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
         operational_hour_start_times=None,
         operational_hour_stop_times=None,
         crs_m = "EPSG:4087",
@@ -111,7 +115,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         # initialization
         super().__init__(env=env,
                          edge=edge,
-                         capacity=math.inf,
+                         nr_resources=math.inf,
                          length=self.lock_length,
                          remaining_length=self.lock_length,
                          *args, **kwargs)
@@ -145,10 +149,10 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.gate_closing_time = gate_closing_time
         self.gate_A_open = True
         self.gate_B_open = True
-        self.gate_open = gate_open
-        if self.gate_open is None:
-            self.gate_open = self.start_node
-        if self.gate_open == self.start_node:
+        self.gate_open_at_node = gate_open_at_node
+        if self.gate_open_at_node is None:
+            self.gate_open_at_node = self.start_node
+        if self.gate_open_at_node == self.start_node:
             self.gate_B_open = False
         else:
             self.gate_A_open = False
@@ -164,7 +168,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.valve_opening_time = valve_opening_time
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
         hydromanager = HydrodynamicDataManager()
-        wlev_series = hydromanager._get_hydrodynamic_data_series(time, self.gate_open, "Water level")
+        wlev_series = hydromanager._get_hydrodynamic_data_series(time, self.gate_open_at_node, "Water level")
         self.water_level = wlev_series
 
         # operational information
@@ -190,6 +194,45 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
 
         # Add to the graph:
         add_lock_to_graph(self)
+
+
+    def get_performance(self):
+        Tc_df = calculate_cycle_information(self)
+        if Tc_df.empty:
+            return pd.Series()
+        ic, capacity = calculate_ic_ratio(self, Tc_df)
+        occupancy, _ = calculate_lock_occupancy(self)
+        event_durations, event_durations_summary = calculate_cycle_event_durations(Tc_df)
+        _, vessel_delays, vessel_delays_causes = get_vessel_delays(self)
+        vessel_delays_locations = vessel_delays[['waiting_area (%)',
+                                                 'sailing_to_lock (%)',
+                                                 'in_lock (%)',
+                                                 'sailing_from_lock (%)']]
+        vessel_delays_causes = vessel_delays_causes[['congestion (%)',
+                                                     'obstruction (%)',
+                                                     'traffic (%)',
+                                                     'operation of lock (%)']]
+        results = {'Minimum delay': vessel_delays['min_delay'],
+                   'Average delay': vessel_delays['average_delay'],
+                   'Maximum delay': vessel_delays['max_delay'],
+                   'Total delay': vessel_delays['total_delay'],
+                   'Delay areas': dict(sorted(vessel_delays_locations.to_dict().items(), key=lambda x: x[1], reverse=True)),
+                   'Delay causes': dict(sorted(vessel_delays_causes.to_dict().items(), key=lambda x: x[1], reverse=True)),
+                   'Cycle-averaged occupancy (%)': occupancy,
+                   'Average cycle time': event_durations['Average cycle time'],
+                   'Cycle event composition': event_durations_summary.to_dict(),
+                   'Lock capacity': np.round(capacity,2),
+                   'Cycle-averaged I/C-ratio': np.round(ic,2)}
+
+        summary = pd.Series(results)
+        show_results(summary)
+        return summary
+
+
+    def get_aggregated_cycle_information(self):
+        Tc_df = calculate_cycle_information(self)
+        event_durations, _ = calculate_cycle_event_durations(Tc_df)
+        return event_durations
 
 
     def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib'):

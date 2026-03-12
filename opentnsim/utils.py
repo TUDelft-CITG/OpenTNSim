@@ -18,6 +18,10 @@ See https://en.wikipedia.org/wiki/Shapefile for additional information.
 import pathlib
 import warnings
 
+#
+import inspect
+from IPython.display import display
+
 # spatial libraries
 import networkx as nx
 
@@ -71,5 +75,177 @@ def time_to_numpy(t_start):
         t_start = np.array([t_start], dtype=np.datetime64)[0]
     return t_start
 
+
+def inspect_object(Class, candidate_kwargs={}, show_parameter_table = False):
+
+    def highlight_status(row):
+        if row["status"] == "missing":
+            return ["background-color: #ffcccc"] * len(row)
+        if row["status"] == "optional (unused)":
+            return ["background-color: #ffe5b4"] * len(row)
+        if row["status"] == "optional (used)":
+            return ["background-color: #e8f5e9"] * len(row)
+        return ["background-color: #c8e6c9"] * len(row)
+
+    rows = []
+    for cls in Class.mro():
+        if cls is object:
+            continue
+
+        if "__init__" not in cls.__dict__:
+            continue
+
+        sig = inspect.signature(cls.__init__)
+
+        for name, param in sig.parameters.items():
+            if name == "self":
+                continue
+
+            if param.kind in (
+                    inspect.Parameter.VAR_POSITIONAL,
+                    inspect.Parameter.VAR_KEYWORD,
+            ):
+                continue
+
+            rows.append(
+                {
+                    "parameter": name,
+                    "class": cls.__name__,
+                    "required": param.default is inspect.Parameter.empty,
+                    "provided": name in candidate_kwargs,
+                }
+            )
+
+    df = pd.DataFrame(rows).drop_duplicates("parameter")
+    df["missing"] = df["required"] & (~df["provided"])
+    df["status"] = " "
+    df.loc[df["missing"], "status"] = "missing"
+    df.loc[(df["required"]) & (df["provided"]), "status"] = "added"
+    df.loc[(~df["required"]) & (df["provided"]), "status"] = "optional (used)"
+    df.loc[(~df["required"]) & (~df["provided"]), "status"] = "optional (unused)"
+    df = df.sort_values(
+        by=["missing", "required", "class", "parameter"],
+        ascending=[False, False, True, True],
+    ).reset_index(drop=True)
+    missing_parameters = not df[df.status == 'missing'].empty
+    df = df.drop(["missing", "required", "provided"], axis=1)
+    df = df.style.apply(highlight_status, axis=1)
+    if show_parameter_table:
+        display(df)
+    else:
+        return df, missing_parameters
+
+
+def check_class_is_vesselclass(VesselClass):
+    required_mixins = ["Identifiable", "Movable"]
+    present_mixins = [cls.__name__ for cls in VesselClass.mro()]
+    missing_mixins = [m for m in required_mixins if m not in present_mixins]
+
+    if missing_mixins:
+        raise TypeError(f"VesselClass must include the following mixins: {missing_mixins}")
+
+
+def get_all_init_params(VesselClass):
+    """
+    Return a set of all parameters from __init__ in the MRO
+    (excluding self, *args, **kwargs)
+    """
+    allowed = set()
+    for cls in VesselClass.mro():
+        if cls is object:
+            continue
+        if "__init__" not in cls.__dict__:
+            continue
+        sig = inspect.signature(cls.__init__)
+        for name, param in sig.parameters.items():
+            if name == "self":
+                continue
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL,
+                              inspect.Parameter.VAR_KEYWORD):
+                continue
+            allowed.add(name)
+    return allowed
+
+
+def create_vessel(
+        VesselClass,
+        env,
+        start_node,
+        end_node,
+        show_unused_optional_parameters = False,
+        **kwargs,
+):
+    # check class
+    check_class_is_vesselclass(VesselClass)
+
+    route = nx.dijkstra_path(env.graph, start_node, end_node)
+    geometry = env.graph.nodes[start_node]["geometry"]
+
+    # check input
+    auto_kwargs = {"env": env,
+                   "route": route,
+                   "geometry": geometry, }
+    candidate_kwargs = {**auto_kwargs, **kwargs}
+    df, missing_parameters = inspect_object(VesselClass, candidate_kwargs)
+    if show_unused_optional_parameters or missing_parameters:
+        display(df)
+
+    # construct vessel
+    allowed = get_all_init_params(VesselClass)
+    extra_kwargs = {k: v for k, v in candidate_kwargs.items() if k not in allowed}
+    filtered_kwargs = {k: v for k, v in candidate_kwargs.items() if k in allowed}
+    vessel = VesselClass(**filtered_kwargs)
+    if "ExtraMetadata" in [cls.__name__ for cls in type(vessel).mro()]:
+        vessel.metadata.update(extra_kwargs)
+
+    if show_unused_optional_parameters:
+        return vessel, df
+    return vessel
+
+
+def generate_vessels_from_distribution(env,
+                                       VesselClass,
+                                       vessel_parameters,
+                                       mean_arrival_rate,
+                                       number_of_vessels,
+                                       start_node,
+                                       end_node,
+                                       seed=None,
+                                       start_time=None):
+    if start_time is None:
+        start_time = env.epoch
+    arrival_time = start_time
+
+    rng = np.random.default_rng()
+    if seed is not None:
+        rng = np.random.default_rng(seed)
+
+    vessels = []
+    try:
+        number_of_earlier_vessels = len(env.vessels)
+    except:
+        number_of_earlier_vessels = 0
+
+    for i in range(number_of_vessels):
+        arrival_time += pd.Timedelta(minutes=rng.exponential(mean_arrival_rate))
+
+        params = {
+            'name': f"Vessel {number_of_earlier_vessels + i}",
+            'arrival_time': arrival_time,
+            **vessel_parameters
+        }
+
+        vessel = create_vessel(
+            VesselClass,
+            env,
+            start_node=start_node,
+            end_node=end_node,
+            **params
+        )
+
+        vessels.append(vessel)
+
+    env.vessels[vessel.id] = vessel
+    return vessels
 
 # // END-NOSCAN
