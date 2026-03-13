@@ -86,7 +86,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     route_between_nodes_of_registration = nx.dijkstra_path(lock_complex.env.graph, lock_complex.registration_nodes[0],
                                                            lock_complex.registration_nodes[1])
     lock_edge_geometry = get_trajectory(lock_complex.env.graph, route_between_nodes_of_registration[0],
-                                        route_between_nodes_of_registration[-1])
+                                        route_between_nodes_of_registration[-1])[0]
     lock_edge_geometry_m = transform_geometry(lock_edge_geometry, epsg_out=lock_chamber.crs_m)
 
     # plot the lock geometry over time

@@ -13,9 +13,47 @@ import networkx as nx
 import shapely
 import pyproj
 from shapely.geometry import LineString, Point, MultiLineString
+from shapely.strtree import STRtree
+from scipy.spatial import cKDTree
 
 class NetworkWarning(Warning):
     pass
+
+
+def build_graph_spatial_index(graph):
+    """
+    Build spatial indexes for nodes and edges and store them in graph.graph.
+    """
+    # Avoid rebuilding
+    if "edge_spatial_tree" in graph.graph:
+        return
+
+    node_geoms = []
+    node_lookup = []
+    for n, data in graph.nodes(data=True):
+        geom = data.get("geometry")
+        if geom is not None and not geom.is_empty:
+            node_geoms.append((geom.x, geom.y))
+            node_lookup.append(n)
+
+    node_coords = np.array(node_geoms)
+    node_tree = cKDTree(node_coords)
+
+    graph.graph["node_kdtree"] = node_tree
+    graph.graph["node_lookup"] = node_lookup
+
+    # ---- Edges ----
+    edge_geoms = []
+    edge_lookup = {}
+    for u, v, data in graph.edges(data=True):
+        geom = data.get("geometry")
+        if geom is not None and not geom.is_empty:
+            edge_geoms.append(geom)
+            edge_lookup[geom] = (u, v)
+
+    edge_tree = STRtree(edge_geoms)
+    graph.graph["edge_spatial_tree"] = edge_tree
+    graph.graph["edge_lookup"] = edge_lookup
 
 
 def check_graph_is_multidigraph_type(graph):
@@ -110,49 +148,35 @@ def get_longest_common_subroute(route1, route2):
     return dp[n][m]
 
 
-def find_closest_node(G, point):
-    """find the closest node on the graph from a given point"""
-
-    distance = np.full((len(G.nodes)), fill_value=np.nan)
-    for ii, n in enumerate(G.nodes):
-        distance[ii] = point.distance(G.nodes[n]["geometry"])
-    name_node = list(G.nodes)[np.argmin(distance)]
-    distance_node = np.min(distance)
-
-    return name_node, distance_node
-
-
-def find_closest_edge(G, point: Point):
+def find_closest_node(graph, point):
     """
-    Find the closest edge on the graph from a given point.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-        Graph with edges that have a 'geometry' attribute (LineString).
-    point : shapely.geometry.Point
-        The point to measure distance from.
-
-    Returns
-    -------
-    edge : tuple
-        The edge (u, v) closest to the point.
-    distance_edge : float
-        Distance from the point to the closest edge.
+    Find the closest node to a Shapely Point using KDTree.
     """
-    distances = []
-    edges_list = list(G.edges(data=True))
+    build_graph_spatial_index(graph)
 
-    for u, v, data in edges_list:
-        geom = data.get("geometry")  # shapely LineString
-        if geom is not None and not geom.is_empty and geom.is_valid:
-            distances.append(point.distance(geom))
+    tree = graph.graph["node_kdtree"]
+    lookup = graph.graph["node_lookup"]
 
-    min_idx = np.argmin(distances)
-    closest_edge = (edges_list[min_idx][0], edges_list[min_idx][1])
-    distance_edge = distances[min_idx]
+    dist, idx = tree.query([point.x, point.y])
+    closest_node = lookup[idx]
 
-    return closest_edge, distance_edge
+    return closest_node
+
+
+def find_closest_edge(graph, point):
+    """
+    Find the closest edge to a Shapely Point using STRtree.
+    """
+    build_graph_spatial_index(graph)
+
+    tree = graph.graph["edge_spatial_tree"]
+    lookup = graph.graph["edge_lookup"]
+
+    idx = tree.nearest(point)
+    geom = tree.geometries[idx]
+    edge = lookup[geom]
+
+    return edge
 
 
 def network_check(graph):
@@ -644,9 +668,11 @@ def get_trajectory(graph, node_1, node_2):
     geometry = None
     route = nx.dijkstra_path(graph, node_1, node_2)
     is_multidigraph = check_graph_is_multidigraph_type(graph)
+    edge_length_m = 0
     for edge in zip(route[:-1], route[1:]):
         edge = get_edge(graph, edge, is_multidigraph)
         edge_geometry = graph.edges[edge]['geometry']
+        edge_length_m += graph.edges[edge]['length_m']
         aligned = check_if_geometry_is_aligned_with_edge(graph, edge)
         if not aligned:
             edge_geometry = reverse_geometry(edge_geometry)
@@ -656,7 +682,7 @@ def get_trajectory(graph, node_1, node_2):
         else:
             geometry = edge_geometry
 
-    return geometry
+    return geometry, edge_length_m
 
 
 def get_closest_location_on_edge_to_point(graph, edge, point):
@@ -1041,3 +1067,27 @@ def compare_two_edge_info(graph, edge_A, edge_B):
     missing_items_A = edge_info_A.keys() - shared_items.keys()
     missing_items_B = edge_info_B.keys() - shared_items.keys()
     return shared_items, missing_items_A, missing_items_B
+
+
+def get_largest_route_between_edges(graph, edge1, edge2):
+    if set(edge1) == set(edge2):
+        return list(edge1)
+
+    sources = list(edge1)
+    targets = list(edge2)
+
+    lengths = nx.multi_source_dijkstra_path_length(graph, sources, weight=None)
+    paths = nx.multi_source_dijkstra_path(graph, sources, weight=None)
+
+    best_target = None
+    best_length = -1
+
+    for t in targets:
+        if t in lengths and lengths[t] > best_length:
+            best_length = lengths[t]
+            best_target = t
+
+    if best_target is None:
+        raise nx.NetworkXNoPath
+
+    return paths[best_target]

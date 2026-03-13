@@ -8,7 +8,8 @@ from shapely import reverse
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
-                                   create_transformer, get_trajectory, find_closest_node, find_closest_edge)
+                                   create_transformer, get_trajectory, find_closest_node, find_closest_edge,
+                                   get_largest_route_between_edges)
 import warnings
 
 
@@ -40,7 +41,7 @@ def calculate_depth(geom_start, geom_stop, graph):
     """
     # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
 
-    edge = find_closest_edge(graph, geom_start)[0]
+    edge = find_closest_edge(graph, geom_start)
     node_start, node_stop = edge[:2]
 
     # Read from the graph data from vaarweginformatie.nl the General depth of each edge
@@ -107,6 +108,7 @@ def calculate_distance_along_path(graph, path):
                     break
 
     return path_length
+
 
 def compute_distance(edge, orig, dest):
     """compute distance from origin to destination.
@@ -233,6 +235,26 @@ def calculate_distance_over_network_to_location(graph, node_1, node_2, location,
         distance_sailed = geod.geometry_length(geometries[0])
         distance_to_go = geod.geometry_length(geometries[1])
     return distance_sailed,distance_to_go
+
+
+def calculate_distance_between_locations_along_edges(graph, location_1, location_2):
+    edge_1 = find_closest_edge(graph, location_1)
+    edge_2 = find_closest_edge(graph, location_2)
+    route = get_largest_route_between_edges(graph, edge_1, edge_2)
+    geometry, length_m = get_trajectory(graph, route[0], route[-1])
+    geometry_length = geometry.length
+
+    distance_1 = geometry.project(location_1)
+    distance_2 = geometry.project(location_2)
+
+    fraction_1 = distance_1 / geometry_length
+    fraction_2 = distance_2 / geometry_length
+
+    distance_m_1 = fraction_1 * length_m
+    distance_m_2 = fraction_2 * length_m
+
+    distance_m = round(np.abs(distance_m_1 - distance_m_2),2)
+    return distance_m
 
 
 def calculate_distance_from_location_over_edge(graph,edge,location,tolerance=0.0001):
