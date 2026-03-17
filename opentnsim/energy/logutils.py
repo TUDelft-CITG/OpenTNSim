@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Logging utilities for energy-related calculations.
 """
@@ -54,7 +55,6 @@ def add_energy_attributes_to_eventtable(df, objs):
     df: pandas.DataFrame
         DataFrame with energy-related attributes added.
     """
-
     for index, row in df.iterrows():
 
         # the generator option (next) is used to make sure we get the full copy of
@@ -64,6 +64,7 @@ def add_energy_attributes_to_eventtable(df, objs):
         # get the depth from the edge sailed in the event (and check if squat effects
         # need to be considered
         h_0 = graph_module.calculate_depth(row["start location"], row["stop location"], obj.env.graph)
+
         h_0 = obj.calculate_h_squat(
             v=obj.v, h_0=h_0
         )  # TODO: actually takes width as arg
@@ -217,13 +218,17 @@ def add_H2_attributes_to_event_table(df, objs):
 
         
         df.at[index, "H2_consumption (g)"] = H2_consumption
-        df.at[index, "H2_consumption_m (g/m)"] = H2_consumption / row["distance (m)"]
-        df.at[index, "H2_consumption_s (g/s)"] = H2_consumption / row["duration (s)"]
+        if row["distance (m)"] != 0:
+            df.at[index, "H2_consumption_m (g/m)"] = H2_consumption / row["distance (m)"]
+        else:
+            df.at[index, "H2_consumption_m (g/m)"] = 0.
+        if row["duration (s)"] != 0:
+            df.at[index, "H2_consumption_s (g/s)"] = H2_consumption / row["duration (s)"]
+        else:
+            df.at[index, "H2_consumption_s (g/s)"] = 0.
 
         # Test H2 consumption
         # df.at[index, "H2_consumption_new (g/s)"] = dH2_consumption / row["duration (s)"]
-
-        
 
         # CO2_emission_total = (
         #     row["total_energy (kWh)"] * obj.total_factor_CO2
