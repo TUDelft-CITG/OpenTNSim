@@ -13,6 +13,7 @@ import networkx as nx
 import shapely
 import pyproj
 from shapely.geometry import LineString, Point, MultiLineString
+from shapely.ops import split, snap
 from shapely.strtree import STRtree
 from scipy.spatial import cKDTree
 
@@ -25,7 +26,7 @@ def build_graph_spatial_index(graph):
     Build spatial indexes for nodes and edges and store them in graph.graph.
     """
     # Avoid rebuilding
-    if "edge_spatial_tree" in graph.graph:
+    if "node_lookup" in graph.graph and len(graph.graph['node_lookup']) == len(graph.nodes):
         return
 
     node_geoms = []
@@ -685,6 +686,27 @@ def get_trajectory(graph, node_1, node_2):
     return geometry, edge_length_m
 
 
+def get_trajectory_between_locations(graph, point_1, point_2, tolerance = 0.0001):
+    edge_1 = find_closest_edge(graph, point_1)
+    edge_2 = find_closest_edge(graph, point_2)
+
+    route = get_largest_route_between_edges(graph, edge_1, edge_2)
+    geometry = get_trajectory(graph, route[0], route[-1])[0]
+
+    lines_1 = split(snap(geometry, point_1, tolerance), point_1).geoms
+    distance = math.inf
+    splitting_index = 0
+    for index, line_1 in enumerate(lines_1):
+        distance_to_line = line_1.distance(point_2)
+        if distance_to_line < distance:
+            splitting_index = index
+            distance = distance_to_line
+
+    geometry = lines_1[splitting_index]
+    geometry = split(snap(geometry, point_2, tolerance), point_2).geoms[splitting_index]
+    return geometry
+
+
 def get_closest_location_on_edge_to_point(graph, edge, point):
     edge_geometry = graph.edges[edge]["geometry"]
     point_on_edge = edge_geometry.interpolate(edge_geometry.project(point))
@@ -752,6 +774,7 @@ def get_edges(graph, route):
 def create_transformer(crs_in = "EPSG:4326", crs_out = "EPSG:4087"):
     transformer = pyproj.Transformer.from_crs(crs_in, crs_out, always_xy=True).transform
     return transformer
+
 
 def get_edges_at_a_distance(graph, start_node, end_node, threshold):
     """

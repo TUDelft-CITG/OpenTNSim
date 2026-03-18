@@ -4,16 +4,18 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from opentnsim.graph.utils import get_trajectory
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.graph.visualizations import (visualize_node_in_folium_plot, visualize_edge_in_folium_plot,
                                             visualize_geometry_point_in_folium_plot,
                                             visualize_geometry_polygon_in_folium_plot)
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.lock.utils import _get_vessels_that_passed_the_lock_chamber
 import folium
 from IPython.display import display, HTML
 
-def add_locking_phases_to_plot(lock_chamber, fig, extend, time_axis = 'x', method='Matplotlib'):
+def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, time_axis = 'x', method='Matplotlib'):
     lock_df = pd.DataFrame(lock_chamber.logbook)
     for index, message_info in lock_df.iterrows():
         message_found = False
@@ -39,9 +41,9 @@ def add_locking_phases_to_plot(lock_chamber, fig, extend, time_axis = 'x', metho
         if method == 'Matplotlib' and message_found:
             extend = [extend[0],extend[0],extend[-1],extend[-1]]
             if time_axis == 'y':
-                fig.fill(extend, [time_start, time_stop, time_stop, time_start], color=color, zorder=-1)
+                ax.fill(extend, [time_start, time_stop, time_stop, time_start], color=color, zorder=-1)
             else:
-                fig.fill([time_start, time_stop, time_stop, time_start], extend, color=color, zorder=-1)
+                ax.fill([time_start, time_stop, time_stop, time_start], extend, color=color, zorder=-1)
         elif method == 'Plotly' and message_found:
             x_data = [time_start,time_stop]
             y_data = extend
@@ -55,10 +57,11 @@ def add_locking_phases_to_plot(lock_chamber, fig, extend, time_axis = 'x', metho
                           y1=y_data[-1],
                           fillcolor=color, opacity=0.5,
                           layer="below", line_width=0,
-                          name=name)
+                          name=name, row=ax[0], col=ax[1])
 
 
-def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method='Matplotlib'):
+def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method='Matplotlib',
+                              boundary_nodes = None):
     """Create a time-distance plot of vessels passing a lock complex
 
     Parameters
@@ -82,9 +85,11 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     lock_complex = lock_chamber.lock_complex
     vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
 
+    if boundary_nodes is None:
+        boundary_nodes = lock_complex.registration_nodes
+
     # create lock edge geometry in [m]
-    route_between_nodes_of_registration = nx.dijkstra_path(lock_complex.env.graph, lock_complex.registration_nodes[0],
-                                                           lock_complex.registration_nodes[1])
+    route_between_nodes_of_registration = nx.dijkstra_path(lock_complex.env.graph, boundary_nodes[0], boundary_nodes[1])
     lock_edge_geometry = get_trajectory(lock_complex.env.graph, route_between_nodes_of_registration[0],
                                         route_between_nodes_of_registration[-1])[0]
     lock_edge_geometry_m = transform_geometry(lock_edge_geometry, epsg_out=lock_chamber.crs_m)
@@ -132,6 +137,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     all_times = []
     all_distances = []
     traces = []
+    vessel_names = []
     for vessel in vessels:
         times = []
         distances = []
@@ -156,17 +162,67 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         distances = np.array(distances) - x_correction
         all_times.append(times)
         all_distances.append(distances)
-
+        vessel_names.append(vessel.name)
         # Add vessel trace with vessel.name in legend
         if method == 'Plotly':
             traces.append(go.Scatter(x=distances, y=times, mode='lines', name=vessel.name))
 
+    nrows = 1
+    ncols = 1
+    width_ratios = [1]
+    if len(lock_chamber.water_level):
+        hydromanager = HydrodynamicDataManager()
+        node_A, node_B = lock_chamber.edge
+        ncols = 2
+        width_ratios = [4, 1]
     if method == 'Matplotlib':
-        fig, ax = plt.subplots()
-        for distances, times in zip(all_distances, all_times):
-            ax.plot(distances, times)
+        fig, axes = plt.subplots(nrows, ncols, width_ratios=width_ratios)
+        ax = axes[0]
+        for distances, times, vessel_name in zip(all_distances, all_times, vessel_names):
+            ax.plot(distances, times, label=vessel_name)
+        if ncols > 1:
+            ax = axes[1]
+            ax.plot(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"],
+                    hydromanager.hydrodynamic_data["TIME"], color='lightblue',label=f'Node {node_A}')
+            ax.plot(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Water level"],
+                    hydromanager.hydrodynamic_data["TIME"], color='C0',label=f'Node {node_B}')
+            ax.plot(lock_chamber.water_level, hydromanager.hydrodynamic_data["TIME"],
+                    color='k', label = 'Lock chamber')
+            ax.set_yticklabels([])
+            ax.set_xlabel('Water level [m]')
     elif method == 'Plotly':
-        fig = go.Figure(data=traces)
+        width_ratios = list(width_ratios / np.sum(width_ratios))
+        fig = make_subplots(
+            rows=nrows,
+            cols=ncols,
+            column_widths=width_ratios
+        )
+        for trace in traces:
+            fig.add_trace(trace, row=1, col=1)
+        if ncols > 1:
+            fig.add_trace(go.Scatter(x=hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"],
+                                     y=hydromanager.hydrodynamic_data["TIME"], mode='lines', name=f'Node {node_A}',
+                                     line=dict(color="cyan")), row=1, col=2)
+            fig.add_trace(go.Scatter(x=hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Water level"],
+                                     y=hydromanager.hydrodynamic_data["TIME"], mode='lines', name=f'Node {node_B}',
+                                     line=dict(color="darkblue")), row=1, col=2)
+            fig.add_trace(go.Scatter(x=lock_chamber.water_level, y=hydromanager.hydrodynamic_data["TIME"],
+                                     mode='lines', name='Lock chamber', line=dict(color="black")), row=1, col=2)
+            x_min = np.floor(np.min([np.min(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"]),
+                                     np.min(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Water level"])]))
+            if x_min < 0:
+                x_min = 1.1*x_min
+            else:
+                x_min = 0.9*x_min
+
+            x_max = np.ceil(np.max([np.max(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"]),
+                                    np.max(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Water level"])]))
+            if x_max < 0:
+                x_max = 0.9*x_max
+            else:
+                x_max = 1.1*x_max
+
+            extend_x = [x_min, x_max]
 
     # Determine y-axis limits
     all_y_values = [t for sublist in all_times for t in sublist]
@@ -185,6 +241,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     lock_extend_x = np.array([x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection
     if method == 'Matplotlib':
+        ax = axes[0]
         ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=-2)
     elif method == 'Plotly':
         fig.add_shape(type="rect",
@@ -196,33 +253,62 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     # plot the lock phases
     if method == 'Matplotlib':
-        add_locking_phases_to_plot(lock_chamber, ax,lock_extend_x,time_axis='y',method=method)
+        add_locking_phases_to_plot(lock_chamber, fig, axes[0], lock_extend_x, time_axis='y', method=method)
+        extend_x = axes[1].get_xlim()
+        add_locking_phases_to_plot(lock_chamber, fig, axes[1], extend_x, time_axis='y', method=method)
     elif method == 'Plotly':
-        add_locking_phases_to_plot(lock_chamber, fig, lock_extend_x, time_axis='y', method=method)
+        add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, time_axis='y', method=method)
+        if ncols > 1:
+            add_locking_phases_to_plot(lock_chamber, fig, (1,2), extend_x, time_axis='y', method=method)
 
     # plot the approach points
     sailing_distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point + lock_chamber.lock_length / 2
     xlabel = "Distance from Lock Complex [m]"
     ylabel = "Timestamp"
-    title = "Time-Distance Plot of Vessel Movements"
     if method == 'Matplotlib':
+        ax = axes[0]
         ax.axvline(-sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
         ax.axvline(sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
         ax.set_xlim([xlimmin, xlimmax])
-        ax.set_ylim([ylimmin, ylimmax])
-        ax.set_title(title)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
+        bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+        ax_width_in = bbox.width
+        item_width = 1.2
+        ncol = max(1, int(ax_width_in // item_width))
+        ax.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.15),
+            ncol=ncol,
+            frameon=False
+        )
+        for ax in axes:
+            ax.set_ylim([ylimmin, ylimmax])
+        if ncols > 1:
+            ax = axes[1]
+            ax.set_xlim(extend_x)
+            bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+            ax_width_in = bbox.width
+            item_width = 1.2
+            ncol = max(1, int(ax_width_in // item_width))
+            ax.legend(
+                loc="upper center",
+                bbox_to_anchor=(0.75, -0.15),
+                ncol=ncol,
+                frameon=False
+            )
 
     elif method == 'Plotly':
         fig.add_vline(x=-sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
         fig.add_vline(x=sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
-        fig.update_layout(title=title,
-                          xaxis_title=xlabel,
-                          yaxis_title=ylabel,
-                          xaxis_range=[xlimmin, xlimmax],
-                          yaxis_range=[ylimmin, ylimmax],
-                          showlegend=True)
+        fig.update_layout(showlegend=True)
+        fig.update_xaxes(title_text=xlabel,
+                         range=[xlimmin, xlimmax], row=1, col=1)
+        fig.update_yaxes(title_text=ylabel,
+                         range=[ylimmin, ylimmax], row=1, col=1)
+        if ncols > 1:
+            fig.update_xaxes(title_text='Water level [m]', range=extend_x, row=1, col=2)
+            fig.update_yaxes(range=[ylimmin, ylimmax], row=1, col=2)
 
     return fig
 

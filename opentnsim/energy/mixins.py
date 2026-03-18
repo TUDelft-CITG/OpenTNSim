@@ -59,8 +59,6 @@ def karpov_smooth_curves():
 
 
 # %% CLASSES
-
-
 class ConsumesEnergy:
     """
     Mixin class: Something that consumes energy.

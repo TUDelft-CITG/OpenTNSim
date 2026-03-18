@@ -212,10 +212,10 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
                                                      'obstruction (%)',
                                                      'traffic (%)',
                                                      'operation of lock (%)']]
-        results = {'Minimum delay': vessel_delays['min_delay'],
-                   'Average delay': vessel_delays['average_delay'],
-                   'Maximum delay': vessel_delays['max_delay'],
-                   'Total delay': vessel_delays['total_delay'],
+        results = {'Minimum individual vessel delay': vessel_delays['min_vessel_delay'],
+                   'Average individual vessel delay': vessel_delays['average_vessel_delay'],
+                   'Maximum individual vessel delay': vessel_delays['max_vessel_delay'],
+                   'Total vessel delay': vessel_delays['total_delay'],
                    'Delay areas': dict(sorted(vessel_delays_locations.to_dict().items(), key=lambda x: x[1], reverse=True)),
                    'Delay causes': dict(sorted(vessel_delays_causes.to_dict().items(), key=lambda x: x[1], reverse=True)),
                    'Cycle-averaged occupancy (%)': occupancy,
@@ -235,6 +235,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         return event_durations
 
 
-    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib'):
-        fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, method = method)
+    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib', boundary_nodes = None):
+        fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax,
+                                        method = method, boundary_nodes = boundary_nodes)
         return fig

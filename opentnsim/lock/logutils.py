@@ -273,9 +273,9 @@ def get_vessel_delays(lock_chamber):
     vessel_delay_locations = {
         "nr_operations":cycle_nr,
         "nr_vessels": len(vessel_delays),
-        "min_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.min().total_seconds())),
-        "average_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.mean().total_seconds())),
-        "max_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.max().total_seconds())),
+        "min_vessel_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.min().total_seconds())),
+        "average_vessel_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.mean().total_seconds())),
+        "max_vessel_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.max().total_seconds())),
         "total_delay": total_delay,
         "waiting_area (%)": waiting_time_in_waiting_area,
         "sailing_to_lock (%)": sailing_delay_to_lock,
@@ -286,9 +286,9 @@ def get_vessel_delays(lock_chamber):
     vessel_delays_causes = {
         "nr_operations":cycle_nr,
         "nr_vessels": len(vessel_delays),
-        "min_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.min().total_seconds())),
-        "average_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.mean().total_seconds())),
-        "max_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.max().total_seconds())),
+        "min_vessel_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.min().total_seconds())),
+        "average_vessel_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.mean().total_seconds())),
+        "max_vessel_delay": pd.Timedelta(seconds=round(vessel_delays.total_delay.max().total_seconds())),
         "total_delay": total_delay,
         "congestion (%)": np.round(
             (vessel_delays["waiting time in waiting_area for available operation (%)"]*
@@ -524,7 +524,8 @@ def calculate_cycle_information(lock_chamber):
         results.append({
             "Start time of cycle":t_start,
             "Stop time of cycle":t_stop,
-            "Direction": direction,
+            "Direction first operation": direction,
+            "Direction second operation": 1 - direction,
             "Loop time start side": pd.Timedelta(seconds=round(t_l_up)),
             "Sailing-in time start side": pd.Timedelta(seconds=round(sum_t_i_up)),
             "Closing gate time start side": pd.Timedelta(seconds=round(T_close_up)),

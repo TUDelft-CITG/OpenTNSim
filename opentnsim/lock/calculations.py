@@ -240,7 +240,7 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
         operation_planning=lock_chamber.lock_complex.operation_planning,
         start_node=lock_chamber.start_node,
         end_node=lock_chamber.end_node,
-        node_open=lock_chamber.gate_open,
+        node_open=lock_chamber.gate_open_at_node,
         epoch=lock_chamber.env.epoch,
     )
 
@@ -267,10 +267,19 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
     )
 
     # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber
+    t = t_start + [np.timedelta64(int(dt), 's') for dt in t]
     if not prediction:
-        # TODO: de lock.water_level wordt niet gebruikt, maar is wel leuk om als logging terug te zien na een berekening. Nadenken of we dat zo willen laten, of anders willen bijhouden.
-        t_final = t_start + np.timedelta64(int(levelling_time))
         hydromanager = HydrodynamicDataManager()
+        wlev = H_A
+        if not direction:
+            wlev = H_B
+        for z_index, dt in enumerate(t):
+            t_index = hydromanager._get_time_index_of_hydrodynamic_data(dt)
+            if pd.isna(z[z_index]):
+                break
+            lock_chamber.water_level[t_index] = wlev[t_index] - z[z_index]
+
+        t_final = t_start + np.timedelta64(int(levelling_time),'s')
         t_index_final = hydromanager._get_time_index_of_hydrodynamic_data(t_final)
         if not direction:
             lock_chamber.water_level[t_index_final:] = H_B[t_index_final:].copy()
@@ -1819,8 +1828,8 @@ def calculate_cycle_event_durations(Tc_df):
     timedelta_columns = Tc_df.select_dtypes(include="timedelta64[ns]").columns
     Tc_df[timedelta_columns] = Tc_df[timedelta_columns].apply(lambda col: col.dt.total_seconds().astype("int64"))
 
-    Tc_df_down = Tc_df[Tc_df.Direction == 1]
-    Tc_df_up = Tc_df[Tc_df.Direction == 0]
+    Tc_df_down = Tc_df[Tc_df['Direction first operation'] == 1]
+    Tc_df_up = Tc_df[Tc_df['Direction first operation'] == 0]
     total_loop_times_down = \
         Tc_df_down['Loop time start side'].sum() + Tc_df_up['Loop time opposing side'].sum()
     total_sailing_in_times_down = \
