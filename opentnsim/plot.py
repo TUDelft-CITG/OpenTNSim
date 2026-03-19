@@ -63,20 +63,21 @@ def vessel_planning(vessels, activities, colors, web=False):
         )
 
     # prepare layout of figure
+  
+  
     layout = go.Layout(
-        title="Vessel planning",
-        hovermode="closest",
-        legend=dict(x=0, y=-0.2, orientation="h"),
-        xaxis=dict(
-            title="Time",
-            titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
-            range=[0, df.index[-1]],
-        ),
-        yaxis=dict(
-            title="Vessels",
-            titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
-        ),
-    )
+    title="Vessel planning",
+    hovermode="closest",
+    legend=dict(x=0, y=-0.2, orientation="h"),
+    xaxis=dict(
+        title="Time",
+        range=[0, df.index[-1]],
+    ),
+    yaxis=dict(
+        title="Vessels",
+    ),
+)
+    
 
     # plot figure
     init_notebook_mode(connected=True)
