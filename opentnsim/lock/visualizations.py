@@ -60,8 +60,8 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, time_axis = 'x', m
                           name=name, row=ax[0], col=ax[1])
 
 
-def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method='Matplotlib',
-                              boundary_nodes = None):
+def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, offset_x=0.,
+                              method='Matplotlib', boundary_nodes = None, fig=None, ax=None):
     """Create a time-distance plot of vessels passing a lock complex
 
     Parameters
@@ -159,7 +159,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
                 times.append(time)
                 distances.append(distance)
 
-        distances = np.array(distances) - x_correction
+        distances = np.array(distances) - x_correction + offset_x
         all_times.append(times)
         all_distances.append(distances)
         vessel_names.append(vessel.name)
@@ -176,8 +176,10 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         ncols = 2
         width_ratios = [4, 1]
     if method == 'Matplotlib':
-        fig, axes = plt.subplots(nrows, ncols, width_ratios=width_ratios)
-        ax = axes[0]
+        axes = ax
+        if ax is None:
+            fig, axes = plt.subplots(nrows, ncols, width_ratios=width_ratios)
+            ax = axes[0]
         for distances, times, vessel_name in zip(all_distances, all_times, vessel_names):
             ax.plot(distances, times, label=vessel_name)
         if ncols > 1:
@@ -192,11 +194,12 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             ax.set_xlabel('Water level [m]')
     elif method == 'Plotly':
         width_ratios = list(width_ratios / np.sum(width_ratios))
-        fig = make_subplots(
-            rows=nrows,
-            cols=ncols,
-            column_widths=width_ratios
-        )
+        if fig is None:
+            fig = make_subplots(
+                rows=nrows,
+                cols=ncols,
+                column_widths=width_ratios
+            )
         for trace in traces:
             fig.add_trace(trace, row=1, col=1)
         if ncols > 1:
@@ -239,7 +242,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     if xlimmax is None:
         xlimmax = 2 * sailing_distance_to_crossing_point
 
-    lock_extend_x = np.array([x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection
+    lock_extend_x = np.array([x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection + offset_x
     if method == 'Matplotlib':
         ax = axes[0]
         ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=-2)
@@ -267,8 +270,8 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     ylabel = "Timestamp"
     if method == 'Matplotlib':
         ax = axes[0]
-        ax.axvline(-sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
-        ax.axvline(sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
+        ax.axvline(-sailing_distance_to_crossing_point + offset_x, color="lightgrey", zorder=0)
+        ax.axvline(sailing_distance_to_crossing_point + offset_x, color="lightgrey", zorder=0)
         ax.set_xlim([xlimmin, xlimmax])
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
@@ -299,8 +302,8 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             )
 
     elif method == 'Plotly':
-        fig.add_vline(x=-sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
-        fig.add_vline(x=sailing_distance_to_crossing_point, line=dict(color="lightgrey"))
+        fig.add_vline(x=-sailing_distance_to_crossing_point + offset_x, line=dict(color="lightgrey"))
+        fig.add_vline(x=sailing_distance_to_crossing_point + offset_x, line=dict(color="lightgrey"))
         fig.update_layout(showlegend=True)
         fig.update_xaxes(title_text=xlabel,
                          range=[xlimmin, xlimmax], row=1, col=1)
@@ -328,7 +331,7 @@ def plot_saltwater_intrusion(lock_chamber, ZSF_results):
     ax.set_xticklabels([])
     ax.set_xlabel('')
     ylim = ax.get_ylim()
-    add_locking_phases_to_plot(lock_chamber, ax, ylim, time_axis='x', method='Matplotlib')
+    add_locking_phases_to_plot(lock_chamber, fig, ax, ylim, time_axis='x', method='Matplotlib')
     ax.set_ylabel('Salt\nconcentration\n'+r'[kgm$^{-3}$]')
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
@@ -337,7 +340,7 @@ def plot_saltwater_intrusion(lock_chamber, ZSF_results):
     ax = axes[1]
     ax.plot(ZSF_results.time_stop.values,ZSF_results['mass_transport_lake'].cumsum().apply(lambda x: x * -1),color='gold')
     ylim = ax.get_ylim()
-    add_locking_phases_to_plot(lock_chamber, ax, ylim, time_axis='x', method='Matplotlib')
+    add_locking_phases_to_plot(lock_chamber, fig, ax, ylim, time_axis='x', method='Matplotlib')
     ax.set_ylabel('Salt mass\n[kg]')
     ax.set_xlabel('Time')
     ax.set_xlim(xlim)

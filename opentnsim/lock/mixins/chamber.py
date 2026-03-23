@@ -168,7 +168,10 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.valve_opening_time = valve_opening_time
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
         hydromanager = HydrodynamicDataManager()
-        wlev_series = hydromanager._get_hydrodynamic_data_series(time, self.gate_open_at_node, "Water level")
+        wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
+        time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
+        wlev_series = wlev_init*np.ones(len(time_series))
+        self.time = time_series
         self.water_level = wlev_series
 
         # operational information
@@ -235,7 +238,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         return event_durations
 
 
-    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, method = 'Matplotlib', boundary_nodes = None):
-        fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax,
-                                        method = method, boundary_nodes = boundary_nodes)
+    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, offset_x = 0., method = 'Matplotlib', boundary_nodes = None, fig=None, ax=None):
+        fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, offset_x = offset_x,
+                                        method = method, boundary_nodes = boundary_nodes, fig=fig, ax=ax)
         return fig
