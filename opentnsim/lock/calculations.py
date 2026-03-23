@@ -1370,7 +1370,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
     except:
         delay = pd.Timedelta(seconds = 0)
 
-    if delay > pd.Timedelta(seconds = 0):
+    if delay > pd.Timedelta(seconds = 0) and vessel is not None:
         for other_vessel in other_vessels_in_lock:
             other_vessel_planning_index = vessel_planning[vessel_planning.id == other_vessel.id].iloc[-1].name
             vessel_planning.loc[other_vessel_planning_index, 'time_lock_departure_start'] += delay

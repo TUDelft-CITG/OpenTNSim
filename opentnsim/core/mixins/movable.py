@@ -287,6 +287,7 @@ class Movable(Locatable, Routable, Log):
             current_time = datetime.datetime.fromtimestamp(self.env.now)
             delay = (arrival_time - current_time).total_seconds()
             yield self.env.timeout(delay)
+            self.metadata.pop('arrival_time')
 
         # Check if vessel is at correct location - if not, move to location
         yield from self._move_to_start()

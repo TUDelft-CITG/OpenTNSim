@@ -209,6 +209,7 @@ class IsLockChamberOperator:
         self.prepare_next_lock_operation(operation_index, direction, vessel)
 
         yield from self.communicate_vessel_to_leave_lock_complex(vessel, direction)
+        vessel.has_registered = False
 
 
     def allow_vessel_to_pass_waiting_area(self, vessel, waiting_area):

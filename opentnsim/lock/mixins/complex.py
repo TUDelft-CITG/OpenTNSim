@@ -76,6 +76,7 @@ class LockComplexTraversable(Movable, HasMultiDiGraph):
         if not hasattr(self.env,'vessels'):
             self.env.vessels = {}
         self.env.vessels[self.id] = self
+        self.has_registered = False
 
 
     def register_to_lock_master(self, origin):

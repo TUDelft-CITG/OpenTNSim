@@ -600,7 +600,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
     for lock_chamber in lock_complex.lock_chambers.values():
         if vessel.T < lock_chamber.lock_depth and vessel.L < lock_chamber.lock_length and vessel.B < lock_chamber.lock_width:
             suitable_lock_chambers.append(lock_chamber)
-
+    print(suitable_lock_chambers)
     if not len(suitable_lock_chambers):
         raise ValueError("Vessel cannot pass lock complex")
 
