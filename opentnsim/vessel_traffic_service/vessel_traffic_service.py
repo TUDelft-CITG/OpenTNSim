@@ -27,7 +27,7 @@ from shapely import reverse
 from shapely.ops import transform
 from opentnsim import core
 from opentnsim import model
-from opentnsim.graph.mixins import get_length_of_edge, get_geometry_of_edge, determine_length_of_edge_geometry
+from opentnsim.graph.utils import get_length_of_edge, get_geometry_of_edge, get_length_of_edge
 from opentnsim.graph import mixins
 from opentnsim.vessel_traffic_service.hydrodanamic_data_manager import HydrodynamicDataManager
 
@@ -76,7 +76,7 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         self.edges_info = self.get_edges_info()
 
         for edge in self.graph.edges:
-            length = determine_length_of_edge_geometry(graph, edge, crs_meter = self.crs_m)
+            length = get_length_of_edge(graph, edge, crs_meter = self.crs_m)
             self.graph.edges[edge]["length_m"] = length
 
         for node in graph.nodes:
