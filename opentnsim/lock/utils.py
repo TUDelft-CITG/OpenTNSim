@@ -190,9 +190,9 @@ def _get_lock_operation_direction(lock_chamber, to_node):
     return direction
 
 
-def _get_previous_assigned_vessel(lock_complex, operation_index):
+def _get_previous_assigned_vessel(lock_complex, lock_chamber, operation_index):
     operation_planning = lock_complex.operation_planning
-    assigned_operation = operation_planning.loc[operation_index]
+    assigned_operation = operation_planning[operation_planning.lock_chamber == lock_chamber.name].loc[operation_index]
     if len(assigned_operation.vessels) == 1:
         return None
     previous_vessel = assigned_operation.vessels[-2]
@@ -526,6 +526,7 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
     lock_complex = lock_chamber.lock_complex
     previous_planned_operations = lock_complex.operation_planning[(lock_complex.operation_planning.index < operation_index) &
                                                                   (lock_complex.operation_planning.lock_chamber == lock_chamber.name)]
+    print(lock_chamber.name, operation_index)
     empty_lock_operation_to_be_requested = False
     lock_operation_to_be_executed = False
     if not previous_planned_operations.empty:
@@ -600,7 +601,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
     for lock_chamber in lock_complex.lock_chambers.values():
         if vessel.T < lock_chamber.lock_depth and vessel.L < lock_chamber.lock_length and vessel.B < lock_chamber.lock_width:
             suitable_lock_chambers.append(lock_chamber)
-    print(suitable_lock_chambers)
+
     if not len(suitable_lock_chambers):
         raise ValueError("Vessel cannot pass lock complex")
 
