@@ -69,7 +69,8 @@ def calculate_z(
     H_B_init = H_B[time_index]
 
     if wlev_init is None:
-        last_operations = operation_planning[operation_planning.index < operation_index]
+        operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+        last_operations = operation_planning_lock[operation_planning_lock.operation_index < operation_index]
         if not last_operations.empty:
             last_operation = last_operations.iloc[-1]
             last_operation_direction = last_operation.direction
@@ -308,7 +309,8 @@ def calculate_lock_operation_start_information(lock_chamber, vessel, operation_i
     minimum_advance_to_open_gate = lock_chamber.minimum_advance_to_open_gate
     time_potential_lock_gate_opening_stop = time_lock_entry_start - minimum_advance_to_open_gate
 
-    previous_planned_operations = operation_planning[operation_planning.index < operation_index]
+    operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+    previous_planned_operations = operation_planning_lock[operation_planning_lock.index < operation_index]
     if not previous_planned_operations.empty:
         previous_operation = previous_planned_operations.iloc[-1]
         if not len(previous_operation.vessels):
@@ -609,13 +611,11 @@ def calculate_sailing_time_in_lock(lock_chamber, vessel, operation_index):
 
     """
     # determine the vessels assigned to the lock operation (that are already in the lock)
-    lock_complex = lock_chamber.lock_complex
-    vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index)
+    vessels = _get_vessels_from_planned_operation(lock_chamber, operation_index=operation_index)
 
     # determine the sailing distance from the lock gate to the position assigned to the vessel
     vessel_index = vessels.index(vessel)
     sailing_distance_from_lock_gate = (lock_chamber.lock_length - np.sum([vessel.L for vessel in vessels[:vessel_index]])) - 0.5 * vessel.L
-
 
     # determine the sailing speed of the vessel in the lock
     sailing_speed_into_lock = _get_vessel_sailing_speed_in_lock(lock_chamber, vessel)
@@ -654,7 +654,7 @@ def calculate_sailing_in_time_delay(lock_chamber, vessel, operation_index, time_
 
     lock_complex = lock_chamber.lock_complex
     vessel_planning = lock_complex.vessel_planning
-    vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index)
+    vessels = _get_vessels_from_planned_operation(lock_chamber, operation_index=operation_index)
     vessel_index = vessels.index(vessel)
 
     previous_vessels = vessels[:(vessel_index + 1)]
@@ -760,7 +760,8 @@ def calculate_lock_operation_start_time(lock_chamber, vessel, operation_index, d
     lock_operation_start_time = calculate_vessel_passing_start_time(lock_chamber, first_vessel, operation_index, direction)
 
     # determines the lock_operation_start_time based on whether it fits given the previous lock operations (should not be overlapping)
-    previous_operations = operation_planning[operation_planning.index < operation_index]
+    operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+    previous_operations = operation_planning_lock[operation_planning_lock.operation_index < operation_index]
     if not previous_operations.empty:
         previous_operation = previous_operations.iloc[-1]
         previous_lock_operation_stop_time = previous_operation.time_lock_operation_stop
@@ -871,8 +872,7 @@ def calculate_lock_entry_stop_time(lock_chamber, vessel, operation_index, direct
     # determine the last assigned vessel of the lock operation to determine the lock entry stop time
     if vessel is None:
         return lock_entry_start_time
-    lock_complex = lock_chamber.lock_complex
-    last_vessel = _get_last_vessel_of_lock_operation(lock_complex, operation_index)
+    last_vessel = _get_last_vessel_of_lock_operation(lock_chamber, operation_index)
     lock_entry_stop_duration = calculate_vessel_entry_stop_time(lock_chamber, last_vessel, operation_index, direction)
     lock_entry_stop_time = lock_entry_stop_duration + lock_entry_start_time
     return lock_entry_stop_time
@@ -915,18 +915,20 @@ def calculate_lock_operation_times(lock_chamber, operation_index, start_time, ve
     lock_complex = lock_chamber.lock_complex
     vessel_planning = lock_complex.vessel_planning
     operation_planning = lock_complex.operation_planning
+    operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+    operation_planning_index = operation_planning_lock[operation_planning_lock.operation_index == operation_index].index[-1]
     try:
-        vessel_goes_with_previous_operation = start_time < operation_planning.loc[operation_index, "time_gate_closing_start"]
+        vessel_goes_with_previous_operation = start_time < operation_planning.loc[operation_planning_index, "time_gate_closing_start"]
     except:
         vessel_goes_with_previous_operation = False
 
     if vessel_goes_with_previous_operation:
-        time_gate_closing_start = operation_planning.loc[operation_index, "time_gate_closing_start"]
-        time_gate_closing_stop = operation_planning.loc[operation_index, "time_gate_closing_stop"]
-        time_levelling_start = operation_planning.loc[operation_index, "time_levelling_start"]
-        time_levelling_stop = operation_planning.loc[operation_index, "time_levelling_stop"]
-        time_gate_opening_start = operation_planning.loc[operation_index, "time_gate_opening_start"]
-        time_gate_opening_stop = operation_planning.loc[operation_index, "time_gate_opening_stop"]
+        time_gate_closing_start = operation_planning.loc[operation_planning_index, "time_gate_closing_start"]
+        time_gate_closing_stop = operation_planning.loc[operation_planning_index, "time_gate_closing_stop"]
+        time_levelling_start = operation_planning.loc[operation_planning_index, "time_levelling_start"]
+        time_levelling_stop = operation_planning.loc[operation_planning_index, "time_levelling_stop"]
+        time_gate_opening_start = operation_planning.loc[operation_planning_index, "time_gate_opening_start"]
+        time_gate_opening_stop = operation_planning.loc[operation_planning_index, "time_gate_opening_stop"]
 
     else:
         # set default time gate closing start as start time
@@ -991,7 +993,7 @@ def calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index
 
     lock_complex = lock_chamber.lock_complex
     vessel_planning = lock_complex.vessel_planning
-    vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index)
+    vessels = _get_vessels_from_planned_operation(lock_chamber, operation_index=operation_index)
     vessel_index = vessels.index(vessel)
 
     previous_vessels = vessels[:(vessel_index+1)]
@@ -1004,7 +1006,6 @@ def calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index
         if vessel_1.id == vessel.id:
             sailing_time_out_of_lock = calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_index)
             sailing_out_stop_v1 = operation_stop_time + sailing_time_out_of_lock
-            #delay_to_departure = operation_stop_time
 
         sailing_out_gap = sailing_out_stop_v1 - sailing_out_stop_v0
         if sailing_out_gap < lock_chamber.sailing_out_time_gap_through_gate:
@@ -1078,7 +1079,7 @@ def calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_in
         the time that a lock operation's departure process can start
     """
     lock_complex = lock_chamber.lock_complex
-    vessels = _get_vessels_from_planned_operation(lock_complex, operation_index=operation_index,)
+    vessels = _get_vessels_from_planned_operation(lock_chamber, operation_index=operation_index,)
     vessel_index = vessels.index(vessel)
     distance_to_lock = np.sum([vessel.L for vessel in vessels[:vessel_index]]) + 0.5 * vessel.L
     vessel_speed = _get_vessel_sailing_speed_out_lock(lock_chamber, vessel)
@@ -1138,8 +1139,7 @@ def calculate_lock_departure_stop_time(lock_chamber, vessel, operation_index, op
     """
     if vessel is None:
         return operation_stop_time
-    lock_complex = lock_chamber.lock_complex
-    last_vessel = _get_last_vessel_of_lock_operation(lock_complex, operation_index)
+    last_vessel = _get_last_vessel_of_lock_operation(lock_chamber, operation_index)
     time_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, last_vessel, operation_index, operation_stop_time)
     return time_departure_stop
 
@@ -1193,8 +1193,7 @@ def calculate_lock_operation_stop_time(lock_chamber, vessel, operation_index, di
     """
     if vessel is None:
         return operation_stop_time
-    lock_complex = lock_chamber.lock_complex
-    last_vessel = _get_last_vessel_of_lock_operation(lock_complex, operation_index)
+    last_vessel = _get_last_vessel_of_lock_operation(lock_chamber, operation_index)
     time_operation_stop = calculate_vessel_passing_stop_time(lock_chamber, last_vessel, operation_index, direction, operation_stop_time)
     return time_operation_stop
 
@@ -1326,6 +1325,15 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
         vessel_planning_info = lock_complex.vessel_planning.loc[vessel_planning_index]
         lock_complex.vessel_planning.loc[vessel_planning_index, 'operation_index'] = operation_index
 
+    operation_planning = lock_complex.operation_planning
+    operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+    operation_planning_info = operation_planning_lock[operation_planning_lock.operation_index == operation_index]
+    if operation_planning_info.empty:
+        operation_planning_index = len(operation_planning)
+        lock_complex.operation_planning.loc[operation_planning_index, 'operation_index'] = operation_index
+    else:
+        operation_planning_index = operation_planning_info.index
+
     lock_operation_information = _get_information_for_lock_operation(lock_chamber, operation_index, direction)
     if vessel is not None:
         lock_operation_information["capacity_L"] -= vessel.L
@@ -1334,7 +1342,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
         vessels.append(vessel)
         lock_operation_information["vessels"] = vessels
         _update_lock_vessel_planning(lock_complex, vessel_planning_index, lock_operation_information)
-    _update_lock_operation_planning(lock_complex, operation_index, lock_operation_information)
+    _update_lock_operation_planning(lock_complex, operation_planning_index, lock_operation_information)
 
     arrival_information = calculate_lock_operation_start_information(lock_chamber, vessel, operation_index, direction)
     if vessel is not None:
@@ -1350,7 +1358,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
         for info in ['time_potential_lock_gate_opening_stop', 'time_lock_operation_start', 'time_lock_entry_start']:
             arrival_information.pop(info, None)
 
-    _update_lock_operation_planning(lock_complex, operation_index, arrival_information)
+    _update_lock_operation_planning(lock_complex, operation_planning_index, arrival_information)
 
     levelling_information = calculate_lock_operation_times(lock_chamber,
                                                            operation_index=operation_index,
@@ -1361,10 +1369,10 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
     if vessel is not None:
         _update_lock_vessel_planning(lock_complex, vessel_planning_index, levelling_information)
 
-    _update_lock_operation_planning(lock_complex, operation_index, levelling_information)
+    _update_lock_operation_planning(lock_complex, operation_planning_index, levelling_information)
 
     vessel_planning = lock_complex.vessel_planning
-    operation_info = lock_complex.operation_planning.loc[operation_index]
+    operation_info = lock_complex.operation_planning.loc[operation_planning_index]
     try:
         delay = levelling_information['time_gate_opening_stop'] - operation_info['time_lock_departure_start']
     except:
@@ -1387,7 +1395,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
         first_vessel_index = vessel_planning[vessel_planning.id == other_vessels_in_lock[0].id].iloc[-1].name
         departure_information['time_lock_departure_start'] = vessel_planning.loc[first_vessel_index, 'time_lock_departure_start']
 
-    _update_lock_operation_planning(lock_complex, operation_index, departure_information)
+    _update_lock_operation_planning(lock_complex, operation_planning_index, departure_information)
     _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                     departure_information)
 

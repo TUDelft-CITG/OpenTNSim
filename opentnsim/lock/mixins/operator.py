@@ -212,7 +212,7 @@ class IsLockChamberOperator:
         vessel.has_registered = False
 
 
-    def allow_vessel_to_pass_waiting_area(self, vessel, waiting_area):
+    def allow_vessel_to_pass_waiting_area(self, vessel, waiting_area, lock_chamber):
         """
         Let the vessel pass the waiting area
 
@@ -235,8 +235,9 @@ class IsLockChamberOperator:
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         operation_planning = self.lock_complex.operation_planning
         operation_index = vessel_planning.loc[vessel_planning_index, 'operation_index']
-        vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
-
+        operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+        operation_info = operation_planning_lock[operation_planning_lock.operation_index == operation_index].iloc[-1]
+        vessels_in_operation = operation_info.vessels
         if len(vessels_in_operation) < self.min_vessels_in_operation:
             yield from self.let_vessel_wait_for_other_vessels_in_waiting_area(vessel)
 
@@ -312,6 +313,10 @@ class IsLockChamberOperator:
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         operation_planning = self.lock_complex.operation_planning
         operation_index = vessel_planning.loc[vessel_planning_index, 'operation_index']
+        lock_chamber_name = vessel_planning.loc[vessel_planning_index, 'lock_chamber']
+        lock_chamber = lock_complex.lock_chambers[lock_chamber_name]
+        operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber_name]
+        operation_planning_index = operation_planning_lock[operation_planning_lock.operation_index == operation_index].index[-1]
 
         waiting_start = vessel.env.now
         # log the waiting event
@@ -319,10 +324,10 @@ class IsLockChamberOperator:
                           waiting_start, vessel.output.copy(), vessel.logbook[-1]['Geometry'])
 
         # create a request to wait for another vessel (this is a request for a filter store: only if there are enough vessels the operation will be assigned to the store and all vessels will continue to the lock chamber)
-        request = self.wait_for_other_vessel_to_arrive.get(lambda operation: operation.operation_index == operation_index)
+        request = self.wait_for_other_vessel_to_arrive.get(lambda operation: operation.operation_index == operation_planning_index)
 
         # waiting in the waiting area, if request is interrupted, the vessel keeps waiting
-        while len(operation_planning.loc[operation_index, 'vessels']) < self.min_vessels_in_operation:
+        while len(operation_planning.loc[operation_planning_index, 'vessels']) < self.min_vessels_in_operation:
             try:
                 yield request
             except simpy.Interrupt as e:
@@ -333,7 +338,7 @@ class IsLockChamberOperator:
 
         # if the moment of the vessel starting to enter the lock has shifted, then update the vessel planning and the operation planning if it is the first assigned vessel to the lock
         vessel_planning_info =  vessel_planning.loc[vessel_planning_index]
-        operation_planning_info = operation_planning.loc[operation_index]
+        operation_planning_info = operation_planning.loc[operation_planning_index]
         passage_information = {'time_lock_operation_start': vessel_planning_info['time_lock_operation_start'],
                                'time_lock_entry_start': vessel_planning_info['time_lock_entry_start'],
                                'time_lock_entry_stop':  vessel_planning_info['time_lock_entry_stop'],
@@ -348,11 +353,11 @@ class IsLockChamberOperator:
             passage_information['time_lock_entry_start'] += delay
             passage_information['time_lock_entry_stop'] += delay
 
-            if _check_if_vessel_is_first_vessel(lock_complex, vessel, operation_index):
+            if _check_if_vessel_is_first_vessel(lock_chamber, vessel, operation_index):
                 operation_information['time_entry_start'] += delay
             vessel_planning.loc[vessel_planning_index, 'time_arrival_at_lineup_area'] += delay
             _update_lock_vessel_planning(lock_complex, vessel_planning_index, passage_information)
-            _update_lock_operation_planning(lock_complex, operation_index, operation_information)
+            _update_lock_operation_planning(lock_complex, operation_planning_index, operation_information)
 
         # log that the waiting has stopped
         vessel.log_entry_v0("Waiting for other vessel for lock operation stop",
@@ -548,7 +553,9 @@ class IsLockChamberOperator:
             next_node = self.start_node
 
         # initiate levelling if vessel is the last assigned vessel in the lock
-        is_last_vessel = _check_if_vessel_is_last_vessel(self.lock_complex, vessel, operation_index)
+        lock_chamber_name = vessel_planning.loc[vessel_planning_index, "lock_chamber"]
+        lock_chamber = self.lock_complex.lock_chambers[lock_chamber_name]
+        is_last_vessel = _check_if_vessel_is_last_vessel(lock_chamber, vessel, operation_index)
         if is_last_vessel:
             yield from self.convert_chamber(next_node, direction, operation_index=operation_index, vessel=vessel)
         else:
