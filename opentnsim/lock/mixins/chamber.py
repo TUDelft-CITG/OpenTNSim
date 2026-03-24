@@ -168,11 +168,11 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.valve_opening_time = valve_opening_time
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
         hydromanager = HydrodynamicDataManager()
-        wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
-        time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
-        wlev_series = wlev_init*np.ones(len(time_series))
-        self.time = time_series
-        self.water_level = wlev_series
+        # wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
+        # time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
+        # wlev_series = wlev_init*np.ones(len(time_series))
+        # self.time = time_series
+        # self.water_level = wlev_series
 
         # operational information
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed
