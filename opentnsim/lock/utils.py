@@ -778,21 +778,21 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
                                                                vessel=next_vessel,
                                                                direction=next_direction,)
         # update the operation planning accordingly
-        operation_planning.loc[next_vessel_planning_index, "time_gate_closing_start"] = levelling_information["time_gate_closing_start"]
-        operation_planning.loc[next_vessel_planning_index, "time_gate_closing_stop"] = levelling_information["time_gate_closing_stop"]
-        operation_planning.loc[next_vessel_planning_index, "time_levelling_start"] = levelling_information["time_levelling_start"]
-        delay_after_levelling = levelling_information["time_levelling_stop"] - operation_planning.loc[next_vessel_planning_index, "time_levelling_stop"]
-        operation_planning.loc[next_vessel_planning_index, "time_levelling_stop"] = levelling_information["time_levelling_stop"]
-        operation_planning.loc[next_vessel_planning_index, "time_gate_opening_start"] = levelling_information["time_gate_opening_start"]
-        operation_planning.loc[next_vessel_planning_index, "time_gate_opening_stop"] = levelling_information["time_gate_opening_stop"]
+        operation_planning.loc[next_operation_planning_index, "time_gate_closing_start"] = levelling_information["time_gate_closing_start"]
+        operation_planning.loc[next_operation_planning_index, "time_gate_closing_stop"] = levelling_information["time_gate_closing_stop"]
+        operation_planning.loc[next_operation_planning_index, "time_levelling_start"] = levelling_information["time_levelling_start"]
+        delay_after_levelling = levelling_information["time_levelling_stop"] - operation_planning.loc[next_operation_planning_index, "time_levelling_stop"]
+        operation_planning.loc[next_operation_planning_index, "time_levelling_stop"] = levelling_information["time_levelling_stop"]
+        operation_planning.loc[next_operation_planning_index, "time_gate_opening_start"] = levelling_information["time_gate_opening_start"]
+        operation_planning.loc[next_operation_planning_index, "time_gate_opening_stop"] = levelling_information["time_gate_opening_stop"]
         if delay_after_levelling > pd.Timedelta(seconds=0):
             delay_after_levelling = delay_after_levelling.round("us")
-            operation_planning.loc[next_vessel_planning_index, "time_lock_departure_start"] += delay_after_levelling
-            operation_planning.loc[next_vessel_planning_index, "time_lock_departure_stop"] += delay_after_levelling
-            operation_planning.loc[next_vessel_planning_index, "time_lock_operation_stop"] += delay_after_levelling
-            operation_planning.loc[next_vessel_planning_index, "time_potential_lock_gate_closure_start"] += delay_after_levelling
-            operation_planning.loc[next_vessel_planning_index, "total_delay"] += delay_after_levelling * len(next_vessels)
-            operation_planning.loc[next_vessel_planning_index, "maximum_individual_delay"] += delay_after_levelling
+            operation_planning.loc[next_operation_planning_index, "time_lock_departure_start"] += delay_after_levelling
+            operation_planning.loc[next_operation_planning_index, "time_lock_departure_stop"] += delay_after_levelling
+            operation_planning.loc[next_operation_planning_index, "time_lock_operation_stop"] += delay_after_levelling
+            operation_planning.loc[next_operation_planning_index, "time_potential_lock_gate_closure_start"] += delay_after_levelling
+            operation_planning.loc[next_operation_planning_index, "total_delay"] += delay_after_levelling * len(next_vessels)
+            operation_planning.loc[next_operation_planning_index, "maximum_individual_delay"] += delay_after_levelling
 
         # update also the departure information of the affected vessels
         for vessel_index, next_vessel in enumerate(next_vessels):

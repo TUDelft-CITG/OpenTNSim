@@ -957,7 +957,6 @@ def calculate_lock_operation_times(lock_chamber, operation_index, start_time, ve
         time_gate_opening_stop = time_levelling_stop + pd.Timedelta(seconds=lock_chamber.gate_opening_time)
 
     wlev_A, wlev_B = _get_water_levels_before_and_after_levelling(lock_chamber, time_levelling_start, time_levelling_stop, direction)
-
     levelling_information = {"time_gate_closing_start":time_gate_closing_start,
                              "time_gate_closing_stop":time_gate_closing_stop,
                              "time_levelling_start":time_levelling_start,
@@ -1332,7 +1331,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
         operation_planning_index = len(operation_planning)
         lock_complex.operation_planning.loc[operation_planning_index, 'operation_index'] = operation_index
     else:
-        operation_planning_index = operation_planning_info.index
+        operation_planning_index = operation_planning_info.index[-1]
 
     lock_operation_information = _get_information_for_lock_operation(lock_chamber, operation_index, direction)
     if vessel is not None:
@@ -1359,7 +1358,6 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
             arrival_information.pop(info, None)
 
     _update_lock_operation_planning(lock_complex, operation_planning_index, arrival_information)
-
     levelling_information = calculate_lock_operation_times(lock_chamber,
                                                            operation_index=operation_index,
                                                            start_time=arrival_information["time_lock_entry_stop"],
@@ -1388,6 +1386,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
 
     departure_information = calculate_lock_departure_information(lock_chamber, vessel, operation_index, direction,
                                                                  levelling_information)
+
     if vessel is not None:
         _update_lock_vessel_planning(lock_complex, vessel_planning_index, departure_information)
 
@@ -1401,6 +1400,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
 
     lock_operation_information = {**lock_operation_information, **arrival_information,
                                   **levelling_information, **departure_information}
+
     return lock_operation_information
 
 

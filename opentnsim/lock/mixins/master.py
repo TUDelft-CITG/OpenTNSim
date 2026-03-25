@@ -265,7 +265,6 @@ class IsLockMaster:
 
         if not route_goes_through_lock:
             vessel.route = new_route
-            vessel.env.process(vessel.move())
             vessel.has_registered = True
             raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 

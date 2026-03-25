@@ -295,7 +295,6 @@ class Movable(Locatable, Routable, Log):
         # look ahead to first node
         self.position_on_route = 0
         yield from self.look_ahead_to_node(self.route[0])
-
         # Move over the path and log every step
         for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
             # update current position
