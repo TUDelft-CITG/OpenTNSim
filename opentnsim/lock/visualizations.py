@@ -170,7 +170,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     nrows = 1
     ncols = 1
     width_ratios = [1]
-    if len(lock_chamber.water_level):
+    if lock_chamber.has_hydrodynamics:
         hydromanager = HydrodynamicDataManager()
         node_A, node_B = lock_chamber.edge
         ncols = 2
@@ -209,7 +209,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             fig.add_trace(go.Scatter(x=hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Water level"],
                                      y=hydromanager.hydrodynamic_data["TIME"], mode='lines', name=f'Node {node_B}',
                                      line=dict(color="darkblue")), row=1, col=2)
-            fig.add_trace(go.Scatter(x=lock_chamber.water_level, y=hydromanager.hydrodynamic_data["TIME"],
+            fig.add_trace(go.Scatter(x=lock_chamber.water_level, y=lock_chamber.time,
                                      mode='lines', name='Lock chamber', line=dict(color="black")), row=1, col=2)
             x_min = np.floor(np.min([np.min(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"]),
                                      np.min(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Water level"])]))

@@ -87,10 +87,10 @@ def calculate_z(
             wlev_init = H_B_init
 
     if not direction:
-        z[0] = H_B_init - wlev_init
+        z[0:] = H_B_init - wlev_init
 
     else:
-        z[0] = H_A_init - wlev_init
+        z[0:] = H_A_init - wlev_init
 
     return z, H_A, H_B
 
@@ -129,57 +129,40 @@ def levelling_time_equation(
     A_s = np.linspace(0, opening_area, int(T1 / float(dt)))  # sluice opening area over time when opening [m^2] (time-dependent)
     A_s = np.append(A_s, [opening_area] * (len(z) - len(A_s)))  # sluice opening over full levelling process [m^2] (time-dependent)
     hydromanager = HydrodynamicDataManager()
-    H_time = hydromanager.hydrodynamic_data['TIME'].values.astype(float)  # time series of the hydrodynamic data [s]
-
+    H_time = hydromanager.hydrodynamic_data['TIME'].values.astype('datetime64[s]').astype(float)  # time series of the hydrodynamic data [s]
     # time-integration by (sefl-coded) Euler's method TODO Checken of we een standaard solver kunnen gebruiken. En of we dit algoritme los kunnen maken van de klasse.
+    t0 = t_start.astype('datetime64[s]').astype(float)
+    wlev_change = 0
     for i in range(len(t) - 1):
-        H_Ai = np.interp(
-            (np.timedelta64(int(i * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01")) / np.timedelta64(1, "us"),
-            H_time,
-            H_A,
-        )  # water level at side A at time = i
-        H_Aii = np.interp(
-            (np.timedelta64(int((i + 1) * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01"))
-            / np.timedelta64(1, "us"),
-            H_time,
-            H_A,
-        )  # water level at side A at time = i + 1
-        H_Bi = np.interp(
-            (np.timedelta64(int(i * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01")) / np.timedelta64(1, "us"),
-            H_time,
-            H_B,
-        )  # water level at side B at time = i
-        H_Bii = np.interp(
-            (np.timedelta64(int((i + 1) * float(dt) * 10**6), "us") + t_start - np.datetime64("1970-01-01"))
-            / np.timedelta64(1, "us"),
-            H_time,
-            H_B,
-        )  # water level at side B at time = i + 1
+        interp_time_i = t0 + i*dt
+        interp_time_ii = t0 + (i + 1)*dt
+        H_Ai = np.interp(interp_time_i, H_time, H_A)  # water level at side A at time = i
+        H_Aii = np.interp(interp_time_ii, H_time, H_A)   # water level at side A at time = i + 1
+        H_Bi = np.interp(interp_time_i, H_time, H_B)   # water level at side B at time = i
+        H_Bii = np.interp(interp_time_ii, H_time, H_B)   # water level at side B at time = i + 1
         deltaH_A = H_Aii - H_Ai  # water level difference at side A between time = i and time = i + 1
         deltaH_B = H_Bii - H_Bi  # water level difference at side B between time = i and time = i + 1
-
         # determine the contribution to the change in water level difference outside of the lock (i.e., due to tides) in the water level difference at time = i + 1
         if not direction:
-            to_wlev_change = -deltaH_B
+            to_wlev_change = deltaH_B
         else:
-            to_wlev_change = -deltaH_A
+            to_wlev_change = deltaH_A
 
         # calculate change in water level difference between time = i and time = i + 1
         z_i = abs(z[i])  # absolute water level difference at time = i
 
         dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch  # change in water level difference over time [m/s]
         if z[i] < 0:  # correct if water level difference is negative
+            to_wlev_change = -to_wlev_change
             dz_dt = -dz_dt
-        dz = dz_dt * float(dt) + to_wlev_change
+        dz = dz_dt * float(dt)
 
         # calculate the new water level difference at time = i + 1
-        z[i + 1] = z[i] + dz
+        z[i + 1] = z[i] + dz + to_wlev_change
         if np.sign(z[i + 1]) != np.sign(z[i]):  # prevents overshooting of the water level difference
             z[i + 1] = 0
 
-        if (
-            np.abs(z[i + 1]) <= water_level_difference_limit_to_open_gate
-        ):  # breaks the integration if the water level difference is smaller than a default 5 cm (the last 5 cm of water level difference takes long to overcome, so lock master opens gate)
+        if (np.abs(z[i + 1]) <= water_level_difference_limit_to_open_gate):  # breaks the integration if the water level difference is smaller than a default 5 cm (the last 5 cm of water level difference takes long to overcome, so lock master opens gate)
             z[(i + 1) :] = np.nan  # set all next values of the water level series to nan
             break
 
@@ -188,7 +171,6 @@ def levelling_time_equation(
         levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
     else:
         levelling_time = t[-1]
-
     return levelling_time, t, z
 
 
@@ -268,18 +250,18 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
 
     # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber
     time_series = lock_chamber.time
-
+    t_start = t_start.astype('datetime64[s]')
+    t_index_lock = np.abs(time_series - t_start).argmin()
     if not prediction:
         hydromanager = HydrodynamicDataManager()
-        t_index_lock = np.abs(time_series - t_start).argmin()
-        t_index_harbour = hydromanager._get_time_index_of_hydrodynamic_data(t_start)
-        wlev = H_A
+        node = lock_chamber.edge[0]
         if not direction:
-            wlev = H_B
+            node = lock_chamber.edge[1]
         for z_index, dt in enumerate(t):
             if pd.isna(z[z_index]):
                 break
-            lock_chamber.water_level[t_index_lock + z_index] = wlev[t_index_harbour] - z[z_index]
+            wlev_harbour = hydromanager._get_hydrodynamic_data_value(t_start + np.timedelta64(int(dt),'s'), node, 'Water level')
+            lock_chamber.water_level[t_index_lock + z_index + 1] = wlev_harbour - z[z_index]
 
         t_final = t_start + np.timedelta64(int(levelling_time),'s')
         t_index_final_lock = np.abs(time_series - t_final).argmin()

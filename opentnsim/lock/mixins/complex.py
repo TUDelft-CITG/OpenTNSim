@@ -9,7 +9,6 @@ import pandas as pd
 import simpy
 
 from opentnsim.core import HasResource, Identifiable, Log, Movable, ExtraMetadata, SimpyObject, Locatable
-from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.graph.calculations import (calculate_location_over_edges,
                                           transform_geometry,
                                           calculate_distance_along_geometry_to_nodes_of_edge)

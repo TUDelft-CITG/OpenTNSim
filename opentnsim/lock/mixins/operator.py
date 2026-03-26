@@ -723,10 +723,11 @@ class IsLockChamberOperator:
         else:
             node = self.end_node
 
-        hydromanager = HydrodynamicDataManager()
-        # time_index = np.abs(self.time - time).argmin()
-        # new_water_level = hydromanager._get_hydrodynamic_data_value(time, node, "Water level")
-        # self.water_level[time_index:] = new_water_level
+        if self.has_hydrodynamics:
+            hydromanager = HydrodynamicDataManager()
+            time_index = np.abs(self.time - time).argmin()
+            new_water_level = hydromanager._get_hydrodynamic_data_value(time, node, "Water level")
+            self.water_level[time_index:] = new_water_level
 
         # log the end of the event
         self.log_entry_v0("Lock gate closing stop", self.env.now, self.output.copy(), self.gate_open_at_node)
@@ -855,19 +856,23 @@ class IsLockChamberOperator:
                     if e.cause is not None:
                         delay += float(e.cause)
 
-        hydromanager = HydrodynamicDataManager()
+
 
         # determine the water level in the lock chamber
-        time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        # time_index = hydromanager._get_time_index_of_hydrodynamic_data(time)
-        # wlev_chamber = self.water_level[time_index]
+        if self.has_hydrodynamics:
+            hydromanager = HydrodynamicDataManager()
+            time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
+            time_index = hydromanager._get_time_index_of_hydrodynamic_data(time)
+            wlev_chamber = self.water_level[time_index]
 
         # determine to_level
         if to_level is None:
             to_level = self.gate_open_at_node
 
         # determine the water level in the harbour
-        wlev_harbour = hydromanager._get_hydrodynamic_data_value(time, to_level, "Water level")
+        wlev_harbour = None
+        if self.has_hydrodynamics:
+            wlev_harbour = hydromanager._get_hydrodynamic_data_value(time, to_level, "Water level")
 
         # determine the direction to which the vessels are sailing out
         if to_level == self.start_node:
@@ -881,16 +886,16 @@ class IsLockChamberOperator:
         else:
             self.gate_open_at_node = to_level
 
-        time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-        # time_index_lock = np.abs(self.time - time).argmin()
-        # print(time_index_lock)
-        # interp_time = self.time[time_index_lock:]
-        # time_series = hydromanager.hydrodynamic_data.TIME.values
-        # wlev_series_node_gate_open = hydromanager._get_hydrodynamic_data_series(time, self.gate_open_at_node, "Water level")
-        # time_index_harbour = hydromanager._get_time_index_of_hydrodynamic_data(time)
-        # self.water_level[time_index_lock:] = np.interp(interp_time.astype('datetime64[ns]').astype('int64') / 1e9,
-        #                                                time_series[time_index_harbour:].astype('int64') / 1e9,
-        #                                                wlev_series_node_gate_open)
+        if self.has_hydrodynamics:
+            time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
+            time_index_lock = np.abs(self.time - time).argmin()
+            interp_time = self.time[time_index_lock:]
+            time_series = hydromanager.hydrodynamic_data.TIME.values
+            wlev_series_node_gate_open = hydromanager._get_hydrodynamic_data_series(time, self.gate_open_at_node, "Water level")
+            time_index_harbour = hydromanager._get_time_index_of_hydrodynamic_data(time)
+            self.water_level[time_index_lock:] = np.interp(interp_time.astype('datetime64[ns]').astype('int64') / 1e9,
+                                                           time_series[time_index_harbour:].astype('int64') / 1e9,
+                                                           wlev_series_node_gate_open)
 
         # make sure that all lock elements are requested, so only one process is occurring
         hold_gate_A = self.gate_A.resource.request()

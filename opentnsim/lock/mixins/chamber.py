@@ -55,10 +55,10 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
     def __init__(
         self,
         env,
-        edge = None,
-        lock_length=0.0, # a float which contains the length of the lock chamber
-        lock_width=0.0, # a float which contains the width of the lock chamber
-        lock_depth=0.0, # a float which contains the depth of the lock chamber
+        lock_length, # a float which contains the length of the lock chamber
+        lock_width, # a float which contains the width of the lock chamber
+        lock_depth, # a float which contains the depth of the lock chamber
+        edge=None,
         geometry=None,
         geometry_m=None,
         distance_from_start_node_to_lock_gate_A=0.0,  # a float that is the distance between the start_node of the edge and the lock gate A [m]
@@ -168,11 +168,15 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.valve_opening_time = valve_opening_time
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
         hydromanager = HydrodynamicDataManager()
-        # wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
-        # time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
-        # wlev_series = wlev_init*np.ones(len(time_series))
-        # self.time = time_series
-        # self.water_level = wlev_series
+        wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
+        self.has_hydrodynamics = False
+        if not pd.isna(wlev_init):
+            self.has_hydrodynamics = True
+        if self.has_hydrodynamics:
+            time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
+            wlev_series = wlev_init*np.ones(len(time_series))
+            self.time = time_series
+            self.water_level = wlev_series
 
         # operational information
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed

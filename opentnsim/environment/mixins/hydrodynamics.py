@@ -73,8 +73,9 @@ class HydrodynamicDataManager:
 
         return cls._instance
 
+
     def _get_hydrodynamic_data_value(self, time, node, hydrodynamic_property):
-        """Gets the value of a hydrodynamic property at a certain time and node
+        """Gets the interpolated value of a hydrodynamic property at a certain time and node
 
         Parameters
         ----------
@@ -83,25 +84,33 @@ class HydrodynamicDataManager:
         node : str
             the node name in the graph
         hydrodynamic_property : str
-            the hydrodynamic property: "Water level", "Current velocity", "Salinity" (if included in the hydrodynamic data)
+            the hydrodynamic property: "Water level", "Current velocity", "Salinity"
 
         Returns
         -------
         value : float
-            the value of a hydrodynamic property at the specified time and node
+            the interpolated value of a hydrodynamic property at the specified time and node
         """
         if self.hydrodynamic_data is None:
             return None
 
-        # determine the time_index and station_inex
-        time_index = self._get_time_index_of_hydrodynamic_data(time)
+        # convert time to float for interpolation
+        time_float = np.datetime64(time, 's').astype(float)
+
+        # get station index
         station_index = self._get_station_index_of_hydrodynamic_data(node)
 
-        # determine the property
+        # get time series
+        H_time = self.hydrodynamic_data['TIME'].values.astype('datetime64[s]').astype(float)
+
+        # get data series at that station
         if isinstance(self.hydrodynamic_data, xr.Dataset):
-            value = self.hydrodynamic_data[hydrodynamic_property][station_index][time_index].values.copy()
+            data_series = self.hydrodynamic_data[hydrodynamic_property][station_index, :].values
         else:
-            value = self.hydrodynamic_data[hydrodynamic_property][station_index][time_index].copy()
+            data_series = self.hydrodynamic_data[hydrodynamic_property][station_index, :]
+
+        # interpolate in time
+        value = np.interp(time_float, H_time, data_series)
 
         return value
 
