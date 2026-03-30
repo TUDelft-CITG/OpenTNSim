@@ -263,10 +263,8 @@ class IsLockMaster:
         _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                         lock_operation_information)
 
-        display(self.vessel_planning)
         if not route_goes_through_lock:
             vessel.route = new_route
-            vessel.env.process(vessel.move())
             vessel.has_registered = True
             raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 

@@ -161,7 +161,7 @@ class LockComplexTraversable(Movable, HasMultiDiGraph):
 
 
     def request_to_pass_waiting_area(self, lock_chamber, waiting_area):
-        yield from lock_chamber.allow_vessel_to_pass_waiting_area(self, waiting_area)
+        yield from lock_chamber.allow_vessel_to_pass_waiting_area(self, waiting_area, lock_chamber)
 
 
     def sail_to_lock_chamber(self, lock_chamber, waiting_area, direction):
