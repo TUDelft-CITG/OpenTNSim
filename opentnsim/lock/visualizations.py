@@ -170,11 +170,18 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     nrows = 1
     ncols = 1
     width_ratios = [1]
-    if lock_chamber.has_hydrodynamics:
-        hydromanager = HydrodynamicDataManager()
-        node_A, node_B = lock_chamber.edge
+    node_A, node_B = lock_chamber.edge
+    hydromanager = HydrodynamicDataManager()
+    if lock_chamber.has_water_level and not lock_chamber.has_salinity:
         ncols = 2
         width_ratios = [4, 1]
+    if lock_chamber.has_salinity and not lock_chamber.has_water_level:
+        ncols = 3
+        width_ratios = [4, 1, 1]
+    if lock_chamber.has_water_level and lock_chamber.has_salinity:
+        ncols = 4
+        width_ratios = [4, 1, 1, 1]
+
     if method == 'Matplotlib':
         axes = ax
         if ax is None:
@@ -182,16 +189,35 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             ax = axes[0]
         for distances, times, vessel_name in zip(all_distances, all_times, vessel_names):
             ax.plot(distances, times, label=vessel_name)
-        if ncols > 1:
+        if lock_chamber.has_water_level:
             ax = axes[1]
             ax.plot(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"],
                     hydromanager.hydrodynamic_data["TIME"], color='lightblue',label=f'Node {node_A}')
             ax.plot(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Water level"],
                     hydromanager.hydrodynamic_data["TIME"], color='C0',label=f'Node {node_B}')
-            ax.plot(lock_chamber.water_level, hydromanager.hydrodynamic_data["TIME"],
+            ax.plot(lock_chamber.water_level, lock_chamber.time,
                     color='k', label = 'Lock chamber')
             ax.set_yticklabels([])
-            ax.set_xlabel('Water level [m]')
+            ax.set_xlabel('Water\nlevel\n[m]')
+        if lock_chamber.has_salinity:
+            ax = axes[1]
+            if lock_chamber.has_water_level:
+                ax = axes[2]
+            ax.plot(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Salinity"],
+                    hydromanager.hydrodynamic_data["TIME"], color='lightblue', label=f'Node {node_A}')
+            ax.plot(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Salinity"],
+                    hydromanager.hydrodynamic_data["TIME"], color='C0', label=f'Node {node_B}')
+            ax.plot(lock_chamber.salinity, lock_chamber.time,
+                    color='k', label='Lock chamber')
+            ax.set_yticklabels([])
+            ax.set_xlabel('Salt\nconcentration\n[kgm3]')
+            ax = axes[3]
+            ax.plot(lock_chamber.saltmass, lock_chamber.time,
+                    color='k', label='Lock chamber')
+            ax.set_yticklabels([])
+            ax.set_xlabel('Saltmass\n[kg]')
+
+
     elif method == 'Plotly':
         width_ratios = list(width_ratios / np.sum(width_ratios))
         if fig is None:
@@ -202,7 +228,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             )
         for trace in traces:
             fig.add_trace(trace, row=1, col=1)
-        if ncols > 1:
+        if lock_chamber.has_water_level:
             fig.add_trace(go.Scatter(x=hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"],
                                      y=hydromanager.hydrodynamic_data["TIME"], mode='lines', name=f'Node {node_A}',
                                      line=dict(color="cyan")), row=1, col=2)
@@ -225,7 +251,55 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             else:
                 x_max = 1.1*x_max
 
-            extend_x = [x_min, x_max]
+            col_wlev = (1,2)
+            extend_x_wlev = [x_min, x_max]
+        if lock_chamber.has_salinity:
+            col = 3
+            if not lock_chamber.has_water_level:
+                col = 2
+            fig.add_trace(go.Scatter(x=hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Salinity"],
+                                     y=hydromanager.hydrodynamic_data["TIME"], mode='lines', name=f'Node {node_A}',
+                                     line=dict(color="cyan")), row=1, col=col)
+            fig.add_trace(go.Scatter(x=hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Salinity"],
+                                     y=hydromanager.hydrodynamic_data["TIME"], mode='lines', name=f'Node {node_B}',
+                                     line=dict(color="darkblue")), row=1, col=col)
+            fig.add_trace(go.Scatter(x=lock_chamber.salinity, y=lock_chamber.time,
+                                     mode='lines', name='Lock chamber', line=dict(color="black")), row=1, col=col)
+            x_min = np.floor(np.min([np.min(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Salinity"]),
+                                     np.min(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Salinity"])]))
+            if x_min < 0:
+                x_min = 1.1*x_min
+            else:
+                x_min = 0.9*x_min
+
+            x_max = np.ceil(np.max([np.max(hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Salinity"]),
+                                    np.max(hydromanager.hydrodynamic_data.sel({'STATION': node_B})["Salinity"])]))
+            if x_max < 0:
+                x_max = 0.9*x_max
+            else:
+                x_max = 1.1*x_max
+
+            col_sal = (1, col)
+            extend_x_sal = [x_min, x_max]
+
+            col += 1
+            fig.add_trace(go.Scatter(x=lock_chamber.saltmass, y=lock_chamber.time,
+                                     mode='lines', name='Lock chamber', line=dict(color="black")), row=1, col=col)
+            x_min = np.floor(np.min(lock_chamber.saltmass))
+            if x_min < 0:
+                x_min = 1.1 * x_min
+            else:
+                x_min = 0.9 * x_min
+
+            x_max = np.ceil(np.max(lock_chamber.saltmass))
+            if x_max < 0:
+                x_max = 0.9 * x_max
+            else:
+                x_max = 1.1 * x_max
+
+            col_sm = (1, col)
+            extend_x_sm = [x_min, x_max]
+
 
     # Determine y-axis limits
     all_y_values = [t for sublist in all_times for t in sublist]
@@ -259,10 +333,17 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         add_locking_phases_to_plot(lock_chamber, fig, axes[0], lock_extend_x, time_axis='y', method=method)
         extend_x = axes[1].get_xlim()
         add_locking_phases_to_plot(lock_chamber, fig, axes[1], extend_x, time_axis='y', method=method)
+        extend_x = axes[2].get_xlim()
+        add_locking_phases_to_plot(lock_chamber, fig, axes[2], extend_x, time_axis='y', method=method)
+        extend_x = axes[3].get_xlim()
+        add_locking_phases_to_plot(lock_chamber, fig, axes[3], extend_x, time_axis='y', method=method)
     elif method == 'Plotly':
         add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, time_axis='y', method=method)
-        if ncols > 1:
-            add_locking_phases_to_plot(lock_chamber, fig, (1,2), extend_x, time_axis='y', method=method)
+        if lock_chamber.has_water_level:
+            add_locking_phases_to_plot(lock_chamber, fig, col_wlev, extend_x_wlev, time_axis='y', method=method)
+        if lock_chamber.has_salinity:
+            add_locking_phases_to_plot(lock_chamber, fig, col_sal, extend_x_sal, time_axis='y', method=method)
+            add_locking_phases_to_plot(lock_chamber, fig, col_sm, extend_x_sm, time_axis='y', method=method)
 
     # plot the approach points
     sailing_distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point + lock_chamber.lock_length / 2
@@ -288,16 +369,11 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         for ax in axes:
             ax.set_ylim([ylimmin, ylimmax])
         if ncols > 1:
-            ax = axes[1]
+            ax = axes[-1]
             ax.set_xlim(extend_x)
-            bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-            ax_width_in = bbox.width
-            item_width = 1.2
-            ncol = max(1, int(ax_width_in // item_width))
             ax.legend(
-                loc="upper center",
-                bbox_to_anchor=(0.75, -0.15),
-                ncol=ncol,
+                loc="upper left",
+                bbox_to_anchor=(1.4, 1.0),
                 frameon=False
             )
 
@@ -309,44 +385,16 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
                          range=[xlimmin, xlimmax], row=1, col=1)
         fig.update_yaxes(title_text=ylabel,
                          range=[ylimmin, ylimmax], row=1, col=1)
-        if ncols > 1:
-            fig.update_xaxes(title_text='Water level [m]', range=extend_x, row=1, col=2)
-            fig.update_yaxes(range=[ylimmin, ylimmax], row=1, col=2)
+        if lock_chamber.has_water_level:
+            fig.update_xaxes(title_text='Water\nlevel\n[m]', range=extend_x_wlev, row=col_wlev[0], col=col_wlev[1])
+            fig.update_yaxes(range=[ylimmin, ylimmax], row=col_wlev[0], col=col_wlev[1])
+        if lock_chamber.has_salinity:
+            fig.update_xaxes(title_text='Salt\nconcentration\n[kgm3]', range=extend_x_sal, row=col_sal[0], col=col_sal[1])
+            fig.update_yaxes(range=[ylimmin, ylimmax], row=col_sal[0], col=col_sal[1])
+            fig.update_xaxes(title_text='Saltmass\n[kg]', range=extend_x_sm, row=col_sm[0],col=col_sm[1])
+            fig.update_yaxes(range=[ylimmin, ylimmax], row=col_sm[0], col=col_sm[1])
 
     return fig
-
-def plot_saltwater_intrusion(lock_chamber, ZSF_results):
-    fig, axes = plt.subplots(2, 1, figsize=[11,6])
-
-    stacked_salinity_lock = pd.DataFrame({
-        "time": pd.concat([ZSF_results["time_start"], ZSF_results["time_stop"]], ignore_index=True),
-        "salinity": pd.concat([ZSF_results["salinity_lock_start"], ZSF_results["salinity_lock_stop"]], ignore_index=True)
-    }).sort_values("time").reset_index(drop=True)
-
-    ax = axes[0]
-    ax.plot(ZSF_results.time_start.values,ZSF_results['salinity_sea'].values, color='lightblue', label='Sea')
-    ax.plot(ZSF_results.time_start.values,ZSF_results['salinity_lake'].values, color='C0', label='Lake')
-    ax.plot(stacked_salinity_lock.time.values,stacked_salinity_lock.salinity.values,color='k',label='Lock')
-    xlim = [stacked_salinity_lock.time.values[1],stacked_salinity_lock.time.values[-2]]
-    ax.set_xticklabels([])
-    ax.set_xlabel('')
-    ylim = ax.get_ylim()
-    add_locking_phases_to_plot(lock_chamber, fig, ax, ylim, time_axis='x', method='Matplotlib')
-    ax.set_ylabel('Salt\nconcentration\n'+r'[kgm$^{-3}$]')
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-    ax.legend(loc='upper right',frameon=False, bbox_to_anchor = [1.11,1.0])
-
-    ax = axes[1]
-    ax.plot(ZSF_results.time_stop.values,ZSF_results['mass_transport_lake'].cumsum().apply(lambda x: x * -1),color='gold')
-    ylim = ax.get_ylim()
-    add_locking_phases_to_plot(lock_chamber, fig, ax, ylim, time_axis='x', method='Matplotlib')
-    ax.set_ylabel('Salt mass\n[kg]')
-    ax.set_xlabel('Time')
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b %Y\n%H:%M"))
-    plt.xticks(rotation=45);
 
 
 def spatially_visualize_lock_complex(lock_complex):

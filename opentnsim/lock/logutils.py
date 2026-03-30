@@ -43,7 +43,7 @@ def get_levelling_cycles(lock_chamber):
 
 def get_index_of_logbook_when_vessel_passes_registration_node(lock_complex, vessel, levelling_idx, start = True):
     vessel_df = pd.DataFrame(vessel.logbook)
-    pattern = r"^Sailing from node (\S+) to node (\S+) (start|stop)$"
+    pattern = r"^Sailing from node (.+?) to node (.+?) (start|stop)$"
     msg_type = 'start'
     group_nr_node = 1
     search_range = range(levelling_idx, -1, -1)

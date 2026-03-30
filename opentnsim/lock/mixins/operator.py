@@ -11,7 +11,8 @@ from opentnsim.lock.calculations import (
     calculate_lock_operation_times,
     calculate_time_to_open_gate,
     calculate_sailing_time_to_approach_point,
-    calculate_sailing_time_to_waiting_area
+    calculate_sailing_time_to_waiting_area,
+    calculate_lock_salinity_and_saltmass
 )
 from opentnsim.lock.utils import (
     _get_vessel_departure_start_delay,
@@ -681,6 +682,8 @@ class IsLockChamberOperator:
         ------
         The closing of the gate
         """
+        if self.has_salinity:
+            calculate_lock_salinity_and_saltmass(self)
 
         # if there is a delay -> yield time out
         start_delay = self.env.now
@@ -723,7 +726,7 @@ class IsLockChamberOperator:
         else:
             node = self.end_node
 
-        if self.has_hydrodynamics:
+        if self.has_water_level:
             hydromanager = HydrodynamicDataManager()
             time_index = np.abs(self.time - time).argmin()
             new_water_level = hydromanager._get_hydrodynamic_data_value(time, node, "Water level")
@@ -780,6 +783,7 @@ class IsLockChamberOperator:
         ------
         Levelling of the lock chamber
         """
+
         # make sure that all lock elements are requested, so only one process is occurring
         hold_gate_A = self.gate_A.resource.request()
         hold_levelling = self.levelling.resource.request()
@@ -856,37 +860,15 @@ class IsLockChamberOperator:
                     if e.cause is not None:
                         delay += float(e.cause)
 
-
-
-        # determine the water level in the lock chamber
-        if self.has_hydrodynamics:
-            hydromanager = HydrodynamicDataManager()
-            time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
-            time_index = hydromanager._get_time_index_of_hydrodynamic_data(time)
-            wlev_chamber = self.water_level[time_index]
-
         # determine to_level
         if to_level is None:
             to_level = self.gate_open_at_node
 
-        # determine the water level in the harbour
-        wlev_harbour = None
-        if self.has_hydrodynamics:
-            wlev_harbour = hydromanager._get_hydrodynamic_data_value(time, to_level, "Water level")
+        #lock at new location
+        self.gate_open_at_node = to_level
 
-        # determine the direction to which the vessels are sailing out
-        if to_level == self.start_node:
-            direction = 1
-        else:
-            direction = 0
-
-        # if the water levels in the chamber and harbour are not aligned -> level lock again
-        if wlev_harbour is not None and np.abs(wlev_chamber - wlev_harbour) >= 0.1: #wlev_chamber is not None and
-            yield from self.level_lock(to_level, direction=direction)
-        else:
-            self.gate_open_at_node = to_level
-
-        if self.has_hydrodynamics:
+        if self.has_water_level:
+            hydromanager = HydrodynamicDataManager()
             time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
             time_index_lock = np.abs(self.time - time).argmin()
             interp_time = self.time[time_index_lock:]
@@ -939,3 +921,6 @@ class IsLockChamberOperator:
         self.gate_A.resource.release(hold_gate_A)
         self.levelling.resource.release(hold_levelling)
         self.gate_B.resource.release(hold_gate_B)
+
+        if self.has_salinity:
+            calculate_lock_salinity_and_saltmass(self)

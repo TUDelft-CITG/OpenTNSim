@@ -195,6 +195,65 @@ class HydrodynamicDataManager:
         return series
 
 
+    def _get_interpolated_hydrodynamic_series(
+            self,
+            target_times,
+            node,
+            hydrodynamic_property,
+    ):
+        """
+        Interpolates a hydrodynamic time series onto a new set of timestamps.
+
+        Parameters
+        ----------
+        target_times : np.ndarray of np.datetime64
+            The timestamps to interpolate to
+        node : str
+            Node name in the graph
+        hydrodynamic_property : str
+            Property name (e.g. "Water level", "Current velocity", "Salinity")
+        allow_extrapolation : bool, optional
+            If False, raises an error when target_times fall outside original range
+
+        Returns
+        -------
+        interpolated_series : np.ndarray
+            Interpolated values at target_times
+        """
+
+        if self.hydrodynamic_data is None:
+            return np.array([])
+
+        # Get station index
+        station_index = self._get_station_index_of_hydrodynamic_data(node)
+
+        # Extract original time + data
+        if hasattr(self.hydrodynamic_data, "coords"):  # xarray
+            original_times = self.hydrodynamic_data.coords["TIME"].values
+            series = self.hydrodynamic_data[hydrodynamic_property][station_index].values
+        else:
+            original_times = self.hydrodynamic_data["TIME"]
+            series = self.hydrodynamic_data[hydrodynamic_property][station_index]
+
+        # Convert datetime64 → float (ns since epoch) for interpolation
+        original_times_num = original_times.astype("datetime64[ns]").astype(np.int64)
+        target_times_num = target_times.astype("datetime64[ns]").astype(np.int64)
+
+        # Bounds checking
+        t_min, t_max = original_times_num.min(), original_times_num.max()
+        if target_times_num.min() < t_min or target_times_num.max() > t_max:
+            raise ValueError("Extrapolating outside original time range.")
+
+        # Interpolation
+        interpolated_series = np.interp(
+            target_times_num,
+            original_times_num,
+            series
+        )
+
+        return interpolated_series
+
+
 class HydrodynamicData(SimpyObject):
 
     def __init__(self, hydrodynamic_data: xr.Dataset, *args, **kwargs):

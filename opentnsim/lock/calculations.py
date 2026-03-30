@@ -1537,22 +1537,45 @@ def calculate_time_to_open_gate(lock_chamber, operation_index, direction, gate_r
 
 def calculate_ZSF_eventttable(lock_chamber):
     lock_df = pd.DataFrame(lock_chamber.logbook)
+    if lock_df.empty:
+        return pd.DataFrame()
+
     df_operations = get_levelling_cycles(lock_chamber)
     df_vessels = get_vessels_per_cycle(lock_chamber)
     df_operations['vessels'] = [[]]*len(df_operations)
-    for operation_nr, operation_info in df_operations.iterrows():
-        vessel_ids = df_vessels[df_vessels.cycle_nr == operation_nr].vessel_id.to_list()
-        volume_of_vessels_in_lock = 0.
-        for vessel_id in vessel_ids:
-            vessel = lock_chamber.env.vessels[vessel_id]
-            volume_of_vessels_in_lock += vessel.L*vessel.B*vessel.T
-        df_operations.at[operation_nr, 'volume_of_vessels_in_lock'] = volume_of_vessels_in_lock
-    zsf_events = pd.DataFrame(
+
+    df_operations['volume_of_vessels_in_lock'] = 0.
+    if not df_vessels.empty:
+        for operation_nr, operation_info in df_operations.iterrows():
+            vessel_ids = df_vessels[df_vessels.cycle_nr == operation_nr].vessel_id.to_list()
+            volume_of_vessels_in_lock = 0.
+            for vessel_id in vessel_ids:
+                vessel = lock_chamber.env.vessels[vessel_id]
+                volume_of_vessels_in_lock += vessel.L*vessel.B*vessel.T
+            df_operations.at[operation_nr, 'volume_of_vessels_in_lock'] = volume_of_vessels_in_lock
+    zsf_events_new = pd.DataFrame(
         columns=['time_start', 'time_stop', 'head_sea', 'head_lake', 'routine', 'salinity_sea', 'salinity_lake',
                  'ship_volume_lake_to_sea', 'ship_volume_sea_to_lake', 't_level', 't_open_lake', 't_open_sea',
                  'temperature_lake', 'temperature_sea'])
 
+    zsf_events = pd.DataFrame()
+    if hasattr(lock_chamber, 'zsf_events'):
+        zsf_events = lock_chamber.zsf_events
+        zsf_events = zsf_events.reset_index()
+
+    new_indexes = []
     for index, info in lock_df.iterrows():
+        if info.Message not in ["Lock gate closing start", "Lock gate opening start", "Lock levelling stop"]:
+            continue
+        if info.Message == "Lock gate closing start" and index:
+            continue
+
+        last_event_idx_old = len(zsf_events)
+        event_idx = len(zsf_events_new)
+        if not zsf_events.empty and event_idx in zsf_events.index and event_idx < last_event_idx_old - 4:
+            zsf_events_new.loc[event_idx, :] = zsf_events.loc[event_idx, :]
+            continue
+
         t_level = 0
         t_open_lake = 0
         t_open_sea = 0
@@ -1572,8 +1595,9 @@ def calculate_ZSF_eventttable(lock_chamber):
             future_gate_closing_df = future_lock_df[future_lock_df.Message == "Lock gate closing stop"]
             time_start = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
             if future_gate_closing_df.empty:
-                duration = (lock_chamber.env.simulation_stop - time_start).total_seconds()
-                time_stop = lock_chamber.env.simulation_stop
+                time_stop = datetime.datetime.fromtimestamp(lock_chamber.env.now) + \
+                            pd.Timedelta(seconds=lock_chamber.gate_closing_time)/2
+                duration = (time_stop - time_start).total_seconds()
             else:
                 time_stop = future_gate_closing_df.iloc[0].Timestamp - pd.Timedelta(
                     seconds=lock_chamber.gate_closing_time) / 2
@@ -1589,8 +1613,8 @@ def calculate_ZSF_eventttable(lock_chamber):
         elif info.Message == "Lock levelling stop":
             past_lock_df = lock_df.loc[:index]
             levelling_start_info = past_lock_df[past_lock_df.Message == "Lock levelling start"].iloc[-1]
-            time_start = levelling_start_info.Timestamp
-            time_stop = info.Timestamp
+            time_start = levelling_start_info.Timestamp - pd.Timedelta(seconds=lock_chamber.gate_closing_time) / 2
+            time_stop = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
             duration = (time_stop - time_start).total_seconds()
             if info.Geometry == lock_chamber.start_node:
                 routine = 'Levelling to sea'
@@ -1599,10 +1623,6 @@ def calculate_ZSF_eventttable(lock_chamber):
                 routine = 'Levelling to lake'
                 t_level = duration
 
-        else:
-            continue
-
-        event_idx = len(zsf_events)
         hydromanager = HydrodynamicDataManager()
         time_start = np.datetime64(time_start)
         time_stop = np.datetime64(time_stop)
@@ -1614,12 +1634,17 @@ def calculate_ZSF_eventttable(lock_chamber):
         temperature_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.end_node, 'Temperature')
         ship_volume_lake_to_sea = 0.
         ship_volume_sea_to_lake = 0.
-        zsf_events.loc[event_idx, :] = [time_start, time_stop, head_sea, head_lake, routine, salinity_sea,
-                                        salinity_lake, ship_volume_lake_to_sea, ship_volume_sea_to_lake, t_level,
-                                        t_open_lake, t_open_sea, temperature_lake, temperature_sea]
+        zsf_events_new.loc[event_idx, :] = [time_start, time_stop, head_sea, head_lake, routine, salinity_sea,
+                                            salinity_lake, ship_volume_lake_to_sea, ship_volume_sea_to_lake, t_level,
+                                            t_open_lake, t_open_sea, temperature_lake, temperature_sea]
+        new_indexes.append(event_idx)
 
+    zsf_events = zsf_events_new.copy()
     for phase_idx, phase_info in zsf_events[zsf_events.routine.isin(['Levelling to lake','Levelling to sea'])].iterrows():
-        levelling_event_df = df_operations[df_operations.leveling_start == phase_info.time_start]
+        if phase_idx not in new_indexes:
+            continue
+        levelling_event_df = df_operations[(df_operations.leveling_start >= phase_info.time_start)&
+                                           (df_operations.leveling_stop <= phase_info.time_stop)]
         if levelling_event_df.empty:
             continue
         levelling_event = levelling_event_df.iloc[0]
@@ -1634,14 +1659,19 @@ def calculate_ZSF_eventttable(lock_chamber):
 
     # #Correcting events for varying water levels
     for index in zsf_events[zsf_events.routine == 'Levelling to sea'].index:
+        if index not in new_indexes:
+            continue
         iloc = zsf_events.index.get_loc(index)
         zsf_events.loc[index, 'head_sea'] = zsf_events.iloc[iloc + 1]['head_sea']
 
     for index in zsf_events[zsf_events.routine == 'Levelling to lake'].index:
+        if index not in new_indexes:
+            continue
         iloc = zsf_events.index.get_loc(index)
         zsf_events.loc[index, 'head_lake'] = zsf_events.iloc[iloc + 1]['head_lake']
 
     zsf_events = zsf_events.set_index(['time_start','time_stop'])
+    lock_chamber.zsf_events = zsf_events.copy()
     return zsf_events
 
 
@@ -1663,8 +1693,20 @@ def calculate_exchange_current_speed(lock_chamber, state_a, parameters_b, side='
     return exchange_current_velocity
 
 
-def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0):
-    zsf_events = calculate_ZSF_eventttable(lock_chamber)
+def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, zsf_events = None):
+    zsf_events_was_none = False
+    if zsf_events is None:
+        zsf_events_was_none = True
+        zsf_events = calculate_ZSF_eventttable(lock_chamber)
+    if zsf_events.empty:
+        return pd.DataFrame()
+
+    try:
+        skiprows = len(lock_chamber.ZSF_results) - 3
+        if skiprows < 0:
+            skiprows = 0
+    except:
+        skiprows = 0
 
     lock_parameters = {
         "lock_length": lock_chamber.lock_length,
@@ -1682,20 +1724,42 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0):
         "sill_height_sea": 0.0,
     }
 
+    if skiprows > 0 and zsf_events_was_none:
+        zsf_events = zsf_events.iloc[skiprows:].copy()
+    else:
+        skiprows = 0
+
+    if zsf_events.empty:
+        if not hasattr(lock_chamber, 'ZSF_results'):
+            return pd.DataFrame()
+        return lock_chamber.ZSF_results
+
     first_event = zsf_events.iloc[0]
     if first_event.routine == 'Gate open at lake' or first_event.routine == 'Levelling to sea':
         head_lock = first_event.head_lake
-    elif first_event.routine == 'Gate open at sea' or first_event.routine == 'Levelling to lake':
+    else:
         head_lock = first_event.head_sea
-    ZSF = pyzsf.ZSFUnsteady(sal_lock=init_salinity_lock, head_lock=head_lock, **lock_parameters, **mitigation_parameters)
-    lockages = list(zsf_events.to_dict("records"))
+
+    if skiprows:
+        init_salinity_lock = lock_chamber.ZSF_results.salinity_lock_stop.iloc[-3]
+        head_lock = lock_chamber.ZSF_results.head_lock_stop.iloc[-3]
+
+    lockage = list(zsf_events.to_dict("records"))[0].copy()
+    lockage.pop("routine")
+    lockage.pop("t_open_lake")
+    lockage.pop("t_open_sea")
+    lockage.pop("t_level")
+    ZSF = pyzsf.ZSFUnsteady(sal_lock=init_salinity_lock, head_lock=head_lock, **lockage, **lock_parameters, **mitigation_parameters)
     all_results = []
-    for parameters in lockages:
+    lockages = list(zsf_events.to_dict("records"))
+    for lockage_nr, parameters in enumerate(lockages):
         routine = parameters.pop("routine")
         t_open_lake = parameters.pop("t_open_lake")
         t_open_sea = parameters.pop("t_open_sea")
         t_level = parameters.pop("t_level")
-
+        if skiprows and not lockage_nr:
+            t_open_lake = 0.
+            t_open_sea = 0.
         initial_ZSF_state = ZSF.state.copy()
         initial_ZSF_state = {'salinity_lock_start': initial_ZSF_state['salinity_lock'],
                              'saltmass_lock_start': initial_ZSF_state['saltmass_lock'],
@@ -1705,65 +1769,59 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0):
         if routine == 'Levelling to lake':
             assert t_level > 0
             results = ZSF.step_phase_1(t_level, **parameters)
-        elif routine == 'Gate open at lake':
-            state_before = ZSF.state.copy()
-            ZSF.state["head_lock"] = parameters['head_lake']
-            parameters_a = parameters.copy()
-            parameters_a['ship_volume_lake_to_sea'] = 0.
-            results_a = ZSF.step_phase_2(0., **parameters_a)
-            state_a = ZSF.state.copy()
-            parameters_b = parameters.copy()
-            parameters_b['ship_volume_lake_to_sea'] = 0.
-            parameters_b['ship_volume_sea_to_lake'] = 0.
-            results_b = ZSF.step_phase_2(t_open_lake, **parameters_b)
-            state_b = ZSF.state.copy()
-            parameters_c = parameters.copy()
-            parameters_c['ship_volume_sea_to_lake'] = 0.
-            results_c = ZSF.step_phase_2(0., **parameters)
-            state_c = ZSF.state.copy()
-            results = ZSF.step_phase_2(t_open_lake, **parameters)
-            results['salinity_lock_start'] = state_before['salinity_lock']
-            results['saltmass_lock_start'] = state_before['saltmass_lock']
-            for subphase_nr, substate, subresults in zip(['a', 'b', 'c'],
-                                                         [state_a, state_b, state_c],
-                                                         [results_a, results_b, results_c]):
-                results[f'salinity_lock_{subphase_nr}'] = substate['salinity_lock']
-                results[f'saltmass_lock_{subphase_nr}'] = substate['saltmass_lock']
-                exchange_current_velocity = calculate_exchange_current_speed(lock_chamber, state_a, parameters_b, 'lake')
-                results[f'exchange_current_velocity'] = exchange_current_velocity
-                results[f'discharge_from_lake_{subphase_nr}'] = subresults['discharge_from_lake']
-                results[f'discharge_from_sea_{subphase_nr}'] = subresults['discharge_from_sea']
-                results[f'discharge_to_lake_{subphase_nr}'] = subresults['discharge_to_lake']
-                results[f'discharge_to_sea_{subphase_nr}'] = subresults['discharge_to_sea']
-                results[f'volume_from_lake_{subphase_nr}'] = subresults['volume_from_lake']
-                results[f'volume_from_sea_{subphase_nr}'] = subresults['volume_from_sea']
-                results[f'volume_to_lake_{subphase_nr}'] = subresults['volume_to_lake']
-                results[f'volume_to_sea_{subphase_nr}'] = subresults['volume_to_sea']
-                results[f'salinity_lock_{subphase_nr}'] = subresults['mass_transport_sea']
-                results[f'salinity_lock_{subphase_nr}'] = subresults['mass_transport_lake']
-
         elif routine == 'Levelling to sea':
             assert t_level > 0
             results = ZSF.step_phase_3(t_level, **parameters)
-        elif routine == 'Gate open at sea':
-            state_before = ZSF.state.copy()
-            ZSF.state["head_lock"] = parameters['head_lake']
+        elif routine == 'Gate open at sea' or routine == 'Gate open at lake':
+            #Pre phase
+            if routine == 'Gate open at sea':
+                ZSF.state["head_lock"] = parameters['head_sea']
+                initial_ZSF_state['volume_ship_in_lock_start'] = parameters['ship_volume_lake_to_sea']
+            else:
+                ZSF.state["head_lock"] = parameters['head_lake']
+                initial_ZSF_state['volume_ship_in_lock_start'] = parameters['ship_volume_sea_to_lake']
+
+            #Phase a)
             parameters_a = parameters.copy()
-            parameters_a['ship_volume_sea_to_lake'] = 0.
-            results_a = ZSF.step_phase_4(0., **parameters_a)
+            if routine == 'Gate open at sea':
+                parameters_a['ship_volume_sea_to_lake'] = 0.
+                results_a = ZSF.step_phase_4(0., **parameters_a)
+            else:
+                parameters_a['ship_volume_lake_to_sea'] = 0.
+                results_a = ZSF.step_phase_2(0., **parameters_a)
             state_a = ZSF.state.copy()
+
+            #Phase b)
             parameters_b = parameters.copy()
             parameters_b['ship_volume_lake_to_sea'] = 0.
             parameters_b['ship_volume_sea_to_lake'] = 0.
-            results_b = ZSF.step_phase_4(t_open_sea, **parameters_b)
+            if routine == 'Gate open at sea':
+                results_b = ZSF.step_phase_4(t_open_sea, **parameters_b)
+            else:
+                results_b = ZSF.step_phase_2(t_open_lake, **parameters_b)
             state_b = ZSF.state.copy()
+
+            # Phase c)
             parameters_c = parameters.copy()
-            parameters_c['ship_volume_lake_to_sea'] = 0.
-            results_c = ZSF.step_phase_4(0., **parameters)
+            if routine == 'Gate open at sea':
+                parameters_c['ship_volume_lake_to_sea'] = 0.
+                results_c = ZSF.step_phase_4(0., **parameters)
+            else:
+                parameters_c['ship_volume_sea_to_lake'] = 0.
+                results_c = ZSF.step_phase_2(0., **parameters)
             state_c = ZSF.state.copy()
-            results = ZSF.step_phase_4(t_open_sea, **parameters)
-            results['salinity_lock_start'] = state_before['salinity_lock']
-            results['saltmass_lock_start'] = state_before['saltmass_lock']
+
+            results = {}
+            results['discharge_from_sea'] = 0.
+            results['discharge_from_lake'] = 0.
+            results['discharge_to_lake'] = 0.
+            results['discharge_to_sea'] = 0.
+            results['volume_from_lake'] = 0.
+            results['volume_from_sea'] = 0.
+            results['volume_to_lake'] = 0.
+            results['volume_to_sea'] = 0.
+            results['mass_transport_sea'] = 0.
+            results['mass_transport_lake'] = 0.
             for subphase_nr, substate, subresults in zip(['a','b','c'],
                                                          [state_a, state_b, state_c],
                                                          [results_a, results_b, results_c]):
@@ -1779,9 +1837,18 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0):
                 results[f'volume_from_sea_{subphase_nr}'] = subresults['volume_from_sea']
                 results[f'volume_to_lake_{subphase_nr}'] = subresults['volume_to_lake']
                 results[f'volume_to_sea_{subphase_nr}'] = subresults['volume_to_sea']
-                results[f'salinity_lock_{subphase_nr}'] = subresults['mass_transport_sea']
-                results[f'salinity_lock_{subphase_nr}'] = subresults['mass_transport_lake']
-
+                results[f'mass_transport_sea_{subphase_nr}'] = subresults['mass_transport_sea']
+                results[f'mass_transport_lake_{subphase_nr}'] = subresults['mass_transport_lake']
+                results['discharge_from_sea'] += subresults['discharge_from_sea']
+                results['discharge_from_lake'] += subresults['discharge_from_lake']
+                results['discharge_to_lake'] += subresults['discharge_to_lake']
+                results['discharge_to_sea'] += subresults['discharge_to_sea']
+                results['volume_from_lake'] += subresults['volume_from_lake']
+                results['volume_from_sea'] += subresults['volume_from_sea']
+                results['volume_to_lake'] += subresults['volume_to_lake']
+                results['volume_to_sea'] += subresults['volume_to_sea']
+                results['mass_transport_sea'] += subresults['mass_transport_sea']
+                results['mass_transport_lake'] += subresults['mass_transport_lake']
         elif routine in {-2, -4}:
             results = ZSF.step_flush_doors_closed(t_flushing, **parameters)
         else:
@@ -1794,10 +1861,27 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0):
         results['saltmass_lock_stop'] = ZSF.state['saltmass_lock']
         results['volume_ship_in_lock_stop'] = ZSF.state['volume_ship_in_lock']
         results['head_lock_stop'] = ZSF.state['head_lock']
+        if skiprows and not lockage_nr:
+            index = zsf_events.index[1:]
+            zsf_events_to_concat = zsf_events.iloc[1:]
+            continue
         all_results.append(results)
+        if not skiprows:
+            index = zsf_events.index
+            zsf_events_to_concat = zsf_events
 
-    ZSF_results = pd.concat([zsf_events,pd.DataFrame(all_results, index=zsf_events.index)],axis=1)
+    ZSF_results = pd.concat([zsf_events_to_concat,pd.DataFrame(all_results, index=index)],axis=1)
     ZSF_results = ZSF_results.reset_index()
+    if hasattr(lock_chamber, 'ZSF_results') and not lock_chamber.ZSF_results.empty:
+        for _, info in ZSF_results.iterrows():
+            if info.time_start in lock_chamber.ZSF_results.time_start.values:
+                index = lock_chamber.ZSF_results[lock_chamber.ZSF_results.time_start == info.time_start].index[-1]
+                lock_chamber.ZSF_results.loc[index, :] = info
+            else:
+                lock_chamber.ZSF_results.loc[len(lock_chamber.ZSF_results), :] = info
+    else:
+        lock_chamber.ZSF_results = ZSF_results.copy()
+    lock_chamber.ZSF_results = lock_chamber.ZSF_results.reset_index(drop = True)
     return ZSF_results
 
 
@@ -1830,23 +1914,24 @@ def calculate_aggregated_water_exchange_fluxes(lock_chamber, ZSF_results):
     return overall_results
 
 
-def calculate_lock_salinity_and_saltmass(lock_chamber, ZSF_results):
-    lock_chamber.salinity = np.zeros(len(lock_chamber.time))
-    lock_chamber.saltmass = np.zeros(len(lock_chamber.time))
+def calculate_lock_salinity_and_saltmass(lock_chamber, ZSF_results = None):
+    if ZSF_results is None:
+        ZSF_results = calculate_water_exchange_fluxes(lock_chamber)
+
     for idx, phase in ZSF_results.iterrows():
         if phase.routine in ['Gate open at sea', 'Gate open at lake']:
             t_open = (phase.time_stop - phase.time_start).total_seconds()
             lock_water_depth = (phase.head_lock_start + lock_chamber.lock_depth)
             lock_volume = lock_water_depth * lock_chamber.lock_length * lock_chamber.lock_width
             saltmass_when_fully_exchanged = lock_volume * phase.salinity_lake
+            if phase.routine == 'Gate open at sea':
+                saltmass_when_fully_exchanged = lock_volume * phase.salinity_sea
             saltmass_start = phase.saltmass_lock_a
             saltmass_stop = phase.saltmass_lock_b
-            exchange_frac = 1 - (saltmass_stop - saltmass_when_fully_exchanged) / \
-                            (saltmass_start - saltmass_when_fully_exchanged)
-            if phase.routine == 'Gate open at sea':
-                exchange_frac = 1 - (saltmass_start - saltmass_when_fully_exchanged) / \
-                                (saltmass_stop - saltmass_when_fully_exchanged)
-            t_exch = t_open / math.atanh(exchange_frac)
+            exchange_frac = np.abs(
+                1 - (saltmass_stop - saltmass_when_fully_exchanged) / (saltmass_start - saltmass_when_fully_exchanged)
+            )
+            t_exch = t_open / math.atanh(np.min([np.max([0,exchange_frac]),0.99999999999999]))
             dt = lock_chamber.time_step
             time_index_lock_start = np.abs(lock_chamber.time - phase.time_start).argmin()
             time_series = np.arange(0., t_open, dt)
@@ -1860,13 +1945,23 @@ def calculate_lock_salinity_and_saltmass(lock_chamber, ZSF_results):
                 lock_salinity_t.append(salinity_kgm3)
                 lock_saltmass_t.append(saltmass_dt)
             time_index_lock_stop = time_index_lock_start + len(lock_saltmass_t)
+            lock_chamber.salinity[time_index_lock_start-1] = phase.salinity_lock_start
+            lock_chamber.saltmass[time_index_lock_start-1] = phase.saltmass_lock_start
             lock_chamber.salinity[time_index_lock_start:time_index_lock_stop] = lock_salinity_t
             lock_chamber.saltmass[time_index_lock_start:time_index_lock_stop] = lock_saltmass_t
             time_index_lock_final = np.abs(lock_chamber.time - phase.time_stop).argmin()
-            print(phase.time_stop)
-            print(time_index_lock_final)
-            lock_chamber.salinity[time_index_lock_final:] = saltmass_stop / lock_volume
-            lock_chamber.saltmass[time_index_lock_final:] = saltmass_stop
+            lock_chamber.salinity[time_index_lock_final:] = phase.salinity_lock_c
+            lock_chamber.saltmass[time_index_lock_final:] = phase.saltmass_lock_c
+        if phase.routine in ['Levelling to sea', 'Levelling to lake']:
+            time_index_lock_start = np.abs(lock_chamber.time - phase.time_start).argmin()
+            time_index_lock_final = np.abs(lock_chamber.time - phase.time_stop).argmin()
+            dts = time_index_lock_final - time_index_lock_start
+            d_salinity_dts = (phase.salinity_lock_stop - phase.salinity_lock_start) / dts
+            d_saltmass_dts = (phase.saltmass_lock_stop - phase.saltmass_lock_start) / dts
+            t0 = time_index_lock_start
+            for t in range(time_index_lock_start, time_index_lock_final+1):
+                lock_chamber.salinity[t] = d_salinity_dts*(t-t0) + phase.salinity_lock_start
+                lock_chamber.saltmass[t] = d_saltmass_dts*(t-t0) + phase.saltmass_lock_start
 
 
 def salinity_psu_to_density(salinity_psu, temperature):
@@ -2122,3 +2217,39 @@ def calculate_ic_ratio(lock_chamber, Tc_df):
     C_s, _, _ = estimate_lock_capacity(lock_chamber)
     I_s_avg = Tc_df['Intensity (I_s)'].sum()/len(Tc_df)
     return I_s_avg / C_s, C_s
+
+
+def calculate_saltwater_intrusion(lock_chamber, ZSF_results = None):
+    if not lock_chamber.has_salinity:
+        return {}, {}
+    if ZSF_results is None:
+        ZSF_results = lock_chamber.ZSF_results
+    saltwater_intrusion = -1 * ZSF_results.mass_transport_lake.sum()
+    duration = (ZSF_results.time_stop.iloc[-1] - ZSF_results.time_start.iloc[0]).total_seconds()
+    saltwater_intrusion_flux = saltwater_intrusion / duration
+    water_volume_lost = ZSF_results.volume_to_lake.sum() - ZSF_results.volume_from_lake.sum()
+    saltwater_inrusion_results = {}
+    saltwater_inrusion_results['saltwater_intrusion'] = saltwater_intrusion
+    saltwater_inrusion_results['saltwater_intrusion_flux'] = saltwater_intrusion_flux
+    saltwater_inrusion_results['water_volume_lost'] = -1*water_volume_lost
+    saltwater_inrusion_results['water_outflow'] = -1*water_volume_lost/duration
+
+    saltwater_intrusion_tot = saltwater_intrusion + lock_chamber.ZSF_results.mass_transport_lake_a.sum()
+    saltwater_intrusion_due_to_exchange_current = -1 * ZSF_results.mass_transport_lake_b.sum() / saltwater_intrusion_tot
+    saltwater_intrusion_due_to_outbound_vessels = -1 * ZSF_results.mass_transport_lake_c.sum() / saltwater_intrusion_tot
+    levelling_mask = ZSF_results.routine.str.contains('Levelling')
+    saltwater_intrusion_due_to_levelling = -1 * ZSF_results[levelling_mask].mass_transport_lake.sum() / \
+                                           saltwater_intrusion_tot
+    saltwater_intrusion_causes = {
+        'Exchange current (%)': np.round(saltwater_intrusion_due_to_exchange_current*100, 1),
+        'Outbound vessels (%)': np.round(saltwater_intrusion_due_to_outbound_vessels*100, 1),
+        'Levelling (%)': np.round(saltwater_intrusion_due_to_levelling*100, 1),
+    }
+    saltwater_intrusion_causes_sorted = dict(
+        sorted(
+            saltwater_intrusion_causes.items(),
+            key=lambda item: item[1],
+            reverse=True
+        )
+    )
+    return saltwater_inrusion_results, saltwater_intrusion_causes_sorted

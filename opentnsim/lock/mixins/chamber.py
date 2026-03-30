@@ -22,7 +22,8 @@ from opentnsim.lock.calculations import (
     calculate_and_check_lock_dimensions,
     calculate_lock_distances_to_nodes_of_edge_from_geometry,
     calculate_lock_occupancy,
-    calculate_cycle_event_durations
+    calculate_cycle_event_durations,
+    calculate_saltwater_intrusion
 )
 from opentnsim.lock.mixins.operator import IsLockChamberOperator
 from opentnsim.lock.logutils import get_vessel_delays, calculate_cycle_information
@@ -168,15 +169,29 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.valve_opening_time = valve_opening_time
         time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
         hydromanager = HydrodynamicDataManager()
-        wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
-        self.has_hydrodynamics = False
-        if not pd.isna(wlev_init):
-            self.has_hydrodynamics = True
-        if self.has_hydrodynamics:
+        try:
+            self.has_water_level = True
+            wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
+            if pd.isna(wlev_init):
+                self.has_water_level = False
+        except:
+            self.has_water_level = False
+        try:
+            self.has_salinity = True
+            sal_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Salinity")
+            if pd.isna(sal_init):
+                self.has_salinity = False
+        except:
+            self.has_salinity = False
+
+        if self.has_water_level:
             time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
-            wlev_series = wlev_init*np.ones(len(time_series))
+            wlev_series = hydromanager._get_interpolated_hydrodynamic_series(time_series,self.gate_open_at_node,"Water level",)
             self.time = time_series
             self.water_level = wlev_series
+        if self.has_salinity:
+            self.salinity = np.zeros(len(self.time))
+            self.saltmass = np.zeros(len(self.time))
 
         # operational information
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed
@@ -230,6 +245,16 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
                    'Cycle event composition': event_durations_summary.to_dict(),
                    'Lock capacity': np.round(capacity,2),
                    'Cycle-averaged I/C-ratio': np.round(ic,2)}
+
+        if self.has_salinity:
+            saltwater_intrusion_results, saltwater_intrusion_causes = calculate_saltwater_intrusion(self)
+            results['Water volume lost [m3]'] = np.round(saltwater_intrusion_results['water_volume_lost'], 1)
+            results['Average outflow of water [m3/s]'] = np.round(saltwater_intrusion_results['water_outflow'], 1)
+            results['Saltwater intrusion [kg]'] = np.round(saltwater_intrusion_results['saltwater_intrusion'], 1)
+            results['Average saltwater intrusion flux [kg/s]'] = np.round(
+                saltwater_intrusion_results['saltwater_intrusion_flux'], 1
+            )
+            results['Saltwater intrusion causes'] = saltwater_intrusion_causes
 
         summary = pd.Series(results)
         show_results(summary)
