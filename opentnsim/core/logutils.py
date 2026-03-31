@@ -6,8 +6,11 @@ Core utiltities related to logging.
 # %% IMPORT DEPENDENCIES
 # generic
 import pandas as pd
-
-from shapely import Point
+from opentnsim.graph.utils import get_trajectory_between_locations, find_closest_node, find_closest_edge
+from shapely.ops import split, linemerge, snap
+from shapely.geometry import MultiPoint, MultiLineString, LineString, Point
+import geopandas as gpd
+import networkx as nx
 
 # internal
 import opentnsim.graph.mixins as mixins
@@ -242,4 +245,284 @@ def logbook2eventtable(objs):
                               'start location', 'stop location', 'start time', 'stop time',
                               'distance (m)', 'duration (s)']]
 
+
+
     return eventtable
+
+
+def eventtable2gdf(df_eventtable, objs):
+    # check if all objects have a logbook with expected structure
+    graph = None
+    obj_ids = []
+    for obj in objs:
+        if (
+                not hasattr(obj, "logbook")
+                or not hasattr(obj, "id")
+                or not hasattr(obj, "name")
+                or not hasattr(obj, "env")
+        ):
+            raise ValueError(
+                f"Object {obj} does not have a logbook or id/name attributes."
+            )
+        obj_ids.append(obj.id)
+        graph = obj.env.graph
+
+    if graph is None:
+        return df_eventtable
+
+    def get_unique_geometries(row):
+        start = row['start location']
+        stop = row['stop location']
+        if start == stop:
+            return Point(start)
+        else:
+            return LineString([start, stop])
+
+    def determine_if_geometry_on_node(row, graph):
+        geometry = row['geometry']
+        start_location = row['start location']
+        stop_location = row['stop location']
+        node_start = find_closest_node(graph, start_location)
+        node_stop = find_closest_node(graph, stop_location)
+        start_location_on_node = False
+        stop_location_on_node = False
+        if graph.nodes[node_start]['geometry'] == start_location:
+            start_location_on_node = True
+        if graph.nodes[node_stop]['geometry'] == stop_location:
+            stop_location_on_node = True
+        return start_location_on_node, stop_location_on_node
+
+    def split_edge_in_graph(G, u, v, segments):
+        """
+        Replace edge (u, v) with multiple segment edges.
+
+        segments: list of LineStrings (ordered!)
+        """
+        G_new = G.copy()
+
+        # Get original edge data
+        edge_data = G.edges[u, v].copy()
+
+        # Remove original edge
+        G_new.remove_edge(u, v)
+
+        # Helper: create node id from coordinate
+        def node_id(coord):
+            return tuple(coord)  # or str(coord) if needed
+
+        # Build nodes + edges
+        prev_node = u
+
+        for i, seg in enumerate(segments):
+            start = seg.coords[0]
+            end = seg.coords[-1]
+
+            # Add start node if needed
+            if prev_node == u:
+                current_start = u
+            else:
+                current_start = node_id(start)
+                G_new.add_node(current_start, x=start[0], y=start[1], geometry=Point(start))
+
+            # Add end node
+            if i == len(segments) - 1:
+                current_end = v
+            else:
+                current_end = node_id(end)
+                G_new.add_node(current_end, x=end[0], y=end[1], geometry=Point(end))
+
+            # Add new edge
+            G_new.add_edge(current_start, current_end, weight=1, geometry=seg)
+
+            prev_node = current_end
+
+        return G_new
+
+    def copy_graph_and_remove_information(graph, keep_edge_columns=['weigth', 'geometry'],
+                                          keep_node_columns=['geometry']):
+        graph_new = graph.copy()
+        for n, data in graph_new.nodes(data=True):
+            keys = list(data.keys())
+            for k in keys:
+                if k not in keep_node_columns:
+                    del data[k]
+        for u, v, data in graph_new.edges(data=True):
+            keys = list(data.keys())
+            for k in keys:
+                if k not in keep_node_columns:
+                    del data[k]
+        return graph_new
+
+    def weighted_avg(group, col, weight_col):
+        weight_sum = group[weight_col].sum()
+        if weight_sum == 0.:
+            return 0.
+        return (group[col] * group[weight_col]).sum() / weight_sum
+
+    def update_locations(row):
+        geom = row['geometry']
+        if isinstance(geom, LineString):
+            row['start location'] = Point(geom.coords[0])
+            row['stop location'] = Point(geom.coords[-1])
+        elif isinstance(geom, Point):
+            row['start location'] = geom
+            row['stop location'] = geom
+        return row
+
+    def expand_row_by_edges(row, graph):
+        """
+        Expands a row into multiple rows if it has multiple edges.
+        Distance and duration are split proportionally.
+        """
+        edges = row['edges']
+        if not edges or len(edges) <= 1:
+            return [row]
+
+        # Get edge lengths
+        edge_lengths = []
+        edge_geoms = []
+        for edge in edges:
+            u, v = edge
+            geom = graph.edges[edge]['geometry']
+            if isinstance(geom, LineString):
+                length = geom.length
+            else:
+                # fallback: compute from coords
+                length = LineString([u, v]).length
+            edge_lengths.append(length)
+            edge_geoms.append(geom if isinstance(geom, LineString) else LineString([u, v]))
+
+        total_length = sum(edge_lengths)
+
+        # Split distance and duration proportionally
+        new_rows = []
+        for length, geom in zip(edge_lengths, edge_geoms):
+            new_row = row.copy()
+            fraction = length / total_length if total_length > 0 else 0
+            new_row['distance (m)'] = row['distance (m)'] * fraction
+            new_row['duration (s)'] = row['duration (s)'] * fraction
+            new_row['geometry'] = geom
+            # Update start_node and stop_node for this segment
+            new_row['start_node'] = geom.coords[0]
+            new_row['stop_node'] = geom.coords[-1]
+            new_rows.append(new_row)
+
+        return new_rows
+
+    graph_new = copy_graph_and_remove_information(graph)
+    graph_new = graph_new.to_undirected()
+    df_eventtable['geometry'] = df_eventtable.apply(get_unique_geometries, axis=1)
+    df = pd.DataFrame(df_eventtable.apply(determine_if_geometry_on_node, graph=graph_new, axis=1), columns=['result'])
+    df_eventtable[['start_location_on_node', 'stop_location_on_node']] = pd.DataFrame(df['result'].tolist(),
+                                                                                      index=df.index)
+    unique_locations = pd.unique(pd.concat([df_eventtable[~df_eventtable.start_location_on_node]['start location'],
+                                            df_eventtable[~df_eventtable.start_location_on_node]['stop location']]))
+    edge_splits = {}
+    for unique_location in unique_locations:
+        edge = find_closest_edge(graph, unique_location)
+        if edge not in edge_splits.keys():
+            edge_splits[edge] = []
+        edge_splits[edge].append(unique_location)
+
+    for edge, points in edge_splits.items():
+        edge_geometry = graph.edges[edge]['geometry']
+        splitter = snap(MultiPoint(points), edge_geometry, tolerance=1e-6)
+        segments = split(edge_geometry, splitter)
+        graph_new = split_edge_in_graph(graph_new, edge[0], edge[1], segments.geoms)
+
+    df_eventtable['start_node'] = df_eventtable['start location'].apply(lambda x: find_closest_node(graph_new, x))
+    df_eventtable['stop_node'] = df_eventtable['stop location'].apply(lambda x: find_closest_node(graph_new, x))
+    df_eventtable['route'] = df_eventtable.apply(lambda x: nx.dijkstra_path(graph_new, x.start_node, x.stop_node),
+                                                 axis=1)
+    df_eventtable['edges'] = df_eventtable['route'].apply(lambda r: list(zip(r[:-1], r[1:])))
+
+    expanded_rows = []
+
+    for idx, row in df_eventtable.iterrows():
+        expanded_rows.extend(expand_row_by_edges(row, graph_new))
+
+    df_expanded = pd.DataFrame(expanded_rows)
+    df_expanded = df_expanded.reset_index(drop=True)
+    df_expanded = df_expanded.apply(update_locations, axis=1)
+    df_expanded['geometry'] = df_expanded.apply(get_unique_geometries, axis=1)
+    df_expanded['start_node'] = df_expanded['start location'].apply(lambda x: find_closest_node(graph_new, x))
+    df_expanded['stop_node'] = df_expanded['stop location'].apply(lambda x: find_closest_node(graph_new, x))
+    df_expanded['network_geometry'] = df_expanded.apply(
+        lambda x: graph_new.edges[(x.start_node, x.stop_node)]['geometry'] if x.start_node != x.stop_node else
+        graph_new.nodes[x.start_node]['geometry'], axis=1)
+
+    first_cols = ['network_geometry', 'waterway width (m)']
+    sum_cols = ['distance (m)', 'duration (s)', 'total_energy (kWh)',
+                'diesel_consumption (g)', 'CO2_emission_total (g)',
+                'PM10_emission_total (g)', 'NOX_emission_total (g)']
+    mean_cols = ['engine age (year)', 'P_tot (kW)', 'P_given (kW)', 'P_installed (kW)']
+    weighted_cols_t = ['diesel_consumption_s (g/s)', 'CO2_emission_per_s (g/s)',
+                       'PM10_emission_per_s (g/s)', 'NOX_emission_per_s (g/s)']
+    weighted_cols_m = ['diesel_consumption_m (g/m)', 'CO2_emission_per_m (g/m)',
+                       'PM10_emission_per_m (g/m)', 'NOX_emission_per_m (g/m)']
+
+    # Keep only columns that exist
+    first_cols = [c for c in first_cols if c in df_expanded.columns]
+    sum_cols = [c for c in sum_cols if c in df_expanded.columns]
+    mean_cols = [c for c in mean_cols if c in df_expanded.columns]
+    weighted_cols_t = [c for c in weighted_cols_t if c in df_expanded.columns]
+    weighted_cols_m = [c for c in weighted_cols_m if c in df_expanded.columns]
+
+    # Build aggregation dictionary
+    agg_dict = {col: 'sum' for col in sum_cols}
+    agg_dict.update({col: 'first' for col in first_cols})
+    agg_dict.update({col: 'mean' for col in mean_cols})
+    if 'object id' in df_expanded.columns:
+        agg_dict['object id'] = lambda x: list(pd.unique(x))
+
+    # Group by geometry key
+    df_expanded['geom_key'] = df_expanded['network_geometry'].apply(lambda g: g.wkt)
+    grouped = df_expanded.groupby('geom_key')
+    df_edges = grouped.agg(agg_dict).reset_index()
+
+    # Weighted averages
+    for col in weighted_cols_t:
+        weight_col = 'duration (s)'
+        if weight_col in df_expanded.columns:
+            df_edges[col] = grouped.apply(lambda g: weighted_avg(g, col, weight_col),
+                                          include_groups=False).values
+
+    for col in weighted_cols_m:
+        weight_col = 'distance (m)'
+        if weight_col in df_expanded.columns:
+            df_edges[col] = grouped.apply(lambda g: weighted_avg(g, col, weight_col),
+                                          include_groups=False).values
+
+    # Renaming
+    renaming_columns = {
+        'distance (m)': 'total_distance_sailed (m)',
+        'duration (s)': 'total_residence_time (s)',
+        'P_tot (kW)': 'average_P_tot (kW)',
+        'P_given (kW)': 'average_P_given (kW)',
+        'P_installed (kW)': 'average_P_installed (kW)',
+        'engine age (year)': 'average_engine_age (year)',
+        'total_energy (kWh)': 'total_energy_consumed (kWh)',
+        'diesel_consumption (g)': 'total_diesel_consumed (g)',
+        'CO2_emission_total (g)': 'total_CO2_emitted (g)',
+        'PM10_emission_total (g)': 'total_PM10_emitted (g)',
+        'NOX_emission_total (g)': 'total_NOX_emitted (g)',
+        'diesel_consumption_s (g/s)': 'average_diesel_consumption_s (g/s)',
+        'CO2_emission_per_s (g/s)': 'average_CO2_emission_per_s (g/s)',
+        'PM10_emission_per_s (g/s)': 'average_PM10_emission_per_s (g/s)',
+        'NOX_emission_per_s (g/s)': 'average_NOX_emission_per_s (g/s)',
+        'diesel_consumption_m (g/m)': 'average_diesel_consumption_m (g/m)',
+        'CO2_emission_per_m (g/m)': 'average_CO2_emission_per_m (g/m)',
+        'PM10_emission_per_m (g/m)': 'average_PM10_emission_per_m (g/m)',
+        'NOX_emission_per_m (g/m)': 'average_NOX_emission_per_m (g/m)',
+        'network_geometry': 'geometry',
+        'object id': 'vessel_ids',
+    }
+
+    # Filter renaming to only existing columns
+    renaming_columns = {k: v for k, v in renaming_columns.items() if k in df_edges.columns}
+
+    df_edges = df_edges.rename(columns=renaming_columns)
+    df_edges = df_edges[list(renaming_columns.values())]
+
+    gdf_edges = gpd.GeoDataFrame(df_edges, geometry='geometry', crs='EPSG:4326')
+    return gdf_edges

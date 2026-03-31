@@ -6,10 +6,10 @@ Logging utilities for energy-related calculations.
 # %% IMPORT DEPENDENCIES
 # generic
 import numpy as np
+import pandas as pd
 
 # internal
 from opentnsim.graph.calculations import calculate_depth
-
 
 # %% ADD ENERGY ATTRIBUTES INTO EVENT TABLE
 def add_energy_attributes_to_eventtable(df, objs):
@@ -55,17 +55,25 @@ def add_energy_attributes_to_eventtable(df, objs):
     df: pandas.DataFrame
         DataFrame with energy-related attributes added.
     """
+    from opentnsim.lock.logutils import add_lock_chamber_dimensions_in_energy_eventtable
+    env = objs[0].env
+    df = df.copy()
+    add_lock_chamber_dimensions_in_energy_eventtable(df, env)
 
     for index, row in df.iterrows():
-
         # the generator option (next) is used to make sure we get the full copy of
         # the object found in the list
         obj = next((x for x in objs if x.id == row["object id"]), None)
         if obj is None:
             continue
+        if hasattr(obj, 'env'):
+            env = obj.env
         # get the depth from the edge sailed in the event (and check if squat effects
         # need to be considered
-        h_0 = calculate_depth(row["start location"], row["stop location"], obj.env.graph)
+        if pd.isna(row["waterdepth (m)"]):
+            h_0 = calculate_depth(row["start location"], row["stop location"], obj.env.graph)
+        else:
+            h_0 = row["waterdepth (m)"]
         h_0 = obj.calculate_h_squat(v=obj.v, h_0=h_0)  # TODO: actually takes width as arg
         calc_v = row['distance (m)']/row['duration (s)']
         obj.calculate_total_resistance(v=calc_v, h_0=h_0)
@@ -74,7 +82,7 @@ def add_energy_attributes_to_eventtable(df, objs):
         obj.calculate_SFC_final(v=calc_v, h_0=h_0)
 
         df.at[index, "waterdepth (m)"] = h_0
-        df.at[index, "waterway width (m)"] = None
+        #df.at[index, "waterway width (m)"] = None
         df.at[index, "current (m/s)"] = 0  # TODO: get current from graph
         df.at[index, "engine age (year)"] = obj.C_year
 
@@ -121,6 +129,7 @@ def add_fuel_attributes_to_event_table(df, objs):
             "attributes. Make sure to call add_energy_attributes_to_eventtable first."
         )
 
+    df = df.copy()
     for index, row in df.iterrows():
 
         # the generator option (next) is used to make sure we get the full copy of the object found in the list

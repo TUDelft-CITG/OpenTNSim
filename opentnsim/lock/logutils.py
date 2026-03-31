@@ -548,3 +548,87 @@ def calculate_cycle_information(lock_chamber):
 
     return pd.DataFrame(results)
 
+
+def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, env):
+    if env is None:
+        return df_eventtable_energy
+
+    mask = df_eventtable_energy['subactivity name'].str.contains('lock', case=False, na=False)
+    df_with_lock = df_eventtable_energy[mask]
+    if df_with_lock.empty:
+        return df_eventtable_energy
+
+    graph = env.graph
+    edges_with_lock = [(u, v) for u, v, data in graph.edges(data=True) if "Lock chamber" in data]
+
+    vessel_ids = pd.unique(df_eventtable_energy['object id'])
+
+    for vessel_id in vessel_ids:
+        df_vessel = df_eventtable_energy[df_eventtable_energy['object id'] == vessel_id].copy()
+
+        # Filter only rows that are part of lock activities
+        target_msgs = [
+            'Sailing to position in lock',
+            'Waiting for lock gate closing',
+            'Waiting for lock levelling',
+            'Waiting for lock gate opening',
+            'Sailing to second lock gate'
+        ]
+        df_lock = df_vessel[df_vessel['subactivity name'].isin(target_msgs)].copy()
+        df_lock = df_lock.sort_values(['object id', 'start time'])
+        # create a boolean: True for rows that belong to a lock sequence
+        df_lock['is_lock'] = df_lock['subactivity name'].isin(target_msgs)
+
+        # identify start of a new lock passage:
+        df_lock['lock_start'] = df_lock['is_lock'] & (~df_lock['is_lock'].shift(fill_value=False))
+
+        # assign a group by cumulative sum of lock_start per object
+        df_lock['lock_group'] = df_lock.groupby('object id')['lock_start'].cumsum()
+
+        # forward-fill so all consecutive lock rows get the same group
+        df_lock['lock_group'] = df_lock.groupby('object id')['lock_group'].ffill().astype(int)
+
+        # Iterate over lock groups per vessel
+        for lock_group, df_group in df_lock.groupby('lock_group'):
+            # df_group contains all rows for this lock group
+            df_ref_group = df_group[df_group['subactivity name'] == 'Waiting for lock levelling']
+
+            # Assign actual lock chamber values for levelling rows
+            for index, row in df_ref_group.iterrows():
+                main_event = row['main activity name']
+                pattern = r"^Sailing from node (.+?) to node (.+?)$"
+                match = re.search(pattern, main_event)
+                if not match:
+                    continue
+                node_from, node_to = match.groups()
+
+                # Find the edge with a lock
+                if (node_from, node_to) in edges_with_lock:
+                    edge = (node_from, node_to)
+                elif (node_to, node_from) in edges_with_lock:
+                    edge = (node_to, node_from)
+                else:
+                    continue
+
+                # Check which lock chamber contains this timestamp
+                lock_chambers = graph.edges[edge]["Lock chamber"]
+                for lock_chamber in lock_chambers:
+                    lock_df = pd.DataFrame(lock_chamber.logbook)
+                    if pd.Timestamp(row['start time']) in lock_df['Timestamp'].dt.round('s').values:
+                        df_eventtable_energy.loc[index, 'waterdepth (m)'] = lock_chamber.lock_depth
+                        df_eventtable_energy.loc[index, 'waterway width (m)'] = lock_chamber.lock_width
+                        break  # Stop once we found the correct lock chamber
+
+            # Now propagate these values to the other rows in this lock group
+            df_target_group = df_group[df_group['subactivity name'] != 'Waiting for lock levelling'].copy()
+            if not df_ref_group.empty:
+                # There may be multiple levelling rows; pick first or nearest timestamp
+                waterdepth = df_eventtable_energy.loc[df_ref_group.index, 'waterdepth (m)'].iloc[0]
+                waterway_width = df_eventtable_energy.loc[df_ref_group.index, 'waterway width (m)'].iloc[0]
+
+                df_eventtable_energy.loc[df_target_group.index, 'waterdepth (m)'] = waterdepth
+                df_eventtable_energy.loc[df_target_group.index, 'waterway width (m)'] = waterway_width
+
+    return df_eventtable_energy
+
+
