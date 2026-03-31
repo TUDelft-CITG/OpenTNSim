@@ -5,6 +5,8 @@ import functools
 import math
 import numpy as np
 import pandas as pd
+import networkx as nx
+import simpy
 from IPython.display import display
 
 from opentnsim.core import SimpyObject
@@ -28,6 +30,7 @@ from opentnsim.lock.utils import (
     _update_future_lock_operations_by_lock_delay_previous_operation,
 )
 from opentnsim.utils import inherit_docstring
+from opentnsim.graph.utils import node_path_to_edge_path, expand_path_edges
 
 class IsLockMaster:
     """Mixin class: lock complex has a lock master:
@@ -263,6 +266,22 @@ class IsLockMaster:
 
         if not route_goes_through_lock:
             vessel.route = new_route
+            vessel.edge_route = node_path_to_edge_path(vessel.env.graph, route)
+            expanded_routes = expand_path_edges(vessel.env.graph, new_route)
+            for expanded_route in expanded_routes:
+                for edge in expanded_route:
+                    if 'Lock chamber' not in vessel.env.graph.edges[edge].keys():
+                        continue
+
+                    lock_chambers = vessel.env.graph.edges[edge]['Lock chamber']
+                    for lock_chamber_found in lock_chambers:
+                        if lock_chamber_found.name == lock_chamber.name:
+                            break
+
+                    for index, routed_edge in enumerate(vessel.edge_route):
+                        if routed_edge[:2] == edge[:2]:
+                            vessel.edge_route[index] = lock_chamber.edge
+                            break
             vessel.has_registered = True
             raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 

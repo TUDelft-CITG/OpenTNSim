@@ -8,7 +8,7 @@ import numpy as np
 from operator import itemgetter
 import pandas as pd
 from numpy.testing import assert_almost_equal
-from opentnsim.graph.utils import get_length_of_edge, get_edge, check_graph_is_multidigraph_type, get_sailing_information_on_edge_to_distance_on_another_edge
+from opentnsim.graph.utils import get_length_of_edge, get_edge, check_graph_is_multidigraph_type, get_sailing_information_on_edge_to_distance_on_another_edge, expand_path_edges
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from IPython.display import display
 import warnings
@@ -172,9 +172,10 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
         lock_end_node = lock_chamber.start_node
         distance_to_lock_on_edge = lock_chamber.distance_from_end_node_to_lock_gate_B
     routes = nx.dijkstra_path(vessel.env.graph, vessel.current_node, lock_end_node) #all_simple_paths not working for large networks
+    edge_routes = expand_path_edges(vessel.env.graph, routes)
     suitable_waiting_areas = pd.DataFrame(columns=['sailing_time_waiting_area_to_lock','available'])
-    for route in [routes]:
-        for edge in zip(route[:-1],route[1:]):
+    for edge_route in edge_routes:
+        for edge in edge_route:
             if 'Waiting area' not in vessel.env.graph.edges[edge].keys():
                 continue
             waiting_areas = vessel.env.graph.edges[edge]['Waiting area']
@@ -821,9 +822,9 @@ def add_lock_to_graph(lock_chamber):
         lock_chamber.env.graph.edges[lock_chamber.edge_reversed]["Lock chamber"].append(lock_chamber)
 
 
-def _check_if_lock_chamber_is_next_lock_complex_object(lock_chamber, origin, destination):
+def _check_if_lock_chamber_is_next_lock_complex_object(lock_chamber, edge):
     is_multidigraph = check_graph_is_multidigraph_type(lock_chamber.env.graph)
-    edge = get_edge(lock_chamber.env.graph, (origin, destination, lock_chamber.k), is_multidigraph)
+    edge = get_edge(lock_chamber.env.graph, edge, is_multidigraph)
     if not 'Lock chamber' in lock_chamber.env.graph.edges[edge].keys():
         return
 
@@ -1017,12 +1018,13 @@ def check_lock_complex_geometry(lock_complex):
         for lock_chamber in lock_complex.lock_chambers.values():
             locks_found[lock_chamber.name] = False
 
-        routes = nx.dijkstra_path(lock_chamber.env.graph, node_start, node_stop)
-        for path in [routes]:
+        route = nx.dijkstra_path(lock_chamber.env.graph, node_start, node_stop)
+        edge_routes = expand_path_edges(lock_chamber.env.graph, route)
+        for edge_route in edge_routes:
             lock_found = False
             waiting_area_before_lock_chamber = False
             distance_waiting_area_from_edge_start = math.inf
-            for edge in zip(path[:-1], path[1:]):
+            for edge in edge_route:
                 edge_info = lock_complex.env.graph.edges[edge]
                 waiting_areas = []
                 locks = []
@@ -1105,9 +1107,14 @@ def check_all_paths_through_registration(lock_complex):
 def _get_directional_edge(lock_chamber, direction):
     """get the edge of the lock chamber in the correct direction"""
     if not direction:
-        return (lock_chamber.start_node, lock_chamber.end_node)
+        edge = (lock_chamber.start_node, lock_chamber.end_node, lock_chamber.k)
     else:
-        return (lock_chamber.end_node, lock_chamber.start_node)
+        edge = (lock_chamber.end_node, lock_chamber.start_node, lock_chamber.k)
+
+    if not isinstance(lock_chamber.env.graph, nx.MultiDiGraph):
+        edge = edge[:2]
+
+    return edge
 
 
 def _get_vessel_sailing_speed_in_lock(lock_chamber, vessel):
@@ -1187,7 +1194,7 @@ def _get_vessel_sailing_in_speed(lock_chamber, vessel, direction):
     edge = _get_directional_edge(lock_chamber, direction)
 
     # determine the speed of the vessel over the edge
-    speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
+    speed = vessel._compute_velocity_on_edge(edge)
 
     # if there is an overruled speed on the edge, use this speed
     if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
@@ -1224,7 +1231,7 @@ def _get_vessel_sailing_out_speed(lock_chamber, vessel, direction):
     edge = _get_directional_edge(lock_chamber, direction)
 
     # determine the speed of the vessel over the edge
-    speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
+    speed = vessel._compute_velocity_on_edge(edge)
 
     # if there is an overruled speed on the edge, use this speed
     if 'overruled_speed' in dir(vessel) and edge in vessel.overruled_speed.index:

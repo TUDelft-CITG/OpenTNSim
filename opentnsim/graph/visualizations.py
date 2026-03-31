@@ -31,28 +31,42 @@ def plot_graph(graph, static: bool = False):
 
     # Labels
     labels = {node: node for node in graph.nodes()}
-    edge_labels = {(u, v): f"{d['weight']} km" for u, v, d in graph.edges(data=True)}
 
     # positions
     positions = {node: (graph.nodes[node]["geometry"].x, graph.nodes[node]["geometry"].y) for node in graph.nodes}
 
     # Edge labels in meters
     edge_labels = {}
-    for u, v in graph.edges():
+    for edge in graph.edges:
+        u, v = edge[:2]
         origin = graph.nodes[u]['geometry']
         destination = graph.nodes[v]['geometry']
         distance_m = calculate_distance(origin, destination)
-        edge_labels[(u, v)] = f"{int(distance_m)} m"
+        edge_labels[edge] = f"{int(distance_m)} m"
 
     # Edge traces and arrow annotations
     edge_traces = []
     arrow_annotations = []
-    for u, v in graph.edges():
-        x0, y0 = positions[u]
-        x1, y1 = positions[v]
+    for edge in graph.edges:
+        u, v = edge[:2]
+        geom = graph.edges[edge].get("geometry")
+
+        if geom is not None:
+            x, y = geom.xy
+            x = list(x)
+            y = list(y)
+            x0, y0 = geom.coords[-2]  # second last point
+            x1, y1 = geom.coords[-1]  # last point
+        else:
+            # fallback if no geometry exists
+            x = [positions[u][0], positions[v][0]]
+            y = [positions[u][1], positions[v][1]]
+            x0, y0 = positions[u]
+            x1, y1 = positions[v]
+
         edge_traces.append(go.Scatter(
-            x=[x0, x1],
-            y=[y0, y1],
+            x=x,
+            y=y,
             line=dict(width=2, color='red'),
             mode='lines',
             hoverinfo='none'
@@ -83,11 +97,20 @@ def plot_graph(graph, static: bool = False):
 
     # Edge label annotations
     edge_label_annotations = []
-    for (u, v), label in edge_labels.items():
-        x0, y0 = positions[u]
-        x1, y1 = positions[v]
-        x_mid = (x0 + x1) / 2
-        y_mid = (y0 + y1) / 2
+    for (edge), label in edge_labels.items():
+        u, v = edge[:2]
+        geom = graph.edges[edge].get("geometry")
+
+        if geom is not None:
+            midpoint = geom.interpolate(0.5, normalized=True)
+            x_mid, y_mid = midpoint.x, midpoint.y
+        else:
+            # fallback to straight line midpoint
+            x0, y0 = positions[u]
+            x1, y1 = positions[v]
+            x_mid = (x0 + x1) / 2
+            y_mid = (y0 + y1) / 2
+
         edge_label_annotations.append(go.layout.Annotation(
             x=x_mid, y=y_mid,
             text=label,

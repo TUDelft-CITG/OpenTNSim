@@ -170,7 +170,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     nrows = 1
     ncols = 1
     width_ratios = [1]
-    node_A, node_B = lock_chamber.edge
+    node_A, node_B = lock_chamber.edge[:2]
     hydromanager = HydrodynamicDataManager()
     if lock_chamber.has_water_level and not lock_chamber.has_salinity:
         ncols = 2

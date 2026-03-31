@@ -156,7 +156,7 @@ class IsLockChamberOperator:
         yield from vessel.leave_lock_complex(self, direction)
 
 
-    def allow_vessel_to_sail_into_lock(self, origin, destination, waiting_area, vessel=None):
+    def allow_vessel_to_sail_into_lock(self, edge, waiting_area, vessel=None):
         """Allows the vessel to sail into the lock chamber
 
         Parameters
@@ -168,7 +168,7 @@ class IsLockChamberOperator:
         vessel : type
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         """
-        lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, origin, destination)
+        lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, edge)
         if not lock_chamber_is_next_up:
             return
 
@@ -193,7 +193,7 @@ class IsLockChamberOperator:
             self.close_gate_between_arrivals_if_necessary(vessel, direction, operation_index)
 
 
-    def allow_vessel_to_sail_out_of_lock(self, origin, destination, vessel=None):
+    def allow_vessel_to_sail_out_of_lock(self, edge, vessel=None):
         """Allows the vessel to sail out of the lock chamber
 
         Parameters
@@ -209,7 +209,7 @@ class IsLockChamberOperator:
         ------
         Vessel to sail to the end of the edge at which the lock chamber is located, and initiates new processes: i.e. closing gate or empty lock operation
         """
-        lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, origin, destination)
+        lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, edge)
         if not lock_chamber_is_next_up:
             return
 
@@ -522,7 +522,7 @@ class IsLockChamberOperator:
                                                     direction = 1 - direction))
 
 
-    def allow_vessel_to_be_locked(self, origin, destination, vessel=None):
+    def allow_vessel_to_be_locked(self, edge, vessel=None):
         """
         Initiates levelling process as function that can be added to a vessel
 
@@ -539,7 +539,7 @@ class IsLockChamberOperator:
 
 
         """
-        lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, origin, destination)
+        lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, edge)
         if not lock_chamber_is_next_up:
             return
 

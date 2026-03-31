@@ -30,7 +30,7 @@ import opentnsim.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
-from opentnsim.graph.utils import get_length_of_edge
+from opentnsim.graph.utils import get_length_of_edge, node_path_to_edge_path
 
 # get logger
 logger = logging.getLogger(__name__)
@@ -76,6 +76,8 @@ class Routable(SimpyObject):
         # initialization
         super().__init__(*args, **kwargs)
         self.route = route
+        self.edge_route = node_path_to_edge_path(env.graph, route)
+
         # start at start of route
         self.position_on_route = 0
         self.complete_path = complete_path
@@ -103,16 +105,15 @@ class Routable(SimpyObject):
         If you want the multidigraph use the HasMultiGraph mixin
 
         """
-        graph = None
         if hasattr(self.env, "graph"):
             graph = self.env.graph
         else:
             raise ValueError("Routable expects .graph to be present on env")
-
-        if isinstance(graph, nx.MultiDiGraph):
-            return nx.DiGraph(graph)
-        elif isinstance(graph, nx.MultiGraph):
-            return nx.Graph(graph)
+        #
+        # if isinstance(graph, nx.MultiDiGraph):
+        #     return nx.DiGraph(graph)
+        # elif isinstance(graph, nx.MultiGraph):
+        #     return nx.Graph(graph)
         return graph
 
 
@@ -297,7 +298,9 @@ class Movable(Locatable, Routable, Log):
         yield from self.look_ahead_to_node(self.route[0])
 
         # Move over the path and log every step
-        for index, edge in enumerate(zip(self.route[:-1], self.route[1:])):
+        for index, _ in enumerate(zip(self.route[:-1], self.route[1:])):
+            edge = self.edge_route[index]
+
             # update current position
             self.update_position(index)
 
@@ -315,7 +318,7 @@ class Movable(Locatable, Routable, Log):
                 continue
 
             try:
-                yield from self.pass_edge(self.current_node, self.next_node)
+                yield from self.pass_edge(edge)
             except simpy.exceptions.Interrupt as e:
                 break
 
@@ -449,7 +452,7 @@ class Movable(Locatable, Routable, Log):
         else:
             return None
 
-    def pass_edge(self, origin, destination):
+    def pass_edge(self, edge):
         """pass an edge and call all on_pass_edge_functions.
 
         Parameters
@@ -463,7 +466,7 @@ class Movable(Locatable, Routable, Log):
         ------
         The time it takes to pass the edge.
         """
-        edge = (origin, destination)
+        origin, destination = edge[:2]
         edge_info = self.graph.edges[edge]
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
@@ -471,16 +474,16 @@ class Movable(Locatable, Routable, Log):
         self.distance_left_on_edge = distance
 
         # calculate velocity based on depth and power, if possible.
-        self.v = self._compute_velocity_on_edge(origin, destination)
+        self.v = self._compute_velocity_on_edge(edge)
 
         # Check if the edge has current info
         # NB: positive current is directed from origin to destination
-        current = self._get_current(origin, destination)
+        current = self._get_current(edge)
         # Wait for edge resources to become available
         # TODO: Misschien moeten we Resources ook onder Info hangen?
         if "Resources" in edge_info.keys() and self.req is None:
             arrival = self.env.now  # remember when we arrived at the edge
-            yield from self._request_resource(self.graph.edges[origin, destination]["Resources"])
+            yield from self._request_resource(self.graph.edges[edge]["Resources"])
             # we had to wait, log it
             if arrival != self.env.now:
                 self.log_entry_v0(
@@ -505,7 +508,7 @@ class Movable(Locatable, Routable, Log):
 
         # on pass edge functions
         for on_pass_edge_function in self.on_pass_edge_functions:
-            yield from on_pass_edge_function(origin, destination)
+            yield from on_pass_edge_function(edge)
 
         # default velocity based on current speed.
         timeout = self.distance_left_on_edge / (self.current_speed + current)
@@ -535,12 +538,13 @@ class Movable(Locatable, Routable, Log):
         for gen in self.on_complete_pass_edge_functions:
             yield from gen(destination)
 
-    def look_ahead_to_node(self, destination):
 
+    def look_ahead_to_node(self, destination):
         for gen in self.on_look_ahead_to_node_functions:
             yield from gen(destination)
 
-    def _get_current(self, origin, destination):
+
+    def _get_current(self, edge):
         """Get the current on the edge
 
         Parameters
@@ -555,19 +559,13 @@ class Movable(Locatable, Routable, Log):
         float
             the current on the edge (in m/s)
         """
-        if "Info" not in self.graph.edges[origin, destination].keys():
+        if "Info" not in self.graph.edges[edge].keys():
             # no info on the current, return 0
             return 0.0
-        elif "Current" not in self.graph.edges[origin, destination]["Info"].keys():
+        elif "Current" not in self.graph.edges[edge]["Info"].keys():
             # no info on current, return 0
             return 0.0
-        elif not isinstance(self.graph, nx.DiGraph):
-            raise TypeError(
-                "Current is only available on a DiGraph. Use a Digraph to use current in your calculations.",
-                UserWarning,
-            )
-            return 0.0
-        current = self.graph.edges[origin, destination]["Info"]["Current"]
+        current = self.graph.edges[edge]["Info"]["Current"]
 
         if (self.current_speed + current) <= 0:
             raise ValueError(
@@ -582,7 +580,7 @@ class Movable(Locatable, Routable, Log):
         """return the current speed of the vessel"""
         return self.v
 
-    def _compute_velocity_on_edge(self, origin, destination):
+    def _compute_velocity_on_edge(self, edge):
         """compute the velocity on an edge, based on the energy module and the depth.
 
         parameters
@@ -593,7 +591,7 @@ class Movable(Locatable, Routable, Log):
             the destination node of the edge
         """
 
-        edge = (origin, destination)
+        origin, destination = edge[:2]
         if hasattr(self,'overruled_speed') and edge in self.overruled_speed.index:
             overruled_speed = self.overruled_speed.loc[edge]
             return overruled_speed
@@ -605,9 +603,9 @@ class Movable(Locatable, Routable, Log):
             return self.v
 
         # determine the depth of the edge
-        edge = self.graph.edges[origin, destination]
+        edge_info = self.graph.edges[edge]
         try:
-            depth = edge["Info"]["GeneralDepth"]
+            depth = edge_info["Info"]["GeneralDepth"]
         except KeyError:
             raise ValueError(
                 f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
@@ -618,7 +616,7 @@ class Movable(Locatable, Routable, Log):
         # 1. The grounding speed:
         # TODO: Als we dit laten staan, moeten we get_upperbound_for_power2v ook checken en testen.
         # TODO get_upperbound_for_power2v heeft een width standaard 150. Is dat handig?
-        edge_width = self._get_general_width(origin, destination)
+        edge_width = self._get_general_width(edge)
         edge_width = edge_width if edge_width is not None else 150  # default width if not set
 
         upperbound = opentnsim.strategy.get_upperbound_for_power2v_optim(self, width=edge_width, depth=depth, margin=0)
@@ -626,7 +624,7 @@ class Movable(Locatable, Routable, Log):
         power_used = min(self.P_tot_given, upperbound)
         return self.power2v(self, edge, power_used)
 
-    def _get_general_width(self, origin, destination):
+    def _get_general_width(self, edge):
         """Get the general width of the edge.
 
         Parameters
@@ -641,12 +639,12 @@ class Movable(Locatable, Routable, Log):
         float
             the general width of the edge (in m)
         """
-        if "Info" not in self.graph.edges[origin, destination].keys():
+        if "Info" not in self.graph.edges[edge].keys():
             return None
-        elif "GeneralWidth" not in self.graph.edges[origin, destination]["Info"].keys():
+        elif "GeneralWidth" not in self.graph.edges[edge]["Info"].keys():
             return None
         else:
-            return self.graph.edges[origin, destination]["Info"]["GeneralWidth"]
+            return self.graph.edges[edge]["Info"]["GeneralWidth"]
 
 
 class ContainerDependentMovable(Movable, HasContainer):

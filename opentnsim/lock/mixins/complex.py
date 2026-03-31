@@ -69,9 +69,16 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
         # Add attributes to the vessels movable functions
         self.on_pass_node_functions.append(self.register_to_lock_master)
         self.registered_to_lock = False
+        graph = self.env.graph
         self.overruled_speed = pd.DataFrame(
-            data=[], columns=["speed"], index=pd.MultiIndex.from_arrays([[], []], names=("node_start", "node_stop"))
+            data=[], columns=["speed"],
+            index=pd.MultiIndex.from_arrays([[], []], names=("node_start", "node_stop"))
         )
+        if isinstance(graph, nx.MultiDiGraph):
+            self.overruled_speed = pd.DataFrame(
+                data=[], columns=["speed"],
+                index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", 'k'))
+            )
 
         # TODO: should not be here but in a "Vessel"-module
         if not hasattr(self.env,'vessels'):
@@ -103,7 +110,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
                     yield from lock_complex.register_vessel(self)
 
 
-    def sail_to_waiting_area(self, origin, destination, waiting_area, lock_chamber):
+    def sail_to_waiting_area(self, edge, waiting_area, lock_chamber):
         """
         Vessel sails to the waiting area
 
@@ -124,7 +131,6 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
             return
 
         # if the origin of the vessel has not reached the waiting area edge, then skip this function
-        edge = (origin, destination)
         if 'Waiting area' not in self.env.graph.edges[edge].keys():
             return
 

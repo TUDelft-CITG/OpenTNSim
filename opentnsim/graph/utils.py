@@ -21,6 +21,77 @@ class NetworkWarning(Warning):
     pass
 
 
+def expand_path_edges(G, node_path):
+    edge_paths = [[]]
+    is_multidigraph = G.is_multigraph()
+
+    for u, v in zip(node_path[:-1], node_path[1:]):
+        edges = G.get_edge_data(u, v)
+        new_paths = []
+
+        if is_multidigraph:
+            for k in edges:
+                for path in edge_paths:
+                    new_paths.append(path + [(u, v, k)])
+        else:
+            for path in edge_paths:
+                new_paths.append(path + [(u, v)])
+
+        edge_paths = new_paths
+
+    return edge_paths
+
+
+def node_path_to_edge_path(G, node_path, weight="weight"):
+    """
+    Convert a node path to an edge path, selecting the lowest weight edge
+    for MultiDiGraph. Works for both DiGraph and MultiDiGraph.
+
+    Parameters
+    ----------
+    G : networkx.Graph or networkx.MultiDiGraph
+        The graph.
+    node_path : list
+        Sequence of nodes from a path.
+    weight : str, optional
+        Edge attribute used as weight. Default is 'weight'.
+
+    Returns
+    -------
+    edge_path : list
+        For DiGraph: [(u,v), ...]
+        For MultiDiGraph: [(u,v,k), ...]
+    """
+    edge_path = []
+    is_multidigraph = G.is_multigraph()
+
+    for u, v in zip(node_path[:-1], node_path[1:]):
+        edges = G.get_edge_data(u, v)
+
+        if edges is None:
+            raise ValueError(f"No edge between {u} and {v} in graph")
+
+        if is_multidigraph:
+            best_k = None
+            best_weight = float("inf")
+
+            for k, data in edges.items():
+                w = data.get(weight)
+                if w is None:
+                    if best_k is None:
+                        best_k = k
+                else:
+                    if w < best_weight:
+                        best_weight = w
+                        best_k = k
+
+            edge_path.append((u, v, best_k))
+        else:
+            edge_path.append((u, v))
+
+    return edge_path
+
+
 def build_graph_spatial_index(graph):
     """
     Build spatial indexes for nodes and edges and store them in graph.graph.
