@@ -30,7 +30,6 @@ from opentnsim.lock.logutils import get_vessel_delays, calculate_cycle_informati
 from opentnsim.lock.utils import (
     _get_directional_edge,
     _get_lock_operation_to_and_from_node,
-    _get_waiting_area,
     _get_distance_to_lock,
     add_lock_to_graph,
     _create_operational_hours,

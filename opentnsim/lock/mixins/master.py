@@ -93,12 +93,13 @@ class IsLockMaster:
         )
 
         self.operation_planning = pd.DataFrame(
-            index=pd.Index([], name="lock_operation"),
+            index=pd.Index([]),
             columns=[
                 "node_from",
                 "node_to",
                 "direction",
                 "lock_chamber",
+                "operation_index",
                 "vessels",
                 "capacity_L",
                 "capacity_B",
@@ -139,9 +140,14 @@ class IsLockMaster:
         else:
             direction = 1
 
-        operation_index = self.add_vessel_to_lock_operation_planning(vessel, direction)
-        waiting_area = self.waiting_areas[self.vessel_planning[self.vessel_planning.id == vessel.id].iloc[-1].waiting_area]
-        lock_chamber = self.lock_chambers[self.operation_planning.loc[operation_index, 'lock_chamber']]
+        if not vessel.has_registered:
+            operation_index = self.add_vessel_to_lock_operation_planning(vessel, direction)
+        else:
+            operation_index = self.vessel_planning[self.vessel_planning.id == vessel.id].iloc[-1].operation_index
+        vessel_info = self.vessel_planning[self.vessel_planning.id == vessel.id].iloc[-1]
+
+        waiting_area = self.waiting_areas[vessel_info.waiting_area]
+        lock_chamber = self.lock_chambers[vessel_info.lock_chamber]
         yield from self.communicate_vessel_to_proceed_to_lock(vessel, waiting_area, lock_chamber)
         yield from self.optimize_arrival_time_previous_vessel(vessel, operation_index, lock_chamber)
 
@@ -219,6 +225,23 @@ class IsLockMaster:
         self.vessel_planning.loc[vessel_planning_index, 'waiting_area'] = waiting_area_name
         self.vessel_planning.loc[vessel_planning_index, 'lock_chamber'] = lock_chamber_name
 
+        # TODO: to be moved to a util later
+        route = vessel.route
+        route_goes_through_lock = False
+        for edge in zip(route[:-1], route[1:]):
+            if edge == lock_chamber.edge or (edge[1], edge[0]) == lock_chamber.edge:
+                route_goes_through_lock = True
+                break
+
+        if not route_goes_through_lock:
+            new_route = []
+            nodes = [vessel.current_node, lock_chamber.edge[0], route[-1]]
+            for i in range(len(nodes) - 1):
+                segment = nx.dijkstra_path(lock_chamber.env.graph, nodes[i], nodes[i + 1])
+                if i > 0:
+                    segment = segment[1:]
+                new_route.extend(segment)
+
         vessel_information = calculate_vessel_approach_information(self, vessel, direction)
         _update_lock_vessel_planning(self, vessel_planning_index, vessel_information)
         if new_operation:
@@ -237,6 +260,11 @@ class IsLockMaster:
         # update the next lock operations if the previous lock operation caused a delay
         _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                         lock_operation_information)
+
+        if not route_goes_through_lock:
+            vessel.route = new_route
+            vessel.has_registered = True
+            raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
         return operation_index
 

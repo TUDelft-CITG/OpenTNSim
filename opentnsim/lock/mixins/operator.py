@@ -15,12 +15,13 @@ from opentnsim.lock.calculations import (
     calculate_lock_salinity_and_saltmass
 )
 from opentnsim.lock.utils import (
+    _get_operation_info,
+    _get_next_operations,
     _get_vessel_departure_start_delay,
     _check_if_vessel_is_first_vessel,
     _check_if_vessel_is_last_vessel,
     _get_vessel_sailing_in_speed,
     _get_lock_operation_to_and_from_node,
-    _get_waiting_area,
     _get_distance_to_lock,
     _check_if_lock_chamber_is_next_lock_complex_object,
     determine_if_gate_is_closed,
@@ -454,10 +455,8 @@ class IsLockChamberOperator:
             a type including the following parent-classes: PassesLockComplex, Identifiable, Movable, VesselProperties, ExtraMetadata, HasMultiDiGraph, HasOutput
         """
         # get variables of the last lock operation: do nothing if it is not the last vessel that is sailing out of the lock
-        lock_complex = self.lock_complex
-        operation_planning = lock_complex.operation_planning
-        last_operation = operation_planning.loc[operation_index]
-        vessels_in_last_operation = last_operation.vessels
+        made_operation = _get_operation_info(self, operation_index)
+        vessels_in_last_operation = made_operation.vessels
         is_last_vessel_sailing_out = vessels_in_last_operation[-1] == vessel
 
         if not is_last_vessel_sailing_out:
@@ -466,7 +465,7 @@ class IsLockChamberOperator:
         # get the current time, and the information of the next operation
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
         _, to_node = _get_lock_operation_to_and_from_node(self, 1 - direction)
-        next_operations = operation_planning[operation_planning.index > operation_index]
+        next_operations = _get_next_operations(self, operation_index)
 
         # determine if the gate can be closed after the considered vessel has sailed out of the lock
         gate_can_be_closed = determine_if_gate_can_be_closed(self, vessel, direction, operation_index)
@@ -491,7 +490,7 @@ class IsLockChamberOperator:
 
         elif next_lockage_is_empty:
             gate_closing_start_time = next_operation.time_gate_closing_start
-            closing_delay = np.max([self.minimum_delay_to_close_gate.total_seconds(),
+            closing_delay = np.max([0., #self.minimum_delay_to_close_gate.total_seconds()
                                     (gate_closing_start_time - current_time).total_seconds()])
 
             # if there is an empty lock operation and no policy that gate are closed in between operations is active -> close gate and convert chamber afterwards
@@ -559,7 +558,7 @@ class IsLockChamberOperator:
             next_node = self.start_node
 
         # initiate levelling if vessel is the last assigned vessel in the lock
-        is_last_vessel = _check_if_vessel_is_last_vessel(self.lock_complex, vessel, operation_index)
+        is_last_vessel = _check_if_vessel_is_last_vessel(self, vessel, operation_index)
         if is_last_vessel:
             yield from self.convert_chamber(next_node, direction, operation_index=operation_index, vessel=vessel)
         else:
@@ -567,6 +566,7 @@ class IsLockChamberOperator:
 
         # determine and yield sailing out delay
         sailing_out_delay = _get_vessel_departure_start_delay(self, vessel, operation_index).total_seconds()
+
         if sailing_out_delay > 0.: #TODO: delay should never be smaller than 0, but it still occurs
             yield from self.instruct_vessel_to_wait_in_lock_chamber_before_sailing_out(vessel, sailing_out_delay)
 
@@ -595,9 +595,8 @@ class IsLockChamberOperator:
         """
         vessels = []
         this_operation = None
-        operation_planning = self.lock_complex.operation_planning
         if operation_index is not None:
-            this_operation = operation_planning.loc[operation_index]
+            this_operation = _get_operation_info(self, operation_index)
             vessels = this_operation.vessels
 
         vessel_planning_index = None
@@ -620,11 +619,12 @@ class IsLockChamberOperator:
         # Wait for other vessels to lay still
         if not delay and operation_index is not None:
             delay = (this_operation.time_gate_closing_start.to_pydatetime(warn = False).timestamp() - self.env.now)
-        if delay > 0:
-            yield self.env.timeout(delay)
 
         # Convert lock chamber
         if close_gate is None:
+            if delay > 0:
+                yield self.env.timeout(delay)
+                delay = 0
             close_gate = True
             if operation_index is not None and vessel_planning_index is not None:
                 gate_can_be_closed = this_operation.time_gate_closing_start > vessel_planning_info.time_lock_entry_stop
