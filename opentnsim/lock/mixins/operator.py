@@ -89,7 +89,6 @@ class IsLockChamberOperator:
         vessel.on_pass_edge_functions.append(allow_vessel_to_be_locked)
         vessel.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
 
-
         # correct distance left on edge with the already covered distance through this function
         vessel.overruled_speed.loc[waiting_area.edge, 'speed'] = _get_vessel_sailing_in_speed(self, vessel, direction)
         distance_left_on_edge = waiting_area.distance_waiting_area_to_end_edge
@@ -257,7 +256,8 @@ class IsLockChamberOperator:
             yield from self.let_vessel_wait_for_other_vessels_in_waiting_area(vessel)
 
         # determines the sailing time to reach the approach point of the lock complex
-        sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction)
+        distance_sailed = waiting_area.distance_from_edge_start
+        sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction, distance_sailed)
 
         # determine the current time (after waiting for another vessel, or not) and the time that the vessel will be at the approach point if it will continue and what was planned before
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -282,17 +282,17 @@ class IsLockChamberOperator:
         vessel_planning = self.lock_complex.vessel_planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         direction = vessel_planning.loc[vessel_planning_index, 'direction']
+        distance_sailed = waiting_area.distance_from_edge_start
 
         # determines the sailing time to reach the approach point of the lock complex
-        sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction)
-        sailing_to_waiting_area, _, _ = calculate_sailing_time_to_waiting_area(waiting_area, vessel)
+        sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction, distance_sailed)
 
         # set the moment in time that the waiting in the waiting area has started
         waiting_start = vessel.env.now
 
         # determine the current time (after waiting for another vessel, or not) and the time that the vessel will be at the approach point if it will continue and what was planned before
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
-        time_at_approach = current_time + sailing_to_approach - sailing_to_waiting_area
+        time_at_approach = current_time + sailing_to_approach
         planned_start_time_entering_lock = vessel_planning.loc[vessel_planning_index, 'time_lock_operation_start']
 
         # determine (additional) waiting time for the vessel
@@ -490,7 +490,7 @@ class IsLockChamberOperator:
 
         elif next_lockage_is_empty:
             gate_closing_start_time = next_operation.time_gate_closing_start
-            closing_delay = np.max([0., #self.minimum_delay_to_close_gate.total_seconds()
+            closing_delay = np.max([self.minimum_delay_to_close_gate.total_seconds(),
                                     (gate_closing_start_time - current_time).total_seconds()])
 
             # if there is an empty lock operation and no policy that gate are closed in between operations is active -> close gate and convert chamber afterwards

@@ -55,9 +55,9 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
     def __init__(
         self,
         env,
-        lock_length, # a float which contains the length of the lock chamber
-        lock_width, # a float which contains the width of the lock chamber
         lock_depth, # a float which contains the depth of the lock chamber
+        lock_length = None,  # a float which contains the length of the lock chamber
+        lock_width = None,  # a float which contains the width of the lock chamber
         edge=None,
         geometry=None,
         geometry_m=None,

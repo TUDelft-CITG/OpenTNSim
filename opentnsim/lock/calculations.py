@@ -17,6 +17,7 @@ from opentnsim.graph.utils import (
     get_edge,
     get_length_of_edge,
     get_geometry_of_edge,
+    node_path_to_edge_path,
 )
 from opentnsim.lock.logutils import get_vessels_per_cycle, get_levelling_cycles
 from opentnsim.lock.utils import (
@@ -33,7 +34,8 @@ from opentnsim.lock.utils import (
     _get_vessels_from_planned_operation,
     _get_first_vessel_of_lock_operation,
     _get_last_vessel_of_lock_operation,
-    _get_route_to_lock,
+    _get_edge_route_to_lock,
+    _get_edge_route_to_waiting_area,
     _get_water_levels_before_and_after_levelling,
     _get_information_for_lock_operation,
     _update_lock_vessel_planning,
@@ -373,10 +375,11 @@ def calculate_sailing_information_on_route_to_lock_complex(lock_complex, vessel,
 
     # determine the sailing time from its current node to the end of the lock complex (depending on the direction of the vessel)
     route_vessel = vessel.route_ahead
-    route_index_current_node = route_vessel.index(vessel.current_node)
-    route_index_end_of_lock_complex = route_vessel.index(lock_end_node)
-    route_vessel_to_pass_lock_complex = route_vessel[route_index_current_node:route_index_end_of_lock_complex]
-    _, sailing_information = get_sailing_time(vessel, route_vessel_to_pass_lock_complex) #TODO: maybe rename this function in the VTS, because it provides a dataframe of the sailing information (i.e., time, speed, and distance) per edge over the route of the vessel
+    edge_route_vessel = vessel.edge_route_ahead
+    edge_route_index_current_node = route_vessel.index(vessel.current_node)
+    edge_route_index_end_of_lock_complex = route_vessel.index(lock_end_node)
+    edge_route_vessel_to_pass_lock_complex = edge_route_vessel[edge_route_index_current_node:edge_route_index_end_of_lock_complex]
+    _, sailing_information = get_sailing_time(vessel, edge_route_vessel_to_pass_lock_complex) #TODO: maybe rename this function in the VTS, because it provides a dataframe of the sailing information (i.e., time, speed, and distance) per edge over the route of the vessel
 
     # correct the sailing time at the lock complex edge to the distance on that edge from the node to the lock gate (depending on the direction of the vessel)
     last_sailing_index = sailing_information.iloc[-1].index
@@ -420,15 +423,17 @@ def calculate_sailing_time_to_waiting_area(waiting_area, vessel):
 
     """
     if vessel is None:
-        return 0., _, _
-    # determine route to the start node of the edge at which the waiting area is located
-    route_to_waiting_area = nx.dijkstra_path(vessel.env.graph, vessel.current_node, waiting_area.edge[1]) #TODO: check this -> waiting area should be assigned to vessel
+        return pd.Timedelta(seconds=0.), np.nan, np.nan
+
+    # determine route to the start node of the edge at which the waiting area is located\
+    edge_route_to_waiting_area = _get_edge_route_to_waiting_area(vessel, waiting_area, last_node_included = True)
 
     # determine the distance that the vessel has to sail on the edge at which the waiting area is located (from the start node of the edge)
     distance_to_waiting_area_on_last_edge = waiting_area.distance_from_edge_start
 
     # calculation of the sailing information (time, distance, speed) per edge on route to the waiting area
-    sailing_to_waiting_area = get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route_to_waiting_area, 0., distance_to_waiting_area_on_last_edge)
+    sailing_to_waiting_area = get_sailing_information_on_edge_to_distance_on_another_edge(
+        vessel, edge_route_to_waiting_area, 0., distance_to_waiting_area_on_last_edge)
 
     # calculation of the sailing time, distance, and average speed to the waiting area
     sailing_to_waiting_area_time = pd.Timedelta(seconds=sailing_to_waiting_area['time'].sum())
@@ -476,7 +481,7 @@ def calculate_sailing_time_to_lineup_area(lineup_area, vessel):
 
     return sailing_to_lineup_area_time
 
-def calculate_sailing_time_to_approach_point(lock_chamber, vessel, direction):
+def calculate_sailing_time_to_approach_point(lock_chamber, vessel, direction, distance_sailed=0.):
     """
     Calculates the sailing time of a vessel from its location to the approach point
 
@@ -508,11 +513,10 @@ def calculate_sailing_time_to_approach_point(lock_chamber, vessel, direction):
     sailing_time_entry = pd.Timedelta(seconds=sailing_distance_from_entry / sailing_speed_during_entry)
 
     # determine the time of the vessel to its first encountered waiting area and lock_gate
-    sailing_time_to_waiting_area = pd.Timedelta(seconds=0)
-    sailing_time_to_lock_gate = calculate_sailing_time_to_lock_gate(lock_chamber, vessel, direction)
+    sailing_time_to_lock_gate = calculate_sailing_time_to_lock_gate(lock_chamber, vessel, direction, distance_sailed)
 
     # determine the sailing time to the approach point
-    sailing_time_to_start_approach = sailing_time_to_lock_gate - sailing_time_entry - sailing_time_to_waiting_area
+    sailing_time_to_start_approach = sailing_time_to_lock_gate - sailing_time_entry
     return sailing_time_to_start_approach
 
 def calculate_delay_until_arrival_within_operational_hours(lock_complex, time_sailing_to_lock_start):
@@ -526,7 +530,7 @@ def calculate_delay_until_arrival_within_operational_hours(lock_complex, time_sa
     return delay
 
 
-def calculate_sailing_time_to_lock_gate(lock_chamber, vessel, direction):
+def calculate_sailing_time_to_lock_gate(lock_chamber, vessel, direction, distance_sailed=0.):
     """
     Calculates the sailing time of a vessel from its location to the first lock gate that it will encounter
 
@@ -546,13 +550,17 @@ def calculate_sailing_time_to_lock_gate(lock_chamber, vessel, direction):
     if vessel is None:
         return pd.Timedelta(seconds=0.)
     # determine the end node of the lock complex from the perspective of the vessel and the distance from the start node of the lock complex to the lock gate
-    distance_to_lock = _get_distance_to_lock(lock_chamber, direction)
+    distance_to_lock = _get_distance_to_lock(lock_chamber, direction) - distance_sailed
 
     # determine the route of the vessel to the end node of the lock complex from the perspective of the vessel
-    route_to_lock_chamber = _get_route_to_lock(vessel, lock_chamber)
+    lock_edge = lock_chamber.edge
+    if direction:
+        lock_edge = (lock_chamber.edge[1], lock_chamber.edge[0]) + lock_chamber.edge[2:]
+    route_to_lock_chamber = nx.dijkstra_path(vessel.env.graph, vessel.current_node, lock_edge[0])
+    edge_route_to_lock_chamber = node_path_to_edge_path(vessel.env.graph, route_to_lock_chamber)
 
     # calculate sailing time to the start node of the edge of lock complex from the perspective of the vessel
-    _, sailing_to_lock_chamber = get_sailing_time(vessel, route_to_lock_chamber)
+    _, sailing_to_lock_chamber = get_sailing_time(vessel, edge_route_to_lock_chamber)
     sailing_to_lock_chamber_distance = sailing_to_lock_chamber['distance'].sum()
     sailing_to_lock_chamber_time = sailing_to_lock_chamber['time'].sum()
 
@@ -560,7 +568,6 @@ def calculate_sailing_time_to_lock_gate(lock_chamber, vessel, direction):
     sailing_to_lock_chamber_distance += distance_to_lock
     sailing_to_lock_chamber_time += distance_to_lock / _get_vessel_sailing_in_speed(lock_chamber, vessel, direction)
     sailing_to_lock_chamber_time = pd.Timedelta(seconds=sailing_to_lock_chamber_time)
-
     return sailing_to_lock_chamber_time
 
 
@@ -568,10 +575,10 @@ def calculate_sailing_time_to_pass_lock(lock_chamber, vessel):
     if vessel is None:
         return pd.Timedelta(seconds=0.)
 
-    route_to_lock_chamber = _get_route_to_lock(vessel, lock_chamber, True)
+    edge_route_to_lock_chamber = _get_edge_route_to_lock(vessel, lock_chamber, True)
 
     # calculate sailing time to the start node of the edge of lock complex from the perspective of the vessel
-    _, sailing_to_lock_chamber = get_sailing_time(vessel, route_to_lock_chamber)
+    _, sailing_to_lock_chamber = get_sailing_time(vessel, edge_route_to_lock_chamber)
     sailing_to_lock_chamber_time = sailing_to_lock_chamber['time'].sum()
 
     return pd.Timedelta(seconds=sailing_to_lock_chamber_time)
@@ -1395,7 +1402,6 @@ def calculate_vessel_approach_information(lock_complex, vessel, direction):
     sailing_time_to_lock = calculate_sailing_time_to_lock_gate(lock_chamber, vessel, direction)
     sailing_time_to_pass_lock = calculate_sailing_time_to_pass_lock(lock_chamber, vessel)
     delay = calculate_delay_until_arrival_within_operational_hours(lock_chamber, current_time + sailing_time_to_lock)
-
     vessel_information = {}
     vessel_information['time_of_registration'] = current_time
     vessel_information['time_of_acceptance'] = current_time
@@ -1985,7 +1991,7 @@ def estimate_lock_capacity(lock_chamber):
     vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
     average_length = np.mean([vessel.L for vessel in vessels])
     n_max = lock_chamber.lock_length / average_length
-    vessel_speed_outside_of_lock = vessels[0]._compute_velocity_on_edge(*lock_chamber.edge)
+    vessel_speed_outside_of_lock = vessels[0]._compute_velocity_on_edge(lock_chamber.edge)
     lock_length = lock_chamber.lock_length
     distance_last_ship_to_sail_in = lock_length/n_max/2
     distance_last_ship_to_sail_out = lock_length/n_max/2

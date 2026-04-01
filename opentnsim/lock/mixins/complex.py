@@ -178,9 +178,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
         lock_gate_position = _get_lock_gate_position(lock_chamber, direction)
 
         # correct the distance to the lock gate if the vessel is in the waiting area, located at the same edge of the lock
-        lock_start_node, lock_end_node = _get_lock_operation_to_and_from_node(lock_chamber, direction)
-        if (lock_start_node, lock_end_node) == waiting_area.edge:
-            distance_to_lock -= waiting_area.distance_from_edge_start
+        distance_to_lock -= waiting_area.distance_from_edge_start
 
         # log the start of sailing to the lock gate
         last_position_vessel = self.logbook[-1]["Geometry"]
@@ -240,7 +238,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
             except simpy.Interrupt as e:
                 remaining_sailing_time -= self.env.now - start_sailing
 
-        # log the stop of the sailing event to the assigned locaiton in the lock chamber
+        # log the stop of the sailing event to the assigned location in the lock chamber
         self.log_entry_v0("Sailing to position in lock stop", self.env.now, self.output.copy(), self.position_in_lock, )
 
 

@@ -8,7 +8,7 @@ import numpy as np
 from operator import itemgetter
 import pandas as pd
 from numpy.testing import assert_almost_equal
-from opentnsim.graph.utils import get_length_of_edge, get_edge, check_graph_is_multidigraph_type, get_sailing_information_on_edge_to_distance_on_another_edge, expand_path_edges
+from opentnsim.graph.utils import get_length_of_edge, get_edge, get_sailing_information_on_edge_to_distance_on_another_edge, expand_path_edges, node_path_to_edge_path
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from IPython.display import display
 import warnings
@@ -166,37 +166,33 @@ def _update_lock_vessel_planning(lock_chamber, vessel_index, passage_information
 
 
 def _find_available_waiting_area(vessel, lock_chamber, direction):
-    lock_end_node = lock_chamber.end_node
     distance_to_lock_on_edge = lock_chamber.distance_from_start_node_to_lock_gate_A
     if direction:
-        lock_end_node = lock_chamber.start_node
         distance_to_lock_on_edge = lock_chamber.distance_from_end_node_to_lock_gate_B
-    routes = nx.dijkstra_path(vessel.env.graph, vessel.current_node, lock_end_node) #all_simple_paths not working for large networks
-    edge_routes = expand_path_edges(vessel.env.graph, routes)
     suitable_waiting_areas = pd.DataFrame(columns=['sailing_time_waiting_area_to_lock','available'])
-    for edge_route in edge_routes:
-        for edge in edge_route:
-            if 'Waiting area' not in vessel.env.graph.edges[edge].keys():
-                continue
-            waiting_areas = vessel.env.graph.edges[edge]['Waiting area']
-            for waiting_area in waiting_areas:
-                distance_to_waiting_area_on_edge = waiting_area.distance_from_edge_start
-                get_sailing_info = get_sailing_information_on_edge_to_distance_on_another_edge
-                route_to_lock = nx.dijkstra_path(vessel.env.graph, waiting_area.edge[0], lock_end_node)
-                sailing_info = get_sailing_info(vessel, route_to_lock, distance_to_waiting_area_on_edge, distance_to_lock_on_edge)
-                sailing_time = pd.Timedelta(seconds=sailing_info.time.sum())
-                available = waiting_area.resource.capacity > len(waiting_area.resource.users)
-                suitable_waiting_areas.loc[waiting_area.name,:] = [sailing_time, available]
+    for edge in vessel.edge_route:
+        if 'Waiting area' not in vessel.env.graph.edges[edge].keys():
+            continue
+        waiting_areas = vessel.env.graph.edges[edge]['Waiting area']
+        for waiting_area in waiting_areas:
+            distance_to_waiting_area_on_edge = waiting_area.distance_from_edge_start
+            get_sailing_info = get_sailing_information_on_edge_to_distance_on_another_edge
+            edge_route_to_lock = _get_edge_route_to_lock(vessel, lock_chamber, last_node_included=True)
+            sailing_info = get_sailing_info(
+                vessel, edge_route_to_lock, distance_to_waiting_area_on_edge, distance_to_lock_on_edge)
+            sailing_time = pd.Timedelta(seconds=sailing_info.time.sum())
+            available = waiting_area.resource.capacity > len(waiting_area.resource.users)
+            suitable_waiting_areas.loc[waiting_area.name,:] = [sailing_time, available]
 
     available_waiting_areas = suitable_waiting_areas[suitable_waiting_areas.available]
-    waiting_area = None
+    waiting_area_name = None
     if not available_waiting_areas.empty:
-        waiting_area = available_waiting_areas.sort_values('sailing_time_waiting_area_to_lock').iloc[0].name
+        waiting_area_name = available_waiting_areas.sort_values('sailing_time_waiting_area_to_lock').iloc[0].name
 
-    if waiting_area is None:
+    if waiting_area_name is None:
         raise ValueError(f"No route found to waiting area")
 
-    return waiting_area
+    return waiting_area_name
 
 
 def _get_lock_operation_direction(lock_chamber, to_node):
@@ -312,7 +308,7 @@ def _get_last_vessel_of_lock_operation(lock_chamber, operation_index):
 
     return last_vessel
 
-def _get_route_to_lock(vessel, lock, last_node_included = False):
+def _get_edge_route_to_lock(vessel, lock_chamber, last_node_included = False):
     """Determines the route of a vessel to the lock
 
     Parameters
@@ -325,16 +321,43 @@ def _get_route_to_lock(vessel, lock, last_node_included = False):
     route_to_lock : list or str
         list of the node names that make up the route to the lock
     """
-    route_to_come = vessel.route_ahead
+    edge_route_to_come = vessel.edge_route_ahead
     index = 0
-    for index, edge in enumerate(zip(route_to_come[:-1], route_to_come[1:])):
-        if edge == lock.edge or edge == lock.edge[::-1]:
-            index += 1
+    for index, edge in enumerate(edge_route_to_come):
+        edge_rev = (edge[1], edge[0]) + edge[2:]
+        if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
             break
+        index += 1
     if last_node_included:
         index += 1
-    route_to_lock = route_to_come[:(index)]
-    return route_to_lock
+    edge_route_to_lock = edge_route_to_come[:(index)]
+    return edge_route_to_lock
+
+
+def _get_edge_route_to_waiting_area(vessel, waiting_area, last_node_included = False):
+    """Determines the route of a vessel to the lock
+
+    Parameters
+    ----------
+    lock : object
+        the lock chamber object generated with IsLockChamber
+
+    Returns
+    -------
+    route_to_lock : list or str
+        list of the node names that make up the route to the lock
+    """
+    edge_route_to_come = vessel.edge_route_ahead
+    index = 0
+    for index, edge in enumerate(edge_route_to_come):
+        edge_rev = (edge[1], edge[0]) + edge[2:]
+        if edge == waiting_area.edge or edge_rev == waiting_area.edge:
+            break
+        index += 1
+    if last_node_included:
+        index += 1
+    edge_route_to_lock = edge_route_to_come[:(index)]
+    return edge_route_to_lock
 
 
 def _get_information_for_lock_operation(lock_chamber, operation_index, direction):
@@ -404,10 +427,8 @@ def _get_upcoming_lock_complexes(vessel):
     upcoming_lock_complexes = {}
 
     # loop over all edges on the route ahead.
-    route_to_come = vessel.route_ahead
-    for edge in zip(route_to_come[:-1], route_to_come[1:]):
-        is_multidigraph = check_graph_is_multidigraph_type(vessel.env.graph)
-        edge = get_edge(vessel.env.graph, edge, is_multidigraph)
+    edge_route_to_come = vessel.edge_route_ahead
+    for edge in edge_route_to_come:
         if "Lock chamber" not in vessel.env.graph.edges[edge].keys():
             continue
         lock_chamber = vessel.env.graph.edges[edge]["Lock chamber"][0]
@@ -586,11 +607,16 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
 
     most_suitable_lock_chamber = pd.DataFrame(columns=['time_lock_operation_start','operation_index','new_lock_operation'])
     for lock_chamber in suitable_lock_chambers:
-        route_to_lock_chamber = _get_route_to_lock(vessel, lock_chamber, last_node_included=True)
+        lock_edge = lock_chamber.edge
+        if direction:
+            lock_edge = (lock_chamber.edge[1], lock_chamber.edge[0]) + lock_chamber.edge[2:]
+        route_to_lock_chamber = nx.dijkstra_path(vessel.env.graph, vessel.current_node, lock_edge[0])
+        edge_route_to_lock_chamber = node_path_to_edge_path(vessel.env.graph, route_to_lock_chamber)
         lock_distance_last_edge = lock_chamber.distance_from_start_node_to_lock_gate_A
         if direction:
             lock_distance_last_edge = lock_chamber.distance_from_end_node_to_lock_gate_B
-        sailing_time_to_lock_df = get_sailing_information_on_edge_to_distance_on_another_edge(vessel, route_to_lock_chamber, distance_to_be_sailed_on_last_edge = lock_distance_last_edge) #TODO: include registration node on edge (distance_sailed_on_first_edge)
+        sailing_time_to_lock_df = get_sailing_information_on_edge_to_distance_on_another_edge(
+            vessel, edge_route_to_lock_chamber, distance_to_be_sailed_on_last_edge = lock_distance_last_edge)
         sailing_time_to_lock = pd.Timedelta(seconds=sailing_time_to_lock_df['time'].sum())
         time_lock_entry_start = datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time_to_lock
 
@@ -610,7 +636,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
             mask_max_vessels = operation_planning_lock.vessels.apply(len) < lock_chamber.max_vessels_in_operation
 
         # future operations mask: lock operations that still have to take place
-        mask_future_operations = operation_planning_lock.time_levelling_start >= time_lock_entry_start
+        mask_future_operations = operation_planning_lock.time_gate_closing_start >= time_lock_entry_start
 
         # combinations of the masks
         mask_max_waiting_time = (mask_max_waiting_time & ~mask_empty_lock)  # non-empty lock operations with non-exceedance of the maximum waiting time
@@ -823,8 +849,6 @@ def add_lock_to_graph(lock_chamber):
 
 
 def _check_if_lock_chamber_is_next_lock_complex_object(lock_chamber, edge):
-    is_multidigraph = check_graph_is_multidigraph_type(lock_chamber.env.graph)
-    edge = get_edge(lock_chamber.env.graph, edge, is_multidigraph)
     if not 'Lock chamber' in lock_chamber.env.graph.edges[edge].keys():
         return
 

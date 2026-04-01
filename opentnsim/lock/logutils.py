@@ -138,7 +138,7 @@ def get_vessels_per_cycle(lock_chamber):
 def get_vessel_delays(lock_chamber):
     lock_complex = lock_chamber.lock_complex
     vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
-    vessel_speed_edge = vessels[0]._compute_velocity_on_edge(*lock_chamber.edge)
+    vessel_speed_edge = vessels[0]._compute_velocity_on_edge(lock_chamber.edge)
     levelling_cycles = get_levelling_cycles(lock_chamber)
     vessels_per_cyle = []
     cycle_nr = 0

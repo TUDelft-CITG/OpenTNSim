@@ -233,6 +233,18 @@ class Movable(Locatable, Routable, Log):
         else:
             return []
 
+    @property
+    def edge_route_ahead(self):
+        """Return the remaining route ahead of the current position."""
+        if 0 <= self.position_on_route < len(self.route):
+            current_node = self.route[self.position_on_route]
+            for index, edge in enumerate(self.edge_route):
+                if edge[0] == current_node:
+                    break
+            return self.edge_route[index:]
+        else:
+            return []
+
     def determine_route_to_target_node(self, target_node: str):
         """Determine the route to the target node.
         Parameters
@@ -300,7 +312,6 @@ class Movable(Locatable, Routable, Log):
         # Move over the path and log every step
         for index, _ in enumerate(zip(self.route[:-1], self.route[1:])):
             edge = self.edge_route[index]
-
             # update current position
             self.update_position(index)
 
