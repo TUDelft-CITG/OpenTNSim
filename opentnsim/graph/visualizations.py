@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import folium
 import pandas as pd
 import geopandas as gpd
+import networkx as nx
 
 # OpenTNSim
 from opentnsim.graph.calculations import calculate_distance
@@ -147,13 +148,16 @@ def visualize_geometry_point_in_folium_plot(m, geometry, size=25, color='black',
     folium.Circle((point_y, point_x), color=color, fill_color=color, radius=size, popup=label, tooltip=label).add_to(m)
 
 
-def visualize_geometry_polygon_in_folium_plot(m, geometry):
+def visualize_geometry_polygon_in_folium_plot(m, geometry, label = None):
     points_x = list(geometry.exterior.coords.xy[0])
     points_y = list(geometry.exterior.coords.xy[1])
     polyline = []
     for i, _ in enumerate(points_x):
         polyline.append((points_y[i], points_x[i]))
-    folium.Polygon(polyline).add_to(m)
+    if label is not None:
+        folium.Polygon(polyline, tooltip=label, popup=label).add_to(m)
+    else:
+        folium.Polygon(polyline).add_to(m)
 
 
 def visualize_node_in_folium_plot(m, graph, node, size=25, color='black', label=''):
@@ -196,21 +200,31 @@ def plot_graph_folium(graph, longitude, latitude, zoom_start=5,
         plot_berths(berths, m=m)
 
     edges = []
-    for u, v, data in graph.edges(data=True):
+    graph_loop = graph.edges(data=True)
+    multi_graph = False
+    if isinstance(graph, nx.MultiGraph) or isinstance(graph, nx.MultiDiGraph):
+        graph_loop = graph.edges(keys=True, data=True)
+        multi_graph = True
+    for edge_info in graph_loop:
+        u, v = edge_info[:2]
+        data = edge_info[-1]
+        if multi_graph:
+            k = edge_info[2]
         geom = data["geometry"]
-        edges.append({
-            "geometry": data["geometry"],
-            "u": u,
-            "v": v
-        })
+        edge_info = {"geometry": data["geometry"], "u": u,"v": v}
+        fields = ["u", "v"]
+        if isinstance(graph, nx.MultiGraph) or isinstance(graph, nx.MultiDiGraph):
+            edge_info['k'] = k
+            fields = ["u", "v", "k"]
+        edges.append(edge_info)
 
     gdf_edges = gpd.GeoDataFrame(edges,geometry="geometry", crs='EPSG:4326')
 
     folium.GeoJson(
         gdf_edges,
         style_function=lambda x: {"color": "violet", "weight": 2},
-        popup=folium.GeoJsonPopup(fields=["u", "v"]),
-        tooltip=folium.GeoJsonTooltip(fields=["u", "v"]),
+        popup=folium.GeoJsonPopup(fields=fields),
+        tooltip=folium.GeoJsonTooltip(fields=fields),
     ).add_to(m)
 
     nodes = []

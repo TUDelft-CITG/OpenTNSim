@@ -324,46 +324,50 @@ def merge_edges(graph, edge_A, edge_B):
     new_edge_data['GeoType'] = np.nan
     new_edge_data['Wkt'] = str(new_edge_geometry)
     new_edge_data['geometry'] = new_edge_geometry
-    new_edge_data['length'] = edge_info_A['length'] + edge_info_B['length']
     new_edge_data['length_m'] = edge_info_A['length_m'] + edge_info_B['length_m']
 
     if (start_junction_id, end_junction_id) in graph.edges:
-        warnings.warn(f"Edge ({start_junction_id},{end_junction_id}) is already part of the network, merging aborted.")
-        return graph
+        if not (isinstance(graph, nx.MultiGraph) or isinstance(graph, nx.MultiDiGraph)):
+            warnings.warn(f"Edge ({start_junction_id},{end_junction_id}) is already part of the network, merging aborted.")
+            return graph
 
     graph.add_edge(start_junction_id, end_junction_id, **new_edge_data)
     return graph
 
 
-def merge_two_consecutive_edges_based_on_shared_node(graph, node):
-    if node not in graph.nodes:
-        warnings.warn(f"Node ({node}) does not exist in graph, merging aborted.")
-        return graph
+def merge_two_consecutive_edges_based_on_shared_node(graph, nodes):
+    graph_copy = graph.copy()
+    for node in nodes:
+        if node not in graph_copy.nodes:
+            warnings.warn(f"Node ({node}) does not exist in graph, merging aborted.")
+            return graph
 
-    edges = find_edges_based_on_shared_node(graph, node)
-    number_of_edges = len(edges)
-    number_of_allowed_edges = 2
-    if graph.is_directed():
-        number_of_allowed_edges = 4
-    if number_of_edges != number_of_allowed_edges:
-        if number_of_edges > number_of_allowed_edges:
-            warnings.warn(f"Node ({node}) has multiple ({number_of_edges}) edges, merging aborted.")
+        edges = find_edges_based_on_shared_node(graph_copy, node)
+        number_of_edges = len(edges)
+        number_of_allowed_edges = 2
+        if graph_copy.is_directed():
+            number_of_allowed_edges = 4
+        if number_of_edges != number_of_allowed_edges:
+            if number_of_edges > number_of_allowed_edges:
+                warnings.warn(f"Node ({node}) has multiple ({number_of_edges}) edges, merging aborted.")
+            else:
+                warnings.warn(f"Node ({node}) has only one edge, merging aborted.")
+            return graph
+
+        if graph_copy.is_directed():
+            edge_AA, edge_AB = edges[0], edges[2]
+            if not (edge_AA == edge_AB or edge_AA == (edge_AB[1], edge_AB[0]) + edge_AB[2:]):
+                graph_copy = merge_edges(graph_copy, edge_AA, edge_AB)
+            edge_BA, edge_BB = (edge_AB[1],edge_AB[0]) + edge_AB[2:], (edge_AA[1], edge_AA[0]) + edge_AA[2:]
+            if not (edge_BA == edge_BB or edge_BA == (edge_BB[1], edge_BB[0]) + edge_BB[2:]):
+                graph_copy = merge_edges(graph_copy, edge_BA, edge_BB)
         else:
-            warnings.warn(f"Node ({node}) has only one edge, merging aborted.")
-        return graph
+            edge_A, edge_B = edges
+            graph_copy = merge_edges(graph_copy, edge_A, edge_B)
 
-    if graph.is_directed():
-        edge_AA, edge_AB = edges[0],edges[2]
-        graph = merge_edges(graph, edge_AA, edge_AB)
-        edge_BA, edge_BB = (edge_AB[1],edge_AB[0]), (edge_AA[1],edge_AA[0])
-        graph = merge_edges(graph, edge_BA, edge_BB)
-    else:
-        edge_A, edge_B = edges
-        graph = merge_edges(graph, edge_A, edge_B)
-
-    graph = remove_node_from_network(graph, node)
-    graph = align_network_geometries_with_edge_directions(graph)
-    return graph
+        graph_copy = remove_node_from_network(graph_copy, node)
+        graph_copy = align_network_geometries_with_edge_directions(graph_copy)
+    return graph_copy
 
 
 def calculate_bounding_rectangle(geometry):

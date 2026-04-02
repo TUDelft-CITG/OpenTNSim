@@ -130,7 +130,7 @@ def build_graph_spatial_index(graph):
 
 def check_graph_is_multidigraph_type(graph):
     is_multidigraph = False
-    if isinstance(graph, nx.MultiDiGraph):
+    if isinstance(graph, nx.MultiGraph) or isinstance(graph, nx.MultiDiGraph):
         is_multidigraph = True
     return is_multidigraph
 
@@ -865,7 +865,7 @@ def get_edges_at_a_distance(graph, start_node, end_node, threshold):
     # Compute shortest-path distances from end_node
     distances = nx.single_source_dijkstra_path_length(graph_copy, source=end_node, weight='length_m')
     crossing_edges = []
-    for edge in graph_copy.edges():
+    for edge in graph_copy.edges:
         u, v = edge[:2]
         if u not in distances or v not in distances:
             continue
@@ -874,9 +874,45 @@ def get_edges_at_a_distance(graph, start_node, end_node, threshold):
 
         # Check if threshold lies strictly between them
         if (du < threshold and dv > threshold) or (dv < threshold and du > threshold):
-            crossing_edges.append((u, v))
+            crossing_edges.append(edge)
 
     return crossing_edges
+
+
+def _get_all_simple_edge_paths(G, source, target, cutoff=None):
+    def dfs(current, target, visited, path, depth):
+        if cutoff is not None and depth > cutoff:
+            return
+
+        if current == target:
+            yield list(path)
+            return
+
+        neighbors = G.successors(current) if G.is_directed() else G.neighbors(current)
+
+        for neighbor in neighbors:
+            if neighbor in visited:
+                continue
+
+            if G.is_multigraph():
+                edge_iter = G[current][neighbor].items()
+            else:
+                edge_iter = [(None, G[current][neighbor])]
+
+            for key, data in edge_iter:
+                if G.is_multigraph():
+                    path.append((current, neighbor, key))
+                else:
+                    path.append((current, neighbor))
+
+                visited.add(neighbor)
+
+                yield from dfs(neighbor, target, visited, path, depth + 1)
+
+                visited.remove(neighbor)
+                path.pop()
+
+    yield from dfs(source, target, {source}, [], 0)
 
 
 def get_sailing_distance(graph, edge_route):
@@ -1131,7 +1167,6 @@ def align_network_geometries_with_edge_directions(graph):
     for edge in graph.edges:
         start_node = edge[0]
         end_node = edge[1]
-        edge = (start_node, end_node)
         start_node_geometry = graph.nodes[start_node]["geometry"]
         end_node_geometry = graph.nodes[end_node]["geometry"]
         edge_geometry = graph.edges[edge]["geometry"]

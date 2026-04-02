@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from opentnsim.graph.utils import get_trajectory
+from opentnsim.graph.utils import get_trajectory, _get_all_simple_edge_paths
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.graph.visualizations import (visualize_node_in_folium_plot, visualize_edge_in_folium_plot,
                                             visualize_geometry_point_in_folium_plot,
@@ -413,20 +413,22 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 def spatially_visualize_lock_complex(lock_complex):
     m = folium.Map(tiles="cartodbpositron")
 
+    # Plotting the nearby graph between the registration nodes
     graph = lock_complex.env.graph
-    # Plotting the nearby graph
     for registration_node_1, registration_node_2 in zip(lock_complex.registration_nodes[:-1],
                                                         lock_complex.registration_nodes[1:]):
-        route = nx.dijkstra_path(graph, registration_node_1, registration_node_2)
-        edges = []
-        for edge in zip(route[:-1], route[1:]):
-            edges.append(edge)
+        edge_routes = list(_get_all_simple_edge_paths(graph, registration_node_1, registration_node_2, 10))
+        for edge_route in edge_routes:
+            edges = []
+            for edge in edge_route:
+                edges.append(edge)
 
-        for edge in zip(route[:-1], route[1:]):
-            visualize_edge_in_folium_plot(m, graph, edge)
-            visualize_node_in_folium_plot(m, graph, edge[0], color='darkviolet', size=10, label=edge[0])
-            visualize_node_in_folium_plot(m, graph, edge[1], color='darkviolet', size=10, label=edge[1])
+            for edge in edge_route:
+                visualize_edge_in_folium_plot(m, graph, edge)
+                visualize_node_in_folium_plot(m, graph, edge[0], color='darkviolet', size=10, label=edge[0])
+                visualize_node_in_folium_plot(m, graph, edge[1], color='darkviolet', size=10, label=edge[1])
 
+    # Plotting the lock chambers
     for name, lock_chamber in lock_complex.lock_chambers.items():
         if lock_chamber.geometry is not None:
             visualize_geometry_polygon_in_folium_plot(m, lock_chamber.geometry)
@@ -436,6 +438,7 @@ def spatially_visualize_lock_complex(lock_complex):
         visualize_geometry_point_in_folium_plot(m, lock_chamber.gate_B.geometry, color='red', size=10 ,
                                                 label = name + ' - Gate B')
 
+    # Plotting the waiting areas
     for name, waiting_area in lock_complex.waiting_areas.items():
         visualize_geometry_point_in_folium_plot(m, waiting_area.geometry, color='black', size=10, label = name)
 
