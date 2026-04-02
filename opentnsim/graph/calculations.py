@@ -359,7 +359,7 @@ def merge_two_consecutive_edges_based_on_shared_node(graph, node):
         graph = merge_edges(graph, edge_BA, edge_BB)
     else:
         edge_A, edge_B = edges
-        graph = merge_edges(edges, edge_A, edge_B)
+        graph = merge_edges(graph, edge_A, edge_B)
 
     graph = remove_node_from_network(graph, node)
     return graph
@@ -390,10 +390,8 @@ def calculate_bounding_rectangle(geometry):
     hull_points = points[ConvexHull(points).vertices]
 
     # calculate edge angles
-    edges = np.zeros((len(hull_points) - 1, 2))
     edges = hull_points[1:] - hull_points[:-1]
 
-    angles = np.zeros((len(edges)))
     angles = np.arctan2(edges[:, 1], edges[:, 0])
 
     angles = np.abs(np.mod(angles, pi2))

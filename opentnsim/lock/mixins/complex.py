@@ -15,7 +15,6 @@ from opentnsim.graph.calculations import (calculate_location_over_edges,
 from opentnsim.graph.mixins import HasMultiDiGraph, OnEdge
 from opentnsim.graph.utils import (
     get_length_of_edge,
-    get_trajectory,
     get_edge,
     check_graph_is_multidigraph_type,
     get_edges_at_a_distance,

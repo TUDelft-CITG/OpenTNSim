@@ -854,30 +854,26 @@ def get_edges_at_a_distance(graph, start_node, end_node, threshold):
     """
 
     # Copy graph to prevent backward traversal
-    graph2 = graph.copy()
+    graph_copy = graph.copy()
 
     # Block the input edge so we only move "forward"
-    if graph2.has_edge(start_node, end_node):
-        graph2.remove_edge(start_node, end_node)
-    if graph2.has_edge(end_node, start_node):
-        graph2.remove_edge(end_node, start_node)
+    if graph_copy.has_edge(start_node, end_node):
+        graph_copy.remove_edge(start_node, end_node)
+    if graph_copy.has_edge(end_node, start_node):
+        graph_copy.remove_edge(end_node, start_node)
 
     # Compute shortest-path distances from end_node
-    distances = nx.single_source_dijkstra_path_length(graph2, source=end_node, weight='length_m')
-
+    distances = nx.single_source_dijkstra_path_length(graph_copy, source=end_node, weight='length_m')
     crossing_edges = []
-    for u, v in graph2.edges():
+    for edge in graph_copy.edges():
+        u, v = edge[:2]
         if u not in distances or v not in distances:
             continue
         du = distances[u]
         dv = distances[v]
 
-        if du > dv:
-            continue
-
         # Check if threshold lies strictly between them
-        if (du < threshold and dv > threshold) or \
-           (dv < threshold and du > threshold):
+        if (du < threshold and dv > threshold) or (dv < threshold and du > threshold):
             crossing_edges.append((u, v))
 
     return crossing_edges
