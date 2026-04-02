@@ -161,7 +161,45 @@ def logbook2eventtable(objs, graph=None):
             
             distance_meters = None
 
-            if graph is not None and isinstance(start_location, Point) and isinstance(stop_location, Point):
+            msg = str(start_row["Message"])
+
+            if graph is not None and msg.startswith("Sailing from node ") and " to node " in msg:
+                try:
+                    u = msg.split("Sailing from node ")[1].split(" to node ")[0]
+                    v = msg.split(" to node ")[1].rsplit(" start", 1)[0]
+
+                    try:
+                        if graph.is_multigraph():
+                            k = sorted(
+                                graph[u][v],
+                                key=lambda kk: graph[u][v][kk].get("geometry", None).length
+                                if graph[u][v][kk].get("geometry", None) is not None else 1e18
+                            )[0]
+                            e = graph.edges[u, v, k]
+                        else:
+                            e = graph.edges[u, v]
+                    except Exception:
+                        if graph.is_multigraph():
+                            k = sorted(
+                                graph[v][u],
+                                key=lambda kk: graph[v][u][kk].get("geometry", None).length
+                                if graph[v][u][kk].get("geometry", None) is not None else 1e18
+                            )[0]
+                            e = graph.edges[v, u, k]
+                        else:
+                            e = graph.edges[v, u]
+
+                    if "length_m" in e and e["length_m"] is not None:
+                        distance_meters = float(e["length_m"])
+                    elif "length" in e and e["length"] is not None:
+                        distance_meters = float(e["length"])
+                    else:
+                        distance_meters = mixins.calculate_distance(start_location, stop_location)
+
+                except Exception:
+                    distance_meters = mixins.calculate_distance(start_location, stop_location)
+
+            elif graph is not None and isinstance(start_location, Point) and isinstance(stop_location, Point):
                 u = mixins.find_closest_node(graph, start_location)[0]
                 v = mixins.find_closest_node(graph, stop_location)[0]
 
@@ -188,6 +226,8 @@ def logbook2eventtable(objs, graph=None):
 
             elif isinstance(start_location, Point):
                 distance_meters = mixins.calculate_distance(start_location, stop_location)
+    
+        
 
             events.append(
                 {
