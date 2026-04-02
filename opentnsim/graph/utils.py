@@ -853,10 +853,10 @@ def get_edges_at_a_distance(graph, start_node, end_node, threshold):
     from end_node to u and v lie on opposite sides of threshold.
     """
 
-    # Copy graph to prevent backward traversal
+    # Copy graph to prevent pollution of graph
     graph_copy = graph.copy()
 
-    # Block the input edge so we only move "forward"
+    # Block the input edge so we only move forward
     if graph_copy.has_edge(start_node, end_node):
         graph_copy.remove_edge(start_node, end_node)
     if graph_copy.has_edge(end_node, start_node):
@@ -1067,24 +1067,24 @@ def get_closest_location_on_edge_to_point(graph, edge, point):
     return point_on_edge
 
 
-def find_nodes_in_a_polygon(graph, lock_polygon):
+def find_nodes_in_a_polygon(graph, polygon):
     nodes = []
     for node in graph.nodes(data=True):
         node_info = node[1]
         node_geometry = node_info["geometry"]
-        if lock_polygon.intersects(node_geometry):
+        if polygon.intersects(node_geometry):
             nodes.append(node[0])
     return nodes
 
 
-def find_edges_in_a_polygon(graph, lock_polygon):
+def find_edges_in_a_polygon(graph, polygon):
     edges = []
     for edge in graph.edges(data=True):
         start_node = edge[0]
         end_node = edge[1]
         edge_info = edge[2]
         edge_geometry = edge_info["geometry"]
-        if lock_polygon.intersects(edge_geometry):
+        if polygon.intersects(edge_geometry):
             edges.append((start_node, end_node))
     return edges
 

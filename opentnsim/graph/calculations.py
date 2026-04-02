@@ -9,7 +9,7 @@ from shapely.geometry import Point, Polygon
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
                                    create_transformer, get_trajectory, find_closest_node, find_closest_edge,
-                                   get_largest_route_between_edges)
+                                   get_largest_route_between_edges, align_network_geometries_with_edge_directions)
 import warnings
 
 
@@ -362,6 +362,7 @@ def merge_two_consecutive_edges_based_on_shared_node(graph, node):
         graph = merge_edges(graph, edge_A, edge_B)
 
     graph = remove_node_from_network(graph, node)
+    graph = align_network_geometries_with_edge_directions(graph)
     return graph
 
 

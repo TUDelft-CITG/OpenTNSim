@@ -177,9 +177,11 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
         for waiting_area in waiting_areas:
             distance_to_waiting_area_on_edge = waiting_area.distance_from_edge_start
             get_sailing_info = get_sailing_information_on_edge_to_distance_on_another_edge
-            edge_route_to_lock = _get_edge_route_to_lock(vessel, lock_chamber, last_node_included=True)
+            edge_route_to_waiting_area = _get_edge_route_to_waiting_area(vessel, waiting_area, last_node_included=True)
+            if vessel.current_edge != waiting_area.edge:
+                distance_to_waiting_area_on_edge = 0.
             sailing_info = get_sailing_info(
-                vessel, edge_route_to_lock, distance_to_waiting_area_on_edge, distance_to_lock_on_edge)
+                vessel, edge_route_to_waiting_area, distance_to_waiting_area_on_edge, distance_to_lock_on_edge)
             sailing_time = pd.Timedelta(seconds=sailing_info.time.sum())
             available = waiting_area.resource.capacity > len(waiting_area.resource.users)
             suitable_waiting_areas.loc[waiting_area.name,:] = [sailing_time, available]

@@ -218,6 +218,14 @@ class Movable(Locatable, Routable, Log):
             return None
 
     @property
+    def current_edge(self) -> Union[str, None]:
+        """Return the current node on the route based on self.position_on_route."""
+        if 0 <= self.position_on_route < len(self.edge_route):
+            return self.edge_route[self.position_on_route]
+        else:
+            return None
+
+    @property
     def next_node(self) -> Union[str, None]:
         """Return the next node on the route based on self.position_on_route."""
         if 0 <= self.position_on_route < len(self.route) - 1:

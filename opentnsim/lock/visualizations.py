@@ -92,7 +92,6 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     route_between_nodes_of_registration = nx.dijkstra_path(lock_complex.env.graph, boundary_nodes[0], boundary_nodes[1])
     lock_edge_geometry = get_trajectory(lock_complex.env.graph, route_between_nodes_of_registration[0],
                                         route_between_nodes_of_registration[-1])[0]
-    print(lock_edge_geometry)
     lock_edge_geometry_m = transform_geometry(lock_edge_geometry, epsg_out=lock_chamber.crs_m)
 
     # plot the lock geometry over time
@@ -187,7 +186,10 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         axes = ax
         if ax is None:
             fig, axes = plt.subplots(nrows, ncols, width_ratios=width_ratios)
-            ax = axes[0]
+            try:
+                ax = axes[0]
+            except:
+                ax = axes
         for distances, times, vessel_name in zip(all_distances, all_times, vessel_names):
             ax.plot(distances, times, label=vessel_name)
         if lock_chamber.has_water_level:
@@ -319,7 +321,10 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     lock_extend_x = np.array([x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection + offset_x
     if method == 'Matplotlib':
-        ax = axes[0]
+        try:
+            ax = axes[0]
+        except:
+            ax = axes
         ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=-2)
     elif method == 'Plotly':
         fig.add_shape(type="rect",
@@ -331,13 +336,14 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     # plot the lock phases
     if method == 'Matplotlib':
-        add_locking_phases_to_plot(lock_chamber, fig, axes[0], lock_extend_x, time_axis='y', method=method)
-        extend_x = axes[1].get_xlim()
-        add_locking_phases_to_plot(lock_chamber, fig, axes[1], extend_x, time_axis='y', method=method)
-        extend_x = axes[2].get_xlim()
-        add_locking_phases_to_plot(lock_chamber, fig, axes[2], extend_x, time_axis='y', method=method)
-        extend_x = axes[3].get_xlim()
-        add_locking_phases_to_plot(lock_chamber, fig, axes[3], extend_x, time_axis='y', method=method)
+        try:
+            for index, ax in enumerate(axes):
+                extend_x = lock_extend_x
+                if index:
+                    extend_x = ax.get_xlim()
+                add_locking_phases_to_plot(lock_chamber, fig, axes, lock_extend_x, time_axis='y', method=method)
+        except:
+            add_locking_phases_to_plot(lock_chamber, fig, ax, lock_extend_x, time_axis='y', method=method)
     elif method == 'Plotly':
         add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, time_axis='y', method=method)
         if lock_chamber.has_water_level:
@@ -351,7 +357,10 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
     xlabel = "Distance from Lock Complex [m]"
     ylabel = "Timestamp"
     if method == 'Matplotlib':
-        ax = axes[0]
+        try:
+            ax = axes[0]
+        except:
+            ax = axes
         ax.axvline(-sailing_distance_to_crossing_point + offset_x, color="lightgrey", zorder=0)
         ax.axvline(sailing_distance_to_crossing_point + offset_x, color="lightgrey", zorder=0)
         ax.set_xlim([xlimmin, xlimmax])
@@ -367,8 +376,11 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             ncol=ncol,
             frameon=False
         )
-        for ax in axes:
-            ax.set_ylim([ylimmin, ylimmax])
+        try:
+            for ax in axes:
+                ax.set_ylim([ylimmin, ylimmax])
+        except:
+            axes.set_ylim([ylimmin, ylimmax])
         if ncols > 1:
             ax = axes[-1]
             ax.set_xlim(extend_x)
@@ -412,8 +424,8 @@ def spatially_visualize_lock_complex(lock_complex):
 
         for edge in zip(route[:-1], route[1:]):
             visualize_edge_in_folium_plot(m, graph, edge)
-            visualize_node_in_folium_plot(m, graph, edge[0], color='darkviolet', size=10)
-            visualize_node_in_folium_plot(m, graph, edge[1], color='darkviolet', size=10)
+            visualize_node_in_folium_plot(m, graph, edge[0], color='darkviolet', size=10, label=edge[0])
+            visualize_node_in_folium_plot(m, graph, edge[1], color='darkviolet', size=10, label=edge[1])
 
     for name, lock_chamber in lock_complex.lock_chambers.items():
         if lock_chamber.geometry is not None:
@@ -428,7 +440,7 @@ def spatially_visualize_lock_complex(lock_complex):
         visualize_geometry_point_in_folium_plot(m, waiting_area.geometry, color='black', size=10, label = name)
 
     m.fit_bounds(m.get_bounds())
-
+    m.fit_bounds(m.get_bounds())
     return m
 
 
