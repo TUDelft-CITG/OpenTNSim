@@ -72,7 +72,8 @@ def find_route_with_restrictions(self):
 
 
 class HasDraughtRestrictions:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, loading_factor, *args, **kwargs):
+        self.loading_factor = loading_factor
         super().__init__(*args, **kwargs)
         self.bound = 'inbound'
         self.tidal_window_calculations = {}

@@ -11,6 +11,7 @@ import pandas as pd
 import datetime
 import networkx as nx
 import simpy
+import warnings
 
 
 class HasTerminal(Movable):
@@ -31,7 +32,7 @@ class HasTerminal(Movable):
         self.loading_time = loading_time
         self.deberthing_time = deberthing_time
         if next_destination is None and not len(next_terminals):
-            raise ValueError('The vessel has no destination after the terminal.')
+            warnings.warn('The vessel has no destination after the terminal.', UserWarning)
         self.next_destination = next_destination
         self.next_berthing_times = next_berthing_times
         self.next_terminals = next_terminals
@@ -95,6 +96,7 @@ class HasTerminal(Movable):
         current_time = datetime.datetime.fromtimestamp(self.env.now)
         process_stop_time = current_time + pd.Timedelta(seconds=self.loading_time*3600 + self.deberthing_time*60)
         loading_process = self.env.timeout(self.loading_time*3600)
+        self._T = self.T * (1 + self.loading_factor / 100)
         negotiate_port_exit = self.env.process(self.request_port_exit(origin, parallel_process=loading_process, process_stop_time = process_stop_time))
         yield loading_process | negotiate_port_exit
         if negotiate_port_exit.is_alive:
