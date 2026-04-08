@@ -175,12 +175,42 @@ def logbook2eventtable(objs):
         gap_count = 1
 
         for _, sub in subs.iterrows():
-
-            if sub['start time'] > current_start:
+            if sub['start time'] == current_start and sub['stop time'] < main_row['stop time']:
                 # Copy the main row and adjust columns for the gap
                 gap_row = main_row.copy()
 
                 gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
+                gap_row['subactivity name'] = sub['subactivity name']
+
+                gap_row['start time'] = sub['start time']
+                gap_row['stop time'] = sub['stop time']
+
+                gap_row['start location'] = sub['start location']
+                gap_row['stop location'] = sub['stop location']
+                gap_row['distance (m)'] = calculate_distance_between_locations_along_edges(
+                    graph,
+                    gap_row['start location'],
+                    gap_row['stop location']
+                )
+                gap_row['duration (s)'] = (sub['stop time'] - sub['start time']).total_seconds()
+
+                gap_row['is_subprocess'] = False
+                gap_row['has_subprocesses'] = False
+
+                gap_segments.append(gap_row)
+
+                gap_count += 1
+
+            # Move start pointer forward
+            current_start = max(current_start, sub['stop time'])
+            current_start_loc = sub['stop location']
+
+            if sub['start time'] > current_start and sub['stop time'] < main_row['stop time']:
+                # Copy the main row and adjust columns for the gap
+                gap_row = main_row.copy()
+
+                gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
+                gap_row['subactivity name'] = sub['subactivity name']
 
                 gap_row['start time'] = current_start
                 gap_row['stop time'] = sub['start time']
@@ -210,6 +240,7 @@ def logbook2eventtable(objs):
             gap_row = main_row.copy()
 
             gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
+            gap_row['subactivity name'] = sub['subactivity name']
 
             gap_row['start time'] = current_start
             gap_row['stop time'] = main_row['stop time']
@@ -222,7 +253,7 @@ def logbook2eventtable(objs):
                 gap_row['start location'],
                 gap_row['stop location']
             )
-            print('hi', gap_row['start location'], gap_row['stop location'], gap_row['distance (m)'], gap_row['activity name'])
+
             gap_row['duration (s)'] = (main_row['stop time'] - current_start).total_seconds()
 
             gap_row['is_subprocess'] = False
@@ -238,7 +269,7 @@ def logbook2eventtable(objs):
     sub_df = df[df['is_subprocess'] == True]
 
     # Combine all
-    combined_df = pd.concat([sub_df, main_without_subs, gaps_df], ignore_index=True)
+    combined_df = pd.concat([main_without_subs, gaps_df], ignore_index=True)
     combined_df = combined_df.sort_values(['object id', 'start time']).reset_index(drop=True)
     combined_df['main activity name'] = combined_df['main activity name'].ffill()
 

@@ -1089,10 +1089,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
 
             # correct distance left on edge with the already covered distance through this function (to communicate with the move function)
-            waiting_area = lock.waiting_area_A
-            if direction:
-                waiting_area = lock.waiting_area_B
-            self.distance_left_on_edge = self.env.graph.edges[waiting_area.edge]['length_m'] - waiting_area.distance_from_edge_start
+            #self.distance_left_on_edge -= sailing_distance_to_waiting_area
 
             # on continuing sailing to the lock complex, determine the current time and whether the vessel is the first vessel or will arrive after another vessel
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -2075,27 +2072,11 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         # calculate sailing time to the start node of the edge of lock complex from the perspective of the vessel
         sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
 
-        if self.mandatory_waiting_time_before_lock:
-            _,_,_,sailing_time_to_waiting_area = self.calculate_sailing_time_to_waiting_area(vessel, direction, overwrite=False)
-            common_indexes = sailing_to_lock_chamber.index.intersection(sailing_time_to_waiting_area.index)
-            sailing_to_lock_chamber.loc[common_indexes] = sailing_time_to_waiting_area.loc[common_indexes]
-            speed_to_waiting_area = sailing_time_to_waiting_area.at[common_indexes[-1],'Speed']
-            distance_to_waiting_area = sailing_time_to_waiting_area.at[common_indexes[-1],'Distance']
-            remaining_distance = distance_to_lock - distance_to_waiting_area
-            speed_after_waiting_time = vessel.v*self.lock_chamber.speed_reduction_factor
-            sailing_time = remaining_distance/speed_after_waiting_time + distance_to_waiting_area/speed_to_waiting_area
-            sailing_to_lock_chamber.at[common_indexes[-1],'Time'] = sailing_time
-            sailing_to_lock_chamber.at[common_indexes[-1],'Distance'] = distance_to_lock
-            sailing_to_lock_chamber.at[common_indexes[-1],'Speed'] = distance_to_lock/sailing_time
-            other_indexes = sailing_to_lock_chamber.loc[common_indexes[-1]:].index[1:]
-            for index in other_indexes:
-                edge_distance = sailing_to_lock_chamber.loc[index, 'Distance']
-                new_sailing_time = edge_distance / speed_after_waiting_time
-                sailing_to_lock_chamber.loc[index, 'Speed'] = new_sailing_time
-                sailing_to_lock_chamber.loc[index, 'Time'] = edge_distance/new_sailing_time
-
-        # add sailing distance and time to the lock doors on the edge of the lock complex to sailing information to the start node of this edge
         sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
+        if self.mandatory_waiting_time_before_lock:
+            sailing_to_lock_chamber_time += self.mandatory_waiting_time_before_lock
+
+        # add sailing distance and time to the lock doors on the edge of the lock complex to sailing information to the start node of this edge 
         sailing_to_lock_chamber_time += self.mandatory_waiting_time_before_lock
         sailing_to_lock_chamber_time = pd.Timedelta(seconds=sailing_to_lock_chamber_time)
         # calculate arrival time of vessel at the first to be encountered lock doors and add to the vessel planning of the lock complex master
