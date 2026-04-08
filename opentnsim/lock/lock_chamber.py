@@ -1500,9 +1500,13 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             if "Lock" not in self.multidigraph.edges[self.start_node, self.end_node, k].keys():
                 self.multidigraph.edges[self.start_node, self.end_node, k]["Lock"] = [self]
                 self.multidigraph.edges[self.end_node, self.start_node, k]["Lock"] = [self]
+                self.env.graph.edges[self.start_node, self.end_node]["Lock"] = [self]
+                self.env.graph.edges[self.end_node, self.start_node]["Lock"] = [self]
             else:
                 self.multidigraph.edges[self.start_node, self.end_node, k]["Lock"].append(self)
                 self.multidigraph.edges[self.end_node, self.start_node, k]["Lock"].append(self)
+                self.env.graph.edges[self.start_node, self.end_node]["Lock"].append(self)
+                self.env.graph.edges[self.end_node, self.start_node]["Lock"].append(self)
 
     def _verify_node_AB(self):
         """Function to verify if nodes A and B are part of the graph, and have an edge between them."""
