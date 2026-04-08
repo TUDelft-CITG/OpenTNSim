@@ -246,7 +246,6 @@ def calculate_distance_between_locations_along_edges(graph, location_1, location
 
     distance_1 = geometry.project(location_1)
     distance_2 = geometry.project(location_2)
-
     fraction_1 = distance_1 / geometry_length
     fraction_2 = distance_2 / geometry_length
 
@@ -297,13 +296,13 @@ def calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_no
         length += graph.edges[edge]['length_m']
     return length
 
-# TEST 
-def calculate_distance_along_geometry_to_nodes_of_edge_test(graph, start_node, end_node):
-    route = nx.dijkstra_path(graph,start_node,end_node)
-    # length = 0
-    for edge in zip(route[:-1],route[1:]):
-        distance = graph.edges[edge]['length_m']
-    return distance
+# TEST --> check of ik de juister eruit heb gehaald 
+# def calculate_distance_along_geometry_to_nodes_of_edge_test(graph, start_node, end_node):
+#     route = nx.dijkstra_path(graph,start_node,end_node)
+#     # length = 0
+#     for edge in zip(route[:-1],route[1:]):
+#         distance = graph.edges[edge]['length_m']
+#     return distance
 
 
 

@@ -679,7 +679,11 @@ def get_trajectory(graph, node_1, node_2):
             edge_geometry = reverse_geometry(edge_geometry)
 
         if geometry:
-            geometry = shapely.ops.linemerge(MultiLineString([geometry, edge_geometry]))
+            if isinstance(geometry, MultiLineString):   
+                lines = list(geometry.geoms) + [edge_geometry]
+                geometry = MultiLineString(lines)
+            else:
+                geometry = shapely.ops.linemerge(MultiLineString([geometry, edge_geometry]))
         else:
             geometry = edge_geometry
 
@@ -1092,25 +1096,44 @@ def compare_two_edge_info(graph, edge_A, edge_B):
     return shared_items, missing_items_A, missing_items_B
 
 
-def get_largest_route_between_edges(graph, edge1, edge2):
-    if set(edge1) == set(edge2):
-        return list(edge1)
+def get_largest_route_between_edges(G, edge1, edge2, weight="length_m"):
+    """
+    Returns the longest among the shortest paths between two edges.
+
+    Parameters
+    ----------
+    G : networkx.Graph or DiGraph
+    edge1 : tuple (u1, v1)
+    edge2 : tuple (u2, v2)
+    weight : str
+
+    Returns
+    -------
+    list
+        Node list representing the chosen path
+
+    Raises
+    ------
+    nx.NetworkXNoPath
+    """
 
     sources = list(edge1)
-    targets = list(edge2)
+    targets = set(edge2)
 
-    lengths = nx.multi_source_dijkstra_path_length(graph, sources, weight=None)
-    paths = nx.multi_source_dijkstra_path(graph, sources, weight=None)
+    best_path = None
+    best_length = float("-inf")
 
-    best_target = None
-    best_length = -1
+    for source in sources:
+        lengths, paths = nx.single_source_dijkstra(G, source, weight=weight)
 
-    for t in targets:
-        if t in lengths and lengths[t] > best_length:
-            best_length = lengths[t]
-            best_target = t
+        for target in targets:
+            if target in lengths and lengths[target] > best_length:
+                best_length = lengths[target]
+                best_path = paths[target]
 
-    if best_target is None:
-        raise nx.NetworkXNoPath
+    if best_path is None:
+        raise nx.NetworkXNoPath("No path between the given edges")
 
-    return paths[best_target]
+    return best_path
+
+

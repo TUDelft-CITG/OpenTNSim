@@ -89,14 +89,6 @@ def logbook2eventtable(objs):
             start_location = start_row["Geometry"]
             stop_location = stop_row["Geometry"]
             duration_seconds = (stop_time - start_time).total_seconds()
-
-            # OLD version with calculate_distance_between_locations_along_edges
-            # if isinstance(start_location, Point):
-            #     distance_meters = calculate_distance_between_locations_along_edges(graph, start_location, stop_location)
-            # else:
-            #     distance_meters = None
-
-            # NEW TRY with calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_node):
             if isinstance(start_location, Point):
                 start_node = find_closest_node(graph, start_location)
                 stop_node  = find_closest_node(graph, stop_location)
@@ -104,7 +96,7 @@ def logbook2eventtable(objs):
                 if start_node == stop_node:
                     distance_meters = 0.0
                 else:
-                    distance_meters = calculate_distance_along_geometry_to_nodes_of_edge_test(graph, start_node, stop_node)
+                    distance_meters = calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, stop_node)
             else:
                 distance_meters = None
 
