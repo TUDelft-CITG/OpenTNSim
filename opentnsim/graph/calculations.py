@@ -297,6 +297,15 @@ def calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_no
         length += graph.edges[edge]['length_m']
     return length
 
+# TEST 
+def calculate_distance_along_geometry_to_nodes_of_edge_test(graph, start_node, end_node):
+    route = nx.dijkstra_path(graph,start_node,end_node)
+    # length = 0
+    for edge in zip(route[:-1],route[1:]):
+        distance = graph.edges[edge]['length_m']
+    return distance
+
+
 
 def calculate_length_of_splitted_edge_geometries(graph, edge, edge_geometries):
     edge_geometry_lengths = [edge_geometry.length for edge_geometry in edge_geometries]
