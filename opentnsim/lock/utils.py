@@ -186,6 +186,8 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
             available = waiting_area.resource.capacity > len(waiting_area.resource.users)
             suitable_waiting_areas.loc[waiting_area.name,:] = [sailing_time, available]
 
+    print(vessel.route, direction)
+    display(suitable_waiting_areas)
     available_waiting_areas = suitable_waiting_areas[suitable_waiting_areas.available]
     waiting_area_name = None
     if not available_waiting_areas.empty:
@@ -1137,7 +1139,7 @@ def _get_directional_edge(lock_chamber, direction):
     else:
         edge = (lock_chamber.end_node, lock_chamber.start_node, lock_chamber.k)
 
-    if not isinstance(lock_chamber.env.graph, nx.MultiDiGraph):
+    if not (isinstance(lock_chamber.env.graph, nx.MultiGraph) or isinstance(lock_chamber.env.graph, nx.MultiDiGraph)):
         edge = edge[:2]
 
     return edge
@@ -1225,7 +1227,6 @@ def _get_vessel_sailing_in_speed(lock_chamber, vessel, direction):
     # if there is an overruled speed on the edge, use this speed
     if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
         speed = vessel.overruled_speed.loc[edge, "speed"]
-
     return speed
 
 
@@ -1292,7 +1293,7 @@ def _get_vessels_that_passed_the_lock_chamber(lock_chamber):
     lock_complex = lock_chamber.lock_complex
     vessel_ids = lock_complex.vessel_planning[lock_complex.vessel_planning.lock_chamber == lock_chamber.name].id
     if not len(vessel_ids):
-        return None
+        return []
     vessels = np.array([itemgetter(*vessel_ids)(lock_complex.env.vessels)]).flatten()
     return vessels
 

@@ -74,7 +74,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
             data=[], columns=["speed"],
             index=pd.MultiIndex.from_arrays([[], []], names=("node_start", "node_stop"))
         )
-        if isinstance(graph, nx.MultiDiGraph):
+        if isinstance(graph, nx.MultiGraph) or isinstance(graph, nx.MultiDiGraph):
             self.overruled_speed = pd.DataFrame(
                 data=[], columns=["speed"],
                 index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", 'k'))
@@ -322,6 +322,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             distance_from_edge_start=None,
             geometry = None,
             capacity = math.inf,
+            direction = None,
             crs_m = None,
             *args,
             **kwargs,
@@ -372,6 +373,9 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
 
         if distance_from_edge_start is not None:
             self.distance_from_edge_start = distance_from_edge_start
+            if direction is None:
+                raise ValueError("You should specify the direction of the waiting area: 0 = .")
+            self.direction = direction
         elif distance_from_lock_gate_A is not None:
             edge_start, edge_stop = edge[:2]
             edge_length = lock_chamber.env.graph.edges[edge]["length_m"]
@@ -385,6 +389,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
                 if check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, edge):
                     distance_from_edge_start = edge_length - remaining_length
             self.distance_from_edge_start = distance_from_edge_start
+            self.direction = 0
         elif distance_from_lock_gate_B is not None:
             edge_start, edge_stop = edge[:2]
             edge_length = lock_chamber.env.graph.edges[edge]["length_m"]
@@ -400,10 +405,10 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
                 if check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, edge):
                     distance_from_edge_start = edge_length - remaining_length
             self.distance_from_edge_start = distance_from_edge_start
+            self.direction = 1
 
         if geometry is None:
             self.geometry = calculate_location_over_edges(self.env.graph, self.edge, self.distance_from_edge_start, crs_m=crs_m)
-            print(self.distance_from_edge_start)
         if 'Waiting area' not in self.env.graph.edges[self.edge].keys():
             self.env.graph.edges[self.edge]['Waiting area'] = [self]
         elif self not in self.env.graph.edges[self.edge]['Waiting area']:
