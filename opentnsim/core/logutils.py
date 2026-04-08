@@ -10,7 +10,7 @@ from shapely import Point
 
 # internal
 import opentnsim.graph.mixins as mixins
-from opentnsim.graph.calculations import calculate_distance_between_locations_along_edges, calculate_distance_along_geometry_to_nodes_of_edge, calculate_distance_along_geometry_to_nodes_of_edge_test
+from opentnsim.graph.calculations import calculate_distance_between_locations_along_edges, calculate_distance_along_geometry_to_nodes_of_edge
 from opentnsim.graph.utils import find_closest_node
 
 # # %% CONVERT LOG TO EVENT TABLE
@@ -188,7 +188,6 @@ def logbook2eventtable(objs):
                 gap_row['start location'] = current_start_loc
                 gap_row['stop location'] = sub['start location']
                 gap_row['distance (m)'] = calculate_distance_between_locations_along_edges(
-                # gap_row['distance (m)'] = calculate_distance_along_geometry_to_nodes_of_edge_test(
                     graph,
                     gap_row['start location'],
                     gap_row['stop location']
@@ -217,12 +216,13 @@ def logbook2eventtable(objs):
 
             gap_row['start location'] = current_start_loc
             gap_row['stop location'] = main_row['stop location']
+
             gap_row['distance (m)'] = calculate_distance_between_locations_along_edges(
-            # gap_row['distance (m)'] = calculate_distance_along_geometry_to_nodes_of_edge_test(
                 graph,
                 gap_row['start location'],
                 gap_row['stop location']
             )
+            print('hi', gap_row['start location'], gap_row['stop location'], gap_row['distance (m)'], gap_row['activity name'])
             gap_row['duration (s)'] = (main_row['stop time'] - current_start).total_seconds()
 
             gap_row['is_subprocess'] = False

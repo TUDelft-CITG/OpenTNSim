@@ -1440,7 +1440,7 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
             self.door_B_open = False
         else:
             self.door_A_open = False
-        print('hi')
+
         # Geometry on edge
         edge = (start_node, end_node, 0)
         edge_info = self.multidigraph.edges[edge]

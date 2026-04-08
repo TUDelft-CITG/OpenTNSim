@@ -996,7 +996,6 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         # TODO: @Floor. Ziet eruit alsof dit de laatste lock is die op de route ligt. Ik den kdat we juist de eerste willen hebben toch?
         # TODO: @Floor: in register_to_lock_master zoeken we gewoon de lock die aan de origin-node grenst. Kunnen we dat hier niet ook doen?
         locks = self._find_upcoming_locks()
-
         # if no lock is found, stop function
         if not bool(locks):
             return
@@ -1090,7 +1089,10 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
 
             # correct distance left on edge with the already covered distance through this function (to communicate with the move function)
-            self.distance_left_on_edge -= sailing_distance_to_waiting_area
+            waiting_area = lock.waiting_area_A
+            if direction:
+                waiting_area = lock.waiting_area_B
+            self.distance_left_on_edge = self.env.graph.edges[waiting_area.edge]['length_m'] - waiting_area.distance_from_edge_start
 
             # on continuing sailing to the lock complex, determine the current time and whether the vessel is the first vessel or will arrive after another vessel
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -1163,6 +1165,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         else:
             direction = 1
             distance_left_on_edge = lock.distance_waiting_area_B_to_end_edge_waiting_area_B
+
 
         # unpacks the lock complex master's vessel and lock planning
         vessel_planning = lock.lock_complex.vessel_planning

@@ -75,9 +75,9 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         global edges_info
         self.edges_info = self.get_edges_info()
 
-        for edge in self.graph.edges:
-            length = get_length_of_edge(graph, edge, crs_meter = self.crs_m)
-            self.graph.edges[edge]["length_m"] = length
+        # for edge in self.graph.edges:
+        #     length = get_length_of_edge(graph, edge, crs_meter = self.crs_m)
+        #     self.graph.edges[edge]["length_m"] = length
 
         for node in graph.nodes:
             node_info = graph.nodes[node]
@@ -119,18 +119,13 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         super().__init__(*args, **kwargs)
 
     def get_edges_info(self):
-        graph = self.multidigraph
-        edges_info = pd.DataFrame(columns=["Edge", "Distance", "MBL"])
-        for edge in graph.edges:
-            edge_info = graph.edges[edge]
-            index = len(edges_info)
-            edges_info.loc[index, "Edge"] = edge
-            edges_info.loc[index, "Distance"] = get_length_of_edge(graph, edge)
-            if "MBL" in edge_info.keys():
-                edges_info.loc[index, "MBL"] = edge_info["MBL"]
-            else:
-                edges_info.loc[index, "MBL"] = 999.0
-        return edges_info.set_index("Edge")
+        rows = [
+            {"u": u, "v": v, "k": 0, "Distance": data.get("length_m")}
+            for u, v, data in self.graph.edges(data=True)
+        ]
+
+        edges_info = pd.DataFrame(rows)
+        return edges_info.set_index(["u", "v", "k"])
 
     def read_tidal_periods(self,hydrodynamic_data,tidal_period_type,station_index):
         if 'tidal_period_type' not in hydrodynamic_data.variables:
