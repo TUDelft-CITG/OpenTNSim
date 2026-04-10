@@ -168,7 +168,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
 
 
     def request_to_pass_waiting_area(self, lock_chamber, waiting_area):
-        yield from lock_chamber.allow_vessel_to_pass_waiting_area(self, waiting_area)
+        yield from lock_chamber.allow_vessel_to_pass_waiting_area(self, lock_chamber, waiting_area)
 
 
     def sail_to_lock_chamber(self, lock_chamber, waiting_area, direction):
@@ -187,7 +187,6 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
         # let vessel sail to the lock gate
         current_time = self.env.now
         vessel_speed = _get_vessel_sailing_in_speed(lock_chamber, self, direction)
-
         remaining_sailing_time = distance_to_lock / vessel_speed
         while remaining_sailing_time > 0:
             try:
@@ -371,14 +370,15 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
 
         super().__init__(edge=edge, geometry=geometry, nr_resources=capacity, *args, **kwargs)
 
+        edge_length = self.env.graph.edges[edge]["length_m"]
         if distance_from_edge_start is not None:
             self.distance_from_edge_start = distance_from_edge_start
             if direction is None:
                 raise ValueError("You should specify the direction of the waiting area: 0 = .")
             self.direction = direction
+
         elif distance_from_lock_gate_A is not None:
             edge_start, edge_stop = edge[:2]
-            edge_length = lock_chamber.env.graph.edges[edge]["length_m"]
             edge_rev = (edge[1], edge[0]) + edge[2:]
             if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
                 distance_from_edge_start = lock_chamber.distance_from_start_node_to_lock_gate_A - distance_from_lock_gate_A
@@ -392,12 +392,11 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             self.direction = 0
         elif distance_from_lock_gate_B is not None:
             edge_start, edge_stop = edge[:2]
-            edge_length = lock_chamber.env.graph.edges[edge]["length_m"]
             edge_rev = (edge[1], edge[0]) + edge[2:]
             if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
                 distance_from_edge_start = lock_chamber.distance_from_end_node_to_lock_gate_B - distance_from_lock_gate_B
                 if edge == lock_chamber.edge:
-                    distance_from_edge_start = self.env.graph.edges[self.edge]['length_m'] - distance_from_edge_start
+                    distance_from_edge_start = edge_length - distance_from_edge_start
             else:
                 length = calculate_distance_along_geometry_to_nodes_of_edge(lock_chamber.env.graph, lock_chamber.edge[1], edge_stop)
                 remaining_length = distance_from_lock_gate_B - length - distance_from_start_node_to_lock_gate_B
@@ -406,6 +405,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
                     distance_from_edge_start = edge_length - remaining_length
             self.distance_from_edge_start = distance_from_edge_start
             self.direction = 1
+        self.distance_waiting_area_to_end_edge = edge_length - distance_from_edge_start
 
         if geometry is None:
             self.geometry = calculate_location_over_edges(self.env.graph, self.edge, self.distance_from_edge_start, crs_m=crs_m)
@@ -413,8 +413,11 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             self.env.graph.edges[self.edge]['Waiting area'] = [self]
         elif self not in self.env.graph.edges[self.edge]['Waiting area']:
             self.env.graph.edges[self.edge]['Waiting area'].append(self)
-        self.distance_waiting_area_to_end_edge = self.env.graph.edges[self.edge]['length_m'] - distance_from_edge_start
 
+
+        if lock_chamber is not None and self.direction and self.edge == lock_chamber.edge:
+            self.distance_from_edge_start = edge_length - distance_from_edge_start
+            self.distance_waiting_area_to_end_edge = distance_from_edge_start
 
 @inherit_docstring
 class IsLockComplex(SimpyObject, Identifiable, IsLockMaster):

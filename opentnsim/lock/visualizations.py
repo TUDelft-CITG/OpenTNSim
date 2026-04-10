@@ -89,7 +89,14 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         boundary_nodes = lock_complex.registration_nodes
 
     # create lock edge geometry in [m]
-    route_between_nodes_of_registration = nx.dijkstra_path(lock_complex.env.graph, boundary_nodes[0], boundary_nodes[1])
+    route_between_nodes_of_registration = []
+    nodes = [boundary_nodes[0], lock_chamber.edge[0], boundary_nodes[-1]]
+    for i in range(len(nodes) - 1):
+        segment = nx.dijkstra_path(lock_chamber.env.graph, nodes[i], nodes[i + 1])
+        if i > 0:
+            segment = segment[1:]
+        route_between_nodes_of_registration.extend(segment)
+
     lock_edge_geometry = get_trajectory(lock_complex.env.graph, route_between_nodes_of_registration[0],
                                         route_between_nodes_of_registration[-1])[0]
     lock_edge_geometry_m = transform_geometry(lock_edge_geometry, epsg_out=lock_chamber.crs_m)
@@ -413,37 +420,92 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 def spatially_visualize_lock_complex(lock_complex):
     m = folium.Map(tiles="cartodbpositron")
 
+    bounds = []
+
+    def add_to_bounds(geometry):
+        """Extract coordinates from different geometry types."""
+        if geometry is None:
+            return
+
+        try:
+            # Point
+            if hasattr(geometry, "x") and hasattr(geometry, "y"):
+                bounds.append([geometry.y, geometry.x])
+
+            # Polygon / LineString
+            elif hasattr(geometry, "geoms"):  # Multi-geometry
+                for geom in geometry.geoms:
+                    add_to_bounds(geom)
+
+            elif hasattr(geometry, "exterior"):  # Polygon
+                for x, y in geometry.exterior.coords:
+                    bounds.append([y, x])
+
+            elif hasattr(geometry, "coords"):  # LineString
+                for x, y in geometry.coords:
+                    bounds.append([y, x])
+
+        except Exception:
+            pass  # fail silently if geometry is unexpected
+
     # Plotting the nearby graph between the registration nodes
     graph = lock_complex.env.graph
-    for registration_node_1, registration_node_2 in zip(lock_complex.registration_nodes[:-1],
-                                                        lock_complex.registration_nodes[1:]):
+    for registration_node_1, registration_node_2 in zip(
+        lock_complex.registration_nodes[:-1],
+        lock_complex.registration_nodes[1:]
+    ):
         edge_routes = list(_get_all_simple_edge_paths(graph, registration_node_1, registration_node_2, 10))
-        for edge_route in edge_routes:
-            edges = []
-            for edge in edge_route:
-                edges.append(edge)
 
+        for edge_route in edge_routes:
             for edge in edge_route:
                 visualize_edge_in_folium_plot(m, graph, edge)
-                visualize_node_in_folium_plot(m, graph, edge[0], color='darkviolet', size=10, label=edge[0])
-                visualize_node_in_folium_plot(m, graph, edge[1], color='darkviolet', size=10, label=edge[1])
+
+                node_a = edge[0]
+                node_b = edge[1]
+
+                visualize_node_in_folium_plot(m, graph, node_a, color='darkviolet', size=10, label=node_a)
+                visualize_node_in_folium_plot(m, graph, node_b, color='darkviolet', size=10, label=node_b)
+
+                # Add node coordinates to bounds
+                geom_a = graph.nodes[node_a].get("geometry")
+                geom_b = graph.nodes[node_b].get("geometry")
+
+                add_to_bounds(geom_a)
+                add_to_bounds(geom_b)
 
     # Plotting the lock chambers
     for name, lock_chamber in lock_complex.lock_chambers.items():
         if lock_chamber.geometry is not None:
             visualize_geometry_polygon_in_folium_plot(m, lock_chamber.geometry)
+            add_to_bounds(lock_chamber.geometry)
 
-        visualize_geometry_point_in_folium_plot(m, lock_chamber.gate_A.geometry, color='green', size=10,
-                                                label = name + ' - Gate A')
-        visualize_geometry_point_in_folium_plot(m, lock_chamber.gate_B.geometry, color='red', size=10 ,
-                                                label = name + ' - Gate B')
+        visualize_geometry_point_in_folium_plot(
+            m, lock_chamber.gate_A.geometry,
+            color='green', size=10,
+            label=name + ' - Gate A'
+        )
+        add_to_bounds(lock_chamber.gate_A.geometry)
+
+        visualize_geometry_point_in_folium_plot(
+            m, lock_chamber.gate_B.geometry,
+            color='red', size=10,
+            label=name + ' - Gate B'
+        )
+        add_to_bounds(lock_chamber.gate_B.geometry)
 
     # Plotting the waiting areas
     for name, waiting_area in lock_complex.waiting_areas.items():
-        visualize_geometry_point_in_folium_plot(m, waiting_area.geometry, color='black', size=10, label = name)
+        visualize_geometry_point_in_folium_plot(
+            m, waiting_area.geometry,
+            color='black', size=10,
+            label=name
+        )
+        add_to_bounds(waiting_area.geometry)
 
-    m.fit_bounds(m.get_bounds())
-    m.fit_bounds(m.get_bounds())
+    # Apply bounds once at the end
+    if bounds:
+        m.fit_bounds(bounds)
+
     return m
 
 

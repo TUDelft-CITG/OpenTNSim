@@ -79,6 +79,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         sailing_out_speed_B=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
         minimum_manoeuvrability_speed=2 * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
         gate_open_at_node=None,  # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
+        water_level_init = 0.,
+        salinity_init = 15.0,
         operational_hour_start_times=None,
         operational_hour_stop_times=None,
         crs_m = "EPSG:4087",
@@ -185,12 +187,27 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
 
         if self.has_water_level:
             time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
-            wlev_series = hydromanager._get_interpolated_hydrodynamic_series(time_series,self.gate_open_at_node,"Water level",)
+            if not self.closing_gate_in_between_operations:
+                wlev_series = hydromanager._get_interpolated_hydrodynamic_series(time_series,self.gate_open_at_node,"Water level",)
+            else:
+                wlev_series = water_level_init * np.ones(len(self.time))
             self.time = time_series
             self.water_level = wlev_series
         if self.has_salinity:
-            self.salinity = np.zeros(len(self.time))
-            self.saltmass = np.zeros(len(self.time))
+            time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
+            if not self.closing_gate_in_between_operations:
+                sal_series = hydromanager._get_interpolated_hydrodynamic_series(time_series, self.gate_open_at_node,"Salinity", )
+            else:
+                sal_series = salinity_init * np.ones(len(self.time))
+            self.salinity = sal_series
+            self.saltmass = (self.water_level + self.lock_depth)*self.lock_width*self.lock_length*sal_series
+            self.node_sea = self.start_node
+            self.node_lake = self.end_node
+            salt_start = hydromanager._get_hydrodynamic_data_series(time, self.start_node, "Salinity").mean()
+            salt_end = hydromanager._get_hydrodynamic_data_series(time, self.end_node, "Salinity").mean()
+            if salt_start < salt_end:
+                self.node_sea = self.end_node
+                self.node_lake = self.start_node
 
         # operational information
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed

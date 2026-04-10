@@ -114,7 +114,10 @@ def get_vessels_per_cycle(lock_chamber):
     for cycle_nr, level_event in levelling_cycles.iterrows():
         for vessel in vessels:
             vessel_df = pd.DataFrame(vessel.logbook)
-            vessel_df["Timestamp"] = pd.to_datetime(vessel_df["Timestamp"])
+            try:
+                vessel_df["Timestamp"] = pd.to_datetime(vessel_df["Timestamp"])
+            except:
+                continue
 
             # Find levelling start/stop pairs
             levelling_starts = vessel_df[vessel_df["Message"] == "Waiting for lock levelling start"]

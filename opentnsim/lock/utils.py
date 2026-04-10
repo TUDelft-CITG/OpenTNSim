@@ -47,7 +47,7 @@ def _get_lock_object_on_registration_node(graph, registration_node):
 
     Parameters
     ----------
-    m_find_available_lock_operationultidigraph : nx.MultiDiGraph
+    _find_available_lock_operationultidigraph : nx.MultiDiGraph
         the graph of the simulation as MultiDiGraph-version (to allow for parallel locks between the same node pair)
     registration_node : str
         node name (that has to be in the graph) on which the vessel is currently starting to navigate an edge
@@ -175,6 +175,8 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
             continue
         waiting_areas = vessel.env.graph.edges[edge]['Waiting area']
         for waiting_area in waiting_areas:
+            if waiting_area.direction != direction:
+                continue
             distance_to_waiting_area_on_edge = waiting_area.distance_from_edge_start
             get_sailing_info = get_sailing_information_on_edge_to_distance_on_another_edge
             edge_route_to_waiting_area = _get_edge_route_to_waiting_area(vessel, waiting_area, last_node_included=True)
@@ -186,8 +188,6 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
             available = waiting_area.resource.capacity > len(waiting_area.resource.users)
             suitable_waiting_areas.loc[waiting_area.name,:] = [sailing_time, available]
 
-    print(vessel.route, direction)
-    display(suitable_waiting_areas)
     available_waiting_areas = suitable_waiting_areas[suitable_waiting_areas.available]
     waiting_area_name = None
     if not available_waiting_areas.empty:
@@ -609,7 +609,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
     if not len(suitable_lock_chambers):
         raise ValueError("Vessel cannot pass lock complex")
 
-    most_suitable_lock_chamber = pd.DataFrame(columns=['time_lock_operation_start','operation_index','new_lock_operation'])
+    most_suitable_lock_chamber = pd.DataFrame(columns=['time_lock_operation_start','operation_index','new_lock_operation','empty_operation_required'])
     for lock_chamber in suitable_lock_chambers:
         lock_edge = lock_chamber.edge
         if direction:
@@ -662,30 +662,57 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
         # TODO: create a selection method that can pick the lock operation based on minimizing expected delay or freshwater loss/saltwater intrusion
 
         current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+        empty_operation_required = False
         if available_operations.empty:
             new_operation = True
             if not operation_planning_lock.empty:
                 last_operation = operation_planning_lock.iloc[-1]
                 operation_index = len(operation_planning[operation_planning.lock_chamber == lock_chamber.name])
-                time_lock_operation_start = (last_operation.time_lock_operation_start - current_time) + sailing_time_to_lock
+                last_time_lock_operation_stop = last_operation.time_lock_operation_stop
+                time_lock_operation_start = (last_time_lock_operation_stop - current_time) + sailing_time_to_lock
+                if last_operation.direction == direction:
+                    time_lock_operation_start += pd.Timedelta(minutes=30)
+                    operation_index += 1
+                    empty_operation_required = True
             else:
                 operation_index = 0
                 time_lock_operation_start = sailing_time_to_lock
+                if lock_chamber.gate_open_at_node != lock_edge[0]:
+                    empty_operation_required = True
+                    time_lock_operation_start += pd.Timedelta(minutes=30)
+                    operation_index += 1
+
         else:
             new_operation = False
             operation_index = available_operations.iloc[0].operation_index
-            time_lock_operation_start = (available_operations.iloc[0].time_lock_operation_start - current_time) + sailing_time_to_lock
+            new_time_operation_start = available_operations.iloc[0].time_lock_operation_start
+            time_lock_operation_start = (new_time_operation_start - current_time) + sailing_time_to_lock
 
-        most_suitable_lock_chamber.loc[lock_chamber.name] = [time_lock_operation_start, operation_index, new_operation]
+        most_suitable_lock_chamber.loc[lock_chamber.name] = [
+            time_lock_operation_start, operation_index, new_operation, empty_operation_required]
 
     add_to_existing_operation_df = most_suitable_lock_chamber[most_suitable_lock_chamber.new_lock_operation == False]
     if not add_to_existing_operation_df.empty:
-        most_efficient_operation = add_to_existing_operation_df[add_to_existing_operation_df.time_lock_operation_start == add_to_existing_operation_df.time_lock_operation_start.min()].iloc[0]
+        minimum_delay_time = add_to_existing_operation_df.time_lock_operation_start.min()
+        most_efficient_operation = add_to_existing_operation_df[
+            add_to_existing_operation_df.time_lock_operation_start == minimum_delay_time].iloc[0]
+        lock_chamber = most_efficient_operation.name
+        operation_index = most_efficient_operation.operation_index
+        new_operation = most_efficient_operation.new_lock_operation
+
+    prevent_empty_operation_df = most_suitable_lock_chamber[
+        most_suitable_lock_chamber.empty_operation_required == False]
+    if not prevent_empty_operation_df.empty:
+        minimum_delay_time = prevent_empty_operation_df.time_lock_operation_start.min()
+        most_efficient_operation = prevent_empty_operation_df[
+            prevent_empty_operation_df.time_lock_operation_start == minimum_delay_time].iloc[0]
         lock_chamber = most_efficient_operation.name
         operation_index = most_efficient_operation.operation_index
         new_operation = most_efficient_operation.new_lock_operation
     else:
-        most_efficient_operation = most_suitable_lock_chamber[most_suitable_lock_chamber.time_lock_operation_start == most_suitable_lock_chamber.time_lock_operation_start.min()].iloc[0]
+        minimum_delay_time = most_suitable_lock_chamber.time_lock_operation_start.min()
+        most_efficient_operation = most_suitable_lock_chamber[
+            most_suitable_lock_chamber.time_lock_operation_start ==minimum_delay_time].iloc[0]
         lock_chamber = most_efficient_operation.name
         operation_index = most_efficient_operation.operation_index
         new_operation = most_efficient_operation.new_lock_operation

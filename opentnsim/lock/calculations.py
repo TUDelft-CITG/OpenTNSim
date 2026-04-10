@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pyzsf
 from shapely.geometry import Point, Polygon
+from shapely import affinity
 import datetime
 from opentnsim.utils import time_to_numpy
 from opentnsim.constants import gravitational_acceleration
@@ -48,6 +49,7 @@ from opentnsim.lock.utils import (
 
 
 def calculate_z(
+    lock_chamber,
     t,
     t_start,
     direction,
@@ -75,7 +77,8 @@ def calculate_z(
     H_B_init = H_B[time_index]
 
     if wlev_init is None:
-        last_operations = operation_planning[operation_planning.index < operation_index]
+        operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+        last_operations = operation_planning_lock[operation_planning_lock.operation_index < operation_index]
         if not last_operations.empty:
             last_operation = last_operations.iloc[-1]
             last_operation_direction = last_operation.direction
@@ -91,7 +94,6 @@ def calculate_z(
 
     if not direction:
         z[0:] = H_B_init - wlev_init
-
     else:
         z[0:] = H_A_init - wlev_init
 
@@ -217,6 +219,7 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
         return levelling_time, t, z
 
     z, H_A, H_B = calculate_z(
+        lock_chamber,
         t=t,
         t_start=t_start,
         direction=direction,
@@ -1359,7 +1362,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
     except:
         delay = pd.Timedelta(seconds = 0)
 
-    if delay > pd.Timedelta(seconds = 0):
+    if vessel is not None and delay > pd.Timedelta(seconds = 0):
         for other_vessel in other_vessels_in_lock:
             other_vessel_planning_index = vessel_planning[vessel_planning.id == other_vessel.id].iloc[-1].name
             vessel_planning.loc[other_vessel_planning_index, 'time_lock_departure_start'] += delay
@@ -1442,22 +1445,65 @@ def calculate_lock_distances_to_nodes_of_edge_from_geometry(lock_chamber, m = Fa
     return distance_from_start_node_to_lock_gate_A, distance_from_end_node_to_lock_gate_B
 
 
-def calculate_lock_dimensions_from_geometry(lock_chamber, m = False):
+def calculate_lock_dimensions_from_geometry(lock_chamber, m=False):
     if not m:
-        lock_chamber.geometry_m = transform_geometry(lock_chamber.geometry, epsg_out=lock_chamber.crs_m)
-    lock_chamber.geometry_m_rectangle = lock_chamber.geometry_m.minimum_rotated_rectangle
-    coords = list(lock_chamber.geometry_m_rectangle.exterior.coords)[:-1]
+        lock_chamber.geometry_m = transform_geometry(
+            lock_chamber.geometry, epsg_out=lock_chamber.crs_m
+        )
+
+    rect = lock_chamber.geometry_m.minimum_rotated_rectangle
+    coords = list(rect.exterior.coords)[:-1]
+
     edges = []
+    edge_vectors = []
+
     for i in range(len(coords)):
         x1, y1 = coords[i]
         x2, y2 = coords[(i + 1) % len(coords)]
-        edges.append(math.hypot(x2 - x1, y2 - y1))
+        dx, dy = x2 - x1, y2 - y1
+        length = math.hypot(dx, dy)
 
+        edges.append(length)
+        edge_vectors.append((dx, dy))
+
+    # Find unique edge lengths (length & width)
     unique = sorted(set(round(e, 8) for e in edges), reverse=True)
-
     length = unique[0]
     width = unique[1]
-    return length, width
+
+    # Find the vector corresponding to the longest edge
+    for e, (dx, dy) in zip(edges, edge_vectors):
+        if round(e, 8) == round(length, 8):
+            angle_rad = math.atan2(dy, dx)
+            break
+
+    angle_deg = math.degrees(angle_rad)
+
+    return length, width, angle_deg
+
+
+def create_rotated_rectangle_from_center(centroid, length, width, angle_deg):
+    cx, cy = centroid.x, centroid.y
+
+    # Half dimensions
+    dx = length / 2
+    dy = width / 2
+
+    # Step 1: axis-aligned rectangle centered at origin
+    rect = Polygon([
+        (-dx, -dy),
+        ( dx, -dy),
+        ( dx,  dy),
+        (-dx,  dy)
+    ])
+
+    # Step 2: rotate (around origin)
+    rect_rot = affinity.rotate(rect, angle_deg, origin=(0, 0), use_radians=False)
+
+    # Step 3: translate to centroid
+    rect_final = affinity.translate(rect_rot, xoff=cx, yoff=cy)
+
+    return rect_final
 
 
 def calculate_and_check_lock_dimensions(lock_chamber):
@@ -1467,19 +1513,32 @@ def calculate_and_check_lock_dimensions(lock_chamber):
         raise ValueError(f'Invalid lock length: {lock_chamber.lock_length} (should be > 0).')
     if not lock_chamber.lock_width and not (lock_chamber.geometry is None or lock_chamber.geometry_m is None):
         raise ValueError(f'Invalid lock length: {lock_chamber.lock_width} (should be > 0).')
-    if (not lock_chamber.lock_length or not lock_chamber.lock_width) and \
-            (lock_chamber.geometry is not None or lock_chamber.geometry_m is not None):
+    if (lock_chamber.geometry is not None or lock_chamber.geometry_m is not None):
         if lock_chamber.geometry is not None:
             m = False
         else:
             m = True
-        lock_length, lock_width = calculate_lock_dimensions_from_geometry(lock_chamber, m=m)
+        lock_length, lock_width, lock_angle = calculate_lock_dimensions_from_geometry(lock_chamber, m=m)
         if not lock_chamber.lock_length:
             lock_chamber.lock_length = lock_length
         if not lock_chamber.lock_width:
             lock_chamber.lock_width = lock_width
-            
-            
+        else:
+            if not m:
+                polygon = transform_geometry(
+                    lock_chamber.geometry, epsg_out=lock_chamber.crs_m
+                )
+                lock_chamber.geometry_m = create_rotated_rectangle_from_center(
+                    polygon.centroid, lock_chamber.lock_length, lock_chamber.lock_width, lock_angle)
+            else:
+                polygon = lock_chamber.geometry_m
+                lock_chamber.geometry_m = create_rotated_rectangle_from_center(
+                    polygon.centroid, lock_chamber.lock_length, lock_chamber.lock_width, lock_angle)
+            lock_chamber.geometry = transform_geometry(
+                lock_chamber.geometry_m, epsg_in=lock_chamber.crs_m, epsg_out='EPSG:4326'
+            )
+
+
 def calculate_time_to_open_gate(lock_chamber, operation_index, direction, gate_required_to_be_open):
     """
     Determines the time to finish the levelling process and the gate opening process
@@ -1564,10 +1623,11 @@ def calculate_ZSF_eventttable(lock_chamber):
         t_level = 0
         t_open_lake = 0
         t_open_sea = 0
+        
         if not index and info.Message == "Lock gate closing start":
             time_stop = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
             duration = (time_stop - lock_chamber.env.simulation_start).total_seconds()
-            if info.Geometry == lock_chamber.start_node:
+            if info.Geometry == lock_chamber.node_sea:
                 routine = 'Gate open at sea'
                 t_open_sea = duration
             else:
@@ -1588,7 +1648,7 @@ def calculate_ZSF_eventttable(lock_chamber):
                     seconds=lock_chamber.gate_closing_time) / 2
                 duration = (time_stop - time_start).total_seconds()
 
-            if info.Geometry == lock_chamber.start_node:
+            if info.Geometry == lock_chamber.node_sea:
                 routine = 'Gate open at sea'
                 t_open_sea = duration
             else:
@@ -1601,7 +1661,7 @@ def calculate_ZSF_eventttable(lock_chamber):
             time_start = levelling_start_info.Timestamp - pd.Timedelta(seconds=lock_chamber.gate_closing_time) / 2
             time_stop = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
             duration = (time_stop - time_start).total_seconds()
-            if info.Geometry == lock_chamber.start_node:
+            if info.Geometry == lock_chamber.node_sea:
                 routine = 'Levelling to sea'
                 t_level = duration
             else:
@@ -1611,12 +1671,12 @@ def calculate_ZSF_eventttable(lock_chamber):
         hydromanager = HydrodynamicDataManager()
         time_start = np.datetime64(time_start)
         time_stop = np.datetime64(time_stop)
-        head_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.start_node, 'Water level')
-        head_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.end_node, 'Water level')
-        salinity_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.start_node, 'Salinity')
-        salinity_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.end_node, 'Salinity')
-        temperature_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.start_node, 'Temperature')
-        temperature_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.end_node, 'Temperature')
+        head_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.node_sea, 'Water level')
+        head_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.node_lake, 'Water level')
+        salinity_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.node_sea, 'Salinity')
+        salinity_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.node_lake, 'Salinity')
+        temperature_sea = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.node_sea, 'Temperature')
+        temperature_lake = hydromanager._get_hydrodynamic_data_value(time_start, lock_chamber.node_lake, 'Temperature')
         ship_volume_lake_to_sea = 0.
         ship_volume_sea_to_lake = 0.
         zsf_events_new.loc[event_idx, :] = [time_start, time_stop, head_sea, head_lake, routine, salinity_sea,
@@ -1678,7 +1738,7 @@ def calculate_exchange_current_speed(lock_chamber, state_a, parameters_b, side='
     return exchange_current_velocity
 
 
-def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, zsf_events = None):
+def calculate_water_exchange_fluxes(lock_chamber, zsf_events = None):
     zsf_events_was_none = False
     if zsf_events is None:
         zsf_events_was_none = True
@@ -1719,24 +1779,32 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, zsf
             return pd.DataFrame()
         return lock_chamber.ZSF_results
 
-    first_event = zsf_events.iloc[0]
-    if first_event.routine == 'Gate open at lake' or first_event.routine == 'Levelling to sea':
-        head_lock = first_event.head_lake
-    else:
-        head_lock = first_event.head_sea
-
-    if skiprows:
-        init_salinity_lock = lock_chamber.ZSF_results.salinity_lock_stop.iloc[-3]
-        head_lock = lock_chamber.ZSF_results.head_lock_stop.iloc[-3]
-
     lockage = list(zsf_events.to_dict("records"))[0].copy()
     lockage.pop("routine")
     lockage.pop("t_open_lake")
     lockage.pop("t_open_sea")
     lockage.pop("t_level")
+    lockages = list(zsf_events.to_dict("records"))
+
+    t_start = datetime.datetime.fromtimestamp(lock_chamber.env.now)
+    time_index = np.argmin(np.abs(lock_chamber.time - t_start))
+    init_salinity_lock = lock_chamber.salinity[time_index]
+    if skiprows:
+        init_salinity_lock = lock_chamber.ZSF_results.salinity_lock_stop.iloc[-3]
+        head_lock = lock_chamber.ZSF_results.head_lock_stop.iloc[-3]
+    else:
+        first_event = zsf_events.iloc[0]
+        if first_event.routine == 'Gate open at lake' or first_event.routine == 'Levelling to sea':
+            head_lock = first_event.head_lake
+            if init_salinity_lock < first_event['salinity_lake']:
+                init_salinity_lock = first_event['salinity_lake']
+        else:
+            head_lock = first_event.head_sea
+            if init_salinity_lock > first_event['salinity_sea']:
+                init_salinity_lock = first_event['salinity_sea']
+
     ZSF = pyzsf.ZSFUnsteady(sal_lock=init_salinity_lock, head_lock=head_lock, **lockage, **lock_parameters, **mitigation_parameters)
     all_results = []
-    lockages = list(zsf_events.to_dict("records"))
     for lockage_nr, parameters in enumerate(lockages):
         routine = parameters.pop("routine")
         t_open_lake = parameters.pop("t_open_lake")
@@ -1750,6 +1818,11 @@ def calculate_water_exchange_fluxes(lock_chamber, init_salinity_lock = 15.0, zsf
                              'saltmass_lock_start': initial_ZSF_state['saltmass_lock'],
                              'volume_ship_in_lock_start': initial_ZSF_state['volume_ship_in_lock'],
                              'head_lock_start': initial_ZSF_state['head_lock']}
+
+        if ZSF.state['salinity_lock'] > parameters['salinity_sea']:
+            parameters['salinity_sea'] = ZSF.state['salinity_lock']
+        if ZSF.state['salinity_lock'] < parameters['salinity_lake']:
+            parameters['salinity_lake'] = ZSF.state['salinity_lock']
 
         if routine == 'Levelling to lake':
             assert t_level > 0
@@ -1913,10 +1986,15 @@ def calculate_lock_salinity_and_saltmass(lock_chamber, ZSF_results = None):
                 saltmass_when_fully_exchanged = lock_volume * phase.salinity_sea
             saltmass_start = phase.saltmass_lock_a
             saltmass_stop = phase.saltmass_lock_b
-            exchange_frac = np.abs(
-                1 - (saltmass_stop - saltmass_when_fully_exchanged) / (saltmass_start - saltmass_when_fully_exchanged)
-            )
-            t_exch = t_open / math.atanh(np.min([np.max([0,exchange_frac]),0.99999999999999]))
+            exchange_frac = 0.
+            if (saltmass_start - saltmass_when_fully_exchanged) > 0:
+                exchange_frac = np.abs(
+                    1 - (saltmass_stop - saltmass_when_fully_exchanged) / (saltmass_start - saltmass_when_fully_exchanged)
+                )
+            try:
+                t_exch = t_open / math.atanh(exchange_frac)
+            except:
+                t_exch = 3600.
             dt = lock_chamber.time_step
             time_index_lock_start = np.abs(lock_chamber.time - phase.time_start).argmin()
             time_series = np.arange(0., t_open, dt)

@@ -227,7 +227,7 @@ class IsLockChamberOperator:
         yield from self.communicate_vessel_to_leave_lock_complex(vessel, direction)
 
 
-    def allow_vessel_to_pass_waiting_area(self, vessel, waiting_area):
+    def allow_vessel_to_pass_waiting_area(self, vessel, lock_chamber, waiting_area):
         """
         Let the vessel pass the waiting area
 
@@ -250,7 +250,8 @@ class IsLockChamberOperator:
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         operation_planning = self.lock_complex.operation_planning
         operation_index = vessel_planning.loc[vessel_planning_index, 'operation_index']
-        vessels_in_operation = operation_planning.loc[operation_index, 'vessels']
+        operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
+        vessels_in_operation = operation_planning_lock[operation_planning_lock.operation_index == operation_index].iloc[-1]['vessels']
 
         if len(vessels_in_operation) < self.min_vessels_in_operation:
             yield from self.let_vessel_wait_for_other_vessels_in_waiting_area(vessel)
