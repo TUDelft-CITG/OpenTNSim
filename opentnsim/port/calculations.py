@@ -12,7 +12,7 @@ from shapely.ops import linemerge, transform
 from shapely.geometry import LineString, MultiLineString
 import xarray as xr
 
-from opentnsim.graph.utils import get_sailing_time, get_longest_common_subroute
+from opentnsim.graph.utils import get_sailing_time, get_longest_common_subroute, node_path_to_edge_path
 from opentnsim.graph.calculations import transform_geometry, transform_route_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity
@@ -543,7 +543,8 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
     for route_index, node_name in enumerate(route):
         if "Horizontal tidal restriction" in vessel.multidigraph.nodes[node_name].keys():
             horizontal_tidal_window = True
-            sailing_time_to_next_node, _ = get_sailing_time(vessel, route[: (route_index + 1)])
+            edge_route = node_path_to_edge_path(vessel.env.graph, route[: (route_index + 1)])
+            sailing_time_to_next_node, _ = get_sailing_time(vessel, edge_route)
             specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Specification"]
             restriction_index, no_tidal_window = determine_tidal_window_restriction(
                 vessel, route, specifications, node_name, delay=delay
@@ -708,7 +709,8 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
     # Start of calculation by looping over the nodes of the route
     for route_index, node_name in enumerate(route):
         node_index = list(hydrodynamic_data["STATION"].values).index(node_name)
-        sailing_time_to_next_node, _ = get_sailing_time(vessel, route[: (route_index + 1)])
+        edge_route = node_path_to_edge_path(vessel.env.graph, route[: (route_index + 1)])
+        sailing_time_to_next_node, _ = get_sailing_time(vessel, edge_route)
         time_correction_index = int(np.round(sailing_time_to_next_node / (t_step / np.timedelta64(1, "s"))))
         time_end_index_node = np.min([len(hydrodynamic_data["Water level"][node_index])-1,
                                       time_end_index + time_correction_index])

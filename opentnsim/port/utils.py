@@ -8,7 +8,7 @@ import shapely
 import re
 from shapely.ops import transform
 from pyproj import Transformer
-from opentnsim.graph.utils import get_sailing_time, get_trajectory
+from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to_edge_path
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.port.calculations import calculate_tidal_windows
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
@@ -31,7 +31,7 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
     corrected_df = pd.DataFrame()
     for index, route_sailed in enumerate(vessel.routes_sailed):
         selected_route = [node for node in route_sailed if node in route]
-        route_geometry = get_trajectory(vessel.env.graph,route[0],route[-1])
+        route_geometry, _ = get_trajectory(vessel.env.graph,route[0],route[-1])
         route_geometry_m = transform_geometry(route_geometry, epsg_out = epsg_out)
         mask = df.index > first_index
         mask2 = df[mask].Message.apply(lambda x: bool(re.search(rf'\b{selected_route[-1]}\b', x)) and 'stop' in x)
@@ -72,7 +72,8 @@ def determine_nearest_anchorage_area(vessel, node):
     for anchorage_area in vessel.terminal.port.anchorage_areas:
         # Determine if the anchorage area can be reached
         route_to_anchorage = nx.dijkstra_path(vessel.env.graph, node, anchorage_area.node)
-        sailing_time_to_anchorage, _ = get_sailing_time(vessel, route_to_anchorage)
+        edge_route_to_anchorage = node_path_to_edge_path(vessel.env.graph, route_to_anchorage)
+        sailing_time_to_anchorage, _ = get_sailing_time(vessel, edge_route_to_anchorage)
         sailing_time_to_anchorages.append(sailing_time_to_anchorage)
         capacity_of_anchorages.append(anchorage_area.resource.capacity > 0)
 
@@ -90,9 +91,12 @@ def determine_if_vessel_needs_to_sail_to_the_anchorage_area(env, vessel, origin,
     nearest_anchorage_area = determine_nearest_anchorage_area(vessel, origin)
     route_to_anchorage_area = nx.dijkstra_path(env.graph, origin, nearest_anchorage_area.node)
     route_after_anchorage_area = nx.dijkstra_path(env.graph, nearest_anchorage_area.node, vessel.route[-1])
-    sailing_time_to_terminal, _ = get_sailing_time(vessel, vessel.route)
-    sailing_time_to_anchorage_area, _ = get_sailing_time(vessel, route_to_anchorage_area)
-    new_sailing_time_to_terminal, _ = get_sailing_time(vessel, route_after_anchorage_area)
+    edge_route_to_terminal = node_path_to_edge_path(vessel.env.graph, vessel.route)
+    edge_route_to_anchorage = node_path_to_edge_path(vessel.env.graph, route_to_anchorage_area)
+    edge_route_after_anchorage = node_path_to_edge_path(vessel.env.graph, route_after_anchorage_area)
+    sailing_time_to_terminal, _ = get_sailing_time(vessel, edge_route_to_terminal)
+    sailing_time_to_anchorage_area, _ = get_sailing_time(vessel, edge_route_to_anchorage)
+    new_sailing_time_to_terminal, _ = get_sailing_time(vessel, edge_route_after_anchorage)
     delay_of_sailing_to_terminal = new_sailing_time_to_terminal - sailing_time_to_terminal + sailing_time_to_anchorage_area
     if delay_of_sailing_to_terminal <= waiting_time:
         sail_to_anchorage_area = True
@@ -233,7 +237,8 @@ def get_tidal_availability_info(vessel):
     has_tidal_window_policy = check_if_route_contains_restrictions(vessel)
     route = vessel.route
     time_start = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now))
-    sailing_time, _ = get_sailing_time(vessel, route)
+    edge_route = node_path_to_edge_path(vessel.env.graph, route)
+    sailing_time, _ = get_sailing_time(vessel, edge_route)
     sailing_time = np.max([pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=48)])
     time_end = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time)
     df_tidal_availability = pd.DataFrame(columns=['Accessibility'])
@@ -329,9 +334,8 @@ def provide_nearest_anchorage_area(vessel, node):
             capacity_of_anchorages.append(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.capacity)
             users_of_anchorages.append(len(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.users))
             route_from_anchorage = nx.dijkstra_path(vessel.multidigraph, node_anchorage, vessel.route[-1])
-            sailing_time_to_anchorage = get_sailing_time(vessel, route_from_anchorage)[
-                "Time"
-            ].sum()
+            edge_route_from_anchorage = node_path_to_edge_path(vessel.env.graph, route_from_anchorage)
+            sailing_time_to_anchorage = get_sailing_time(vessel, edge_route_from_anchorage)["Time"].sum()
             sailing_times_to_anchorages.append(sailing_time_to_anchorage)
 
     # Sort the lists based on the sailing distance to the anchorage area from the designated terminal

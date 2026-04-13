@@ -175,7 +175,7 @@ def transform_geometry(geometry, epsg_in = "EPSG:4326", epsg_out = 'EPSG:4087', 
 
 
 def transform_route_geometry(env, node_start, node_stop, crs_in = "EPSG:4326", crs_out = "EPSG:4087"):
-    route_geometry = get_trajectory(env.graph, node_start, node_stop)
+    route_geometry, _ = get_trajectory(env.graph, node_start, node_stop)
     route_geometry_transformed = transform_geometry(route_geometry, crs_in, crs_out)
     return route_geometry_transformed
 
@@ -218,7 +218,7 @@ def reverse_geometry(geometry):
 
 def calculate_distance_over_network_to_location(graph, node_1, node_2, location, tolerance=0.0001):
     geod = pyproj.Geod(ellps="WGS84")
-    geometry = get_trajectory(graph, node_1,node_2)[0]
+    geometry, _ = get_trajectory(graph, node_1,node_2)[0]
     geometries = split(snap(geometry, location, tolerance=tolerance), location).geoms
     distance_sailed = 0
     distance_to_go = 0

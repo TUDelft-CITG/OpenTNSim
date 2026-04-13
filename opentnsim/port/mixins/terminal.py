@@ -1,7 +1,7 @@
 from opentnsim.core import  HasResource, Identifiable, Locatable, Log, HasLength, Movable, SimpyObject, PriorityFilterStore
 from opentnsim.output import HasOutput
 from opentnsim.graph.mixins import OnNode, OnEdge
-from opentnsim.graph.utils import get_sailing_time
+from opentnsim.graph.utils import get_sailing_time, node_path_to_edge_path
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.mixins.berth import IsQuay, IsJetty, IsBerth
 from opentnsim.port.utils import determine_new_route_for_vessel, get_vessel_from_id
@@ -90,6 +90,7 @@ class HasTerminal(Movable):
                           self.env.graph.nodes[origin]["geometry"])
         new_route = determine_new_route_for_vessel(self)
         self.route = new_route
+        self.edge_route = node_path_to_edge_path(self.env.graph, new_route)
         self.bound = 'outbound'
         current_time = datetime.datetime.fromtimestamp(self.env.now)
         process_stop_time = current_time + pd.Timedelta(seconds=self.loading_time*3600 + self.deberthing_time*60)
@@ -193,7 +194,8 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput
     def determine_sailing_time_to_berth(self, vessel, origin, berth):
         destination = berth.node
         route = nx.dijkstra_path(self.env.graph,origin,destination)
-        sailing_time, _ = get_sailing_time(vessel, route)
+        edge_route = node_path_to_edge_path(vessel.env.graph, route)
+        sailing_time, _ = get_sailing_time(vessel, edge_route)
         return sailing_time
 
 
