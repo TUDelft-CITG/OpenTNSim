@@ -1335,6 +1335,9 @@ class EnergyCalculation:
             "water depth": [],
             "distance": [],
             "delta_t": [],
+            "v_g": [],
+            "v_c": [],
+            "v_w": [],
         }
 
         self.co2_footprint = {"total_footprint": 0, "stationary": 0}
@@ -1437,6 +1440,10 @@ class EnergyCalculation:
                 self.vessel.v_c = v_c
                 self.vessel.v_w = v_w
 
+                self.energy_use["v_g"].append(v_g)
+                self.energy_use["v_c"].append(v_c)
+                self.energy_use["v_w"].append(v_w)
+                
                 v = v_w
 
                 self.energy_use["distance"].append(distance)
@@ -1565,7 +1572,6 @@ class EnergyCalculation:
                     self.energy_use["total_Li_NMC_Battery_mass"].append(delta_Li_NMC_Battery_mass)
                     self.energy_use["total_Li_NMC_Battery_vol"].append(delta_Li_NMC_Battery_vol)
                     self.energy_use["total_Battery2000kWh_consumption_num"].append(delta_Battery2000kWh)
-
                     self.energy_use["water depth"].append(h_0)
 
 

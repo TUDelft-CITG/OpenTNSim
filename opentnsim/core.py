@@ -395,7 +395,10 @@ class Movable(Locatable, Routable, Log):
 
         # Maximum speed restriction may be limiting the on power speed
         if 'vessel_traffic_service' in dir(self.env):
-            self.v = self.env.vessel_traffic_service.provide_speed(self,edge)
+            e2 = dict(edge)
+            e2["u"] = origin
+            e2["v"] = destination
+            self.v = self.env.vessel_traffic_service.provide_speed(self, e2)
 
 
         # Wait for edge resources to become available
