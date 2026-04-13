@@ -312,9 +312,6 @@ class Movable(Locatable, Routable, Log):
                 )
                 continue
 
-            if self.current_node == 8106:
-                ___ = 5
-
             yield from self.pass_edge(self.current_node, self.next_node)
             yield from self.complete_pass_edge(self.next_node)
 
