@@ -508,8 +508,11 @@ def calculate_sailing_time_to_approach_point(lock_chamber, vessel, direction, di
     """
     if vessel is None:
         return pd.Timedelta(seconds=0)
+
     # unpack sailing distance from crossing point to lock gate
-    sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point
+    sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point_A
+    if direction:
+        sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point_B
 
     # determine the time of entering the lock
     sailing_speed_during_entry = _get_vessel_sailing_in_speed(lock_chamber, vessel, direction)
@@ -687,7 +690,10 @@ def calculate_vessel_entry_duration(lock_chamber, vessel, direction):
     # determine the distance from the lock gate to the approach point
     if vessel is None:
         return pd.Timedelta(seconds=0.)
-    sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point
+
+    sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point_A
+    if direction:
+        sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point_B
 
     # determine the vessel speed when entering the lock
     sailing_speed_during_entry = _get_vessel_sailing_in_speed(lock_chamber, vessel, direction)
@@ -1154,8 +1160,13 @@ def calculate_vessel_passing_stop_time(lock_chamber, vessel, operation_index, di
     """
     time_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, operation_stop_time)
     vessel_speed = _get_vessel_sailing_out_speed(lock_chamber, vessel, direction)
+
+    sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point_B
+    if direction:
+        sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point_A
+
     if vessel_speed:
-        time_departure_stop += pd.Timedelta(seconds = lock_chamber.sailing_distance_to_crossing_point/vessel_speed)
+        time_departure_stop += pd.Timedelta(seconds = sailing_distance_from_entry/vessel_speed)
     return time_departure_stop
 
 
@@ -1986,24 +1997,30 @@ def calculate_lock_salinity_and_saltmass(lock_chamber, ZSF_results = None):
                 saltmass_when_fully_exchanged = lock_volume * phase.salinity_sea
             saltmass_start = phase.saltmass_lock_a
             saltmass_stop = phase.saltmass_lock_b
-            exchange_frac = 0.
-            if (saltmass_start - saltmass_when_fully_exchanged) > 0:
-                exchange_frac = np.abs(
-                    1 - (saltmass_stop - saltmass_when_fully_exchanged) / (saltmass_start - saltmass_when_fully_exchanged)
-                )
+            saltmass_stop_corr = saltmass_stop - saltmass_when_fully_exchanged
+            saltmass_start_corr = saltmass_start - saltmass_when_fully_exchanged
             try:
+                exchange_frac = np.nan
+                if phase.routine == 'Gate open at sea' and (saltmass_when_fully_exchanged - saltmass_start):
+                    exchange_frac = (saltmass_stop - saltmass_start)/(saltmass_when_fully_exchanged - saltmass_start)
+                elif phase.routine == 'Gate open at lake' and (saltmass_when_fully_exchanged - saltmass_start):
+                    exchange_frac = (saltmass_stop - saltmass_start)/(saltmass_when_fully_exchanged - saltmass_start)
                 t_exch = t_open / math.atanh(exchange_frac)
+                if pd.isna(exchange_frac):
+                    t_exch = 1800.
             except:
-                t_exch = 3600.
+                t_exch = 1800.
             dt = lock_chamber.time_step
             time_index_lock_start = np.abs(lock_chamber.time - phase.time_start).argmin()
             time_series = np.arange(0., t_open, dt)
             lock_salinity_t = []
             lock_saltmass_t = []
             for t in time_series:
-                exchange_frac_dt = (1 - math.tanh(t / t_exch))
-                saltmass_dt = \
-                    exchange_frac_dt * (saltmass_start - saltmass_when_fully_exchanged) + saltmass_when_fully_exchanged
+                exchange_frac_dt = math.tanh(t / t_exch)
+                if phase.routine == 'Gate open at sea':
+                    saltmass_dt = exchange_frac_dt * (phase.salinity_sea - phase.salinity_lock_a)*lock_volume + saltmass_start
+                else:
+                    saltmass_dt = exchange_frac_dt * (phase.salinity_lake - phase.salinity_lock_a)*lock_volume + saltmass_start
                 salinity_kgm3 = saltmass_dt / lock_volume
                 lock_salinity_t.append(salinity_kgm3)
                 lock_saltmass_t.append(saltmass_dt)
@@ -2077,7 +2094,10 @@ def estimate_lock_capacity(lock_chamber):
     sailing_out_speed = np.mean([lock_chamber.sailing_out_speed_A, lock_chamber.sailing_out_speed_B])
 
     # Part III, Ch3, Eq. 3.2 (NB: de helft van de looptime wordt hier effectief geimplementeerd door de sailing to lock te berekenen)
-    t_sailing_to_lock = lock_chamber.sailing_distance_to_crossing_point / vessel_speed_outside_of_lock
+    sailing_distance_to_crossing_point = np.mean([
+        lock_chamber.sailing_distance_to_crossing_point_A, lock_chamber.sailing_distance_to_crossing_point_B
+        ])
+    t_sailing_to_lock = sailing_distance_to_crossing_point / vessel_speed_outside_of_lock
     t_sailing_to_position = distance_last_ship_to_sail_in / sailing_in_speed
     T_entering = t_sailing_to_lock + \
                  np.max([(n_max - 1),0]) * lock_chamber.sailing_in_time_gap_through_gate.total_seconds() + \
@@ -2087,7 +2107,7 @@ def estimate_lock_capacity(lock_chamber):
     T_operation = lock_chamber.gate_closing_time + lock_chamber.levelling_time + lock_chamber.gate_opening_time
 
     # Part III, Ch3, Eq. 3.4 (NB: de helft van de looptime wordt hier effectief geimplementeerd door de sailing out of lock te berekenen)
-    t_sailing_out_of_lock = lock_chamber.sailing_distance_to_crossing_point / vessel_speed_outside_of_lock
+    t_sailing_out_of_lock = sailing_distance_to_crossing_point / vessel_speed_outside_of_lock
     t_sailing_to_crossing_point = distance_last_ship_to_sail_out / sailing_out_speed
     T_exiting = t_sailing_out_of_lock + \
                 np.max([(n_max - 1),0]) * lock_chamber.sailing_out_time_gap_through_gate.total_seconds() + \
@@ -2102,7 +2122,7 @@ def estimate_lock_capacity(lock_chamber):
     intermediate_results = {
         'Number of vessels in lock': n_max,
         'Sailing distance from crossing point to first gate (first vessel)':
-            lock_chamber.sailing_distance_to_crossing_point,
+            sailing_distance_to_crossing_point,
         'Sailing speed from crossing point to first gate (first vessel)':
             vessel_speed_outside_of_lock,
         'Sailing time from crossing point to first gate (first vessel)':
@@ -2121,7 +2141,7 @@ def estimate_lock_capacity(lock_chamber):
         'Levelling time': lock_chamber.levelling_time,
         'Opening gate time': lock_chamber.gate_opening_time,
         'Sailing distance from position in lock to second gate (first vessel)':
-            lock_chamber.sailing_distance_to_crossing_point,
+            sailing_distance_to_crossing_point,
         'Sailing-out speed in lock (first vessel)':
             sailing_out_speed,
         'Sailing time from position in lock to second gate (first vessel)':
@@ -2131,7 +2151,7 @@ def estimate_lock_capacity(lock_chamber):
         'Total time of vessels sailing out from first vessel until last vessel':
             pd.Timedelta(seconds=round((n_max - 1) * lock_chamber.sailing_out_time_gap_through_gate.total_seconds())),
         'Distance from second lock gate to crossing point (last vessel)':
-            lock_chamber.sailing_distance_to_crossing_point,
+            sailing_distance_to_crossing_point,
         'Sailing speed from second lock gate to crossing point (last vessel)':
             sailing_in_speed,
         'Sailing time from second lock gate to crossing point (last vessel)':
@@ -2297,12 +2317,19 @@ def calculate_saltwater_intrusion(lock_chamber, ZSF_results = None):
     saltwater_inrusion_results['water_volume_lost'] = -1*water_volume_lost
     saltwater_inrusion_results['water_outflow'] = -1*water_volume_lost/duration
 
-    saltwater_intrusion_tot = saltwater_intrusion + lock_chamber.ZSF_results.mass_transport_lake_a.sum()
-    saltwater_intrusion_due_to_exchange_current = -1 * ZSF_results.mass_transport_lake_b.sum() / saltwater_intrusion_tot
-    saltwater_intrusion_due_to_outbound_vessels = -1 * ZSF_results.mass_transport_lake_c.sum() / saltwater_intrusion_tot
+    mass_transport = ZSF_results.mass_transport_lake
+    saltwater_intrusion_tot = -1*mass_transport[mass_transport < 0].sum()
+    for index, mass_transport in enumerate([ZSF_results.mass_transport_lake_b, ZSF_results.mass_transport_lake_c]):
+        mass_transport = mass_transport.copy()
+        mass_transport = mass_transport[mass_transport < 0]
+        if index == 0:
+            saltwater_intrusion_due_to_exchange_current = -1 * mass_transport.sum() / saltwater_intrusion_tot
+        elif index == 1:
+            saltwater_intrusion_due_to_outbound_vessels = -1 * mass_transport.sum() / saltwater_intrusion_tot
     levelling_mask = ZSF_results.routine.str.contains('Levelling')
-    saltwater_intrusion_due_to_levelling = -1 * ZSF_results[levelling_mask].mass_transport_lake.sum() / \
-                                           saltwater_intrusion_tot
+    mass_transport_levelling_events = ZSF_results[levelling_mask].mass_transport_lake
+    mass_transport_levelling_events = mass_transport_levelling_events[mass_transport_levelling_events < 0]
+    saltwater_intrusion_due_to_levelling = -1 * mass_transport_levelling_events.sum() / saltwater_intrusion_tot
     saltwater_intrusion_causes = {
         'Exchange current (%)': np.round(saltwater_intrusion_due_to_exchange_current*100, 1),
         'Outbound vessels (%)': np.round(saltwater_intrusion_due_to_outbound_vessels*100, 1),

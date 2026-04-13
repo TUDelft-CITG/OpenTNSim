@@ -73,6 +73,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         gate_closing_time=300.0,  # a float which contains the time it takes to close the gate [s]
         speed_reduction_factor_lock_chamber=0.3,  # a float that is the reduction factor for the vessel speed from its original speed when entering the lock
         sailing_distance_to_crossing_point=370.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
+        sailing_distance_to_crossing_point_A = None,
+        sailing_distance_to_crossing_point_B = None,
         sailing_in_speed_A=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
         sailing_out_speed_A=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
         sailing_in_speed_B=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
@@ -215,7 +217,12 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.sailing_out_speed_A = sailing_out_speed_A
         self.sailing_in_speed_B = sailing_in_speed_B
         self.sailing_out_speed_B = sailing_out_speed_B
-        self.sailing_distance_to_crossing_point = sailing_distance_to_crossing_point
+        if sailing_distance_to_crossing_point_A is None or sailing_distance_to_crossing_point_B is None:
+            self.sailing_distance_to_crossing_point_A = sailing_distance_to_crossing_point
+            self.sailing_distance_to_crossing_point_B = sailing_distance_to_crossing_point
+        else:
+            self.sailing_distance_to_crossing_point_A = sailing_distance_to_crossing_point_A
+            self.sailing_distance_to_crossing_point_B = sailing_distance_to_crossing_point_B
         self.speed_reduction_factor = speed_reduction_factor_lock_chamber
         self.converting_chamber = False
 

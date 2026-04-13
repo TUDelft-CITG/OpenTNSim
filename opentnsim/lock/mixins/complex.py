@@ -321,7 +321,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             distance_from_edge_start=None,
             geometry = None,
             capacity = math.inf,
-            direction = None,
+            orientation = None,
             crs_m = None,
             *args,
             **kwargs,
@@ -373,9 +373,9 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
         edge_length = self.env.graph.edges[edge]["length_m"]
         if distance_from_edge_start is not None:
             self.distance_from_edge_start = distance_from_edge_start
-            if direction is None:
-                raise ValueError("You should specify the direction of the waiting area: 0 = .")
-            self.direction = direction
+            if orientation is None:
+                raise ValueError("You should specify the orientation of the waiting area")
+            self.orientation = orientation
 
         elif distance_from_lock_gate_A is not None:
             edge_start, edge_stop = edge[:2]
@@ -389,7 +389,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
                 if check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, edge):
                     distance_from_edge_start = edge_length - remaining_length
             self.distance_from_edge_start = distance_from_edge_start
-            self.direction = 0
+            self.orientation = 0
         elif distance_from_lock_gate_B is not None:
             edge_start, edge_stop = edge[:2]
             edge_rev = (edge[1], edge[0]) + edge[2:]
@@ -404,7 +404,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
                 if check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, edge):
                     distance_from_edge_start = edge_length - remaining_length
             self.distance_from_edge_start = distance_from_edge_start
-            self.direction = 1
+            self.orientation = 1
         self.distance_waiting_area_to_end_edge = edge_length - distance_from_edge_start
 
         if geometry is None:
@@ -415,7 +415,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             self.env.graph.edges[self.edge]['Waiting area'].append(self)
 
 
-        if lock_chamber is not None and self.direction and self.edge == lock_chamber.edge:
+        if lock_chamber is not None and self.orientation and self.edge == lock_chamber.edge:
             self.distance_from_edge_start = edge_length - distance_from_edge_start
             self.distance_waiting_area_to_end_edge = distance_from_edge_start
 

@@ -175,7 +175,7 @@ def _find_available_waiting_area(vessel, lock_chamber, direction):
             continue
         waiting_areas = vessel.env.graph.edges[edge]['Waiting area']
         for waiting_area in waiting_areas:
-            if waiting_area.direction != direction:
+            if waiting_area.orientation != direction:
                 continue
             distance_to_waiting_area_on_edge = waiting_area.distance_from_edge_start
             get_sailing_info = get_sailing_information_on_edge_to_distance_on_another_edge

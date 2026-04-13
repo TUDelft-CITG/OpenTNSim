@@ -320,11 +320,13 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             ylimmax = max(all_y_values)
 
     # Determine x-axis limits
-    sailing_distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point + lock_chamber.lock_length / 2
+    xrange = lock_chamber.sailing_distance_to_crossing_point_A + \
+             lock_chamber.lock_length / 2 + \
+             lock_chamber.sailing_distance_to_crossing_point_B
     if xlimmin is None:
-        xlimmin = -2 * sailing_distance_to_crossing_point
+        xlimmin = -2 * xrange
     if xlimmax is None:
-        xlimmax = 2 * sailing_distance_to_crossing_point
+        xlimmax = 2 * xrange
 
     lock_extend_x = np.array([x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection + offset_x
     if method == 'Matplotlib':
@@ -343,14 +345,16 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     # plot the lock phases
     if method == 'Matplotlib':
-        try:
+        if ncols > 1:
             for index, ax in enumerate(axes):
                 extend_x = lock_extend_x
                 if index:
                     extend_x = ax.get_xlim()
-                add_locking_phases_to_plot(lock_chamber, fig, axes, lock_extend_x, time_axis='y', method=method)
-        except:
-            add_locking_phases_to_plot(lock_chamber, fig, ax, lock_extend_x, time_axis='y', method=method)
+                    add_locking_phases_to_plot(lock_chamber, fig, ax, extend_x, time_axis='y', method=method)
+                else:
+                    add_locking_phases_to_plot(lock_chamber, fig, ax, lock_extend_x, time_axis='y', method=method)
+        else:
+            add_locking_phases_to_plot(lock_chamber, fig, axes, lock_extend_x, time_axis='y', method=method)
     elif method == 'Plotly':
         add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, time_axis='y', method=method)
         if lock_chamber.has_water_level:
@@ -360,7 +364,6 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             add_locking_phases_to_plot(lock_chamber, fig, col_sm, extend_x_sm, time_axis='y', method=method)
 
     # plot the approach points
-    sailing_distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point + lock_chamber.lock_length / 2
     xlabel = "Distance from Lock Complex [m]"
     ylabel = "Timestamp"
     if method == 'Matplotlib':
@@ -368,8 +371,8 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             ax = axes[0]
         except:
             ax = axes
-        ax.axvline(-sailing_distance_to_crossing_point + offset_x, color="lightgrey", zorder=0)
-        ax.axvline(sailing_distance_to_crossing_point + offset_x, color="lightgrey", zorder=0)
+        ax.axvline(-lock_chamber.sailing_distance_to_crossing_point_A + offset_x - lock_chamber.lock_length/2, color="lightgrey", zorder=0)
+        ax.axvline(lock_chamber.sailing_distance_to_crossing_point_B + offset_x + lock_chamber.lock_length/2, color="lightgrey", zorder=0)
         ax.set_xlim([xlimmin, xlimmax])
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
@@ -398,20 +401,20 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
             )
 
     elif method == 'Plotly':
-        fig.add_vline(x=-sailing_distance_to_crossing_point + offset_x, line=dict(color="lightgrey"))
-        fig.add_vline(x=sailing_distance_to_crossing_point + offset_x, line=dict(color="lightgrey"))
+        fig.add_vline(x=-lock_chamber.sailing_distance_to_crossing_point_A + offset_x - lock_chamber.lock_length/2, line=dict(color="lightgrey"))
+        fig.add_vline(x=lock_chamber.sailing_distance_to_crossing_point_B + offset_x + lock_chamber.lock_length/2, line=dict(color="lightgrey"))
         fig.update_layout(showlegend=True)
         fig.update_xaxes(title_text=xlabel,
                          range=[xlimmin, xlimmax], row=1, col=1)
         fig.update_yaxes(title_text=ylabel,
                          range=[ylimmin, ylimmax], row=1, col=1)
         if lock_chamber.has_water_level:
-            fig.update_xaxes(title_text='Water\nlevel\n[m]', range=extend_x_wlev, row=col_wlev[0], col=col_wlev[1])
+            fig.update_xaxes(title_text='Water<br>level<br>[m]', range=extend_x_wlev, row=col_wlev[0], col=col_wlev[1])
             fig.update_yaxes(range=[ylimmin, ylimmax], row=col_wlev[0], col=col_wlev[1])
         if lock_chamber.has_salinity:
-            fig.update_xaxes(title_text='Salt\nconcentration\n[kgm3]', range=extend_x_sal, row=col_sal[0], col=col_sal[1])
+            fig.update_xaxes(title_text='Salt<br>concentration<br>[kgm3]', range=extend_x_sal, row=col_sal[0], col=col_sal[1])
             fig.update_yaxes(range=[ylimmin, ylimmax], row=col_sal[0], col=col_sal[1])
-            fig.update_xaxes(title_text='Saltmass\n[kg]', range=extend_x_sm, row=col_sm[0],col=col_sm[1])
+            fig.update_xaxes(title_text='Saltmass<br>[kg]', range=extend_x_sm, row=col_sm[0],col=col_sm[1])
             fig.update_yaxes(range=[ylimmin, ylimmax], row=col_sm[0], col=col_sm[1])
 
     return fig
