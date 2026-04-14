@@ -4,7 +4,7 @@ from .mixins.container import HasContainer
 from .mixins.movable import ContainerDependentMovable, Movable, Routable, Routeable
 from .mixins.resource import HasResource, HasLength, PriorityFilterStore
 from .mixins.vessel_properties import HasLoad, VesselProperties
-from .misc import ExtraMetadata, Neighbours
+from .mixins.misc import ExtraMetadata, Neighbours
 from . import logutils, visualizations
 
 __all__ = [

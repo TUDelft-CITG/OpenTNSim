@@ -10,6 +10,7 @@ import pandas as pd
 
 # internal
 from opentnsim.graph.calculations import calculate_depth
+from opentnsim.lock.logutils import add_lock_chamber_dimensions_in_energy_eventtable
 
 # %% ADD ENERGY ATTRIBUTES INTO EVENT TABLE
 def add_energy_attributes_to_eventtable(df, objs):
@@ -55,12 +56,13 @@ def add_energy_attributes_to_eventtable(df, objs):
     df: pandas.DataFrame
         DataFrame with energy-related attributes added.
     """
-    from opentnsim.lock.logutils import add_lock_chamber_dimensions_in_energy_eventtable
+    
     env = objs[0].env
     df = df.copy()
     add_lock_chamber_dimensions_in_energy_eventtable(df, env)
 
     for index, row in df.iterrows():
+        
         # the generator option (next) is used to make sure we get the full copy of
         # the object found in the list
         obj = next((x for x in objs if x.id == row["object id"]), None)
@@ -68,13 +70,17 @@ def add_energy_attributes_to_eventtable(df, objs):
             continue
         if hasattr(obj, 'env'):
             env = obj.env
+
         # get the depth from the edge sailed in the event (and check if squat effects
         # need to be considered
         if pd.isna(row["waterdepth (m)"]):
             h_0 = calculate_depth(row["start location"], row["stop location"], obj.env.graph)
         else:
             h_0 = row["waterdepth (m)"]
-        h_0 = obj.calculate_h_squat(v=obj.v, h_0=h_0)  # TODO: actually takes width as arg
+        h_0 = obj.calculate_h_squat(
+            v=obj.v, h_0=h_0
+        )  # TODO: actually takes width as arg
+
         calc_v = row['distance (m)']/row['duration (s)']
         obj.calculate_total_resistance(v=calc_v, h_0=h_0)
         obj.calculate_total_power_required(v=calc_v, h_0=h_0)
@@ -163,9 +169,15 @@ def add_fuel_attributes_to_event_table(df, objs):
         df.at[index, "PM10_emission_per_m (g/m)"] = np.nan
         df.at[index, "NOX_emission_per_m (g/m)"] = np.nan
         if row["distance (m)"]:
-            df.at[index, "CO2_emission_per_m (g/m)"] = (CO2_emission_total / row["distance (m)"])
-            df.at[index, "PM10_emission_per_m (g/m)"] = (PM10_emission_total / row["distance (m)"])
-            df.at[index, "NOX_emission_per_m (g/m)"] = (NOX_emission_total / row["distance (m)"])
+            df.at[index, "CO2_emission_per_m (g/m)"] = (
+                CO2_emission_total / row["distance (m)"]
+                )
+            df.at[index, "PM10_emission_per_m (g/m)"] = (
+                PM10_emission_total / row["distance (m)"]
+                )
+            df.at[index, "NOX_emission_per_m (g/m)"] = (
+                NOX_emission_total / row["distance (m)"]
+                )
 
         # TODO: see if these entries are useful. They can also be easily calculated
         # from other entries
@@ -173,8 +185,14 @@ def add_fuel_attributes_to_event_table(df, objs):
         df.at[index, "PM10_emission_per_s (g/s)"] = np.nan
         df.at[index, "NOX_emission_per_s (g/s)"] = np.nan
         if row["duration (s)"]:
-            df.at[index, "CO2_emission_per_s (g/s)"] = (CO2_emission_total / row["duration (s)"])
-            df.at[index, "PM10_emission_per_s (g/s)"] = (PM10_emission_total / row["duration (s)"])
-            df.at[index, "NOX_emission_per_s (g/s)"] = (NOX_emission_total / row["duration (s)"])
+            df.at[index, "CO2_emission_per_s (g/s)"] = (
+                CO2_emission_total / row["duration (s)"]
+                )
+            df.at[index, "PM10_emission_per_s (g/s)"] = (
+                PM10_emission_total / row["duration (s)"]
+                )
+            df.at[index, "NOX_emission_per_s (g/s)"] = (
+                NOX_emission_total / row["duration (s)"]
+                )
 
     return df

@@ -310,7 +310,7 @@ def create_plot_vertical_tidal_window(vessel, trip_index = 0, plot = False):
     return fig, legend_handles, legend_labels
 
 
-def create_plot_horizontal_tidal_window(vessel, trip_index = 0, plot = False):
+def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot = False):
     tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
     time_start_index = tidal_window_calculation_results['time_start_index']
     time_end_index = tidal_window_calculation_results['time_end_index']

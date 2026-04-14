@@ -9,8 +9,61 @@ import warnings
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.graph.utils import get_length_of_edge, get_closest_node_to_geometry
 
-def get_water_depth(vessel, node, delay=0):
 
+def check_hydrodynamic_data_coordinates(hydrodynamic_data):
+    accepted_coordinates = ['STATION','TIME','LAYER']
+    for coordinate in list(hydrodynamic_data.coords):
+        if coordinate not in accepted_coordinates:
+            ValueError(f"Data coordinate {coordinate} is not supported, only {accepted_coordinates} are supported")
+    if 'STATION' not in list(hydrodynamic_data.coords):
+        ValueError(f"Missing ''STATION'' coordinate in data.")
+    if 'TIME' not in list(hydrodynamic_data.coords):
+        ValueError(f"Missing ''TIME'' coordinate in data.")
+
+
+def check_hydrodynamic_data_variables(hydrodynamic_data):
+    accepted_data_variables = ['Water level', 'Current velocity', 'Current direction', 'Nautical depth', 'Salinity', 'Temperature']
+    for data_variable in list(hydrodynamic_data.data_vars):
+        if data_variable not in accepted_data_variables:
+            warnings.warn(f"Data column {data_variable} is not used in the simulation, only {accepted_data_variables} are supported")
+
+
+def check_hydrodynamic_data_temporal_coverage(env, hydrodynamic_data):
+    time = hydrodynamic_data.TIME.values
+    time_min, time_max = time.min(),time.max()
+    if time_min > np.datetime64(env.simulation_start):
+        ValueError(f"There is no available data starting at the simulation start time ''{env.simulation_start}''.")
+    elif time_max < np.datetime64(env.simulation_stop):
+        ValueError(f"There is no available data until the simulation stop time ''{env.simulation_stop}''.")
+
+
+def check_hydrodynamic_data_spatial_coverage(graph, hydrodynamic_data):
+    stations = hydrodynamic_data.STATION.values
+    for node in graph.nodes:
+        if node not in stations:
+            ValueError(f"There is no data for node ''{node}''.")
+
+
+def transpose_data_in_accepted_order(hydrodynamic_data):
+    if 'LAYER' not in list(hydrodynamic_data.coords):
+        hydrodynamic_data = hydrodynamic_data.transpose('STATION','TIME')
+    else:
+        hydrodynamic_data = hydrodynamic_data.transpose('STATION', 'TIME', 'LAYER')
+    return hydrodynamic_data
+
+
+def sort_data(graph, hydrodynamic_data):
+    nodes = graph.nodes
+    times = sorted(hydrodynamic_data.TIME.values)
+    hydrodynamic_data = hydrodynamic_data.reindex(STATION=nodes)
+    hydrodynamic_data = hydrodynamic_data.reindex(TIME=times)
+    if 'LAYER' in list(hydrodynamic_data.coords):
+        layers = sorted(hydrodynamic_data.LAYER.values)
+        hydrodynamic_data = hydrodynamic_data.reindex(LAYER=layers)
+    return hydrodynamic_data
+
+
+def get_water_depth(vessel, node, delay=0):
     hydromanager = HydrodynamicDataManager()
     stations = hydromanager.hydrodynamic_data["STATION"].values
     station_index = {s: i for i, s in enumerate(stations)}
@@ -22,7 +75,8 @@ def get_water_depth(vessel, node, delay=0):
     available_water_depth = water_level - MBL
     return MBL, water_level, available_water_depth
 
-def depth_averaged_current_velocity(interpolation_depth, times, relative_layer_height, current_velocity, station_index):
+
+def get_depth_averaged_current_velocity(interpolation_depth, times, relative_layer_height, current_velocity, station_index):
     layer_boundaries = []
     average_current_velocity = []
     number_of_layers = len(relative_layer_height)
@@ -53,6 +107,7 @@ def depth_averaged_current_velocity(interpolation_depth, times, relative_layer_h
 
     return average_current_velocity
 
+
 def get_governing_current_velocity(vessel, node, time_start_index, time_end_index):
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_data = hydromanager.hydrodynamic_data
@@ -65,9 +120,9 @@ def get_governing_current_velocity(vessel, node, time_start_index, time_end_inde
 
     if "LAYER" in list(hydromanager.hydrodynamic_data["Current velocity"].dimensions):
         if vessel._T <= 5:
-            current_velocity = depth_averaged_current_velocity(5, times, relative_layer_height, current_velocity, node_index)
+            current_velocity = get_depth_averaged_current_velocity(5, times, relative_layer_height, current_velocity, node_index)
         elif vessel._T <= 15:
-            current_velocity = depth_averaged_current_velocity(
+            current_velocity = get_depth_averaged_current_velocity(
                 vessel._T, times, relative_layer_height, current_velocity, node_index
             )
         else:

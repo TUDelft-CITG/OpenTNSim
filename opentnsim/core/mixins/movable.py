@@ -105,15 +105,11 @@ class Routable(SimpyObject):
         If you want the multidigraph use the HasMultiGraph mixin
 
         """
+        graph = None
         if hasattr(self.env, "graph"):
             graph = self.env.graph
         else:
             raise ValueError("Routable expects .graph to be present on env")
-        #
-        # if isinstance(graph, nx.MultiDiGraph):
-        #     return nx.DiGraph(graph)
-        # elif isinstance(graph, nx.MultiGraph):
-        #     return nx.Graph(graph)
         return graph
 
 
@@ -198,6 +194,7 @@ class Movable(Locatable, Routable, Log):
         # keep track of distance travelled on edge
         self.distance_left_on_edge = np.nan
 
+
     def _check_attributes(self):
         """Check if all required attributes are set."""
         # each node on route should have a geometry
@@ -253,6 +250,7 @@ class Movable(Locatable, Routable, Log):
         else:
             return []
 
+
     def determine_route_to_target_node(self, target_node: str):
         """Determine the route to the target node.
         Parameters
@@ -277,6 +275,7 @@ class Movable(Locatable, Routable, Log):
         route = self.route_ahead[: idx + 1]
 
         return route
+
 
     def update_position(self, position_on_route: int):
         """Update the position on the route.
@@ -364,6 +363,7 @@ class Movable(Locatable, Routable, Log):
         else:
             logger.debug("  current_speed:  not set")
 
+
     def _move_to_start(self):
         """Move vessel to the start of the route.
 
@@ -386,6 +386,7 @@ class Movable(Locatable, Routable, Log):
             yield self.env.timeout(self.distance / self.current_speed)
             self.geometry = vessel_origin_location
             self.log_entry_v0("Sailing to start stop", self.env.now, self.distance, self.geometry)
+
 
     def pass_node(self, node):
         """pass a node and call all on_pass_node_functions
@@ -436,11 +437,13 @@ class Movable(Locatable, Routable, Log):
             else:
                 pass
 
+
     def _release_resource(self):
         """Release the current resource."""
         self.resource.release(self.req)
         self.req = None
         self.resource = None
+
 
     def _request_resource(self, resource):
         """Request a resource for passing nodes and edges.
@@ -470,6 +473,7 @@ class Movable(Locatable, Routable, Log):
             return self.route[self.position_on_route], self.route[self.position_on_route + 1]
         else:
             return None
+
 
     def pass_edge(self, edge):
         """pass an edge and call all on_pass_edge_functions.
@@ -553,6 +557,7 @@ class Movable(Locatable, Routable, Log):
             else:
                 pass
 
+
     def complete_pass_edge(self, destination):
         for gen in self.on_complete_pass_edge_functions:
             yield from gen(destination)
@@ -599,6 +604,7 @@ class Movable(Locatable, Routable, Log):
         """return the current speed of the vessel"""
         return self.v
 
+
     def _compute_velocity_on_edge(self, edge):
         """compute the velocity on an edge, based on the energy module and the depth.
 
@@ -642,6 +648,7 @@ class Movable(Locatable, Routable, Log):
         # Here the upperbound is used to estimate the actual velocity
         power_used = min(self.P_tot_given, upperbound)
         return self.power2v(self, edge, power_used)
+
 
     def _get_general_width(self, edge):
         """Get the general width of the edge.

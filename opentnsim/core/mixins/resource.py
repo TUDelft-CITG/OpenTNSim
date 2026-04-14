@@ -18,6 +18,7 @@ from openclsim.core import SimpyObject
 # get logger
 logger = logging.getLogger(__name__)
 
+
 class HasLength(SimpyObject):
     """Mixin class: Something with a length. The length is modelled as a storage capacity
 
@@ -43,6 +44,7 @@ class HasLength(SimpyObject):
         """Initialization"""
         self.length = simpy.Container(self.env, capacity=length, init=remaining_length)
 
+
 class HasResource(SimpyObject):
     """Mixin class: Something that has a resource limitation, a resource request must be granted before the object can be used.
 
@@ -67,6 +69,7 @@ class HasResource(SimpyObject):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.resource = (simpy.PriorityResource(self.env, capacity=nr_resources) if priority else simpy.Resource(self.env, capacity=nr_resources))
+
 
 class PriorityFilterStore(FilterStore):
 

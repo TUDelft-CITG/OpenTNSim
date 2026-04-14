@@ -4,16 +4,18 @@ import networkx as nx
 import pyproj
 from scipy.ndimage import rotate
 from scipy.spatial import ConvexHull
+import shapely
 from shapely import reverse
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
                                    create_transformer, get_trajectory, find_closest_node, find_closest_edge,
                                    get_largest_route_between_edges, align_network_geometries_with_edge_directions)
 import warnings
+from pyproj import Geod
+wgs84 = Geod(ellps="WGS84")
 
-
-def calculate_depth(geom_start, geom_stop, graph):
+def calculate_depth(geom_start, graph):
     """method to calculate the depth of the waterway in meters between two geometries.
 
     Parameters

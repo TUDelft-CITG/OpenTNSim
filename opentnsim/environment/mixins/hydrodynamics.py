@@ -1,62 +1,7 @@
 # config.py
 import numpy as np
 import xarray as xr
-import warnings
 from opentnsim.core import SimpyObject
-
-
-def check_hydrodynamic_data_coordinates(hydrodynamic_data):
-    accepted_coordinates = ['STATION','TIME','LAYER']
-    for coordinate in list(hydrodynamic_data.coords):
-        if coordinate not in accepted_coordinates:
-            ValueError(f"Data coordinate {coordinate} is not supported, only {accepted_coordinates} are supported")
-    if 'STATION' not in list(hydrodynamic_data.coords):
-        ValueError(f"Missing ''STATION'' coordinate in data.")
-    if 'TIME' not in list(hydrodynamic_data.coords):
-        ValueError(f"Missing ''TIME'' coordinate in data.")
-
-
-def check_hydrodynamic_data_variables(hydrodynamic_data):
-    accepted_data_variables = ['Water level', 'Current velocity', 'Current direction', 'Nautical depth', 'Salinity', 'Temperature']
-    for data_variable in list(hydrodynamic_data.data_vars):
-        if data_variable not in accepted_data_variables:
-            warnings.warn(f"Data column {data_variable} is not used in the simulation, only {accepted_data_variables} are supported")
-
-
-def check_hydrodynamic_data_temporal_coverage(env, hydrodynamic_data):
-    time = hydrodynamic_data.TIME.values
-    time_min, time_max = time.min(),time.max()
-    if time_min > np.datetime64(env.simulation_start):
-        ValueError(f"There is no available data starting at the simulation start time ''{env.simulation_start}''.")
-    elif time_max < np.datetime64(env.simulation_stop):
-        ValueError(f"There is no available data until the simulation stop time ''{env.simulation_stop}''.")
-
-
-def check_hydrodynamic_data_spatial_coverage(graph, hydrodynamic_data):
-    stations = hydrodynamic_data.STATION.values
-    for node in graph.nodes:
-        if node not in stations:
-            ValueError(f"There is no data for node ''{node}''.")
-
-
-def transpose_data_in_accepted_order(hydrodynamic_data):
-    if 'LAYER' not in list(hydrodynamic_data.coords):
-        hydrodynamic_data = hydrodynamic_data.transpose('STATION','TIME')
-    else:
-        hydrodynamic_data = hydrodynamic_data.transpose('STATION', 'TIME', 'LAYER')
-    return hydrodynamic_data
-
-
-def sort_data(graph, hydrodynamic_data):
-    nodes = graph.nodes
-    times = sorted(hydrodynamic_data.TIME.values)
-    hydrodynamic_data = hydrodynamic_data.reindex(STATION=nodes)
-    hydrodynamic_data = hydrodynamic_data.reindex(TIME=times)
-    if 'LAYER' in list(hydrodynamic_data.coords):
-        layers = sorted(hydrodynamic_data.LAYER.values)
-        hydrodynamic_data = hydrodynamic_data.reindex(LAYER=layers)
-    return hydrodynamic_data
-
 
 class HydrodynamicDataManager:
     """
@@ -91,8 +36,9 @@ class HydrodynamicDataManager:
         value : float
             the interpolated value of a hydrodynamic property at the specified time and node
         """
+        value = np.nan
         if self.hydrodynamic_data is None:
-            return None
+            return value
 
         # convert time to float for interpolation
         time_float = np.datetime64(time, 's').astype(float)
@@ -179,8 +125,9 @@ class HydrodynamicDataManager:
         series : float
             the time series of a hydrodynamic property at the specified node from the specified time onwards
         """
+        series = np.array([])
         if self.hydrodynamic_data is None:
-            return np.array([])
+            return series
 
         # determine the time_index and station_index
         time_index = self._get_time_index_of_hydrodynamic_data(time)
@@ -252,6 +199,15 @@ class HydrodynamicDataManager:
         )
 
         return interpolated_series
+
+from opentnsim.environment.utils import (
+    check_hydrodynamic_data_coordinates,
+    check_hydrodynamic_data_variables,
+    check_hydrodynamic_data_temporal_coverage,
+    check_hydrodynamic_data_spatial_coverage,
+    transpose_data_in_accepted_order,
+    sort_data
+)
 
 
 class HydrodynamicData(SimpyObject):

@@ -1,34 +1,32 @@
 # -*- coding: utf-8 -*-
 
 """Graph module."""
-import functools
 # packkage(s) for documentation, debugging, saving and loading
 import logging
 import os
 import pickle
-import uuid
 from itertools import cycle
 
-# matplotlib
-import matplotlib.pyplot as plt
 # package(s) for data handling
 import networkx as nx
+import functools
 import yaml
-import numpy as np
-import plotly.graph_objects as go
+import io
+
 # spatial libraries
 import pyproj
 import requests
 import shapely.geometry
+from shapely.geometry import LineString
+from shapely.ops import transform
+
 # package(s) related to the simulation
 import simpy
-from opentnsim.core import Identifiable, Locatable, SimpyObject
+
 # OpenTNSim
-from opentnsim.graph import mixins as graph_module
+import opentnsim
+from opentnsim.core import Identifiable, Locatable, SimpyObject
 from opentnsim.graph import utils
-from plotly.offline import init_notebook_mode, iplot
-from shapely.geometry import LineString, Point
-from shapely.ops import transform
 from opentnsim.graph.visualizations import plot_graph
 
 logger = logging.getLogger(__name__)
@@ -36,6 +34,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Determine the wgs84 geoid
 wgs84 = pyproj.Geod(ellps="WGS84")
+
 
 class OnNode(SimpyObject):
     def __init__(self, node, *args, **kwargs):
@@ -51,7 +50,7 @@ class OnEdge(SimpyObject):
         super().__init__(*args, **kwargs)
 
         if edge not in self.env.graph.edges:
-            raise ValueError(f"Node {node} does not exist in the graph.")
+            raise ValueError(f"Node {edge} does not exist in the graph.")
 
 
 class Node(Identifiable, Locatable):
@@ -123,6 +122,7 @@ class Graph:
         self.graph = nx.Graph()
         self.graph_info = utils.info(self.graph)
 
+
     def from_shape(self, file_location, shapefile, simplify=True, strict=True):
         """Generate nx.Graph() from shapefile
         Make sure to install the required package gdal.
@@ -143,13 +143,36 @@ class Graph:
         from osgeo import ogr, osr
 
         # Create graph
-        self.graph = opentnsim.utils.read_shp(os.path.join(file_location, shapefile), simplify=simplify, strict=strict)
-        self.graph_info = opentnsim.utils.info(self.graph)
+        self.graph = opentnsim.core.utils.read_shp(os.path.join(file_location, shapefile), simplify=simplify, strict=strict)
+        self.graph_info = opentnsim.core.utils.info(self.graph)
 
         # Get spatial reference
         driver = ogr.GetDriverByName("ESRI Shapefile")
         dataset = driver.Open(os.path.join(file_location, shapefile))
         self.SpatialRef = dataset.GetLayer().GetSpatialRef()
+
+
+    def transform_projection(self, to_EPSG):
+        """create a transformation object to transform the graph to a new projection
+        Make sure to install the required package gdal.
+
+        run pip show gdal to check if gdal is installed.
+        Parameters
+        ----------
+        to_EPSG: int
+            The EPSG code to transform the graph to
+        """
+
+        from osgeo import ogr, osr
+
+        outSpatialRef = osr.SpatialReference()
+        outSpatialRef.ImportFromEPSG(to_EPSG)
+
+        # Transform the coordinates
+        transform = osr.CoordinateTransformation(self.SpatialRef, outSpatialRef)
+
+        return transform
+
 
     def change_projection(self, transform, point):
         """Transform one point on the graph
@@ -169,6 +192,7 @@ class Graph:
         point.ExportToWkt()
 
         return point.GetX(), point.GetY()
+
 
     def create_graph_new_projection(self, to_EPSG=4326):
         """redefine self.graph with the new projection
@@ -225,6 +249,7 @@ class Graph:
 
             self.graph = new_graph
             self.graph_info = opentnsim.utils.info(new_graph)
+
 
     def add_resources(self, edges, resources, environment):
         """Add resources to the edges of the graph

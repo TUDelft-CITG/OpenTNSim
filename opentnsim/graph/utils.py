@@ -229,7 +229,7 @@ def find_closest_node(graph, point):
     tree = graph.graph["node_kdtree"]
     lookup = graph.graph["node_lookup"]
 
-    dist, idx = tree.query([point.x, point.y])
+    _, idx = tree.query([point.x, point.y])
     closest_node = lookup[idx]
 
     return closest_node
@@ -725,7 +725,7 @@ def gdf_to_nx(gdf):
             continue
         if geom.geom_type in ["LineString", "MultiLineString"]:
             for edge_id, edge_properties in geom_to_edges(geom, properties):
-                node_source, node_target = edge_properties["e"]
+                node_source, _ = edge_properties["e"]
                 source_geom = shapely.geometry.Point(*node_source)
                 _, node_properties = geom_to_node(source_geom, {})
                 graph.add_node(edge_id[0], **node_properties)
@@ -809,7 +809,6 @@ def get_edge_at_distance_from_node(graph, node_1, node_2, distance):
         total_length += edge_length
         if total_length < distance:
             continue
-        edge = (node_I,node_II,k)
         break
     return edge
 
@@ -836,7 +835,7 @@ def _get_edges_from_geometry(graph, geometry, crs_m, m=False):
 def get_edges(graph, route):
     edges = []
     is_multidigraph = check_graph_is_multidigraph_type(graph)
-    for idx, edge in enumerate(zip(route[:-1], route[1:])):
+    for _, edge in enumerate(zip(route[:-1], route[1:])):
         edge = get_edge(graph, edge, is_multidigraph)
         edges.append(edge)
     return edges
@@ -1010,8 +1009,8 @@ def get_sailing_time(vessel, edge_route):
 
     """
     graph = vessel.env.graph
-    sailing_distance, sailing_distance_df = get_sailing_distance(graph, edge_route)
-    average_sailing_speed, vessel_sailing_speed_df = get_sailing_speed(vessel, graph, edge_route)
+    _, sailing_distance_df = get_sailing_distance(graph, edge_route)
+    _, vessel_sailing_speed_df = get_sailing_speed(vessel, graph, edge_route)
     sailing_time_df = pd.merge(sailing_distance_df,vessel_sailing_speed_df)
     sailing_time_df['time'] = sailing_time_df['distance'] / sailing_time_df['speed']
     sailing_time = sailing_time_df['time'].sum()
@@ -1021,7 +1020,7 @@ def get_sailing_time(vessel, edge_route):
 def get_heading(vessel, graph, edge):
     is_multidigraph = check_graph_is_multidigraph_type(graph)
     edge = get_edge(graph, edge, is_multidigraph)
-    edge_geometry = vessel.multidigraph.edges[edge[0], edge[1], k]["geometry"]
+    edge_geometry = vessel.env.graph.edges[edge]["geometry"]
     heading = np.degrees(math.atan2(edge_geometry.coords[0][0] - edge_geometry.coords[-1][0],
                                     edge_geometry.coords[0][1] - edge_geometry.coords[-1][1]))
     return heading
@@ -1152,7 +1151,7 @@ def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge):
     for target_node in target_edge:
         for node in edge:
             length_route = len(nx.dijkstra_path(graph, node, target_node))
-            if waiting_area_node not in routes.keys() or length_route < routes[waiting_area_node]:
+            if node not in routes.keys() or length_route < routes[node]:
                 routes[node] = len(nx.dijkstra_path(graph, node, target_node))
     closest_node_to_lock = min(routes, key=routes.get)
     return closest_node_to_lock

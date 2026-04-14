@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pyproj
 from pyproj.transformer import Transformer
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, CubicSpline
 from scipy.signal import find_peaks
 from shapely.ops import linemerge, transform
 from shapely.geometry import LineString, MultiLineString
@@ -312,7 +312,7 @@ def calculate_horizontal_tidal_window(vessel,
     currents_time = hydrodynamic_data.TIME.values[time_start_index:time_end_index]
     currents_data, _ = get_governing_current_velocity(vessel, station, time_start_index, time_end_index)
     index_prev_root = 0
-    roots = sc.interpolate.CubicSpline(currents_time, currents_data).roots()
+    roots = CubicSpline(currents_time, currents_data).roots()
     roots = [root for root in roots if root >= currents_time[0].astype(float) and root <= currents_time[-1].astype(float)]
     times_horizontal_tidal_period = []
     for root in roots:

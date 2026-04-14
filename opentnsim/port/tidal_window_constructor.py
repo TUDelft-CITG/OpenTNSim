@@ -84,10 +84,10 @@ class NetworkProperties:
                         globals()[field.name] = [0,0]
 
             # Appends the specific data regarding the type of the restriction to data structure
-            network.nodes[node]['Vertical tidal restriction']['Type'][0].append(ukc_s)
-            network.nodes[node]['Vertical tidal restriction']['Type'][1].append(ukc_p)
-            network.nodes[node]['Vertical tidal restriction']['Type'][2].append(ukc_r)
-            network.nodes[node]['Vertical tidal restriction']['Type'][3].append(fwa)
+            network.nodes[node]['Vertical tidal restriction']['Type'][0].append(globals()['ukc_s'])
+            network.nodes[node]['Vertical tidal restriction']['Type'][1].append(globals()['ukc_p'])
+            network.nodes[node]['Vertical tidal restriction']['Type'][2].append(globals()['ukc_r'])
+            network.nodes[node]['Vertical tidal restriction']['Type'][3].append(globals()['fwa'])
 
             # Unpacks the data for the different vessel criteria and appends it to a list
             vessel_characteristics_type = []
@@ -114,6 +114,7 @@ class NetworkProperties:
             network.nodes[node]['Vertical tidal restriction']['Specification'][3].append(vessel_characteristics_spec)
             network.nodes[node]['Vertical tidal restriction']['Specification'][4].append(vessel_method_list)
             network.nodes[node]['Vertical tidal restriction']['Specification'][5].append([])
+
 
     def append_horizontal_tidal_restriction_to_network(self,network,node,horizontal_tidal_window_input):
         """ Function: appends horizontal tidal restrictions to the node of the network

@@ -10,7 +10,7 @@ from shapely.ops import transform
 from pyproj import Transformer
 from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to_edge_path
 from opentnsim.graph.calculations import transform_geometry
-from opentnsim.port.calculations import calculate_tidal_windows
+from opentnsim.port.calculations import calculate_tidal_windows, calculate_ukc_clearance
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from IPython.display import display
 pd.options.mode.chained_assignment = None
@@ -303,6 +303,7 @@ def provide_waiting_time_for_outbound_tidal_window(vessel, route, delay=0):
     vessel.bound = "inbound"
     return waiting_time
 
+
 def provide_nearest_anchorage_area(vessel, node):
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_information = hydromanager.hydrodynamic_data
@@ -319,7 +320,7 @@ def provide_nearest_anchorage_area(vessel, node):
             for node_on_route in route_to_anchorage:
                 station_index = list(hydrodynamic_information["STATION"]).index(node_on_route)
                 min_water_level = np.min(hydrodynamic_information["Water level"][station_index].values)
-                _, _, _, required_water_depth, _, MBL = provide_ukc_clearance(vessel, node)
+                _, _, _, required_water_depth, _, MBL = calculate_ukc_clearance(vessel, node)
                 if min_water_level + MBL < required_water_depth:
                     anchorage_reachable = False
                     break

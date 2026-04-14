@@ -206,6 +206,7 @@ class VesselProperties:
 
         return h_min
 
+
     def get_route(
         self,
         origin,
