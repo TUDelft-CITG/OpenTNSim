@@ -1075,11 +1075,13 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(
 
 def get_closest_edge_to_geometry(graph, geometry):
     distance_to_edge = {}
-    for edge in graph.edges(data=True):
-        edge_name = (edge[0], edge[1])
-        edge_info = edge[2]
-        edge_geometry = edge_info["geometry"]
-        if not edge_geometry.is_empty and edge_geometry.is_valid:
+    geometry = geometry
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "invalid value encountered in distance")
+        for edge in graph.edges(data=True):
+            edge_name = (edge[0], edge[1])
+            edge_info = edge[2]
+            edge_geometry = edge_info["geometry"]
             distance_to_edge[edge_name] = geometry.distance(edge_geometry)
 
     closest_edge = list(distance_to_edge.keys())[np.argmin(list(distance_to_edge.values()))]
@@ -1089,9 +1091,12 @@ def get_closest_edge_to_geometry(graph, geometry):
 def get_closest_node_to_geometry(graph, geometry):
     closest_edge = get_closest_edge_to_geometry(graph, geometry)
     distance_to_node = {}
-    for node in closest_edge:
-        node_geometry = graph.nodes[node]["geometry"]
-        distance_to_node[node] = geometry.distance(node_geometry)
+    geometry = geometry
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "invalid value encountered in distance")
+        for node in closest_edge:
+            node_geometry = graph.nodes[node]["geometry"]
+            distance_to_node[node] = geometry.distance(node_geometry)
 
     closest_node = list(distance_to_node.keys())[np.argmin(list(distance_to_node.values()))]
     return closest_node
