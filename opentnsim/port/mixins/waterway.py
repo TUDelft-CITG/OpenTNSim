@@ -8,7 +8,7 @@ from IPython.display import display
 #Imports from the port-module
 from opentnsim.port.mixins.rules import Expr, AggregateExpr, ComparisonExpr
 from opentnsim.port.utils import get_vessel_from_id
-from opentnsim.graph.utils import get_sailing_time
+from opentnsim.graph.utils import get_sailing_time, node_path_to_edge_path
 
 class PassesWaterway:
     def __init__(self, *args, **kwargs):
@@ -54,8 +54,10 @@ class IsWaterway(SimpyObject, Identifiable):
             direction = 1
 
         current_time = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds=delay)
-        sailing_time_to_waterway, _ = get_sailing_time(vessel,route_to_waterway)
-        sailing_time_over_waterway, _ = get_sailing_time(vessel,route_over_waterway)
+        edge_route_to_waterway = node_path_to_edge_path(vessel.env.graph, route_to_waterway)
+        edge_route_over_waterway = node_path_to_edge_path(vessel.env.graph, route_over_waterway)
+        sailing_time_to_waterway, _ = get_sailing_time(vessel,edge_route_to_waterway)
+        sailing_time_over_waterway, _ = get_sailing_time(vessel,edge_route_over_waterway)
         time_passage_start = current_time + pd.Timedelta(seconds=sailing_time_to_waterway)
         time_passage_stop = time_passage_start + pd.Timedelta(seconds=sailing_time_over_waterway)
         waterway_available = True
