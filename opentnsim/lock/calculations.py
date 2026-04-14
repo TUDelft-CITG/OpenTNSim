@@ -2317,19 +2317,24 @@ def calculate_saltwater_intrusion(lock_chamber, ZSF_results = None):
     saltwater_inrusion_results['water_volume_lost'] = -1*water_volume_lost
     saltwater_inrusion_results['water_outflow'] = -1*water_volume_lost/duration
 
-    mass_transport = ZSF_results.mass_transport_lake
-    saltwater_intrusion_tot = -1*mass_transport[mass_transport < 0].sum()
-    for index, mass_transport in enumerate([ZSF_results.mass_transport_lake_b, ZSF_results.mass_transport_lake_c]):
-        mass_transport = mass_transport.copy()
-        mass_transport = mass_transport[mass_transport < 0]
-        if index == 0:
-            saltwater_intrusion_due_to_exchange_current = -1 * mass_transport.sum() / saltwater_intrusion_tot
-        elif index == 1:
-            saltwater_intrusion_due_to_outbound_vessels = -1 * mass_transport.sum() / saltwater_intrusion_tot
+    saltwater_intrusion_tot = 0
+    for index, mass_transport in enumerate([ZSF_results.mass_transport_lake_b,
+                                            ZSF_results.mass_transport_lake_c]):
+        mass_transport = -1*mass_transport[mass_transport < 0]
+        saltwater_intrusion_tot += mass_transport.sum()
     levelling_mask = ZSF_results.routine.str.contains('Levelling')
-    mass_transport_levelling_events = ZSF_results[levelling_mask].mass_transport_lake
-    mass_transport_levelling_events = mass_transport_levelling_events[mass_transport_levelling_events < 0]
-    saltwater_intrusion_due_to_levelling = -1 * mass_transport_levelling_events.sum() / saltwater_intrusion_tot
+    mass_transport_levelling_events = ZSF_results[levelling_mask].mass_transport_lake.copy()
+    saltwater_intrusion_tot += -1 * mass_transport_levelling_events[mass_transport_levelling_events < 0].sum()
+    for index, mass_transport in enumerate([ZSF_results.mass_transport_lake_b,
+                                            ZSF_results.mass_transport_lake_c]):
+        mass_transport = -1 * mass_transport[mass_transport < 0]
+        if index == 0:
+            saltwater_intrusion_due_to_exchange_current = mass_transport.sum() / saltwater_intrusion_tot
+
+        elif index == 1:
+            saltwater_intrusion_due_to_outbound_vessels = mass_transport.sum() / saltwater_intrusion_tot
+    mass_transport_levelling_events = -1*mass_transport_levelling_events[mass_transport_levelling_events < 0]
+    saltwater_intrusion_due_to_levelling = mass_transport_levelling_events.sum() / saltwater_intrusion_tot
     saltwater_intrusion_causes = {
         'Exchange current (%)': np.round(saltwater_intrusion_due_to_exchange_current*100, 1),
         'Outbound vessels (%)': np.round(saltwater_intrusion_due_to_outbound_vessels*100, 1),
