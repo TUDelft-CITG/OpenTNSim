@@ -10,7 +10,7 @@ import pandas as pd
 
 # internal
 from opentnsim.graph.calculations import calculate_depth
-from opentnsim.lock.logutils import add_lock_chamber_dimensions_in_energy_eventtable
+
 
 # %% ADD ENERGY ATTRIBUTES INTO EVENT TABLE
 def add_energy_attributes_to_eventtable(df, objs):
@@ -56,7 +56,7 @@ def add_energy_attributes_to_eventtable(df, objs):
     df: pandas.DataFrame
         DataFrame with energy-related attributes added.
     """
-    
+    from opentnsim.lock.logutils import add_lock_chamber_dimensions_in_energy_eventtable
     env = objs[0].env
     df = df.copy()
     add_lock_chamber_dimensions_in_energy_eventtable(df, env)

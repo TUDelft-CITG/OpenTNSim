@@ -21,7 +21,6 @@ from opentnsim.lock.logutils import get_vessels_per_cycle, get_levelling_cycles
 from opentnsim.lock.utils import (
     _get_previous_operations,
     _get_operation_info,
-    _get_next_operations,
     _get_vessels_that_passed_the_lock_chamber,
     _check_if_vessel_is_first_vessel,
     _get_vessel_sailing_in_speed,

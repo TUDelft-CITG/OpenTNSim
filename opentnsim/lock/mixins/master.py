@@ -10,6 +10,7 @@ from opentnsim.lock.calculations import (
     calculate_lock_operation_information_and_update_planning,
     calculate_vessel_approach_information,
     calculate_empty_lock_operation_information_and_update_planning,
+    calculate_optimal_approach_speed_information
 )
 from opentnsim.lock.utils import (
     _check_if_empty_lock_operation_is_required,
@@ -319,7 +320,7 @@ class IsLockMaster:
         yield from self.overrule_vessel_speed(previous_vessel, lock_chamber.end_node, delay_previous_vessel)
 
     
-    def overrule_vessel_speed(self, vessel, lock_end_node, waiting_time=0.):
+    def overrule_vessel_speed(self, vessel, lock_end_node, waiting_time=0., delay=0.):
         """
         Overrules the speed of an vessel based on the additional waiting time
 
@@ -342,8 +343,8 @@ class IsLockMaster:
             vessel.overruled_speed.loc[edge] = reversed_sailing_information_info.speed
 
         # TODO: this communication of interrupting should be checked
-        other_vessel.process.interrupt()
-        other_vessel.gate_open_request.interrupt(str(delay))
+        vessel.process.interrupt()
+        vessel.gate_open_request.interrupt(str(delay))
         yield from []
 
 

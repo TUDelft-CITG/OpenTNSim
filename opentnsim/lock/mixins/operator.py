@@ -122,7 +122,7 @@ class IsLockChamberOperator:
             had_delay = True
             location_of_vessel = pd.DataFrame(vessel.logbook).iloc[-1]['Geometry']
             vessel.log_entry_v0(
-                "Waiting for other vessels to leave lock start", self.env.now, vessel.output.copy(), location_of_vessel)
+                "Waiting for other vessels to leave lock start", self.env.now, vessel.distance, location_of_vessel)
         while sailing_out_delay:
             try:
                 yield vessel.env.timeout(sailing_out_delay)
@@ -132,7 +132,7 @@ class IsLockChamberOperator:
         if had_delay:
             location_of_vessel = pd.DataFrame(vessel.logbook).iloc[-1]['Geometry']
             vessel.log_entry_v0(
-                "Waiting for other vessels to leave lock stop", self.env.now, vessel.output.copy(), location_of_vessel)
+                "Waiting for other vessels to leave lock stop", self.env.now, vessel.distance, location_of_vessel)
 
 
     def instruct_vessel_to_wait_in_waiting_area(self, vessel, sailing_out_delay):
@@ -300,7 +300,7 @@ class IsLockChamberOperator:
         if remaining_static_waiting_time > 0.:
             # log the start of the waiting process
             vessel.log_entry_v0("Waiting for lock operation start",
-                              vessel.env.now, vessel.output.copy(), vessel.logbook[-1]['Geometry'], )
+                              vessel.env.now, vessel.distance, vessel.logbook[-1]['Geometry'], )
             # waiting in the waiting area, if request is interrupted, the vessel keeps waiting but time that vessel already has waited is subtracted
             while remaining_static_waiting_time > 0.:
                 try:
@@ -313,8 +313,7 @@ class IsLockChamberOperator:
                     remaining_static_waiting_time -= self.env.now - waiting_start
 
             # log the stop of the waiting process
-            vessel.log_entry_v0("Waiting for lock operation stop", vessel.env.now, vessel.output.copy(),
-                                vessel.logbook[-1]['Geometry'],)
+            vessel.log_entry_v0("Waiting for lock operation stop", vessel.env.now, vessel.distance, vessel.logbook[-1]['Geometry'],)
 
 
     def let_vessel_wait_for_other_vessels_in_waiting_area(self, vessel):
@@ -328,7 +327,7 @@ class IsLockChamberOperator:
         waiting_start = vessel.env.now
         # log the waiting event
         vessel.log_entry_v0("Waiting for other vessel for lock operation start",
-                          waiting_start, vessel.output.copy(), vessel.logbook[-1]['Geometry'])
+                          waiting_start, vessel.distance, vessel.logbook[-1]['Geometry'])
 
         # create a request to wait for another vessel (this is a request for a filter store: only if there are enough vessels the operation will be assigned to the store and all vessels will continue to the lock chamber)
         request = self.wait_for_other_vessel_to_arrive.get(lambda operation: operation.operation_index == operation_index)
@@ -368,21 +367,21 @@ class IsLockChamberOperator:
 
         # log that the waiting has stopped
         vessel.log_entry_v0("Waiting for other vessel for lock operation stop",
-                          vessel.env.now, vessel.output.copy(),vessel.logbook[-1]['Geometry'],)
+                          vessel.env.now, vessel.distance,vessel.logbook[-1]['Geometry'],)
 
 
     def wait_for_other_vessels_to_start_lock_operation(self,  vessel):
         # Wait for last assigned vessel of lock operation
         waiting_for_other_vessels = True
         lock_position = vessel.position_in_lock
-        vessel.log_entry_v0("Waiting for other vessels to enter lock start", self.env.now, vessel.output.copy(), lock_position)
+        vessel.log_entry_v0("Waiting for other vessels to enter lock start", self.env.now, vessel.distance, lock_position)
         while waiting_for_other_vessels:
             try:
                 yield self.wait_for_other_vessels.get(filter=(lambda request: request.id == vessel.id))
                 waiting_for_other_vessels = False
             except simpy.Interrupt as e:
                 waiting_for_other_vessels = True
-        vessel.log_entry_v0("Waiting for other vessels to enter lock stop", self.env.now, vessel.output.copy(), lock_position)
+        vessel.log_entry_v0("Waiting for other vessels to enter lock stop", self.env.now, vessel.distance, lock_position)
 
         # Follow the converting lock chamber
         waiting_for_levelling = True
@@ -698,11 +697,11 @@ class IsLockChamberOperator:
         yield hold_gate_B
 
         # log the start of the event
-        self.log_entry_v0("Lock gate closing start", self.env.now, self.output.copy(), self.gate_open_at_node)
+        self.log_entry_v0("Lock gate closing start", self.env.now, self.gate_open_at_node, self.gate_open_at_node)
         for request in self.resource.users:
             user = request.vessel
             location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
-            user.log_entry_v0("Waiting for lock gate closing start", self.env.now, user.output.copy(), location_of_vessel)
+            user.log_entry_v0("Waiting for lock gate closing start", self.env.now, user.distance, location_of_vessel)
 
         # timeout event of the gate closing
         remaining_gate_closing_time = self.gate_closing_time
@@ -728,11 +727,11 @@ class IsLockChamberOperator:
             self.water_level[time_index:] = new_water_level
 
         # log the end of the event
-        self.log_entry_v0("Lock gate closing stop", self.env.now, self.output.copy(), self.gate_open_at_node)
+        self.log_entry_v0("Lock gate closing stop", self.env.now, self.gate_open_at_node, self.gate_open_at_node)
         for request in self.resource.users:
             user = request.vessel
             location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
-            user.log_entry_v0("Waiting for lock gate closing stop", self.env.now, user.output.copy(), location_of_vessel)
+            user.log_entry_v0("Waiting for lock gate closing stop", self.env.now, user.distance, location_of_vessel)
 
         if self.gate_open_at_node == self.start_node:
             self.gate_A_open = False
@@ -791,11 +790,11 @@ class IsLockChamberOperator:
         levelling_time, _, _ = calculate_levelling_time(self, self.env.now, direction, operation_index=operation_index)
 
         # log the start of the event
-        self.log_entry_v0("Lock levelling start", self.env.now, self.output.copy(), self.gate_open_at_node, )
+        self.log_entry_v0("Lock levelling start", self.env.now, self.gate_open_at_node, self.gate_open_at_node, )
         for request in self.resource.users:
             user = request.vessel
             location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
-            user.log_entry_v0("Waiting for lock levelling start", self.env.now, user.output.copy(), location_of_vessel)
+            user.log_entry_v0("Waiting for lock levelling start", self.env.now, user.distance, location_of_vessel)
 
         # set new node to which the gate will be opened
         self.gate_open_at_node = new_level
@@ -811,11 +810,11 @@ class IsLockChamberOperator:
                 remaining_levelling_time -= self.env.now - start_levelling
 
         # log the end of the event
-        self.log_entry_v0("Lock levelling stop", self.env.now, self.output.copy(), self.gate_open_at_node, )
+        self.log_entry_v0("Lock levelling stop", self.env.now, self.gate_open_at_node, self.gate_open_at_node, )
         for request in self.resource.users:
             user = request.vessel
             location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
-            user.log_entry_v0("Waiting for lock levelling stop", self.env.now, user.output.copy(), location_of_vessel)
+            user.log_entry_v0("Waiting for lock levelling stop", self.env.now, user.distance, location_of_vessel)
 
         # release all lock elements that were requested, so the next process can start
         self.gate_A.resource.release(hold_gate_A)
@@ -883,11 +882,11 @@ class IsLockChamberOperator:
         yield hold_gate_B
 
         # log the process start
-        self.log_entry_v0("Lock gate opening start", self.env.now, self.output.copy(), self.gate_open_at_node)
+        self.log_entry_v0("Lock gate opening start", self.env.now, self.gate_open_at_node, self.gate_open_at_node)
         for request in self.resource.users:
             user = request.vessel
             location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
-            user.log_entry_v0("Waiting for lock gate opening start", self.env.now, user.output.copy(), location_of_vessel)
+            user.log_entry_v0("Waiting for lock gate opening start", self.env.now, user.distance, location_of_vessel)
 
         # timeout
         remaining_gate_opening_time = self.gate_opening_time
@@ -900,11 +899,11 @@ class IsLockChamberOperator:
                 remaining_gate_opening_time -= self.env.now - start_time_opening
 
         # log the process stop
-        self.log_entry_v0("Lock gate opening stop", self.env.now, self.output.copy(), self.gate_open_at_node,)
+        self.log_entry_v0("Lock gate opening stop", self.env.now, self.gate_open_at_node, self.gate_open_at_node,)
         for request in self.resource.users:
             user = request.vessel
             location_of_vessel = pd.DataFrame(user.logbook).iloc[-1]['Geometry']
-            user.log_entry_v0("Waiting for lock gate opening stop", self.env.now, user.output.copy(), location_of_vessel)
+            user.log_entry_v0("Waiting for lock gate opening stop", self.env.now, user.distance, location_of_vessel)
 
         # determine which side the gate is open to
         if self.gate_open_at_node == self.start_node:

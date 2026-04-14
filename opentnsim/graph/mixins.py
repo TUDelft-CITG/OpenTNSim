@@ -325,31 +325,3 @@ class FIS:
                 pkl_file.close()
 
         return graph
-
-
-class HasMultiDiGraph:
-    """This locking module uses a MultiDiGraph to represent the network. This converts other graphs to a MultiDiGraph."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    @property
-    def multidigraph(self):
-        # create a multidigraph copy of graph if it was not done before
-        if hasattr(self,"env"):
-            graph_class = self.env
-        else:
-            graph_class = self
-        if not hasattr(graph_class, "_multidigraph"):
-            graph_class._multidigraph = self.copy()
-        return graph_class._multidigraph
-
-    def copy(self):
-        if hasattr(self,"env"):
-            graph_class = self.env
-        else:
-            graph_class = self
-        multidigraph = graph_class.graph
-        if not isinstance(graph_class.graph, nx.MultiDiGraph):
-            multidigraph = nx.MultiDiGraph(multidigraph)
-        return multidigraph

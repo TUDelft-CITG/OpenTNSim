@@ -1,4 +1,4 @@
-from .mixins import DiGraph, HasMultiDiGraph, Graph, FIS
+from .mixins import DiGraph, Graph, FIS
 from . import utils
 
-__all__ = ["DiGraph", "HasMultiDiGraph", "Graph", "FIS", "utils"]
+__all__ = ["DiGraph", "Graph", "FIS", "utils"]

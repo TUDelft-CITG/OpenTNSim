@@ -7,9 +7,7 @@ import opentnsim.graph as graph
 import opentnsim.lock as lock
 import opentnsim.port as port
 import opentnsim.model as model
-import opentnsim.plot as plot
 import opentnsim.strategy as strategy
-
 
 """Top-level package for OpenTNSim."""
 

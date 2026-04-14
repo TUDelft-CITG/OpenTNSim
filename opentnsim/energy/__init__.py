@@ -6,7 +6,6 @@ from .mixins import (
 )
 from . import logutils
 
-
 __all__ = [
     "load_partial_engine_load_correction_factors",
     "karpov_smooth_curves",

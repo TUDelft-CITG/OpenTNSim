@@ -21,6 +21,13 @@ class NetworkWarning(Warning):
     pass
 
 
+def check_if_edge_in_graph(graph, edge):
+    edges = list(graph.edges)
+    if edge in edges:
+        return True
+    return False
+
+
 def expand_path_edges(G, node_path):
     edge_paths = [[]]
     is_multidigraph = G.is_multigraph()

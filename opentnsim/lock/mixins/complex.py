@@ -6,15 +6,12 @@ import pandas as pd
 import simpy
 
 from opentnsim.core import HasResource, Identifiable, Log, Movable, SimpyObject, Locatable
-from opentnsim.graph.calculations import (calculate_location_over_edges,
-                                          transform_geometry,
-                                          calculate_distance_along_geometry_to_nodes_of_edge)
-from opentnsim.graph.mixins import HasMultiDiGraph, OnEdge
+from opentnsim.graph.calculations import calculate_location_over_edges, calculate_distance_along_geometry_to_nodes_of_edge
+from opentnsim.graph.mixins import OnEdge
 from opentnsim.graph.utils import (
     check_if_geometry_is_aligned_with_edge,
     get_edges_at_a_distance,)
-from opentnsim.lock.calculations import calculate_sailing_time_to_waiting_area, calculate_sailing_time_to_approach_point
-from opentnsim.lock.mixins.chamber import IsLockChamber
+from opentnsim.lock.calculations import calculate_sailing_time_to_waiting_area
 from opentnsim.lock.mixins.master import IsLockMaster
 from opentnsim.lock.utils import (
     _get_vessel_sailing_speed_in_lock,
@@ -28,11 +25,11 @@ from opentnsim.lock.utils import (
     check_all_paths_through_registration,
     check_lock_complex_geometry,
 )
-from opentnsim.utils import inherit_docstring
-from IPython.display import display
+from opentnsim.core.utils import inherit_docstring
+
 
 @inherit_docstring
-class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
+class LockComplexTraversable(Movable, Identifiable):
     """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
 
     Pre-requisites
@@ -139,7 +136,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
 
         # if there is still sailing time left to the waiting area then continue sailing and log this process (here the locking module takes over the function of the movable)
         if sailing_time_to_waiting_area:
-            self.log_entry_v0("Sailing to waiting area start", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'],)
+            self.log_entry_v0("Sailing to waiting area start", self.env.now, self.distance, self.logbook[-1]['Geometry'],)
 
         # the sailing process can be interrupted, as vessel can be subject to changes in its speed, then the remaining sailing time is determined and continued with the changed speed -> when sailing to the waiting area has been completed: log the process
         while sailing_time_to_waiting_area:
@@ -151,7 +148,9 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
                 sailing_time_to_waiting_area -= self.env.now - start_sailing
                 remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
                 sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
-            self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(), waiting_area.geometry)
+        
+        self.distance += sailing_distance_to_waiting_area
+        self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.distance, waiting_area.geometry)
 
         yield from self.request_to_pass_waiting_area(lock_chamber, waiting_area)
 
@@ -171,7 +170,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
             distance_to_lock -= waiting_area.distance_from_edge_start
         # log the start of sailing to the lock gate
         last_position_vessel = self.logbook[-1]["Geometry"]
-        self.log_entry_v0("Sailing to first lock gate start", self.env.now, self.output.copy(), last_position_vessel,)
+        self.log_entry_v0("Sailing to first lock gate start", self.env.now, self.distance, last_position_vessel,)
 
         # let vessel sail to the lock gate
         current_time = self.env.now
@@ -185,12 +184,12 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
                 remaining_sailing_time -= self.env.now - current_time
                 remaining_sailing_distance = vessel_speed * remaining_sailing_time
                 remaining_sailing_time = remaining_sailing_distance / self.current_speed
-
+        self.distance += distance_to_lock
         # vessel entering now the lock -> delete the overruled speeds imposed on the vessel
         self.overruled_speed = self.overruled_speed.iloc[0:0]
 
         # log the stop of sailing to the lock gate
-        self.log_entry_v0("Sailing to first lock gate stop", self.env.now, self.output.copy(), lock_gate_position, )
+        self.log_entry_v0("Sailing to first lock gate stop", self.env.now, self.distance, lock_gate_position, )
 
 
     def sail_to_position_in_lock_chamber(self, lock_chamber, direction):
@@ -200,7 +199,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
             edge = lock_chamber.edge_reversed
 
         # log the start of sailing to the position within the lock chamber
-        self.log_entry_v0("Sailing to position in lock start", self.env.now, self.output.copy(), lock_gate_position, )
+        self.log_entry_v0("Sailing to position in lock start", self.env.now, self.distance, lock_gate_position, )
 
         # determine position in the lock chamber and distance to sail to this location
         self.distance_position_from_first_lock_gate = lock_chamber.length.level + 0.5 * self.L
@@ -210,30 +209,30 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
         else:
             distance_to_position_in_lock = lock_chamber.distance_from_end_node_to_lock_gate_B + \
                                            self.distance_position_from_first_lock_gate
-            if not self.env.graph.is_directed():
-                distance_to_position_in_lock = lock_chamber.distance_from_start_node_to_lock_gate_A + \
-                                               lock_chamber.lock_length - self.distance_position_from_first_lock_gate
-
+            
         self.position_in_lock = calculate_location_over_edges(self.env.graph, edge,
                                                               distance_to_position_in_lock, crs_m=lock_chamber.crs_m)
 
         # let vessel sail to the assigned location in the lock chamber
         vessel_speed = _get_vessel_sailing_speed_in_lock(lock_chamber, self)
         remaining_sailing_time = self.distance_position_from_first_lock_gate / vessel_speed
+        start_sailing = self.env.now
         while remaining_sailing_time > 0:
             try:
                 yield self.env.timeout(remaining_sailing_time)
                 remaining_sailing_time = 0
             except simpy.Interrupt as e:
                 remaining_sailing_time -= self.env.now - start_sailing
+                start_sailing = self.env.now
+        self.distance += self.distance_position_from_first_lock_gate
 
         # log the stop of the sailing event to the assigned location in the lock chamber
-        self.log_entry_v0("Sailing to position in lock stop", self.env.now, self.output.copy(), self.position_in_lock, )
+        self.log_entry_v0("Sailing to position in lock stop", self.env.now, self.distance, self.position_in_lock, )
 
 
     def sail_out_of_lock_chamber(self, lock_chamber, direction):
         # log that the vessel can start sailing out of the lock (up to the lock gate)
-        self.log_entry_v0("Sailing to second lock gate start", self.env.now, self.output.copy(), self.position_in_lock,)
+        self.log_entry_v0("Sailing to second lock gate start", self.env.now, self.distance, self.position_in_lock,)
 
         # determines the distance from the vessel to the lock gate that have to be passed
         lock_gate_position = _get_lock_gate_position(lock_chamber, 1 - direction)
@@ -249,9 +248,9 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
                 sailing_out_time = 0
             except simpy.Interrupt as e:
                 sailing_out_time -= self.env.now - sailing_out_start
-
+        self.distance += distance_in_lock_from_position
         # log that the vessel can stops sailing out of the lock (up to the lock gate)
-        self.log_entry_v0("Sailing to second lock gate stop", self.env.now, self.output.copy(), lock_gate_position,)
+        self.log_entry_v0("Sailing to second lock gate stop", self.env.now, self.distance, lock_gate_position,)
 
 
     def leave_lock_complex(self, lock_chamber, direction):
@@ -266,7 +265,7 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
             exit_geom = self.env.graph.nodes[lock_chamber.start_node]["geometry"]
 
         # log that sailing out of the lock complex is starting
-        self.log_entry_v0("Sailing to lock complex exit start", self.env.now, self.output.copy(), lock_gate_position)
+        self.log_entry_v0("Sailing to lock complex exit start", self.env.now, self.distance, lock_gate_position)
 
         # let the vessel sail to the end of the lock complex
         vessel_speed = _get_vessel_sailing_out_speed(lock_chamber, self, direction)
@@ -280,9 +279,9 @@ class LockComplexTraversable(Movable, Identifiable, HasMultiDiGraph):
                 sailing_out_time -= self.env.now - sailing_out_start
                 remaining_sailing_distance = vessel_speed * sailing_out_time
                 sailing_out_time = remaining_sailing_distance / self.current_speed
-
+        self.distance += remaining_distance
         # log that sailing out of the lock complex is stopping and set that no distance has to be sailed along the edge (vessel is at end of lock complex)
-        self.log_entry_v0("Sailing to lock complex exit stop", self.env.now, self.output.copy(), exit_geom, )
+        self.log_entry_v0("Sailing to lock complex exit stop", self.env.now, self.distance, exit_geom, )
         self.distance_left_on_edge = 0
 
 
@@ -367,8 +366,8 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             self.orientation = orientation
 
         elif distance_from_lock_gate_A is not None:
-            edge_start, edge_stop = edge[:2]
-            edge_rev = (edge[1], edge[0]) + edge[2:]
+            _, edge_stop = edge[:2]
+            edge_rev = (edge_stop, edge_start) + edge[2:]
             if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
                 distance_from_edge_start = lock_chamber.distance_from_start_node_to_lock_gate_A - distance_from_lock_gate_A
             else:
@@ -381,7 +380,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             self.orientation = 0
         elif distance_from_lock_gate_B is not None:
             edge_start, edge_stop = edge[:2]
-            edge_rev = (edge[1], edge[0]) + edge[2:]
+            edge_rev = (edge_stop, edge_start) + edge[2:]
             if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
                 distance_from_edge_start = lock_chamber.distance_from_end_node_to_lock_gate_B - distance_from_lock_gate_B
                 if edge == lock_chamber.edge:

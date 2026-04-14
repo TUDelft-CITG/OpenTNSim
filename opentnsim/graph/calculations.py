@@ -9,7 +9,7 @@ from shapely import reverse
 from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
-                                   create_transformer, get_trajectory, find_closest_node, find_closest_edge,
+                                   create_transformer, get_trajectory, check_if_edge_in_graph, find_closest_edge,
                                    get_largest_route_between_edges, align_network_geometries_with_edge_directions)
 import warnings
 from pyproj import Geod
@@ -186,6 +186,8 @@ def calculate_location_over_edges(graph, edge, interpolation_length, crs_m = 'EP
     geometry = graph.edges[edge]["geometry"]
     if geometry is None or geometry.is_empty:
         return None
+    if not graph.is_directed() and not check_if_edge_in_graph(graph, edge):
+         interpolation_length = graph.edges[edge]["length_m"] - interpolation_length
     geometry_m = transform_geometry(geometry, epsg_out = crs_m)
     interpolation_point_m = geometry_m.line_interpolate_point(interpolation_length)
     interpolation_point = transform_geometry(interpolation_point_m, epsg_in = crs_m, epsg_out = "EPSG:4326")
