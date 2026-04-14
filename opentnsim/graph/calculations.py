@@ -218,7 +218,7 @@ def reverse_geometry(geometry):
 
 def calculate_distance_over_network_to_location(graph, node_1, node_2, location, tolerance=0.0001):
     geod = pyproj.Geod(ellps="WGS84")
-    geometry, _ = get_trajectory(graph, node_1,node_2)[0]
+    geometry, _ = get_trajectory(graph, node_1,node_2)
     geometries = split(snap(geometry, location, tolerance=tolerance), location).geoms
     distance_sailed = 0
     distance_to_go = 0
