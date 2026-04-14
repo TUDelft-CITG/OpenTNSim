@@ -1,17 +1,11 @@
 # package(s) related to the simulation
-from collections import namedtuple
-import datetime
 import functools
-import math
 import numpy as np
 import pandas as pd
 import networkx as nx
 import simpy
-from IPython.display import display
 
-from opentnsim.core import SimpyObject
 from opentnsim.lock.calculations import (
-    calculate_lock_operation_times,
     calculate_delay_previous_vessel_to_optimize_sailing_in_process,
     calculate_lock_operation_information_and_update_planning,
     calculate_vessel_approach_information,
@@ -22,14 +16,12 @@ from opentnsim.lock.utils import (
     _update_lock_vessel_planning,
     _get_lock_operation_to_and_from_node,
     _find_available_waiting_area,
-    _get_first_vessel_of_lock_operation,
     _get_previous_assigned_vessel,
     _update_vessel_planning_for_delayed_arrival,
     _update_operation_planning_for_delayed_arrival,
     _find_available_lock_operation,
     _update_future_lock_operations_by_lock_delay_previous_operation,
 )
-from opentnsim.utils import inherit_docstring
 from opentnsim.graph.utils import node_path_to_edge_path, expand_path_edges
 
 class IsLockMaster:

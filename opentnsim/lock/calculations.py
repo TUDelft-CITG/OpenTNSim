@@ -7,16 +7,13 @@ import pyzsf
 from shapely.geometry import Point, Polygon
 from shapely import affinity
 import datetime
-from opentnsim.utils import time_to_numpy
+from opentnsim.core.utils import time_to_numpy
 from opentnsim.constants import gravitational_acceleration
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.graph.utils import (
     get_sailing_information_on_edge_to_distance_on_another_edge,
     get_sailing_time,
-    check_graph_is_multidigraph_type,
-    get_edge,
-    get_length_of_edge,
     get_geometry_of_edge,
     node_path_to_edge_path,
 )
@@ -43,7 +40,6 @@ from opentnsim.lock.utils import (
     _update_lock_operation_planning,
     _get_lock_operation_to_and_from_node,
     _correct_lock_operation_start_time_if_outside_of_operational_hours,
-    _update_vessel_planning_for_delayed_deparature,
     _update_future_lock_operations_by_lock_delay_previous_operation,
 )
 

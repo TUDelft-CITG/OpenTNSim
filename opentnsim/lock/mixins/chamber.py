@@ -3,22 +3,19 @@ import datetime
 import math
 import numpy as np
 import pandas as pd
-from shapely.geometry import Point, Polygon
-import simpy
 import networkx as nx
 
 from opentnsim.constants import knots
-from opentnsim.core import HasResource, Identifiable, Log, HasLength, ExtraMetadata, SimpyObject, Locatable
+from opentnsim.core import HasResource, Identifiable, Log, HasLength, ExtraMetadata, Locatable
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.graph.calculations import calculate_location_over_edges
-from opentnsim.graph.mixins import HasMultiDiGraph, OnEdge
+from opentnsim.graph.mixins import OnEdge
 from opentnsim.graph.utils import (
     check_if_geometry_is_aligned_with_edge,
     _get_edges_from_geometry,
 )
 from opentnsim.lock.calculations import (
     calculate_ic_ratio,
-    calculate_lock_dimensions_from_geometry,
     calculate_and_check_lock_dimensions,
     calculate_lock_distances_to_nodes_of_edge_from_geometry,
     calculate_lock_occupancy,
@@ -28,16 +25,12 @@ from opentnsim.lock.calculations import (
 from opentnsim.lock.mixins.operator import IsLockChamberOperator
 from opentnsim.lock.logutils import get_vessel_delays, calculate_cycle_information
 from opentnsim.lock.utils import (
-    _get_directional_edge,
-    _get_lock_operation_to_and_from_node,
-    _get_distance_to_lock,
     add_lock_to_graph,
     _create_operational_hours,
     _verify_node_AB,
     check_lock_distances_to_nodes_of_edge,
 )
 from opentnsim.lock.visualizations import create_time_distance_plot, show_results
-from opentnsim.output import HasOutput
 
 
 class IsLockGate(HasResource, Locatable, Identifiable):
@@ -45,7 +38,7 @@ class IsLockGate(HasResource, Locatable, Identifiable):
         super().__init__(nr_resources=1, *args, **kwargs)
 
 
-class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Identifiable, Log, HasOutput, HasMultiDiGraph, ExtraMetadata):
+class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Identifiable, Log, ExtraMetadata):
     """Mixin class: lock complex has a lock chamber:
 
     creates a lock chamber with a resource which is requested when a vessels wants to enter the area with limited capacity

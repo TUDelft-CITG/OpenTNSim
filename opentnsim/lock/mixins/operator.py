@@ -8,10 +8,8 @@ import simpy
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.lock.calculations import (
     calculate_levelling_time,
-    calculate_lock_operation_times,
     calculate_time_to_open_gate,
     calculate_sailing_time_to_approach_point,
-    calculate_sailing_time_to_waiting_area,
     calculate_lock_salinity_and_saltmass
 )
 from opentnsim.lock.utils import (
@@ -22,14 +20,10 @@ from opentnsim.lock.utils import (
     _check_if_vessel_is_last_vessel,
     _get_vessel_sailing_in_speed,
     _get_lock_operation_to_and_from_node,
-    _get_distance_to_lock,
     _check_if_lock_chamber_is_next_lock_complex_object,
     determine_if_gate_is_closed,
     determine_if_gate_can_be_closed,
 )
-from opentnsim.graph.calculations import calculate_location_over_edges
-from opentnsim.graph.utils import check_graph_is_multidigraph_type, get_edge
-from IPython.display import display
 
 class IsLockChamberOperator:
     """The lock chamber operator operates one chamber of the lock."""

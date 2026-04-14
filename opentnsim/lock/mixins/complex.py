@@ -1,25 +1,18 @@
 """This is the lock module as part of the OpenTNSim package. See the locking examples in the book for detailed descriptions."""
 
-import datetime
-import functools
 import math
 import networkx as nx
-import numpy as np
 import pandas as pd
 import simpy
 
-from opentnsim.core import HasResource, Identifiable, Log, Movable, ExtraMetadata, SimpyObject, Locatable
+from opentnsim.core import HasResource, Identifiable, Log, Movable, SimpyObject, Locatable
 from opentnsim.graph.calculations import (calculate_location_over_edges,
                                           transform_geometry,
                                           calculate_distance_along_geometry_to_nodes_of_edge)
 from opentnsim.graph.mixins import HasMultiDiGraph, OnEdge
 from opentnsim.graph.utils import (
     check_if_geometry_is_aligned_with_edge,
-    get_length_of_edge,
-    get_edge,
-    check_graph_is_multidigraph_type,
-    get_edges_at_a_distance,
-    get_edge_at_distance_from_node,)
+    get_edges_at_a_distance,)
 from opentnsim.lock.calculations import calculate_sailing_time_to_waiting_area, calculate_sailing_time_to_approach_point
 from opentnsim.lock.mixins.chamber import IsLockChamber
 from opentnsim.lock.mixins.master import IsLockMaster
@@ -28,17 +21,13 @@ from opentnsim.lock.utils import (
     _get_vessel_sailing_speed_out_lock,
     _get_vessel_sailing_in_speed,
     _get_vessel_sailing_out_speed,
-    _check_if_vessel_is_first_vessel,
     _get_lock_gate_position,
-    _get_lock_operation_to_and_from_node,
     _get_distance_to_lock,
     _get_lock_object_on_registration_node,
     _get_upcoming_lock_complexes,
-    determine_if_gate_is_closed,
     check_all_paths_through_registration,
     check_lock_complex_geometry,
 )
-from opentnsim.output import HasOutput
 from opentnsim.utils import inherit_docstring
 from IPython.display import display
 

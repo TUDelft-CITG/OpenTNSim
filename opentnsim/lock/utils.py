@@ -8,10 +8,8 @@ import numpy as np
 from operator import itemgetter
 import pandas as pd
 from numpy.testing import assert_almost_equal
-from opentnsim.graph.utils import get_length_of_edge, get_edge, get_sailing_information_on_edge_to_distance_on_another_edge, expand_path_edges, node_path_to_edge_path
+from opentnsim.graph.utils import get_length_of_edge, get_sailing_information_on_edge_to_distance_on_another_edge, expand_path_edges, node_path_to_edge_path
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from IPython.display import display
-import warnings
 
 
 def _get_lock_operation_to_and_from_node(lock, direction):
