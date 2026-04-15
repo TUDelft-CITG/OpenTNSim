@@ -1,9 +1,7 @@
-from opentnsim.core import HasResource, Identifiable, Log, Locatable, Movable
-from opentnsim.output import HasOutput
+from opentnsim.core import Movable
 from opentnsim.waiting_area import IsWaitingArea
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.utils import determine_nearest_anchorage_area
-from opentnsim.graph.utils import get_sailing_time
 
 import simpy
 import pandas as pd
@@ -53,7 +51,7 @@ class PassesAnchorage(Movable):
         raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
 
-class IsAnchorage(IsWaitingArea, IsPortComponent, HasOutput):
+class IsAnchorage(IsWaitingArea, IsPortComponent):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
             creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
 

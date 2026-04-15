@@ -541,19 +541,19 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
     horizontal_tidal_accessibility = pd.DataFrame(columns=["Limit", "Condition", "Accessibility"])
     horizontal_tidal_window = False
     for route_index, node_name in enumerate(route):
-        if "Horizontal tidal restriction" in vessel.multidigraph.nodes[node_name].keys():
+        if "Horizontal tidal restriction" in vessel.env.graph.nodes[node_name].keys():
             horizontal_tidal_window = True
             edge_route = node_path_to_edge_path(vessel.env.graph, route[: (route_index + 1)])
             sailing_time_to_next_node, _ = get_sailing_time(vessel, edge_route)
-            specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Specification"]
+            specifications = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Specification"]
             restriction_index, no_tidal_window = determine_tidal_window_restriction(
                 vessel, route, specifications, node_name, delay=delay
             )
             if no_tidal_window:
                 continue
-            hydrodynamic_data = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Data"][restriction_index]
-            cross_current_limit = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Limit"][restriction_index]
-            window_specifications = vessel.multidigraph.nodes[node_name]["Horizontal tidal restriction"]["Type"][restriction_index]
+            hydrodynamic_data = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Data"][restriction_index]
+            cross_current_limit = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Limit"][restriction_index]
+            window_specifications = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Type"][restriction_index]
             time_start_index = np.max([0, np.absolute(hydrodynamic_data.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
             time_end_index = np.absolute(hydrodynamic_data.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
             if window_specifications.window_method == "Maximum":
@@ -767,9 +767,9 @@ def calculate_ukc_clearance(vessel, node, delay=0):
     """
     MBL, _, available_water_depth = get_water_depth(vessel, node, delay)
     ukc_s, ukc_p, ukc_r, fwa = np.zeros(4)
-    if "Vertical tidal restriction" in vessel.multidigraph.nodes[node].keys():
-        ukcs_s, ukcs_p, ukcs_r, fwas = vessel.multidigraph.nodes[node]["Vertical tidal restriction"]["Type"]
-        specifications = vessel.multidigraph.nodes[node]["Vertical tidal restriction"]["Specification"]
+    if "Vertical tidal restriction" in vessel.env.graph.nodes[node].keys():
+        ukcs_s, ukcs_p, ukcs_r, fwas = vessel.env.graph.nodes[node]["Vertical tidal restriction"]["Type"]
+        specifications = vessel.env.graph.nodes[node]["Vertical tidal restriction"]["Specification"]
 
         # Determine which restriction applies to vessel
         restriction_index, _ = determine_tidal_window_restriction(vessel, [node], specifications, node, delay=delay)

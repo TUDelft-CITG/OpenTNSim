@@ -1,6 +1,4 @@
-from opentnsim.core import  HasResource, Identifiable, Locatable, Log, HasLength, Movable, SimpyObject, PriorityFilterStore
-from opentnsim.output import HasOutput
-from opentnsim.graph.mixins import OnNode, OnEdge
+from opentnsim.core import  Identifiable, Log, Movable, PriorityFilterStore
 from opentnsim.graph.utils import get_sailing_time, node_path_to_edge_path
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.mixins.berth import IsQuay, IsJetty, IsBerth
@@ -138,7 +136,7 @@ class HasBerthPlanning:
         super().__init__(*args, **kwargs)
 
 
-class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent, HasOutput):
+class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent):
 
     def __init__(self, env, berths, *args,**kwargs):
         """ Creates a terminal

@@ -1,5 +1,5 @@
-from opentnsim.core import  HasResource, Identifiable, Log, HasLength, Movable
-from opentnsim.graph.mixins import OnNode, OnEdge
+from opentnsim.core import  HasResource, Identifiable, Log, HasLength
+from opentnsim.graph.mixins import OnNode
 from opentnsim.port.visualizations import plot_berth_planning
 from opentnsim.port.calculations import calculate_berth_performance
 
