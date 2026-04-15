@@ -65,15 +65,16 @@ def add_energy_attributes_to_eventtable(df, objs):
         # get the depth from the edge sailed in the event (and check if squat effects
         # need to be considered
         h_0 = calculate_depth(row["start location"], row["stop location"], obj.env.graph)
-
+        v = row['distance (m)'] / row['duration (s)']
+        
         h_0 = obj.calculate_h_squat(
-            v=obj.v, h_0=h_0
+            v=v, h_0=h_0
         )  # TODO: actually takes width as arg
 
-        obj.calculate_total_resistance(v=obj.v, h_0=h_0)
-        obj.calculate_total_power_required(v=obj.v, h_0=h_0)
-        obj.calculate_emission_factors_total(v=obj.v, h_0=h_0)
-        obj.calculate_SFC_final(v=obj.v, h_0=h_0)
+        obj.calculate_total_resistance(v=v, h_0=h_0)
+        obj.calculate_total_power_required(v=v, h_0=h_0)
+        obj.calculate_emission_factors_total(v=v, h_0=h_0)
+        obj.calculate_SFC_final(v=v, h_0=h_0)
 
         df.at[index, "waterdepth (m)"] = h_0
         df.at[index, "waterway width (m)"] = None
