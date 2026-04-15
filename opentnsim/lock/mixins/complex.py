@@ -5,7 +5,7 @@ import networkx as nx
 import pandas as pd
 import simpy
 
-from opentnsim.core import HasResource, Identifiable, Log, Movable, SimpyObject, Locatable
+from opentnsim.core import HasResource, Identifiable, Log, Movable, SimpyObject, Locatable, VesselProperties, ExtraMetadata
 from opentnsim.graph.calculations import calculate_location_over_edges, calculate_distance_along_geometry_to_nodes_of_edge
 from opentnsim.graph.mixins import OnEdge
 from opentnsim.graph.utils import (
@@ -29,7 +29,7 @@ from opentnsim.core.utils import inherit_docstring
 
 
 @inherit_docstring
-class LockComplexTraversable(Movable, Identifiable):
+class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetadata):
     """Mixin class: Something that passes a lock complex (i.e., can be added to a vessel-object)
 
     Pre-requisites
@@ -366,7 +366,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             self.orientation = orientation
 
         elif distance_from_lock_gate_A is not None:
-            _, edge_stop = edge[:2]
+            edge_start, edge_stop = edge[:2]
             edge_rev = (edge_stop, edge_start) + edge[2:]
             if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
                 distance_from_edge_start = lock_chamber.distance_from_start_node_to_lock_gate_A - distance_from_lock_gate_A

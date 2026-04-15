@@ -35,7 +35,7 @@ def get_levelling_cycles(lock_chamber):
     })
 
     # Add directions
-    directions = lock_df[lock_df["Message"] == "Lock levelling start"]['Geometry'] == lock_chamber.edge[0]
+    directions = lock_df[lock_df["Message"] == "Lock levelling start"]['Value'] == lock_chamber.edge[0]
     directions = (~directions).astype(int)
     levelling_cycles['direction'] = directions.values
     return levelling_cycles

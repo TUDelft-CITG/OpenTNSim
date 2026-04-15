@@ -271,13 +271,13 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
         interp_time = lock_chamber.time[t_index_final_lock:]
         if not direction:
             lock_chamber.water_level[t_index_final_lock:] = np.interp(
-                interp_time.astype('datetime64[ns]').astype('int64') / 1e9,
-                time_series[t_index_final_harbour:].astype('int64') / 1e9,
+                interp_time.astype('datetime64[ns]').astype('int64'),
+                time_series[t_index_final_harbour:].astype('datetime64[ns]').astype('int64'),
                 H_B[t_index_final_harbour:])
         else:
             lock_chamber.water_level[t_index_final_lock:] = np.interp(
-                interp_time.astype('datetime64[ns]').astype('int64') / 1e9,
-                time_series[t_index_final_harbour:].astype('int64') / 1e9,
+                interp_time.astype('datetime64[ns]').astype('int64'),
+                time_series[t_index_final_harbour:].astype('datetime64[ns]').astype('int64'),
                 H_A[t_index_final_harbour:])
 
     return levelling_time, t, z
@@ -1645,7 +1645,7 @@ def calculate_ZSF_eventttable(lock_chamber):
         if not index and info.Message == "Lock gate closing start":
             time_stop = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
             duration = (time_stop - lock_chamber.env.simulation_start).total_seconds()
-            if info.Geometry == lock_chamber.node_sea:
+            if info.Value == lock_chamber.node_sea:
                 routine = 'Gate open at sea'
                 t_open_sea = duration
             else:
@@ -1666,7 +1666,7 @@ def calculate_ZSF_eventttable(lock_chamber):
                     seconds=lock_chamber.gate_closing_time) / 2
                 duration = (time_stop - time_start).total_seconds()
 
-            if info.Geometry == lock_chamber.node_sea:
+            if info.Value == lock_chamber.node_sea:
                 routine = 'Gate open at sea'
                 t_open_sea = duration
             else:
@@ -1679,7 +1679,7 @@ def calculate_ZSF_eventttable(lock_chamber):
             time_start = levelling_start_info.Timestamp - pd.Timedelta(seconds=lock_chamber.gate_closing_time) / 2
             time_stop = info.Timestamp + pd.Timedelta(seconds=lock_chamber.gate_opening_time) / 2
             duration = (time_stop - time_start).total_seconds()
-            if info.Geometry == lock_chamber.node_sea:
+            if info.Value == lock_chamber.node_sea:
                 routine = 'Levelling to sea'
                 t_level = duration
             else:
@@ -1828,7 +1828,10 @@ def calculate_water_exchange_fluxes(lock_chamber, zsf_events = None):
         t_open_lake = parameters.pop("t_open_lake")
         t_open_sea = parameters.pop("t_open_sea")
         t_level = parameters.pop("t_level")
-        t_flushing = parameters.pop("t_flushing")
+        try:
+            t_flushing = parameters.pop("t_flushing")
+        except:
+            t_flushing = 0.
         if skiprows and not lockage_nr:
             t_open_lake = 0.
             t_open_sea = 0.

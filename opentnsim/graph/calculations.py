@@ -10,12 +10,13 @@ from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
                                    create_transformer, get_trajectory, check_if_edge_in_graph, find_closest_edge,
-                                   get_largest_route_between_edges, align_network_geometries_with_edge_directions)
+                                   find_closest_node, get_largest_route_between_edges, 
+                                   align_network_geometries_with_edge_directions)
 import warnings
 from pyproj import Geod
 wgs84 = Geod(ellps="WGS84")
 
-def calculate_depth(geom_start, graph):
+def calculate_depth(geom_start, geom_stop, graph):
     """method to calculate the depth of the waterway in meters between two geometries.
 
     Parameters
@@ -41,10 +42,19 @@ def calculate_depth(geom_start, graph):
         If there is no edge between the two nodes in the graph graph.
         If the depth data is not available for the edge between the two nodes.
     """
-    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
 
-    edge = find_closest_edge(graph, geom_start)
-    node_start, node_stop = edge[:2]
+    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
+    node_start = find_closest_node(graph, geom_start)[0]
+    node_end = find_closest_node(graph, geom_stop)[0]
+    if node_start == node_end:
+        edge_start = find_closest_edge(graph, geom_start)
+        edge_stop = find_closest_edge(graph, geom_stop)
+        if edge_start == edge_stop:
+            node_start, node_stop = edge_start[:2]
+        elif node_start == edge_start[0]:
+            node_start, node_stop = edge_start[:2]
+        else:
+            node_start, node_stop = edge_stop[:2]
 
     # Read from the graph data from vaarweginformatie.nl the General depth of each edge
     try:

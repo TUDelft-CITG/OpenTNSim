@@ -77,6 +77,7 @@ def add_energy_attributes_to_eventtable(df, objs):
             h_0 = calculate_depth(row["start location"], row["stop location"], obj.env.graph)
         else:
             h_0 = row["waterdepth (m)"]
+
         h_0 = obj.calculate_h_squat(
             v=obj.v, h_0=h_0
         )  # TODO: actually takes width as arg

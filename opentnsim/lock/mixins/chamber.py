@@ -4,11 +4,12 @@ import math
 import numpy as np
 import pandas as pd
 import networkx as nx
+from shapely.geometry import LineString
 
 from opentnsim.constants import knots
 from opentnsim.core import HasResource, Identifiable, Log, HasLength, ExtraMetadata, Locatable
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.graph.calculations import calculate_location_over_edges
+from opentnsim.graph.calculations import calculate_location_over_edges, transform_geometry
 from opentnsim.graph.mixins import OnEdge
 from opentnsim.graph.utils import (
     check_if_geometry_is_aligned_with_edge,
@@ -224,6 +225,16 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         else:
             operational_hours = _create_operational_hours([datetime.datetime.min], [datetime.datetime.max])
         self.operational_hours = operational_hours
+
+        if self.geometry_m is not None and self.geometry is None:
+            self.geometry = transform_geometry(self.geometry_m, self.crs_m, "EPSG:4326")
+        elif self.geometry is not None and self.geometry_m is None:
+            self.geometry_m = transform_geometry(self.geometry, "EPSG:4326", self.crs_m)
+        elif self.geometry is None and self.geometry_m is None:
+            line = LineString([geometry_gate_A, geometry_gate_B])
+            line_m = transform_geometry(line, "EPSG:4326", self.crs_m)
+            self.geometry_m = line_m.buffer(self.lock_width / 2, cap_style=2) 
+            self.geometry = transform_geometry(self.geometry_m, self.crs_m, "EPSG:4326")
 
         # checks
         check_lock_distances_to_nodes_of_edge(self)
