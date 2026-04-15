@@ -9,13 +9,11 @@ This script contains the classes
 # generic
 import pathlib
 import logging
-import numpy as np
 import pandas as pd
 
 # OpenTNSim
 import opentnsim
 from opentnsim.graph.calculations import calculate_distance, calculate_depth
-from opentnsim.energy.algorithms import power2v
 from opentnsim.energy.calculations import (
     sample_engine_age,
     calculate_properties,
@@ -27,7 +25,6 @@ from opentnsim.energy.calculations import (
     calculate_residual_resistance,
     calculate_total_power_required,
     calculate_max_sinkage,
-    calculate_total_resistance,
 )
 
 

@@ -2,11 +2,8 @@
 
 # %% IMPORT DEPENENDENCIES
 # generic
-import pathlib
 import logging
 import functools
-import numpy as np
-import pandas as pd
 import scipy.optimize
 
 # OpenTNSim

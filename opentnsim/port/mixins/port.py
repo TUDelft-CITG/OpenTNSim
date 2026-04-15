@@ -1,8 +1,7 @@
 from opentnsim.core import SimpyObject, Identifiable, Movable, Log
 from opentnsim.graph.mixins import OnNode
 from opentnsim.port.utils import get_accessibility_info, update_terminal_planning, determine_vessel_waiting_events, \
-    determine_if_vessel_needs_to_sail_to_the_anchorage_area, check_if_route_contains_restrictions, get_vessel_from_id, \
-    find_waterways_to_be_passed
+    determine_if_vessel_needs_to_sail_to_the_anchorage_area, find_waterways_to_be_passed
 from opentnsim.port.visualizations import plot_vessels_over_route, plot_time_distance_diagram
 from opentnsim.port.calculations import calculate_total_waiting_time
 
