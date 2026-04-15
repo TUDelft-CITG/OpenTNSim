@@ -78,11 +78,11 @@ def add_energy_attributes_to_eventtable(df, objs):
         else:
             h_0 = row["waterdepth (m)"]
 
+        calc_v = row['distance (m)']/row['duration (s)']
         h_0 = obj.calculate_h_squat(
-            v=obj.v, h_0=h_0
+            v=calc_v, h_0=h_0
         )  # TODO: actually takes width as arg
 
-        calc_v = row['distance (m)']/row['duration (s)']
         obj.calculate_total_resistance(v=calc_v, h_0=h_0)
         obj.calculate_total_power_required(v=calc_v, h_0=h_0)
         obj.calculate_emission_factors_total(v=calc_v, h_0=h_0)
