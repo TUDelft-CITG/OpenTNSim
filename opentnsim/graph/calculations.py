@@ -10,7 +10,7 @@ from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
                                    create_transformer, get_trajectory, check_if_edge_in_graph, find_closest_edge,
-                                   find_closest_node, get_largest_route_between_edges, 
+                                   find_closest_node, get_largest_route_between_edges, get_geometry_of_edge,
                                    align_network_geometries_with_edge_directions)
 import warnings
 from pyproj import Geod
@@ -215,7 +215,7 @@ def transform_projection(from_spatialref, to_EPSG):
         The EPSG code to transform the graph to
     """
 
-    from osgeo import ogr, osr
+    from osgeo import osr
 
     to_spatialref = osr.SpatialReference()
     to_spatialref.ImportFromEPSG(to_EPSG)
@@ -298,7 +298,7 @@ def calculate_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EP
     wgs84 = pyproj.CRS(current_crs)
     wgs84_m = pyproj.CRS(crs_meter)
     wgs84_to_wgs84_m = pyproj.transformer.Transformer.from_crs(wgs84, wgs84_m, always_xy=True).transform
-    geometry = graph.edges[edge]["geometry"]
+    geometry = get_geometry_of_edge(graph, edge)
     geometry_m = transform(wgs84_to_wgs84_m, geometry)
     length_m = geometry_m.length
     return length_m

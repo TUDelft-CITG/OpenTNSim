@@ -9,6 +9,7 @@ import geopandas as gpd
 import networkx as nx
 
 # OpenTNSim
+from opentnsim.graph.utils import node_path_to_edge_path
 from opentnsim.graph.calculations import calculate_distance
 from plotly.offline import init_notebook_mode, iplot
 from opentnsim.port.visualizations import plot_anchorage_areas, plot_turning_basins, plot_berths
@@ -160,14 +161,15 @@ def visualize_geometry_polygon_in_folium_plot(m, geometry, label = None):
         folium.Polygon(polyline).add_to(m)
 
 
-def visualize_node_in_folium_plot(m, graph, node, size=25, color='black', label=''):
+def visualize_node_in_folium_plot(m, graph, node, size=3, color='black', label=''):
     node_info = graph.nodes[node]
     point_x = node_info["geometry"].coords.xy[0][0]
     point_y = node_info["geometry"].coords.xy[1][0]
-    folium.Circle((point_y, point_x), color=color, fill_color=color, radius=size, popup=label, tooltip=label).add_to(m)
+    folium.Circle((point_y, point_x), color=color, fill_color=color, opacity=1.0, 
+                  fill=True, fill_opacity=1.0, radius=size, popup=label, tooltip=label).add_to(m)
 
 
-def visualize_edge_in_folium_plot(m, graph, edge, color = 'violet', weight = 3,
+def visualize_edge_in_folium_plot(m, graph, edge, color = 'violet', weight = 2,
                                   label = None, popup_width = 500, popup_height = 300):
     edge_info = graph.edges[edge]
     points_x = list(edge_info["geometry"].coords.xy[0])
@@ -180,7 +182,25 @@ def visualize_edge_in_folium_plot(m, graph, edge, color = 'violet', weight = 3,
         popup = folium.Popup(width=popup_width, height=popup_height)
         if label is None:
             label = edge
-        folium.PolyLine(line, weight=weight, color=color, tooltip=label, popup=label).add_to(m)
+        folium.PolyLine(line, weight=weight, color=color, tooltip=label, popup=popup).add_to(m)
+
+
+def visualize_route_in_folium_plot(m, graph, route, color = 'black', weight = 3, label = None):
+    edges = node_path_to_edge_path(graph, route)
+    for edge in edges:
+        edge_info = graph.edges[edge]
+        points_x = list(edge_info["geometry"].coords.xy[0])
+        points_y = list(edge_info["geometry"].coords.xy[1])
+        
+        line = []
+        for i, _ in enumerate(points_x):
+            line.append((points_y[i], points_x[i]))
+
+        if label is None:
+            label = edge_info["Name"]
+
+        folium.PolyLine(line, color = color, weight = weight, popup = label).add_to(m)
+
 
 
 def plot_graph_folium(graph, longitude, latitude, zoom_start=5,
@@ -210,7 +230,6 @@ def plot_graph_folium(graph, longitude, latitude, zoom_start=5,
         data = edge_info[-1]
         if multi_graph:
             k = edge_info[2]
-        geom = data["geometry"]
         edge_info = {"geometry": data["geometry"], "u": u,"v": v}
         fields = ["u", "v"]
         if isinstance(graph, nx.MultiGraph) or isinstance(graph, nx.MultiDiGraph):

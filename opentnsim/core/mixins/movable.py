@@ -312,6 +312,9 @@ class Movable(Locatable, Routable, Log):
         # Check if vessel is at correct location - if not, move to location
         yield from self._move_to_start()
 
+        # Set edge_route based on route
+        self.edge_route = node_path_to_edge_path(self.graph, self.route)
+
         # look ahead to first node
         self.position_on_route = 0
         yield from self.look_ahead_to_node(self.route[0])
