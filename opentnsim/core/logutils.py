@@ -340,7 +340,8 @@ def eventtable2gdf(df_eventtable, objs):
 
         return G_new
 
-    def copy_graph_and_remove_information(graph, keep_edge_columns=['weigth', 'geometry'],
+    def copy_graph_and_remove_information(graph, 
+                                          keep_edge_columns=['weigth', 'geometry'],
                                           keep_node_columns=['geometry']):
         graph_new = graph.copy()
         for n, data in graph_new.nodes(data=True):
@@ -351,7 +352,7 @@ def eventtable2gdf(df_eventtable, objs):
         for u, v, data in graph_new.edges(data=True):
             keys = list(data.keys())
             for k in keys:
-                if k not in keep_node_columns:
+                if k not in keep_edge_columns:
                     del data[k]
         return graph_new
 
