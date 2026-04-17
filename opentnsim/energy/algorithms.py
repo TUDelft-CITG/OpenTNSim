@@ -30,7 +30,8 @@ def power2v(vessel, edge, upperbound):
         """function to optimize"""
         # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
         # water depth from the edge
-        h_0 = edge["Info"]["GeneralDepth"]
+        # h_0 = edge["Info"]["GeneralDepth"]
+        h_0 = edge["GeneralDepth"]
         try:
             h_0 = vessel.calculate_h_squat(v, h_0)
         except AttributeError:

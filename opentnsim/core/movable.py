@@ -596,7 +596,8 @@ class Movable(Locatable, Routable, Log):
         # determine the depth of the edge
         edge = self.graph.edges[origin, destination]
         try:
-            depth = edge["Info"]["GeneralDepth"]
+            # depth = edge["Info"]["GeneralDepth"]
+            depth = edge["GeneralDepth"]
         except KeyError:
             raise ValueError(
                 f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
