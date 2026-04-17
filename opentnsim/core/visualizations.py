@@ -428,8 +428,10 @@ def generate_vessel_gantt_chart(df_eventtable: pd.DataFrame, static: bool = Fals
     ].copy()
 
     df_sub["activity label"] = (
-        df_sub["object name"] + " - " + df_sub["subactivity name"]
-    )
+    df_sub["object name"].astype(str)
+    + " - "
+    + df_sub["subactivity name"].fillna("").astype(str)
+)
 
     # Combine main and sub activities for plotting
     df_plot = pd.concat([df_main, df_sub], ignore_index=True)
