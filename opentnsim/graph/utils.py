@@ -258,6 +258,22 @@ def find_closest_edge(graph, point):
     return edge
 
 
+def determine_edge_based_on_two_locations(graph, geom_start, geom_stop):
+   # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
+    node_start = find_closest_node(graph, geom_start)[0]
+    node_end = find_closest_node(graph, geom_stop)[0]
+    if node_start == node_end:
+        edge_start = find_closest_edge(graph, geom_start)
+        edge_stop = find_closest_edge(graph, geom_stop)
+        if edge_start == edge_stop:
+            node_start, node_end = edge_start[:2]
+        elif node_start == edge_start[0]:
+            node_start, node_end = edge_start[:2]
+        else:
+            node_start, node_end = edge_stop[:2]
+    return (node_start, node_end)
+
+
 def network_check(graph):
     """Assertions about the graphs used in OpenTNSim"""
     # TODO Determine where we should save this function. This function is not called by any mixins.
@@ -676,7 +692,7 @@ def get_minimum_depth(graph, route):
         # get the properties
         edge = graph.get_edge_data(e[0], e[1])
         # lookup the depth
-        depth = edge["Info"]["GeneralDepth"]
+        depth = edge["GeneralDepth"]
         # remember
         depths.append(depth)
         # find the minimum

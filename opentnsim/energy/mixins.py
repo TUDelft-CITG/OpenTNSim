@@ -428,7 +428,7 @@ class ConsumesEnergy:
             + self.R_B
         )
 
-    def calculate_total_power_required(self, v, h_0):
+    def calculate_total_power_required(self, v):
         """Total required power:
 
         - The total required power is the sum of the power for systems on board (P_hotel) + power required for
@@ -470,7 +470,6 @@ class ConsumesEnergy:
             self.P_partial,
         ) = calculate_total_power_required(
             v=v,
-            h_0=h_0,
             R_tot=self.R_tot,
             F_rL=self.F_rL,
             x=self.x,
@@ -716,7 +715,7 @@ class ConsumesEnergy:
         """
         # TODO: create correction factors for renewable powered ship, the factor may be 100%
         self.calculate_total_power_required(
-            v=v, h_0=h_0
+            v=v
         )  # You need the P_partial values
 
         # Import the correction factors table
@@ -1246,7 +1245,7 @@ class EnergyCalculation:
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
                 # print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
-                self.vessel.calculate_total_power_required(v=v, h_0=h_0)
+                self.vessel.calculate_total_power_required(v=v)
 
                 self.vessel.calculate_emission_factors_total(v=v, h_0=h_0)
                 self.vessel.calculate_SFC_final(v=v, h_0=h_0)

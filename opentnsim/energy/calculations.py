@@ -169,7 +169,6 @@ def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
     """
 
     # TODO: add properties for seagoing ships with bulbs
-
     # (Van Koningsveld et al (2023) - Part IV Eq 5.9, 5.10 and below Eq 5.12)
     C_M = 1.006 - 0.0056 * C_B ** (-3.56)  # Midship section coefficient (Eq 5.9)
     C_WP = (1 + 2 * C_B) / 3  # Waterplane coefficient (Eq 5.10)
@@ -222,7 +221,7 @@ def calculate_properties(C_B, L, B, T, bulbous_bow, C_BB):
     return result
 
 
-def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
+def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho, *args, **kwargs):
     """
     Calculate the frictional resistance of a vessel.
 
@@ -354,7 +353,7 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     return result
 
 
-def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta):
+def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta, *args, **kwargs):
     """
     Calculate the viscous resistance of a vessel.
 
@@ -408,7 +407,7 @@ def calculate_viscous_resistance(c_stern, B, L, T, L_R, C_P, R_f, delta):
     return result
 
 
-def calculate_appendage_resistance(v, rho, S_APP, one_k2, C_f):
+def calculate_appendage_resistance(v, rho, S_APP, one_k2, C_f, *args, **kwargs):
     """
     Calculate the frictional resistance resulting from the wetted area of appendages.
     This function computes the appendage resistance (R_APP) in kilonewtons (kN) based
@@ -443,7 +442,7 @@ def calculate_appendage_resistance(v, rho, S_APP, one_k2, C_f):
     return R_APP
 
 
-def karpov(v, h_0, g, T):
+def karpov(v, h_0, g, T, *args, **kwargs):
     """
     Calculate the corrected velocity and alpha coefficient using the Karpov method.
     The Karpov method applies a correction factor (alpha_xx) to the velocity based on
@@ -561,13 +560,14 @@ def karpov(v, h_0, g, T):
     return result
 
 
-def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho):
+def calculate_wave_resistance(
+        V_2, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho, *args, **kwargs):
     """
     Calculate the wave resistance and related hydrodynamic coefficients for a ship.
 
     Parameters
     ----------
-    V_2v : float
+    V_2 : float
         Karpov corrected ship speed relative to water (m/s).
     h_0 : float
         Water depth (m).
@@ -725,7 +725,8 @@ def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_
     return result
 
 
-def calculate_residual_resistance(V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, h_B, A_BT, bulbous_bow):
+def calculate_residual_resistance(
+        V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, h_B, A_BT, bulbous_bow, *args, **kwargs):
     """
     Calculate the residual resistance of a ship, which includes the resistance due to
     the immersed transom, model-ship correlation resistance, and bulbous bow resistance.
@@ -858,7 +859,8 @@ def calculate_residual_resistance(V_2, g, A_T, B, C_WP, rho, T, L, C_B, S, T_F, 
     return result
 
 
-def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, rho, c_stern, one_k2):
+def calculate_total_resistance(
+        v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, rho, c_stern, one_k2, *args, **kwargs):
     """
     Calculate the total resistance of a ship, which includes frictional, viscous,
     appendage, wave, and residual resistance components.
@@ -919,10 +921,9 @@ def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, r
 
     # calculate the Karpov corrected velocity
     F_rh, V_2, alpha_xx = karpov(v, h_0, g, T)
-    print('Original v = {} m/s, Karpov corrected V_2 = {} m/s'.format(v, V_2))
 
     # wave resistance
-    _, _, _, _, _, _, _, _, _, _, _, R_W = calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho)
+    _, _, _, _, _, _, _, _, _, _, _, R_W = calculate_wave_resistance(V_2, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho)
 
     # residual resistance
     _, _, R_TR, _, _, _, R_A, _, _, R_B, _ = calculate_residual_resistance(
@@ -937,7 +938,6 @@ def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, r
 
 def calculate_total_power_required(
     v,
-    h_0,
     R_tot,
     F_rL,
     x,
@@ -950,6 +950,8 @@ def calculate_total_power_required(
     eta_g,
     P_hotel,
     P_installed,
+    *args, 
+    **kwargs
 ):
     """
     Calculate the total power required for a ship based on its speed, resistance,
@@ -1203,14 +1205,15 @@ def power2v(vessel, edge, upperbound):
     returns velocity [m/s]
     """
 
-    assert isinstance(vessel, opentnsim.core.vessel_properties.VesselProperties), "vessel should be an instance of VesselProperties"
+    assert isinstance(vessel, opentnsim.core.VesselProperties), "vessel should be an instance of VesselProperties"
     assert vessel.C_B is not None, "C_B cannot be None"
 
     def seek_v_given_power(v, vessel, edge):
         """function to optimize"""
-        # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
+
         # water depth from the edge
-        h_0 = edge["Info"]["GeneralDepth"]
+        edge_info = vessel.env.graph.edges[edge]
+        h_0 = edge_info["GeneralDepth"]
         try:
             h_0 = vessel.calculate_h_squat(v, h_0)
         except AttributeError:
@@ -1220,7 +1223,7 @@ def power2v(vessel, edge, upperbound):
         vessel.calculate_total_resistance(v, h_0)
 
         # compute total power given
-        P_given = vessel.calculate_total_power_required(v=v, h_0=h_0)
+        P_given = vessel.calculate_total_power_required(v=v)
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 

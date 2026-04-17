@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 # internal
-from opentnsim.graph.calculations import calculate_depth
+from opentnsim.graph.calculations import calculate_current, calculate_depth, calculate_width
 
 
 # %% ADD ENERGY ATTRIBUTES INTO EVENT TABLE
@@ -73,24 +73,35 @@ def add_energy_attributes_to_eventtable(df, objs):
 
         # get the depth from the edge sailed in the event (and check if squat effects
         # need to be considered
-        if pd.isna(row["waterdepth (m)"]):
+        if "waterdepth (m)" not in row or pd.isna(row["waterdepth (m)"]):
             h_0 = calculate_depth(row["start location"], row["stop location"], obj.env.graph)
         else:
             h_0 = row["waterdepth (m)"]
 
-        calc_v = row['distance (m)']/row['duration (s)']
-        h_0 = obj.calculate_h_squat(
-            v=calc_v, h_0=h_0
-        )  # TODO: actually takes width as arg
+        if "waterway width (m)" not in row or pd.isna(row["waterway width (m)"]):
+            w_0 = calculate_width(row["start location"], row["stop location"], obj.env.graph)
+        else:
+            w_0 = row["waterway width (m)"]  
+        
+        if "current (m/s)" not in row or pd.isna(row["current (m/s)"]):
+            current = calculate_current(row["start location"], row["stop location"], obj.env.graph)
+        else:
+            current = row["current (m/s)"]
 
-        obj.calculate_total_resistance(v=calc_v, h_0=h_0)
-        obj.calculate_total_power_required(v=calc_v, h_0=h_0)
-        obj.calculate_emission_factors_total(v=calc_v, h_0=h_0)
-        obj.calculate_SFC_final(v=calc_v, h_0=h_0)
+        sog = row['distance (m)']/row['duration (s)']
+        stw = sog - current
+        h_0 = obj.calculate_h_squat(v=stw, h_0=h_0)  # TODO: actually takes width as arg
+
+        obj.calculate_total_resistance(v=stw, h_0=h_0)
+        obj.calculate_total_power_required(v=stw)
+        obj.calculate_emission_factors_total(v=stw, h_0=h_0)
+        obj.calculate_SFC_final(v=stw, h_0=h_0)
 
         df.at[index, "waterdepth (m)"] = h_0
-        #df.at[index, "waterway width (m)"] = None
-        df.at[index, "current (m/s)"] = 0  # TODO: get current from graph
+        df.at[index, "waterway width (m)"] = w_0
+        df.at[index, "speed over ground (m/s)"] = sog
+        df.at[index, "speed through water (m/s)"] = stw
+        df.at[index, "current (m/s)"] = current
         df.at[index, "engine age (year)"] = obj.C_year
 
         df.at[index, "P_tot (kW)"] = obj.P_tot

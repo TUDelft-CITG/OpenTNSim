@@ -10,8 +10,8 @@ from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
                                    create_transformer, get_trajectory, check_if_edge_in_graph, find_closest_edge,
-                                   find_closest_node, get_largest_route_between_edges, get_geometry_of_edge,
-                                   align_network_geometries_with_edge_directions)
+                                   determine_edge_based_on_two_locations, get_largest_route_between_edges, 
+                                   get_geometry_of_edge, align_network_geometries_with_edge_directions)
 import warnings
 from pyproj import Geod
 wgs84 = Geod(ellps="WGS84")
@@ -42,24 +42,11 @@ def calculate_depth(geom_start, geom_stop, graph):
         If there is no edge between the two nodes in the graph graph.
         If the depth data is not available for the edge between the two nodes.
     """
-
-    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
-    node_start = find_closest_node(graph, geom_start)[0]
-    node_end = find_closest_node(graph, geom_stop)[0]
-    if node_start == node_end:
-        edge_start = find_closest_edge(graph, geom_start)
-        edge_stop = find_closest_edge(graph, geom_stop)
-        if edge_start == edge_stop:
-            node_start, node_stop = edge_start[:2]
-        elif node_start == edge_start[0]:
-            node_start, node_stop = edge_start[:2]
-        else:
-            node_start, node_stop = edge_stop[:2]
-
+    node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
     # Read from the graph data from vaarweginformatie.nl the General depth of each edge
     try:
-        if "GeneralDepth" in graph.get_edge_data(node_start, node_stop).keys():
-            depth = graph.get_edge_data(node_start, node_stop)["GeneralDepth"]
+        if "GeneralDepth" in graph.get_edge_data(node_start, node_end).keys():
+            depth = graph.get_edge_data(node_start, node_end)["GeneralDepth"]
         else:
             return np.nan  # if no depth data is available, return NaN
     except:
@@ -69,6 +56,84 @@ def calculate_depth(geom_start, geom_stop, graph):
 
     # depth of waterway between two points
     return h_0
+
+
+def calculate_width(geom_start, geom_stop, graph):
+    """method to calculate the width of the waterway in meters between two geometries.
+
+    Parameters
+    ----------
+    geom_start : shapely.geometry.Point
+        Starting point geometry. Must represent a node in graph graph.
+    geom_stop : shapely.geometry.Point
+        Stopping point geometry. must represent a node in graph graph.
+    graph : networkx.Graph
+        The graph containing vaarweginformatie.nl data, with nodes and edges.
+        Must contain 'Info' attribute on edges with 'GeneralWidth'.
+        Must contain an edge between geom_start and geom_stop.
+
+    Returns
+    -------
+    float
+        The width of the waterway between the two geometries in meters.
+
+    Raises
+    ------
+    ValueError
+        If geom_start or geom_stop are not nodes in the graph graph.
+        If there is no edge between the two nodes in the graph graph.
+        If the width data is not available for the edge between the two nodes.
+    """
+    node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
+    # Read from the graph data from vaarweginformatie.nl the General width of each edge
+    try:
+        if "GeneralWidth" in graph.get_edge_data(node_start, node_end).keys():
+            width = graph.get_edge_data(node_start, node_end)["GeneralWidth"]
+        else:
+            return np.nan  # if no width data is available, return NaN
+    except:
+        width = np.nan  # When there is no data of the width available of this edge, it gives a message
+
+    return width
+
+
+def calculate_current(geom_start, geom_stop, graph):
+    """method to calculate the current of the waterway in m/s between two geometries.
+
+    Parameters
+    ----------
+    geom_start : shapely.geometry.Point
+        Starting point geometry. Must represent a node in graph graph.
+    geom_stop : shapely.geometry.Point
+        Stopping point geometry. must represent a node in graph graph.
+    graph : networkx.Graph
+        The graph containing vaarweginformatie.nl data, with nodes and edges.
+        Must contain 'Info' attribute on edges with 'Current'.
+        Must contain an edge between geom_start and geom_stop.
+
+    Returns
+    -------
+    float
+        The current of the waterway between the two geometries in m/s.
+
+    Raises
+    ------
+    ValueError
+        If geom_start or geom_stop are not nodes in the graph graph.
+        If there is no edge between the two nodes in the graph graph.
+        If the current data is not available for the edge between the two nodes.
+    """
+    node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
+    # Read from the graph data from vaarweginformatie.nl the Current of each edge
+    try:
+        if "Current" in graph.get_edge_data(node_start, node_end).keys():
+            current = graph.get_edge_data(node_start, node_end)["Current"]
+        else:
+            return 0.0  # if no current data is available, return NaN
+    except:
+        current = 0.0  # When there is no data of the current available of this edge, it gives a message
+
+    return current
 
 
 def calculate_distance(geom_start, geom_stop):

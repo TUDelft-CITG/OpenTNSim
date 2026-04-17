@@ -162,15 +162,15 @@ class Movable(Locatable, Routable, Log):
         - Several edges and nodes can have the same resource, which is usefull when a segment can only be used by one vessel at a time.
         - When using a digraph, make sure to assign the same resource to both directions of the edge.
     - Current on edges, which can be used to compute the speed of the vessel.
-        - Current on edges is saved in env.graph.edges[origin, destination]["Info"]["Current"].
+        - Current on edges is saved in env.graph.edges[origin, destination]["Current"].
         - Current can only be used in a directed graph (DiGraph).
         - Current is positive in the direction of the edge, and negative in the opposite direction.
         - Make sure to assign current to both directions of the edge in a digraph. (the negative and positive current)
     - Power information, which can be used to compute the speed of the vessel.
         - self must be a mixin of ConsumesEnergy.
         - self must have the attribute P_tot_given and must not be None.
-        - general depth of fairway is saved in env.graph.edges[origin, destination]["Info"]["GeneralDepth"].
-        - width of fairway is saved in env.graph.edges[origin, destination]["Info"]["Width"]. If not given, we use 150 m.
+        - general depth of fairway is saved in env.graph.edges[origin, destination]["GeneralDepth"].
+        - width of fairway is saved in env.graph.edges[origin, destination]["Width"]. If not given, we use 150 m.
 
     """
 
@@ -586,13 +586,10 @@ class Movable(Locatable, Routable, Log):
         float
             the current on the edge (in m/s)
         """
-        if "Info" not in self.graph.edges[edge].keys():
-            # no info on the current, return 0
-            return 0.0
-        elif "Current" not in self.graph.edges[edge]["Info"].keys():
+        if "Current" not in self.graph.edges[edge].keys():
             # no info on current, return 0
             return 0.0
-        current = self.graph.edges[edge]["Info"]["Current"]
+        current = self.graph.edges[edge]["Current"]
 
         if (self.current_speed + current) <= 0:
             raise ValueError(
@@ -633,10 +630,10 @@ class Movable(Locatable, Routable, Log):
         # determine the depth of the edge
         edge_info = self.graph.edges[edge]
         try:
-            depth = edge_info["Info"]["GeneralDepth"]
+            depth = edge_info["GeneralDepth"]
         except KeyError:
             raise ValueError(
-                f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
+                f"Edge {origin} - {destination} has no GeneralDepth. " f"\n Add info or remove ConsumesEnergy mixin"
             )
 
         # You can input more power than is realistic
@@ -668,12 +665,10 @@ class Movable(Locatable, Routable, Log):
         float
             the general width of the edge (in m)
         """
-        if "Info" not in self.graph.edges[edge].keys():
-            return None
-        elif "GeneralWidth" not in self.graph.edges[edge]["Info"].keys():
+        if "GeneralWidth" not in self.graph.edges[edge].keys():
             return None
         else:
-            return self.graph.edges[edge]["Info"]["GeneralWidth"]
+            return self.graph.edges[edge]["GeneralWidth"]
 
 
 class ContainerDependentMovable(Movable, HasContainer):

@@ -314,7 +314,7 @@ def _power_difference(v, vessel, width, depth):
 
     # 2. For the squatted water depth, calculate resistance and power
     vessel.calculate_total_resistance(v=v, h_0=h_0)
-    vessel.calculate_total_power_required(v=v, h_0=h_0)
+    vessel.calculate_total_power_required(v=v)
 
     # 3. Return the difference
     return vessel.P_installed - vessel.P_tot
@@ -422,7 +422,7 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
 
         # for the squatted water depth calculate resistance and power
         vessel.calculate_total_resistance(v=row["velocity"], h_0=h_0)
-        vessel.calculate_total_power_required(v=row["velocity"], h_0=h_0)
+        vessel.calculate_total_power_required(v=row["velocity"])
 
         # prepare a row
         result = {}
