@@ -255,6 +255,7 @@ class IsLockMaster:
                         if routed_edge[:2] == edge[:2]:
                             vessel.edge_route[index] = edge
                             break
+
             waiting_area_name = _find_available_waiting_area(vessel, lock_chamber, direction)
             self.vessel_planning.loc[vessel_planning_index, 'waiting_area'] = waiting_area_name
             self.vessel_planning.loc[vessel_planning_index, 'lock_chamber'] = lock_chamber_name
