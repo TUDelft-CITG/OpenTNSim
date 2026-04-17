@@ -590,6 +590,10 @@ class Movable(Locatable, Routable, Log):
             # no info on current, return 0
             return 0.0
         current = self.graph.edges[edge]["Current"]
+        if current != 0.0 and self.graph.is_directed() is False:
+            raise TypeError(
+                "Current is only available on a DiGraph. Use a Digraph to use current in your calculations."
+            )
 
         if (self.current_speed + current) <= 0:
             raise ValueError(

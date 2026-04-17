@@ -238,7 +238,6 @@ def find_closest_node(graph, point):
 
     _, idx = tree.query([point.x, point.y])
     closest_node = lookup[idx]
-
     return closest_node
 
 
@@ -260,8 +259,8 @@ def find_closest_edge(graph, point):
 
 def determine_edge_based_on_two_locations(graph, geom_start, geom_stop):
    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
-    node_start = find_closest_node(graph, geom_start)[0]
-    node_end = find_closest_node(graph, geom_stop)[0]
+    node_start = find_closest_node(graph, geom_start)
+    node_end = find_closest_node(graph, geom_stop)
     if node_start == node_end:
         edge_start = find_closest_edge(graph, geom_start)
         edge_stop = find_closest_edge(graph, geom_stop)

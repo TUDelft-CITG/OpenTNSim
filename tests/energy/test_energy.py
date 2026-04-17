@@ -2,12 +2,8 @@
 
 # %% IMPORT DEPENDENCIES
 import pytest
-from shapely import Point
 
-import opentnsim.fis
-from opentnsim.core.vessel_properties import VesselProperties
-from opentnsim.energy.mixins import ConsumesEnergy
-from opentnsim.energy.mixins import (
+from opentnsim.energy.calculations import (
     sample_engine_age,
     calculate_max_sinkage,
     calculate_properties,
@@ -17,8 +13,6 @@ from opentnsim.energy.mixins import (
     karpov,
     calculate_wave_resistance,
     calculate_residual_resistance,
-    calculate_total_resistance,
-    calculate_total_power_required,
 )
 
 

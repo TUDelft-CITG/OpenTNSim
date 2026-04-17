@@ -43,6 +43,7 @@ def calculate_depth(geom_start, geom_stop, graph):
         If the depth data is not available for the edge between the two nodes.
     """
     node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
+
     # Read from the graph data from vaarweginformatie.nl the General depth of each edge
     try:
         if "GeneralDepth" in graph.get_edge_data(node_start, node_end).keys():

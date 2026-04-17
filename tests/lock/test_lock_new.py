@@ -2,25 +2,19 @@
 
 import pytest
 import networkx as nx
-from shapely.geometry import Point, LineString, Polygon
+from shapely.geometry import Point, LineString
 
 import simpy
-import xarray as xr
-
-from opentnsim.lock import lock as lock_module
-from opentnsim.core import vessel_properties as vessel_module
-from opentnsim.vessel_traffic_service import vessel_traffic_service as vessel_traffic_service_module
 import datetime as dt
 import pyproj
 from shapely.ops import transform
 
-from opentnsim.lock.lock import (
-    PassesLockComplex,
+from opentnsim.lock import (
+    LockComplexTraversable,
     IsLockChamber,
     IsLockMaster,
     IsLockComplex,
     IsLockWaitingArea,
-    # IsLockLineUpArea, nog niet af...
 )
 
 
@@ -43,95 +37,103 @@ def graph():
     graph = nx.DiGraph()
     graph.add_node("A", geometry=transform(wgs84eqd_to_wgs84rad, Point(-5000, 0)))
     graph.add_node("B", geometry=transform(wgs84eqd_to_wgs84rad, Point(5000, 0)))
-    graph.add_edge("A", "B", geometry=transform(wgs84eqd_to_wgs84rad, LineString([Point(-5000, 0), Point(5000, 0)])), length=10000)
-    graph.add_edge("B", "A", geometry=transform(wgs84eqd_to_wgs84rad, LineString([Point(5000, 0), Point(-5000, 0)])), length=10000)
+    graph.add_edge("A", "B", geometry=transform(wgs84eqd_to_wgs84rad, LineString([Point(-5000, 0), Point(5000, 0)])), length_m=10000)
+    graph.add_edge("B", "A", geometry=transform(wgs84eqd_to_wgs84rad, LineString([Point(5000, 0), Point(-5000, 0)])), length_m=10000)
     return graph
 
 
-@pytest.mark.skip(reason="module must be edited")
 def test_islockwaitingarea_init(env, graph):
     env.graph = graph
-    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=graph)
-    waiting_area = IsLockWaitingArea(name="queue", edge=("A", "B", 0), lock=None, distance_from_node=100, env=env)
-    assert waiting_area.name == "queue"
-    assert waiting_area.node == "A"
-    assert waiting_area.waiting_area.capacity == 1000000  # een van beide moet weg denk ik.
-    assert waiting_area.resource.capacity == 1000000  # een van beide moet weg denk ik.
+    waiting_area = IsLockWaitingArea(name="test lock waiting area A", edge=("A", "B"), orientation=0, distance_from_edge_start=100, env=env, capacity=1000000)
+    assert waiting_area.name == "test lock waiting area A"
+    assert waiting_area.edge == ("A", "B")
+    assert waiting_area.orientation == 0
+    assert waiting_area.distance_from_edge_start == 100
+    assert waiting_area.resource.capacity == 1000000
 
 
 @pytest.mark.skip(reason="Does not exist yet")
 def test_islocklineuparea_init(env, graph):
     env.graph = graph
-    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=graph)
     lineup_area = IsLockLineUpArea(
         name="lineup", start_node="A", end_node="B", lineup_area_length=100, distance_from_start_edge=10, env=env
     )
     assert lineup_area.name == "lineup"
-    assert lineup_area.node == "A"
 
 
-@pytest.mark.skip(reason="make independent of IsLockMaster")
 def test_islockchamber_init(env, graph):
     env.graph = graph
-    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=graph)
 
-    chamber = IsLockChamber(
-        name="test chamber", start_node="A", end_node="B", env=env, lock_length=200, lock_width=20, lock_depth=5
-    )
-    assert chamber.name == "test chamber"
+    lock_chamber = IsLockChamber(name="test lock chamber", 
+                                 edge=("A", "B"), 
+                                 env=env, 
+                                 lock_length=200, 
+                                 lock_width=20, 
+                                 lock_depth=5,
+                                 distance_from_start_node_to_lock_gate_A=4900,
+                                 distance_from_end_node_to_lock_gate_B=4900)
+    
+    assert lock_chamber.name == "test lock chamber"
 
 
 def test_islockcomplex_init(env, graph):
     """Test the initialization of IsLockComplex."""
     env.graph = graph
-    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=graph)
 
-    lock = IsLockComplex(node_A="A", node_B="B", name="test lock", env=env, lock_length=200, lock_width=20, lock_depth=5)
+    lock_chamber = IsLockChamber(name="test lock chamber", 
+                                 edge=("A", "B"), 
+                                 env=env, 
+                                 lock_length=200, 
+                                 lock_width=20, 
+                                 lock_depth=5,
+                                 distance_from_start_node_to_lock_gate_A=4900,
+                                 distance_from_end_node_to_lock_gate_B=4900)
+    waiting_area_A = IsLockWaitingArea(name="test lock waiting area A", edge=("A", "B"), orientation=0, distance_from_edge_start=100, env=env)
+    waiting_area_B = IsLockWaitingArea(name="test lock waiting area B", edge=("B", "A"), orientation=1, distance_from_edge_start=100, env=env)
+    lock = IsLockComplex(lock_chambers=[lock_chamber], 
+                         waiting_areas=[waiting_area_A, waiting_area_B], 
+                         name="test lock complex", 
+                         env=env,
+                         registration_nodes=["A", "B"])
 
     # check attributes
-    assert isinstance(lock.waiting_area_A, IsLockWaitingArea)
-    assert isinstance(lock.waiting_area_B, IsLockWaitingArea)
+    assert isinstance(lock.waiting_areas["test lock waiting area A"], IsLockWaitingArea)
+    assert isinstance(lock.waiting_areas["test lock waiting area B"], IsLockWaitingArea)
 
 
 def test_islockmaster_init(env, graph):
     env.graph = graph
-    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=graph)
 
-    lock_complex = IsLockComplex(node_A="A", node_B="B", name="test lock", env=env, lock_length=200, lock_width=20, lock_depth=5)
-    master = IsLockMaster(lock_complex=lock_complex, env=env)
+    lock_chamber = IsLockChamber(name="test lock chamber", 
+                                 edge=("A", "B"), 
+                                 env=env, 
+                                 lock_length=200, 
+                                 lock_width=20, 
+                                 lock_depth=5,
+                                 distance_from_start_node_to_lock_gate_A=4900,
+                                 distance_from_end_node_to_lock_gate_B=4900)
+    waiting_area_A = IsLockWaitingArea(name="test lock waiting area A", edge=("A", "B"), orientation=0, distance_from_edge_start=100, env=env)
+    waiting_area_B = IsLockWaitingArea(name="test lock waiting area B", edge=("B", "A"), orientation=1, distance_from_edge_start=100, env=env)
+    lock_complex = IsLockComplex(lock_chambers=[lock_chamber], 
+                         waiting_areas=[waiting_area_A, waiting_area_B], 
+                         name="test lock complex", 
+                         env=env,
+                         registration_nodes=["A", "B"])
+    
+    master = IsLockMaster(lock_complex=lock_complex)
     assert master.lock_complex == lock_complex
 
 
-def test_islockcomplex_invalid_nodes(env, graph):
-    """Test that IsLockComplex raises ValueError for invalid nodes."""
-    env.graph = graph
-    env.vessel_traffic_service = vessel_traffic_service_module.VesselTrafficService(graph=graph)
-
-    with pytest.raises(
-        ValueError, match="Lock chamber test lock has invalid node_A X or node_B B which are not part of the graph."
-    ):
-        lock = IsLockComplex(node_A="X", node_B="B", name="test lock", env=env, lock_length=200, lock_width=20, lock_depth=5)
-
-    with pytest.raises(
-        ValueError, match="Lock chamber test lock has invalid node_A A or node_B Y which are not part of the graph."
-    ):
-        lock = IsLockComplex(node_A="A", node_B="Y", name="test lock", env=env, lock_length=200, lock_width=20, lock_depth=5)
-
-    with pytest.raises(ValueError, match="does not have an edge"):
-        lock = IsLockComplex(node_A="A", node_B="A", name="test lock", env=env, lock_length=200, lock_width=20, lock_depth=5)
-
-
 def test_passeslockcomplex_init(env, graph):
-    """Test the initialization of PassesLockComplex."""
+    """Test the initialization of LockComplexTraversable."""
     env.graph = graph
-    vessel = PassesLockComplex(v=4, geometry=graph.nodes["A"]["geometry"], route=["A", "B"], env=env)
+    vessel = LockComplexTraversable(v=4, geometry=graph.nodes["A"]["geometry"], route=["A", "B"], env=env, name = 'test vessel', B = 10, L = 100, T = 2, type="barge")
     assert len(vessel.on_pass_node_functions) == 1
-    assert len(vessel.on_pass_edge_functions) == 1
 
 
 def test_find_upcoming_locks(env, graph):
     env.graph = graph
-    vessel = PassesLockComplex(v=4, geometry=graph.nodes["A"]["geometry"], route=["A", "B"], env=env)
+    vessel = LockComplexTraversable(v=4, geometry=graph.nodes["A"]["geometry"], route=["A", "B"], env=env, name = 'test vessel', B = 10, L = 100, T = 2, type="barge")
     vessel.position_on_route = 0
 
     assert vessel.route_ahead == ["A", "B"]

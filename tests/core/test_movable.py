@@ -6,10 +6,9 @@ import networkx as nx
 from shapely.geometry import Point
 from pyproj import Geod
 
-from opentnsim.core.movable import Routable, Routeable, Movable, ContainerDependentMovable
-from opentnsim.graph.mixins import calculate_distance_along_path
+from opentnsim.core import Routable, Routeable, Movable, VesselProperties
+from opentnsim.graph.calculations import calculate_distance_along_path
 from opentnsim.energy.mixins import ConsumesEnergy
-from opentnsim.core.vessel_properties import VesselProperties
 
 # %% FIXTURES
 @pytest.fixture
@@ -102,9 +101,8 @@ def test_routable_env_with_fg(graph):
 
 
 def test_routable_wrong_route(env):
-    with pytest.raises(ValueError, match="Routable route must be on the graph"):
+    with pytest.raises(ValueError, match="No edge between 1 and 2 in graph"):
         Routable(route=[0, 1, 2], env=env)
-
 
 def test_routeable_warning(env):
     with pytest.warns(DeprecationWarning, match=".Use Routable instead of Routeable"):
@@ -143,7 +141,7 @@ def test_movable_no_generaldepth(env):
             self.P_tot_given = 1
 
     MixinNew = type("mixinNew", (Movable, P_tot_given_mixin), {})
-    with pytest.raises(ValueError, match="Nodes on route must have a 'GeneralDepth' attribute in their 'info'."):
+    with pytest.raises(ValueError, match="Nodes on route must have a 'GeneralDepth' attribute."):
         MixinNew(route=path, env=env, v=1.0, geometry=Point(0, 0))
 
 
@@ -273,7 +271,9 @@ def test_movable_pass_edge(env):
     starttime = env.now
 
     def mission_pass_edge(env, vessel):
-        yield from vessel.pass_edge(origin=0, destination=1)
+        origin=0
+        destination=1
+        yield from vessel.pass_edge((origin,destination))
 
     env.process(mission_pass_edge(env, movable))
     env.run()
@@ -296,6 +296,7 @@ def test_movable_pass_edge_with_energy_error(env):
         "type": "Va/M9 - Verl. Groot Rijnschip",  # This indicates the vessel class. This info is mainly informative.
         "L": 135,  # m
         "B": 11.45,  # m
+        "T": 3.2, #m
         "v": 5,  # m/s If None: this value is calculated based on P_tot_given
         "h_squat": False,  # if the ship should squat while moving, set to True, otherwise set to False
         "P_installed": 1750.0,  # kW
@@ -316,15 +317,17 @@ def test_movable_pass_edge_with_energy_error(env):
     movable.update_position(0)
 
     def mission_pass_edge(env, vessel):
-        yield from vessel.pass_edge(origin=0, destination=1)
+        origin=0
+        destination=1
+        yield from vessel.pass_edge((origin,destination))
 
     env.process(mission_pass_edge(env, movable))
-    with pytest.raises(ValueError, match="has no GeneralDepth in Info"):
+    with pytest.raises(ValueError, match="has no GeneralDepth"):
         env.run()
 
 
 def test_movable_pass_edge_with_energy(env):
-    env.graph.edges[0, 1]["Info"] = {"GeneralDepth": 5}  # from '0' to '1' you sail against the current
+    env.graph.edges[0, 1].update({"GeneralDepth": 5})  # from '0' to '1' you sail against the current
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
     starttime = env.now
@@ -351,7 +354,9 @@ def test_movable_pass_edge_with_energy(env):
     movable.update_position(0)
 
     def mission_pass_edge(env, vessel):
-        yield from vessel.pass_edge(origin=0, destination=1)
+        origin=0
+        destination=1
+        yield from vessel.pass_edge((origin,destination))
 
     env.process(mission_pass_edge(env, movable))
     env.run()
@@ -364,54 +369,62 @@ def test_movable_pass_edge_with_energy(env):
 
 # %% Tests for _get_current method
 def test_movable_get_current_no_info(digraph_movable):
-    current = digraph_movable._get_current(origin=0, destination=1)
+    origin, destination = 0, 1
+    current = digraph_movable._get_current((origin, destination))
     assert current == 0.0, "Expected current to be 0.0, now {}".format(current)
 
 
 def test_movable_get_current_no_current(digraph_movable):
-    digraph_movable.env.graph.edges[0, 1]["Info"] = {}  # 0.5 current
-    current = digraph_movable._get_current(origin=0, destination=1)
+    digraph_movable.env.graph.edges[0, 1].update({"Current": 0.0})
+    origin, destination = 0, 1
+    current = digraph_movable._get_current((origin, destination))
     assert current == 0.0, "Expected current to be 0.0, now {}".format(current)
 
 
 def test_movable_get_current(digraph_movable):
-    digraph_movable.env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
-    current = digraph_movable._get_current(origin=0, destination=1)
+    digraph_movable.env.graph.edges[0, 1].update({"Current": 0.5})  # 0.5 current
+    origin, destination = 0, 1
+    current = digraph_movable._get_current((origin, destination))
     assert current == 0.5, "Expected current to be 0.5, now {}".format(current)
 
 
 def test_movable_get_current_negative(digraph_movable):
-    digraph_movable.env.graph.edges[0, 1]["Info"] = {"Current": -0.5}  # -0.5 current
-    current = digraph_movable._get_current(origin=0, destination=1)
+    digraph_movable.env.graph.edges[0, 1].update({"Current": -0.5})  # -0.5 current
+    origin, destination = 0, 1
+    current = digraph_movable._get_current((origin, destination))
     assert current == -0.5, "Expected current to be -0.5, now {}".format(current)
 
 
 def test_movable_get_current_too_high(digraph_movable):
-    digraph_movable.env.graph.edges[0, 1]["Info"] = {"Current": -1.5}  # 1.5 current
+    digraph_movable.env.graph.edges[0, 1].update({"Current": -1.5})  # 1.5 current
     with pytest.raises(ValueError, match="Current -1.5 m/s is larger than current speed 1.0 m/s"):
-        digraph_movable._get_current(origin=0, destination=1)
+        origin, destination = 0, 1
+        digraph_movable._get_current((origin, destination))
 
 
 def test_movable_get_current_no_digraph(digraph_movable, graph):
-    graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
+    graph.edges[0, 1].update({"Current": 0.5})  # 0.5 current
     digraph_movable.env.graph = graph  # change to a non-DiGraph
     with pytest.raises(
         TypeError, match="Current is only available on a DiGraph. Use a Digraph to use current in your calculations."
     ):
-        digraph_movable._get_current(origin=0, destination=1)
+        origin, destination = 0, 1
+        digraph_movable._get_current((origin, destination))
 
 
 def test_movable_pass_edge_with_current(digraph_movable):
     env = digraph_movable.env
     # add current to the edge
-    env.graph.edges[0, 1]["Info"] = {"Current": 0.5}  # 0.5 current
-    env.graph.edges[1, 0]["Info"] = {"Current": -0.5}  # -0.5 current in the opposite direction
+    env.graph.edges[0, 1].update({"Current": 0.5})  # 0.5 current
+    env.graph.edges[1, 0].update({"Current": -0.5})  # -0.5 current in the opposite direction
     digraph_movable.update_position(0)
 
     starttime = env.now
 
     def mission_pass_edge(env, vessel):
-        yield from vessel.pass_edge(origin=0, destination=1)
+        origin=0
+        destination=1
+        yield from vessel.pass_edge((origin,destination))
 
     env.process(mission_pass_edge(env, digraph_movable))
     env.run()
@@ -443,7 +456,9 @@ def test_movable_resource_restriction_one_edge(env):
     starttime = env.now
 
     def mission_pass_edge(env, vessel):
-        yield from vessel.pass_edge(origin=0, destination=1)
+        origin=0
+        destination=1
+        yield from vessel.pass_edge((origin,destination))
 
     env.process(mission_pass_edge(env, movable1))
     env.process(mission_pass_edge(env, movable2))

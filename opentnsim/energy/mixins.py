@@ -410,7 +410,6 @@ class ConsumesEnergy:
         self.calculate_appendage_resistance(v)
 
         self.karpov(v, h_0)
-        # print('Original v = {} m/s, Karpov corrected V_2 = {} m/s'.format(v, self.V_2))
         if self.karpov_correction:
             self.calculate_wave_resistance(self.V_2, h_0)
             self.calculate_residual_resistance(self.V_2, h_0)
@@ -1243,7 +1242,6 @@ class EnergyCalculation:
                 # we use the calculated velocity to determine the resistance and power required
                 # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
                 h_0 = self.vessel.calculate_h_squat(v, h_0)
-                # print(h_0)
                 self.vessel.calculate_total_resistance(v, h_0)
                 self.vessel.calculate_total_power_required(v=v)
 
