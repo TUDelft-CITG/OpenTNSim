@@ -601,7 +601,6 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
 
     suitable_lock_chambers = []
     for lock_chamber in lock_complex.lock_chambers.values():
-        print(vessel.T, vessel.L, vessel.B, lock_chamber.lock_depth, lock_chamber.lock_length, lock_chamber.lock_width, lock_chamber.name)
         if vessel.T < lock_chamber.lock_depth and vessel.L < lock_chamber.lock_length and vessel.B < lock_chamber.lock_width:
             suitable_lock_chambers.append(lock_chamber)
 
