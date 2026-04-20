@@ -1,7 +1,7 @@
 """This module contains utility functions for lock operations in the OpenTNSim simulation environment."""
 
 import logging
-
+import warnings
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -129,6 +129,7 @@ def determine_route_to_closest_waiting_area(vessel, waiting_area_A, waiting_area
         elif origin == waiting_area_B.edge[0]:
             waiting_area_node = waiting_area_B.edge[1]
             break
+
     if waiting_area_node is not None:
         route_to_waiting_area = vessel.determine_route_to_target_node(target_node=waiting_area_node)
     else:

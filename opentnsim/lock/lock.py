@@ -194,7 +194,6 @@ class HasLockPlanning:
 
         # determine the earlier possible arrival time of the vessel (vessel perspective)
         earliest_possible_time_lock_entry_start = self.vessel_planning.loc[vessel_planning_index, "time_lock_entry_start"]
-
         # determine the time that the lock operation can start (operation perspective)
         time_lock_operation_start = self.calculate_lock_operation_start_time(vessel, operation_index, direction, prognosis=True)
 
@@ -1855,8 +1854,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
             slow_df.set_index(['From', 'To', 'Segment'], inplace=True)
 
             normal_df = df[df['cum_end'] <= speed_reduction_start][['Speed', 'Distance', 'Time']]
-            print(normal_df)
-            print(slow_df)
             corrected_df = pd.concat([normal_df, slow_df])
 
             sailing_to_waiting_area = corrected_df.copy()
@@ -2062,6 +2059,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # determine the end node of the lock complex from the perspective of the vessel and the distance from the start node of the lock complex to the lock doors
         distance_to_lock = self._distance_to_lock(direction)
+        distance_not_to_lock = self.env.graph.edges[self.edge]['length_m'] - distance_to_lock
 
         # determine the route of the vessel to the end node of the lock complex from the perspective of the vessel
         route_to_lock_chamber = vessel._find_route_to_lock(lock=self)
@@ -2070,14 +2068,13 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         calculate_sailing_time = self.env.vessel_traffic_service.provide_sailing_time_distance_on_edge_to_distance_on_another_edge
 
         # calculate sailing time to the start node of the edge of lock complex from the perspective of the vessel
-        sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber)
+        sailing_to_lock_chamber = calculate_sailing_time(vessel, route=route_to_lock_chamber, distance_sailed_on_last_edge = distance_to_lock)
 
         sailing_to_lock_chamber_time = sailing_to_lock_chamber['Time'].sum()
         if self.mandatory_waiting_time_before_lock:
             sailing_to_lock_chamber_time += self.mandatory_waiting_time_before_lock
 
         # add sailing distance and time to the lock doors on the edge of the lock complex to sailing information to the start node of this edge 
-        sailing_to_lock_chamber_time += self.mandatory_waiting_time_before_lock
         sailing_to_lock_chamber_time = pd.Timedelta(seconds=sailing_to_lock_chamber_time)
         # calculate arrival time of vessel at the first to be encountered lock doors and add to the vessel planning of the lock complex master
         if not prognosis and overwrite:
@@ -2931,8 +2928,14 @@ class IsLockComplex(IsLockMaster):
         self.distance_waiting_area_A_from_edge_start_waiting_area_A = self.distance_from_start_node_to_lock_doors_A - self.distance_lock_doors_A_to_waiting_area_A
         if edge_waiting_area_A != (node_A, node_B):
             geometry_edge_start_waiting_area_A_to_lock_node_A = self.env.vessel_traffic_service.provide_trajectory(edge_waiting_area_A[0], node_A)
-            geometry_edge_start_waiting_area_A_to_lock_node_A_m = self.env.vessel_traffic_service.transform_geometry(geometry_edge_start_waiting_area_A_to_lock_node_A)
-            self.distance_waiting_area_A_from_edge_start_waiting_area_A = geometry_edge_start_waiting_area_A_to_lock_node_A_m.length - self.distance_lock_doors_A_to_waiting_area_A
+            if not geometry_edge_start_waiting_area_A_to_lock_node_A is None:
+                geometry_edge_start_waiting_area_A_to_lock_node_A_m = self.env.vessel_traffic_service.transform_geometry(geometry_edge_start_waiting_area_A_to_lock_node_A)
+                self.distance_waiting_area_A_from_edge_start_waiting_area_A = geometry_edge_start_waiting_area_A_to_lock_node_A_m.length - self.distance_lock_doors_A_to_waiting_area_A + self.distance_from_start_node_to_lock_doors_A
+            else:
+                length_edge = self.env.graph.edges[edge_waiting_area_A]['length_m']
+                distance_to_lock_gate_A = self.distance_lock_doors_A_to_waiting_area_A - self.distance_from_start_node_to_lock_doors_A
+                distance_waiting_area_A_from_edge_start_waiting_area_A = length_edge - distance_to_lock_gate_A
+                self.distance_waiting_area_A_from_edge_start_waiting_area_A = distance_waiting_area_A_from_edge_start_waiting_area_A
 
         self.waiting_area_A = IsLockWaitingArea(env=self.env,
                                                 name="waiting_area_A",
@@ -2950,9 +2953,16 @@ class IsLockComplex(IsLockMaster):
         self.distance_waiting_area_B_from_start_edge_waiting_area_B = self.distance_from_end_node_to_lock_doors_B - self.distance_lock_doors_B_to_waiting_area_B
         if edge_waiting_area_B !=(node_B, node_A):
             geometry_edge_start_waiting_area_B_to_lock_node_B = self.env.vessel_traffic_service.provide_trajectory(edge_waiting_area_B[0],node_B)
-            geometry_edge_start_waiting_area_B_to_lock_node_B_m = self.env.vessel_traffic_service.transform_geometry(geometry_edge_start_waiting_area_B_to_lock_node_B)
-            self.distance_waiting_area_B_from_start_edge_waiting_area_B = geometry_edge_start_waiting_area_B_to_lock_node_B_m.length - self.distance_lock_doors_B_to_waiting_area_B
+            if not geometry_edge_start_waiting_area_B_to_lock_node_B is None:
+                geometry_edge_start_waiting_area_B_to_lock_node_B_m = self.env.vessel_traffic_service.transform_geometry(geometry_edge_start_waiting_area_B_to_lock_node_B)
+                self.distance_waiting_area_B_from_start_edge_waiting_area_B = geometry_edge_start_waiting_area_B_to_lock_node_B_m.length - self.distance_lock_doors_B_to_waiting_area_B + self.distance_from_end_node_to_lock_doors_B
+            else:
+                length_edge = self.env.graph.edges[edge_waiting_area_B]['length_m']
+                distance_to_lock_gate_B = self.distance_lock_doors_B_to_waiting_area_B - self.distance_from_end_node_to_lock_doors_B
+                distance_waiting_area_B_from_edge_start_waiting_area_B = length_edge - distance_to_lock_gate_B
+                self.distance_waiting_area_B_from_start_edge_waiting_area_B = distance_waiting_area_B_from_edge_start_waiting_area_B
 
+            
         self.waiting_area_B = IsLockWaitingArea(env=self.env,
                                                 name="waiting_area_B",
                                                 lock=self,
