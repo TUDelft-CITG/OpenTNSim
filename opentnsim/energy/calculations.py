@@ -280,24 +280,39 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
 
     # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep
     # water --> Van Koningsveld et al (2023) - Eq 5.3
-    Cf_deep = 0.08169 / ((np.log10(R_e) - 1.717) ** 2)
+    if R_e:
+        Cf_deep = 0.08169 / ((np.log10(R_e) - 1.717) ** 2)
+    else:
+        Cf_deep = 0.
     assert not isinstance(Cf_deep, complex), f"Cf_deep should not be complex: {Cf_deep}"
 
     # Friction coefficient based on CFD computations of Zeng et al. (2018), taking into
     # account shallow water effects --> Van Koningsveld et al (2023) - Eq 5.4
-    Cf_shallow = (0.08169 / ((np.log10(R_e) - 1.717) ** 2)) * (1 + (0.003998 / (np.log10(R_e) - 4.393)) * (D / L) ** (-1.083))
+    if R_e:
+        Cf_shallow = (0.08169 / ((np.log10(R_e) - 1.717) ** 2)) * (1 + (0.003998 / (np.log10(R_e) - 4.393)) * (D / L) ** (-1.083))
+    else:
+        Cf_shallow = 0.
     assert not isinstance(Cf_shallow, complex), f"Cf_shallow should not be complex: {Cf_shallow}"
 
     # Friction coefficient in deep water according to ITTC-1957 curve
     # Van Koningsveld et al (2023) - Eq 5.6
-    Cf_0 = 0.075 / ((np.log10(R_e) - 2) ** 2)
+    if R_e:
+        Cf_0 = 0.075 / ((np.log10(R_e) - 2) ** 2)
+    else:
+        Cf_0 = 0.
 
     # 'a' is the coefficient needed to calculate the Katsui friction coefficient
     # Van Koningsveld et al (2023) - below Eq 5.7
-    a = 0.042612 * np.log10(R_e) + 0.56725
+    if R_e:
+        a = 0.042612 * np.log10(R_e) + 0.56725
+    else:
+        a = 0.56725
 
     # Van Koningsveld et al (2023) - Eq 5.7
-    Cf_Katsui = 0.0066577 / (np.log10(R_e) - 4.3762) ** a
+    if R_e:
+        Cf_Katsui = 0.0066577 / (np.log10(R_e) - 4.3762) ** a
+    else:
+        Cf_Katsui = 0.
 
     # The average velocity underneath the ship, taking into account the shallow water
     # effect. This calculation is to get V_B, which will be used in the following Cf
@@ -319,7 +334,10 @@ def calculate_frictional_resistance(v, h_0, L, nu, T, S, S_B, rho):
     else:
         # calculate Friction coefficient C_f for shallow water:
         # Van Koningsveld et al (2023) - Eq 5.5
-        C_f = Cf_0 + (Cf_shallow - Cf_Katsui) * (S_B / S) * (V_B / v) ** 2
+        if v:
+            C_f = Cf_0 + (Cf_shallow - Cf_Katsui) * (S_B / S) * (V_B / v) ** 2
+        else:
+            C_f = 0.
         logger.debug("now i am in the shallow loop")
     assert not isinstance(C_f, complex), f"C_f should not be complex: {C_f}"
 
@@ -662,14 +680,20 @@ def calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_
     # Van Koningsveld et al (2023) - Part IV Table 5.1
     m_1 = 0.0140407 * (L / T) - 1.75254 * ((delta) ** (1 / 3) / L) - 4.79323 * (B / L) - c_16
     # Van Koningsveld et al (2023) - Part IV Table 5.1
-    m_2 = c_15 * (C_P**2) * np.exp((-0.1) * (F_rL ** (-2)))
+    if F_rL:
+        m_2 = c_15 * (C_P**2) * np.exp((-0.1) * (F_rL ** (-2)))
+    else:
+        m_2 = 0.
 
     # Van Koningsveld et al (2023) - Part IV Eq 5.16
     # Segers (2019) distinguishes multiple Froude classes (Section 3.2.5 and Appendix C - C.2).
     # for all reasonable combinations of ship lengths and speeds, inland ships always fall in the
     # F_n,V_2 < 0.4 class
-    R_W = c_1 * c_2 * c_5 * delta * rho * g * np.exp(m_1 * (F_rL ** (-0.9)) + m_2 * np.cos(lmbda * (F_rL ** (-2)))) / 1000  # kN
-
+    if F_rL:
+        R_W = c_1 * c_2 * c_5 * delta * rho * g * np.exp(m_1 * (F_rL ** (-0.9)) + m_2 * np.cos(lmbda * (F_rL ** (-2)))) / 1000  # kN
+    else:
+        R_W = 0.
+        
     wave_resistance_properties = collections.namedtuple(
         "WaveResistanceProperties",
         [
@@ -898,7 +922,6 @@ def calculate_total_resistance(v, g, h_0, C_B, L, B, T, bulbous_bow, C_BB, nu, r
 
     # calculate the Karpov corrected velocity
     F_rh, V_2, alpha_xx = karpov(v, h_0, g, T)
-    print('Original v = {} m/s, Karpov corrected V_2 = {} m/s'.format(v, V_2))
 
     # wave resistance
     _, _, _, _, _, _, _, _, _, _, _, R_W = calculate_wave_resistance(V_2, h_0, g, T, L, B, C_P, C_WP, lcb, L_R, A_T, C_M, delta, rho)

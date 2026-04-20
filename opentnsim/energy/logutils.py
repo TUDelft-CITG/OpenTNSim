@@ -5,7 +5,7 @@ Logging utilities for energy-related calculations.
 
 # %% IMPORT DEPENDENCIES
 # generic
-
+import numpy as np
 
 # internal
 import opentnsim.graph.mixins as graph_module
@@ -136,8 +136,14 @@ def add_fuel_attributes_to_event_table(df, objs):
 
         # this first line is strange: diesel_consumption = diesel_C_year? 
         df.at[index, "diesel_consumption (g)"] = diesel_C_year
-        df.at[index, "diesel_consumption_m (g/m)"] = diesel_C_year / row["distance (m)"]
-        df.at[index, "diesel_consumption_s (g/s)"] = diesel_C_year / row["duration (s)"]
+        if row["distance (m)"]:
+            df.at[index, "diesel_consumption_m (g/m)"] = diesel_C_year / row["distance (m)"]
+        else:
+            df.at[index, "diesel_consumption_m (g/m)"] = np.nan
+        if row["duration (s)"]:
+            df.at[index, "diesel_consumption_s (g/s)"] = diesel_C_year / row["duration (s)"]
+        else:
+            df.at[index, "diesel_consumption_s (g/s)"] = np.nan
 
         CO2_emission_total = (
             row["total_energy (kWh)"] * obj.total_factor_CO2
@@ -151,27 +157,37 @@ def add_fuel_attributes_to_event_table(df, objs):
 
         # TODO: see if these entries are useful. They can also be easily calculated
         # from other entries
-        df.at[index, "CO2_emission_per_m (g/m)"] = (
+        if row["distance (m)"]: 
+            df.at[index, "CO2_emission_per_m (g/m)"] = (
             CO2_emission_total / row["distance (m)"]
-        )
-        df.at[index, "PM10_emission_per_m (g/m)"] = (
+            )
+            df.at[index, "PM10_emission_per_m (g/m)"] = (
             PM10_emission_total / row["distance (m)"]
-        )
-        df.at[index, "NOX_emission_per_m (g/m)"] = (
-            NOX_emission_total / row["distance (m)"]
-        )
+            )
+            df.at[index, "NOX_emission_per_m (g/m)"] = (
+                NOX_emission_total / row["distance (m)"]
+            )
+        else:
+            df.at[index, "CO2_emission_per_m (g/m)"] = np.nan
+            df.at[index, "PM10_emission_per_m (g/m)"] = np.nan
+            df.at[index, "NOX_emission_per_m (g/m)"] = np.nan
 
         # TODO: see if these entries are useful. They can also be easily calculated
         # from other entries
-        df.at[index, "CO2_emission_per_s (g/s)"] = (
-            CO2_emission_total / row["duration (s)"]
-        )
-        df.at[index, "PM10_emission_per_s (g/s)"] = (
-            PM10_emission_total / row["duration (s)"]
-        )
-        df.at[index, "NOX_emission_per_s (g/s)"] = (
-            NOX_emission_total / row["duration (s)"]
-        )
+        if row["duration (s)"]:
+            df.at[index, "CO2_emission_per_s (g/s)"] = (
+                CO2_emission_total / row["duration (s)"]
+            )
+            df.at[index, "PM10_emission_per_s (g/s)"] = (
+                PM10_emission_total / row["duration (s)"]
+            )
+            df.at[index, "NOX_emission_per_s (g/s)"] = (
+                NOX_emission_total / row["duration (s)"]
+            )
+        else:
+            df.at[index, "CO2_emission_per_s (g/s)"] = np.nan
+            df.at[index, "PM10_emission_per_s (g/s)"] = np.nan
+            df.at[index, "NOX_emission_per_s (g/s)"] = np.nan
 
     return df
 

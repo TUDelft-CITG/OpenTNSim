@@ -178,7 +178,6 @@ class IsLockChamberOperator:
 
         """
         # TODO: Moeten de origin en destination hier naast elkaar liggen? Zoja, toevoegen in documentatie.
-
         # determine if there is a lock on the edge
         if "Lock" not in vessel.multidigraph.edges[origin, destination, k].keys():
             return
