@@ -127,8 +127,13 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         if m is not None:
             (distance_from_start_node_to_lock_gate_A,
              distance_from_end_node_to_lock_gate_B) = calculate_lock_distances_to_nodes_of_edge_from_geometry(self, m=m)
-        self.distance_from_start_node_to_lock_gate_A = distance_from_start_node_to_lock_gate_A
-        self.distance_from_end_node_to_lock_gate_B = distance_from_end_node_to_lock_gate_B
+        
+        edge_length = self.env.graph.edges[self.edge]['length_m']
+        calculated_edge_length = distance_from_start_node_to_lock_gate_A + self.lock_length + distance_from_end_node_to_lock_gate_B 
+        if not self.geometry and not self.geometry_m and calculated_edge_length != edge_length:
+            distance_from_start_node_to_lock_gate_A = (edge_length - self.lock_length) / 2
+            distance_from_end_node_to_lock_gate_B = (edge_length - self.lock_length) / 2
+        
         self.start_node = self.edge[0]
         self.end_node = self.edge[1]
         self.k = 0
@@ -138,6 +143,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
             self.edge_reversed = (self.end_node, self.start_node, self.k)
 
         # gate information
+        self.distance_from_start_node_to_lock_gate_A = distance_from_start_node_to_lock_gate_A
+        self.distance_from_end_node_to_lock_gate_B = distance_from_end_node_to_lock_gate_B
         geometry_gate_A = calculate_location_over_edges(self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A, crs_m = self.crs_m)
         self.gate_A = IsLockGate(env = self.env, name = 'Gate A', geometry = geometry_gate_A)
         self.levelling = HasResource(env = self.env, nr_resources = 1)
@@ -294,7 +301,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         return event_durations
 
 
-    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, offset_x = 0., method = 'Matplotlib', boundary_nodes = None, fig=None, ax=None):
+    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, offset_x = 0., method = 'Matplotlib', boundary_nodes = None, fig=None, ax=None, legend=True):
         fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, offset_x = offset_x,
-                                        method = method, boundary_nodes = boundary_nodes, fig=fig, ax=ax)
+                                        method = method, boundary_nodes = boundary_nodes, fig=fig, ax=ax, legend = legend)
         return fig

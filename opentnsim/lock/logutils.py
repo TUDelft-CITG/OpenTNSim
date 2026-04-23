@@ -110,31 +110,34 @@ def get_waiting_and_idle_events(vessel, lock_passing_start_idx, levelling_idx, l
 def get_vessels_per_cycle(lock_chamber):
     vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
     levelling_cycles = get_levelling_cycles(lock_chamber)
+
+    vessel_intervals = {}
+    for vessel in vessels:
+        df = pd.DataFrame(vessel.logbook)
+        if df.empty:
+            continue
+
+        df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+
+        starts = df[df["Message"] == "Waiting for lock levelling start"]["Timestamp"].values
+        stops = df[df["Message"] == "Waiting for lock levelling stop"]["Timestamp"].values
+
+        vessel_intervals[vessel.id] = list(zip(starts, stops))
+
     vessels_per_cycle = []
-    for cycle_nr, level_event in levelling_cycles.iterrows():
-        for vessel in vessels:
-            vessel_df = pd.DataFrame(vessel.logbook)
-            try:
-                vessel_df["Timestamp"] = pd.to_datetime(vessel_df["Timestamp"])
-            except:
-                continue
+    for cycle_nr in levelling_cycles.index:
+        level_event = levelling_cycles.loc[cycle_nr]
+        cycle_start = level_event["leveling_start"]
+        cycle_stop = level_event["leveling_stop"]
 
-            # Find levelling start/stop pairs
-            levelling_starts = vessel_df[vessel_df["Message"] == "Waiting for lock levelling start"]
-            vessel_in_lock_cycle = False
-            for levelling_idx, _ in levelling_starts.iterrows():
-                levelling_start = vessel_df.loc[levelling_idx]["Timestamp"]
-                levelling_stop = vessel_df.loc[levelling_idx + 1]["Timestamp"]
-                if levelling_start <= level_event["leveling_stop"] and levelling_stop >= level_event["leveling_start"]:
-                    vessel_in_lock_cycle = True
+        for vessel_id, intervals in vessel_intervals.items():
+            for start, stop in intervals:
+                if start <= cycle_stop and stop >= cycle_start:
+                    vessels_per_cycle.append({
+                        "cycle_nr": cycle_nr,
+                        "vessel_id": vessel_id
+                    })
                     break
-
-            if not vessel_in_lock_cycle:
-                continue
-
-            vessel_info = {'cycle_nr': cycle_nr, 'vessel_id': vessel.id}
-            vessels_per_cycle.append(vessel_info)
-    vessels_per_cycle = pd.DataFrame(vessels_per_cycle)
     return vessels_per_cycle
 
 
@@ -143,10 +146,14 @@ def get_vessel_delays(lock_chamber):
     vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
     vessel_speed_edge = vessels[0]._compute_velocity_on_edge(lock_chamber.edge)
     levelling_cycles = get_levelling_cycles(lock_chamber)
-    vessels_per_cyle = []
+    vessels_per_cycle = get_vessels_per_cycle(lock_chamber)
     cycle_nr = 0
-    for cycle_nr, level_event in levelling_cycles.iterrows():
-        for vessel in vessels:
+    vessels_info_per_cycle = []
+    for cycle_nr in levelling_cycles.index:
+        level_event = levelling_cycles.loc[cycle_nr]
+        vessels_in_cycle = [d["vessel_id"] for d in vessels_per_cycle if d["cycle_nr"] == cycle_nr]
+        for vessel_id in vessels_in_cycle:
+            vessel = lock_chamber.env.vessels[vessel_id]
             vessel_df = pd.DataFrame(vessel.logbook)
             vessel_df["Timestamp"] = pd.to_datetime(vessel_df["Timestamp"])
 
@@ -250,9 +257,9 @@ def get_vessel_delays(lock_chamber):
                 "delay due to sailing away from lock (%)":
                     np.round(leaving_lock_complex / total_delay * 100, 2),
             }
-            vessels_per_cyle.append(vessel_info)
+            vessels_info_per_cycle.append(vessel_info)
 
-    vessel_delays = pd.DataFrame(vessels_per_cyle)
+    vessel_delays = pd.DataFrame(vessels_info_per_cycle)
     if vessel_delays.empty:
         return pd.DataFrame(), pd.Series(), pd.Series()
 
@@ -376,27 +383,22 @@ def calculate_cycle_information(lock_chamber):
     levelling_cycles = get_levelling_cycles(lock_chamber)
     levelling_cycles['vessels_present'] = [[] for _ in range(len(levelling_cycles))]
     vessels_per_cycle = get_vessels_per_cycle(lock_chamber)
-    if vessels_per_cycle.empty:
-        return pd.DataFrame()
-    for cycle_nr, _ in levelling_cycles.iterrows():
-        vessels_in_cycle = vessels_per_cycle[vessels_per_cycle.cycle_nr == cycle_nr]
-        if not vessels_in_cycle.empty:
-            vessels_present = list(vessels_in_cycle.vessel_id.values)
-            levelling_cycles.at[cycle_nr, 'vessels_present'] = vessels_present
+    for cycle_nr in levelling_cycles.index:
+        vessels_in_cycle = [d["vessel_id"] for d in vessels_per_cycle if d["cycle_nr"] == cycle_nr]
+        levelling_cycles.at[cycle_nr, 'vessels_present'] = vessels_in_cycle
 
     def get_duration(df, start_msg, stop_msg):
         starts = df[df["Message"] == start_msg]["Timestamp"].reset_index(drop=True)
         stops = df[df["Message"] == stop_msg]["Timestamp"].reset_index(drop=True)
         return [(stop - start).total_seconds() for start, stop in zip(starts, stops)]
 
-    def get_time_range(log, start_msg, stop_msg):
-        df = pd.DataFrame(log)
-        df["Timestamp"] = pd.to_datetime(df["Timestamp"])
-        starts = df[df["Message"] == start_msg]["Timestamp"]
-        stops = df[df["Message"] == stop_msg]["Timestamp"]
-        if not starts.empty and not stops.empty:
-            return starts.iloc[0], stops.iloc[-1]
-        return None, None
+    def interval(v, start, stop):
+        e = vessel_events.get(v)
+        if not e:
+            return None
+        if start not in e or stop not in e:
+            return None
+        return (e[start][0], e[stop][-1])
 
     lock_df = pd.DataFrame(lock_chamber.logbook)
     lock_df["Timestamp"] = pd.to_datetime(lock_df["Timestamp"])
@@ -408,83 +410,129 @@ def calculate_cycle_information(lock_chamber):
 
     vessel_logs = {getattr(v, "id"): v.logbook for i, v in enumerate(vessels)}
 
+    vessel_events = {}
+    for vessel_id, log_dict in vessel_logs.items():
+        df = pd.DataFrame(log_dict)
+        df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+
+        grouped = df.groupby("Message")["Timestamp"]
+
+        vessel_events[vessel_id] = {
+            msg: g.to_numpy()
+            for msg, g in grouped
+        }
+
     results = []
-    for index, levelling_cycle in levelling_cycles.iterrows():
-        direction = levelling_cycle.direction
+    indices = levelling_cycles.index.to_list()
+    for i, index in enumerate(indices):
         up_cycle = levelling_cycles.loc[index]
-        loc = levelling_cycles.index.get_loc(index)
-        last_index = levelling_cycles.index[loc - 1]
-        try:
-            next_index = levelling_cycles.index[loc + 1]
-        except:
+        direction = up_cycle.direction
+
+        last_index = indices[i - 1] if i > 0 else None
+        next_index = indices[i + 1] if i + 1 < len(indices) else None
+        if next_index is None:
             break
-        down_cycle = levelling_cycles.loc[next_index]
 
         up_vessels = up_cycle["vessels_present"]
-        down_vessels = down_cycle["vessels_present"]
+        down_vessels = levelling_cycles.loc[next_index]["vessels_present"] if next_index else []
 
         # t_l_up
         if index == 0:
             t_l_up = 0
         else:
-            prev_down_vessels = levelling_cycles.loc[last_index]["vessels_present"]
-            last_exit_prev = max([
-                get_time_range(vessel_logs[v], "Sailing to second lock gate start",
-                               "Sailing to second lock gate stop")[1]
-                for v in prev_down_vessels if v in vessel_logs
-            ], default=None)
-            first_entry_up = min([
-                get_time_range(vessel_logs[v], "Sailing to first lock gate stop", "Sailing to first lock gate stop")[
-                    0]
-                for v in up_vessels if v in vessel_logs
-            ], default=None)
-            t_l_up = (first_entry_up - last_exit_prev).total_seconds() if first_entry_up and last_exit_prev else 0
+            prev_down_vessels = levelling_cycles.at[last_index, "vessels_present"]
+            
+            last_exit_prev = max(
+                (
+                    vessel_events[v]["Sailing to second lock gate stop"][-1]
+                    for v in prev_down_vessels
+                    if v in vessel_events and "Sailing to second lock gate stop" in vessel_events[v]
+                ),
+                default=None
+            )
+            
+            first_entry_up = min(
+                (
+                    vessel_events[v]["Sailing to first lock gate stop"][-1]
+                    for v in up_vessels
+                    if v in vessel_events and "Sailing to first lock gate stop" in vessel_events[v]
+                ),
+                default=None
+            )
+            
+            t_l_up = (
+                (first_entry_up - last_exit_prev)/np.timedelta64(1,'s')
+                if first_entry_up and last_exit_prev
+                else 0
+            )
+
 
         # t_l_down
-        last_exit_up = max([
-            get_time_range(vessel_logs[v], "Sailing to second lock gate start", "Sailing to second lock gate stop")[1]
-            for v in up_vessels if v in vessel_logs
-        ], default=None)
-        first_entry_down = min([
-            get_time_range(vessel_logs[v], "Sailing to first lock gate stop", "Sailing to first lock gate stop")[0]
-            for v in down_vessels if v in vessel_logs
-        ], default=None)
-        t_l_down = (first_entry_down - last_exit_up).total_seconds() if first_entry_down and last_exit_up else 0
+        last_exit_up = max(
+            (
+                vessel_events[v]["Sailing to second lock gate stop"][-1]
+                for v in up_vessels
+                if v in vessel_events and "Sailing to second lock gate stop" in vessel_events[v]
+            ),
+            default=None
+        )
+        
+        first_entry_down = min(
+            (
+                vessel_events[v]["Sailing to first lock gate stop"][0]
+                for v in down_vessels
+                if v in vessel_events and "Sailing to first lock gate stop" in vessel_events[v]
+            ),
+            default=None
+        )
+        
+        t_l_down = (
+            (first_entry_down - last_exit_up)/np.timedelta64(1,'s')
+            if first_entry_down and last_exit_up
+            else 0
+        )
 
         # Entry and exit durations using time range
         entry_times_up = [
-            get_time_range(vessel_logs[v], "Sailing to position in lock start", "Sailing to position in lock stop") for
-            v in up_vessels if v in vessel_logs]
+            interval(v, "Sailing to position in lock start", "Sailing to position in lock stop")
+            for v in up_vessels
+            if v in vessel_events
+        ]
         exit_times_up = [
-            get_time_range(vessel_logs[v], "Sailing to second lock gate start", "Sailing to second lock gate stop")
-            for v in up_vessels if v in vessel_logs]
+            interval(v, "Sailing to second lock gate start", "Sailing to second lock gate stop")
+            for v in up_vessels
+            if v in vessel_events
+        ]
         entry_times_down = [
-            get_time_range(vessel_logs[v], "Sailing to position in lock start", "Sailing to position in lock stop") for
-            v in down_vessels if v in vessel_logs]
+            interval(v, "Sailing to position in lock start", "Sailing to position in lock stop")
+            for v in down_vessels
+            if v in vessel_events
+        ]
         exit_times_down = [
-            get_time_range(vessel_logs[v], "Sailing to second lock gate start", "Sailing to second lock gate stop")
-            for v in down_vessels if v in vessel_logs]
-
+            interval(v, "Sailing to second lock gate start", "Sailing to second lock gate stop")
+            for v in down_vessels
+            if v in vessel_events
+        ]
+        
         # Sum of entering times (up), - Part III, Ch 3, Eq. 3.2
         entry_start_up = min([t[0] for t in entry_times_up if t[0] is not None], default=None)
         entry_stop_up = max([t[1] for t in entry_times_up if t[1] is not None], default=None)
-        sum_t_i_up = (entry_stop_up - entry_start_up).total_seconds() if entry_start_up and entry_stop_up else 0
+        sum_t_i_up = (entry_stop_up - entry_start_up)/np.timedelta64(1,'s') if entry_start_up and entry_stop_up else 0
 
         # Sum of exiting times (up), - Part III, Ch 3, Eq. 3.4
         exit_start_up = min([t[0] for t in exit_times_up if t[0] is not None], default=None)
         exit_stop_up = max([t[1] for t in exit_times_up if t[1] is not None], default=None)
-        sum_t_u_up = (exit_stop_up - exit_start_up).total_seconds() if exit_start_up and exit_stop_up else 0
+        sum_t_u_up = (exit_stop_up - exit_start_up)/np.timedelta64(1,'s') if exit_start_up and exit_stop_up else 0
 
         # Sum of entering times (down), - Part III, Ch 3, Eq. 3.2
         entry_start_down = min([t[0] for t in entry_times_down if t[0] is not None], default=None)
         entry_stop_down = max([t[1] for t in entry_times_down if t[1] is not None], default=None)
-        sum_t_i_down = (
-                    entry_stop_down - entry_start_down).total_seconds() if entry_start_down and entry_stop_down else 0
+        sum_t_i_down = (entry_stop_down - entry_start_down)/np.timedelta64(1,'s') if entry_start_down and entry_stop_down else 0
 
         # Sum of exiting times (down), - Part III, Ch 3, Eq. 3.4
         exit_start_down = min([t[0] for t in exit_times_down if t[0] is not None], default=None)
         exit_stop_down = max([t[1] for t in exit_times_down if t[1] is not None], default=None)
-        sum_t_u_down = (exit_stop_down - exit_start_down).total_seconds() if exit_start_down and exit_stop_down else 0
+        sum_t_u_down = (exit_stop_down - exit_start_down)/np.timedelta64(1,'s') if exit_start_down and exit_stop_down else 0
 
         # Identify the index of the op and down cycles
         cycle_index_up = index
@@ -548,7 +596,6 @@ def calculate_cycle_information(lock_chamber):
             "Downstream vessel_ids": down_vessels,
             "Intensity (I_s)": I_s
         })
-
     return pd.DataFrame(results)
 
 

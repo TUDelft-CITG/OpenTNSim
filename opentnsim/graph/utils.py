@@ -952,14 +952,17 @@ def get_sailing_distance(graph, edge_route):
     sailing_distance_over_route : float
         sailing distance along the route in [m]
     """
-
-    # calculate sailing distance along route
     sailing_distance = 0
-    sailing_distance_df = pd.DataFrame(columns=['node_start','node_stop','distance'])
-    for edge in edge_route:
-        edge_distance = graph.edges[edge]['length_m']
-        sailing_distance += edge_distance
-        sailing_distance_df.loc[len(sailing_distance_df),:] = [edge[0],edge[1],edge_distance]
+
+    rows = []
+    for u, v in edge_route:
+        d = graph.edges[u, v]['length_m']
+        sailing_distance += d
+        rows.append((u, v, d))
+
+    sailing_distance_df = pd.DataFrame(
+        rows, columns=['node_start', 'node_stop', 'distance']
+    )
 
     return sailing_distance, sailing_distance_df
 
@@ -997,15 +1000,19 @@ def get_sailing_speed(vessel, graph, edge_route):
     total_sailing_distance = 0.
     total_sailing_time = 0.
     average_sailing_speed = 0.
-    for edge in edge_route:
-        edge_info = graph.edges[edge]
-        sailing_speed = get_edge_speed(vessel, graph, edge)
+    rows = []
+    for u, v in edge_route:
+        edge_data = graph.edges[u, v]
 
-        sailing_distance = edge_info['length_m']
-        total_sailing_distance += sailing_distance
-        total_sailing_time += sailing_distance/sailing_speed
+        distance = edge_data['length_m']
+        speed = get_edge_speed(vessel, graph, (u, v))
 
-        vessel_sailing_speed_df.loc[len(vessel_sailing_speed_df),:] = [edge[0],edge[1],sailing_speed]
+        total_sailing_distance += distance
+        total_sailing_time += distance / speed
+
+        rows.append((u, v, speed))
+
+    vessel_sailing_speed_df = pd.DataFrame(rows, columns=['node_start', 'node_stop', 'speed'])
     if total_sailing_time:
         average_sailing_speed = total_sailing_distance/total_sailing_time
     return average_sailing_speed, vessel_sailing_speed_df
@@ -1031,12 +1038,18 @@ def get_sailing_time(vessel, edge_route):
 
     """
     graph = vessel.env.graph
-    _, sailing_distance_df = get_sailing_distance(graph, edge_route)
-    _, vessel_sailing_speed_df = get_sailing_speed(vessel, graph, edge_route)
-    sailing_time_df = pd.merge(sailing_distance_df,vessel_sailing_speed_df)
-    sailing_time_df['time'] = sailing_time_df['distance'] / sailing_time_df['speed']
-    sailing_time = sailing_time_df['time'].sum()
-    return sailing_time, sailing_time_df
+    rows = []
+    for edge in edge_route:
+        sailing_distance = vessel.env.graph.edges[edge]['length_m']
+        sailing_speed = get_edge_speed(vessel, graph, edge)
+        time = sailing_distance / sailing_speed
+        rows.append((edge[0], edge[1], sailing_distance, sailing_speed, time))
+    sailing_distance_df = pd.DataFrame(
+        rows,
+        columns=["node_start", "node_stop", "distance", "speed", "time"]
+    )
+    sailing_time = sailing_distance_df["time"].sum()
+    return sailing_time, sailing_distance_df
 
 
 def get_heading(vessel, graph, edge):
@@ -1076,21 +1089,25 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(
 
     # obtain dataframe with information of sailing speed, distance and time along route
     _, sailing_information_df = get_sailing_time(vessel=vessel, edge_route=edge_route)
-
     # determine indexes of first and last edges
     if not sailing_information_df.empty:
-        index_first_edge = pd.Index([sailing_information_df.iloc[0].name])
-        index_last_edge = pd.Index([sailing_information_df.iloc[-1].name])
+        first_idx = sailing_information_df.index[0]
+        last_idx = sailing_information_df.index[-1]
 
-        # determine distance that must still be sailed on the current edge of the vessel
-        distance_to_sail_on_first_edge = (sailing_information_df.loc[index_first_edge, 'distance']-distance_sailed_on_first_edge)
+        first_distance = sailing_information_df.at[first_idx, 'distance']
+        distance_to_sail_on_first_edge = first_distance - distance_sailed_on_first_edge
 
-        # adjust information of the sailing distance and sailing time on the first and last edges
-        sailing_information_df.loc[index_first_edge, 'time'] = sailing_information_df.loc[index_first_edge, 'time']*(distance_to_sail_on_first_edge/sailing_information_df.loc[index_first_edge, 'distance'])
-        sailing_information_df.loc[index_first_edge, 'distance'] = distance_to_sail_on_first_edge
-        sailing_information_df.loc[index_last_edge, 'time'] = sailing_information_df.loc[index_last_edge, 'time']*(distance_to_be_sailed_on_last_edge/sailing_information_df.loc[index_last_edge, 'distance'])
-        sailing_information_df.loc[index_last_edge, 'distance'] = distance_to_be_sailed_on_last_edge
+        sailing_information_df.at[first_idx, 'time'] *= (
+            distance_to_sail_on_first_edge / first_distance
+        )
+        sailing_information_df.at[first_idx, 'distance'] = distance_to_sail_on_first_edge
 
+        last_distance = sailing_information_df.at[last_idx, 'distance']
+
+        sailing_information_df.at[last_idx, 'time'] *= (
+            distance_to_be_sailed_on_last_edge / last_distance
+        )
+        sailing_information_df.at[last_idx, 'distance'] = distance_to_be_sailed_on_last_edge
     return sailing_information_df
 
 

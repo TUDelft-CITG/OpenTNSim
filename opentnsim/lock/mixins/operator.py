@@ -9,7 +9,7 @@ from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.lock.calculations import (
     calculate_levelling_time,
     calculate_time_to_open_gate,
-    calculate_sailing_time_to_approach_point,
+    calculate_sailing_time_to_approach_point_and_lock_gate,
     calculate_lock_salinity_and_saltmass
 )
 from opentnsim.lock.utils import (
@@ -254,7 +254,7 @@ class IsLockChamberOperator:
 
         # determines the sailing time to reach the approach point of the lock complex
         distance_sailed = waiting_area.distance_from_edge_start
-        sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction, distance_sailed)
+        sailing_to_approach, _ = calculate_sailing_time_to_approach_point_and_lock_gate(self, vessel, direction, distance_sailed)
 
         # determine the current time (after waiting for another vessel, or not) and the time that the vessel will be at the approach point if it will continue and what was planned before
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -282,7 +282,7 @@ class IsLockChamberOperator:
         distance_sailed = waiting_area.distance_from_edge_start
 
         # determines the sailing time to reach the approach point of the lock complex
-        sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction, distance_sailed)
+        sailing_to_approach, _ = calculate_sailing_time_to_approach_point_and_lock_gate(self, vessel, direction, distance_sailed)
 
         # set the moment in time that the waiting in the waiting area has started
         waiting_start = vessel.env.now
@@ -329,7 +329,7 @@ class IsLockChamberOperator:
         distance_sailed = waiting_area.distance_from_edge_start
 
         # determines the sailing time to reach the approach point of the lock complex
-        sailing_to_approach = calculate_sailing_time_to_approach_point(self, vessel, direction, distance_sailed)
+        sailing_to_approach, _ = calculate_sailing_time_to_approach_point_and_lock_gate(self, vessel, direction, distance_sailed)
         planned_start_time_entering_lock = vessel_planning.loc[vessel_planning_index, 'time_lock_operation_start']
 
         waiting_start = vessel.env.now

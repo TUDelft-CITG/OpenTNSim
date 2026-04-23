@@ -61,7 +61,7 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, time_axis = 'x', m
 
 
 def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, offset_x=0.,
-                              method='Matplotlib', boundary_nodes = None, fig=None, ax=None):
+                              method='Matplotlib', boundary_nodes = None, fig=None, ax=None, legend=True):
     """Create a time-distance plot of vessels passing a lock complex
 
     Parameters
@@ -83,7 +83,7 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     """
     lock_complex = lock_chamber.lock_complex
-    vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber)
+    vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber, t_start = ylimmin, t_stop = ylimmax)
 
     if boundary_nodes is None:
         boundary_nodes = lock_complex.registration_nodes
@@ -380,12 +380,13 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         ax_width_in = bbox.width
         item_width = 1.2
         ncol = max(1, int(ax_width_in // item_width))
-        ax.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.15),
-            ncol=ncol,
-            frameon=False
-        )
+        if legend:
+            ax.legend(
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.15),
+                ncol=ncol,
+                frameon=False
+            )
         try:
             for ax in axes:
                 ax.set_ylim([ylimmin, ylimmax])
@@ -394,16 +395,18 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
         if ncols > 1:
             ax = axes[-1]
             ax.set_xlim(extend_x)
-            ax.legend(
-                loc="upper left",
-                bbox_to_anchor=(1.4, 1.0),
-                frameon=False
-            )
+            if legend:
+                ax.legend(
+                    loc="upper left",
+                    bbox_to_anchor=(1.4, 1.0),
+                    frameon=False
+                )
 
     elif method == 'Plotly':
-        fig.add_vline(x=-lock_chamber.sailing_distance_to_crossing_point_A + offset_x - lock_chamber.lock_length/2, line=dict(color="lightgrey"))
-        fig.add_vline(x=lock_chamber.sailing_distance_to_crossing_point_B + offset_x + lock_chamber.lock_length/2, line=dict(color="lightgrey"))
-        fig.update_layout(showlegend=True)
+        fig.add_vline(x=-lock_chamber.sailing_distance_to_crossing_point_A + offset_x - lock_chamber.lock_length/2, line=dict(color="lightgrey"),layer="below")
+        fig.add_vline(x=lock_chamber.sailing_distance_to_crossing_point_B + offset_x + lock_chamber.lock_length/2, line=dict(color="lightgrey"),layer="below")
+        if legend:
+            fig.update_layout(showlegend=True)
         fig.update_xaxes(title_text=xlabel,
                          range=[xlimmin, xlimmax], row=1, col=1)
         fig.update_yaxes(title_text=ylabel,

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 import simpy
+import time as timepy
 
 from opentnsim.lock.calculations import (
     calculate_delay_previous_vessel_to_optimize_sailing_in_process,
@@ -213,13 +214,15 @@ class IsLockMaster:
 
         """
         # add vessel to vessel planning and operation planning
+        t1 = timepy.time()
         vessel_planning_index = self.add_vessel_to_vessel_planning(vessel, direction)
         lock_chamber_name, operation_index, new_operation = _find_available_lock_operation(self, vessel, direction)
+        t2 = timepy.time()
         lock_chamber = self.lock_complex.lock_chambers[lock_chamber_name]
         waiting_area_name = _find_available_waiting_area(vessel, lock_chamber, direction)
         self.vessel_planning.loc[vessel_planning_index, 'waiting_area'] = waiting_area_name
         self.vessel_planning.loc[vessel_planning_index, 'lock_chamber'] = lock_chamber_name
-
+        t3 = timepy.time()
         route = vessel.route
         route_goes_through_lock = False
         for edge in vessel.edge_route:
@@ -260,6 +263,7 @@ class IsLockMaster:
             self.vessel_planning.loc[vessel_planning_index, 'waiting_area'] = waiting_area_name
             self.vessel_planning.loc[vessel_planning_index, 'lock_chamber'] = lock_chamber_name
 
+        t4 = timepy.time()
         vessel_information = calculate_vessel_approach_information(self, vessel, direction)
         _update_lock_vessel_planning(self, vessel_planning_index, vessel_information)
         if new_operation:
@@ -270,20 +274,22 @@ class IsLockMaster:
                                                                                    1 - direction)
                 if lock_operation_to_be_executed:
                     self.request_empty_levelling(lock_chamber, direction)
-
+        t5 = timepy.time()
         # information of lock chamber
         lock_operation_information = calculate_lock_operation_information_and_update_planning(lock_chamber,
                                                                                               vessel,
                                                                                               operation_index,
                                                                                               direction)
+
+        t6 = timepy.time()
         # update the next lock operations if the previous lock operation caused a delay
         _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                         lock_operation_information)
-
+        t7 = timepy.time()
         if not route_goes_through_lock:
             vessel.has_registered = True
             raise simpy.exceptions.Interrupt('Route of vessel has changed.')
-
+        print(t7-t6,t6-t5,t5-t4,t4-t3,t3-t2,t2-t1)
         return operation_index
 
 

@@ -8,6 +8,7 @@ import numpy as np
 from operator import itemgetter
 import pandas as pd
 from numpy.testing import assert_almost_equal
+import opentnsim
 from opentnsim.graph.utils import get_length_of_edge, get_sailing_information_on_edge_to_distance_on_another_edge, expand_path_edges, node_path_to_edge_path
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 
@@ -750,8 +751,6 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
         information with start and stop times of events that make up the departure of vessels from the lock operation
         required keys: "time_lock_gate_closing_start", "time_lock_operation_stop"
     """
-    from opentnsim.lock.calculations import calculate_sailing_in_time_delay, calculate_lock_operation_times
-
     lock_complex = lock_chamber.lock_complex
     operation_planning = lock_complex.operation_planning
     vessel_planning = lock_complex.vessel_planning
@@ -804,7 +803,7 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
 
         # determine the new start and stop times of the lock operation (i.e., gate-closing, levelling, gate-opening) as it can be that the levelling time is now changed due to the shift of this operation in time (i.e., due to tides)
         time_gate_closing = operation_planning.loc[next_operation_planning_index, "time_lock_entry_stop"]
-        levelling_information = calculate_lock_operation_times(lock_chamber,
+        levelling_information = opentnsim.lock.calculations.calculate_lock_operation_times(lock_chamber,
                                                                operation_index=next_operation_index,
                                                                start_time=time_gate_closing,
                                                                vessel=next_vessel,
@@ -1314,11 +1313,19 @@ def _get_vessel_departure_start_delay(lock_chamber, vessel, operation_index):
     return delay_sailing_through_gate
 
 
-def _get_vessels_that_passed_the_lock_chamber(lock_chamber):
+def _get_vessels_that_passed_the_lock_chamber(lock_chamber, t_start=None, t_stop=None):
     lock_complex = lock_chamber.lock_complex
     vessel_ids = lock_complex.vessel_planning[lock_complex.vessel_planning.lock_chamber == lock_chamber.name].id
     if not len(vessel_ids):
         return []
     vessels = np.array([itemgetter(*vessel_ids)(lock_complex.env.vessels)]).flatten()
-    return vessels
+    if t_start is None and t_stop is None:
+        return vessels
 
+    if t_start is not None and t_stop is None:
+        selected_vessels = [vessel for vessel in vessels if vessel.arrival_time >= t_start]
+    elif t_stop is not None and t_start is None:
+        selected_vessels = [vessel for vessel in vessels if vessel.arrival_time <= t_stop]
+    else:
+        selected_vessels = [vessel for vessel in vessels if t_start <= vessel.arrival_time <= t_stop]
+    return selected_vessels
