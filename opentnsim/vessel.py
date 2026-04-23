@@ -4,6 +4,7 @@ import networkx as nx
 import numpy as np
 import math
 import bisect
+from opentnsim import strategy
 
 from opentnsim import core, output, graph
 
@@ -110,11 +111,11 @@ class VesselProperties:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
         elif self.payload is not None and self.vessel_type is not None:
-            T = opentnsim.strategy.Payload2T(
+            T = strategy.Payload2T(
                 self,
                 Payload_strategy=self.payload,
                 vessel_type=self.vessel_type,
-                bounds=(0, 40),
+                bounds=(0, 5),
             )  # this need to be tested
         # todo: for later possibly include Payload2T
 
