@@ -117,7 +117,9 @@ def determine_vessel_waiting_events(port_accessed, vessel, port_availability_df)
     else:
         previous_event = port_availability_df.loc[[last_previous_event_index]]
     port_availability_df = pd.concat([previous_event, future_events])
-    port_availability_df.index.values[0] = current_time
+    idx = port_availability_df.index.to_list()
+    idx[0] = current_time
+    port_availability_df.index = idx
 
     cols_to_check = port_availability_df.columns.drop('Combined')
     port_availability_df['Reason'] = port_availability_df[cols_to_check].apply(

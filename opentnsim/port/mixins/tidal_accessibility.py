@@ -159,7 +159,7 @@ class HasDraughtRestrictions:
             plt.close(fig)
         else:
             plt.close(fig)
-        return fig, legend_handles, legend_labels
+        return fig, legend_handles, legend_labels, net_ukcs
 
 
     def create_plot_horizontal_tidal_window(self, trip_index = 0, plot = False):
