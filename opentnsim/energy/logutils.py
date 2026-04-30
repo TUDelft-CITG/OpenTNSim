@@ -76,6 +76,7 @@ def add_energy_attributes_to_eventtable(df, objs):
         obj.calculate_emission_factors_total(v=v, h_0=h_0)
         obj.calculate_SFC_final(v=v, h_0=h_0)
 
+        df.at[index, "velocity (m/s)"] = v
         df.at[index, "waterdepth (m)"] = h_0
         df.at[index, "waterway width (m)"] = None
         df.at[index, "current (m/s)"] = 0  # TODO: get current from graph
@@ -244,42 +245,5 @@ def add_H2_attributes_to_event_table(df, objs):
             df.at[index, "H2_consumption_s (g/s)"] = H2_consumption / row["duration (s)"]
         else:
             df.at[index, "H2_consumption_s (g/s)"] = 0.
-
-        # Test H2 consumption
-        # df.at[index, "H2_consumption_new (g/s)"] = dH2_consumption / row["duration (s)"]
-
-        # CO2_emission_total = (
-        #     row["total_energy (kWh)"] * obj.total_factor_CO2
-        # )  # in g (total_factor is the Emission Factor)                                                                                              #stationary phase # in g
-        # PM10_emission_total = row["total_energy (kWh)"] * obj.total_factor_PM10  # in g
-        # NOX_emission_total = row["total_energy (kWh)"] * obj.total_factor_NOX  # in g
-
-        # df.at[index, "CO2_emission_total (g)"] = CO2_emission_total
-        # df.at[index, "PM10_emission_total (g)"] = PM10_emission_total
-        # df.at[index, "NOX_emission_total (g)"] = NOX_emission_total
-
-        # TODO: see if these entries are useful. They can also be easily calculated
-        # from other entries
-        # df.at[index, "CO2_emission_per_m (g/m)"] = (
-        #     CO2_emission_total / row["distance (m)"]
-        # )
-        # df.at[index, "PM10_emission_per_m (g/m)"] = (
-        #     PM10_emission_total / row["distance (m)"]
-        # )
-        # df.at[index, "NOX_emission_per_m (g/m)"] = (
-        #     NOX_emission_total / row["distance (m)"]
-        # )
-
-        # TODO: see if these entries are useful. They can also be easily calculated
-        # from other entries
-        # df.at[index, "CO2_emission_per_s (g/s)"] = (
-        #     CO2_emission_total / row["duration (s)"]
-        # )
-        # df.at[index, "PM10_emission_per_s (g/s)"] = (
-        #     PM10_emission_total / row["duration (s)"]
-        # )
-        # df.at[index, "NOX_emission_per_s (g/s)"] = (
-        #     NOX_emission_total / row["duration (s)"]
-        # )
 
     return df
