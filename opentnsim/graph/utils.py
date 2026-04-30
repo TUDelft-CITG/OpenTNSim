@@ -1038,18 +1038,42 @@ def get_sailing_time(vessel, edge_route):
 
     """
     graph = vessel.env.graph
-    rows = []
-    for edge in edge_route:
-        sailing_distance = vessel.env.graph.edges[edge]['length_m']
-        sailing_speed = get_edge_speed(vessel, graph, edge)
-        time = sailing_distance / sailing_speed
-        rows.append((edge[0], edge[1], sailing_distance, sailing_speed, time))
-    sailing_distance_df = pd.DataFrame(
-        rows,
-        columns=["node_start", "node_stop", "distance", "speed", "time"]
-    )
-    sailing_time = sailing_distance_df["time"].sum()
-    return sailing_time, sailing_distance_df
+    n = len(edge_route)
+
+    # --- Preallocate arrays (faster than list of tuples) ---
+    node_start = [None] * n
+    node_stop = [None] * n
+    distances = [0.0] * n
+    speeds = [0.0] * n
+    times = [0.0] * n
+
+    total_time = 0.0
+
+    for i, edge in enumerate(edge_route):
+        edge_data = graph.edges[edge]  # single lookup
+        dist = edge_data['length_m']
+        speed = get_edge_speed(vessel, graph, edge)
+
+        t = dist / speed
+
+        node_start[i] = edge[0]
+        node_stop[i] = edge[1]
+        distances[i] = dist
+        speeds[i] = speed
+        times[i] = t
+
+        total_time += t
+
+    # --- Build DataFrame once ---
+    sailing_distance_df = pd.DataFrame({
+        "node_start": node_start,
+        "node_stop": node_stop,
+        "distance": distances,
+        "speed": speeds,
+        "time": times,
+    })
+
+    return total_time, sailing_distance_df
 
 
 def get_heading(vessel, graph, edge):
@@ -1062,7 +1086,11 @@ def get_heading(vessel, graph, edge):
 
 
 def get_sailing_information_on_edge_to_distance_on_another_edge(
-        vessel, edge_route, distance_sailed_on_first_edge=0., distance_to_be_sailed_on_last_edge=0.
+        vessel, 
+        edge_route, 
+        distance_sailed_on_first_edge=0., 
+        distance_to_be_sailed_on_last_edge=0.,
+        return_dataframe=True
 ):
     """
     Calculates the distance from a location along an edge A to another location along an edge B
@@ -1088,26 +1116,52 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(
     """
 
     # obtain dataframe with information of sailing speed, distance and time along route
-    _, sailing_information_df = get_sailing_time(vessel=vessel, edge_route=edge_route)
+    if not return_dataframe:
+        total_time = 0.0
+        total_distance = 0.0
+
+        graph = vessel.env.graph
+
+        for i, edge in enumerate(edge_route):
+            edge_data = graph.edges[edge]
+            dist = edge_data['length_m']
+            speed = get_edge_speed(vessel, graph, edge)
+
+            if i == 0 and dist > 0:
+                dist = dist - distance_sailed_on_first_edge
+
+            if i == len(edge_route) - 1 and dist > 0:
+                dist = distance_to_be_sailed_on_last_edge
+
+            total_distance += dist
+            total_time += dist / speed
+        total_time = pd.Timedelta(seconds=total_time)
+        return total_time, total_distance
+
     # determine indexes of first and last edges
+    _, sailing_information_df = get_sailing_time(vessel=vessel, edge_route=edge_route)
     if not sailing_information_df.empty:
-        first_idx = sailing_information_df.index[0]
-        last_idx = sailing_information_df.index[-1]
+        distances = sailing_information_df["distance"].to_numpy(copy=True)
+        times = sailing_information_df["time"].to_numpy(copy=True)
 
-        first_distance = sailing_information_df.at[first_idx, 'distance']
-        distance_to_sail_on_first_edge = first_distance - distance_sailed_on_first_edge
+        first_distance = distances[0]
+        if first_distance > 0:
+            remaining_distance = first_distance - distance_sailed_on_first_edge
+            factor = remaining_distance / first_distance
 
-        sailing_information_df.at[first_idx, 'time'] *= (
-            distance_to_sail_on_first_edge / first_distance
-        )
-        sailing_information_df.at[first_idx, 'distance'] = distance_to_sail_on_first_edge
+            times[0] *= factor
+            distances[0] = remaining_distance
 
-        last_distance = sailing_information_df.at[last_idx, 'distance']
+        last_distance = distances[-1]
+        if last_distance > 0:
+            factor = distance_to_be_sailed_on_last_edge / last_distance
 
-        sailing_information_df.at[last_idx, 'time'] *= (
-            distance_to_be_sailed_on_last_edge / last_distance
-        )
-        sailing_information_df.at[last_idx, 'distance'] = distance_to_be_sailed_on_last_edge
+            times[-1] *= factor
+            distances[-1] = distance_to_be_sailed_on_last_edge
+
+        sailing_information_df = sailing_information_df.copy()
+        sailing_information_df["time"] = times
+        sailing_information_df["distance"] = distances
     return sailing_information_df
 
 

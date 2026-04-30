@@ -203,37 +203,71 @@ def create_vessel(
     return vessel
 
 
-def generate_vessels_from_distribution(env,
-                                       VesselClass,
-                                       vessel_parameters,
-                                       mean_arrival_rate,
-                                       number_of_vessels,
-                                       start_node,
-                                       end_node,
-                                       seed=None,
-                                       start_time=None):
+def generate_vessels_from_distribution(
+    env,
+    VesselClass,
+    vessel_parameters,
+    mean_arrival_rate,
+    number_of_vessels,
+    start_node,
+    end_node,
+    seed=None,
+    start_time=None,
+    use_fleet=False,
+    fleet_composition=None,
+    fleet_data=None
+):
     if start_time is None:
         start_time = env.epoch
+
+    rng = np.random.default_rng(seed)
     arrival_time = start_time
 
-    rng = np.random.default_rng()
-    if seed is not None:
-        rng = np.random.default_rng(seed)
-
-    vessels = []
     try:
         number_of_earlier_vessels = len(env.vessels)
     except:
         number_of_earlier_vessels = 0
 
+    vessels = []
+
+    if use_fleet:
+        if fleet_composition is None or fleet_data is None:
+            raise ValueError("fleet_composition and fleet_data must be provided when use_fleet=True")
+
+        fleet_types = list(fleet_composition.keys())
+        fleet_probs = np.array(list(fleet_composition.values()), dtype=float)
+        fleet_probs = fleet_probs / fleet_probs.sum()
+
+        fleet_specs = fleet_data.set_index("RWS_class")
+
     for i in range(number_of_vessels):
-        arrival_time += pd.Timedelta(minutes=rng.exponential(mean_arrival_rate))
+
+        arrival_time += pd.Timedelta(
+            minutes=rng.exponential(mean_arrival_rate)
+        )
 
         params = {
-            'name': f"Vessel {number_of_earlier_vessels + i}",
-            'arrival_time': arrival_time,
-            **vessel_parameters
+            "name": f"Vessel {number_of_earlier_vessels + i}",
+            "arrival_time": arrival_time
         }
+
+        if not use_fleet:
+            params.update(vessel_parameters)
+        else:
+            vessel_class = rng.choice(fleet_types, p=fleet_probs)
+            class_row = fleet_specs.loc[vessel_class]
+
+            resolved_params = {}
+
+            for out_key, source_key in vessel_parameters.items():
+                if source_key == "RWS_class":
+                    resolved_params[out_key] = vessel_class
+                elif source_key in class_row.index:
+                    resolved_params[out_key] = class_row[source_key]
+                else:
+                    resolved_params[out_key] = source_key
+
+            params.update(resolved_params)
 
         vessel = create_vessel(
             VesselClass,
@@ -244,8 +278,8 @@ def generate_vessels_from_distribution(env,
         )
 
         vessels.append(vessel)
+        env.vessels[vessel.id] = vessel
 
-    env.vessels[vessel.id] = vessel
     return vessels
 
 

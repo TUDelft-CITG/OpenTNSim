@@ -254,6 +254,7 @@ class IsLockChamberOperator:
 
         # determines the sailing time to reach the approach point of the lock complex
         distance_sailed = waiting_area.distance_from_edge_start
+        sailing_to_approach = vessel_planning.loc[vessel_planning_index, 'time_arrival_at_approach_point'] - datetime.datetime.fromtimestamp(vessel.env.now)
         sailing_to_approach, _ = calculate_sailing_time_to_approach_point_and_lock_gate(self, vessel, direction, distance_sailed)
 
         # determine the current time (after waiting for another vessel, or not) and the time that the vessel will be at the approach point if it will continue and what was planned before
@@ -267,14 +268,14 @@ class IsLockChamberOperator:
         # determine the waiting time that a vessel can do by decreasing it sailing speed and the waiting time that the vessel has to wait stationary in the waiting area (due to a minimum required speed for safe manoeuvrability)
         remaining_static_waiting_time = waiting_time.total_seconds()
         if remaining_static_waiting_time > 0.:
-            yield from self.let_vessel_wait_for_available_lock_operation_in_waiting_area(vessel, waiting_area)
+            yield from self.let_vessel_wait_for_available_lock_operation_in_waiting_area(vessel, waiting_area, sailing_to_approach)
 
         # release vessel from waiting area and let vessel continue
         yield from self.communicate_vessel_to_start_approaching_lock_chamber(vessel, waiting_area, direction)
         self.prepare_lock_operation(vessel)
 
 
-    def let_vessel_wait_for_available_lock_operation_in_waiting_area(self, vessel, waiting_area):
+    def let_vessel_wait_for_available_lock_operation_in_waiting_area(self, vessel, waiting_area, sailing_to_approach = None):
         # unpacks the lock complex master's vessel planning and the vessel index in this planning
         vessel_planning = self.lock_complex.vessel_planning
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -602,6 +603,8 @@ class IsLockChamberOperator:
         if operation_index is not None:
             this_operation = _get_operation_info(self, operation_index)
             vessels = this_operation.vessels
+            operation_planning = self.lock_complex.operation_planning
+            operation_planning.loc[this_operation.name, 'status'] = 'processed'
 
         vessel_planning_index = None
         vessel_planning_info = None
