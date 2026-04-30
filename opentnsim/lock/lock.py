@@ -541,7 +541,7 @@ class HasLockPlanning:
         # add vessel to the operation if it is not yet part of it
         if vessel not in vessels_in_operation:
             vessels_in_operation.append(vessel)
-            operation_planning.loc[operation_index, "vessels"] = (vessels_in_operation)  # TODO: is they redundant? or do we need to overwrite the information in the operation planning dataframe again
+            operation_planning.at[operation_index, "vessels"] = (vessels_in_operation)  # TODO: is they redundant? or do we need to overwrite the information in the operation planning dataframe again
             self.calculate_sailing_time_to_approach_point(vessel, direction, operation_index=operation_index)  # TODO: can this be removed?
 
             # if there is a rule that prescribes a minimum amount of vessels in the lock operation and this condition is satisfied, put an operation-object in the FilterStore to communicate that the earlier waiting vessels do not have to wait any longer
@@ -1751,7 +1751,7 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
         operation_planning.loc[operation_index, 'node_to'] = node_to
         operation_planning.loc[operation_index, 'direction'] = direction
         operation_planning.loc[operation_index, "lock_chamber"] = self.lock_complex.name
-        operation_planning.loc[operation_index, 'vessels'] = []
+        operation_planning.at[operation_index, 'vessels'] = []
         operation_planning.loc[operation_index, 'capacity_L'] = self.lock_complex.lock_length
         operation_planning.loc[operation_index, 'capacity_B'] = self.lock_complex.lock_width
 
@@ -3237,7 +3237,7 @@ class IsLockComplex(IsLockMaster):
 
         """
         # create lock edge geometry in [m]
-        route_between_nodes_of_registration = nx.dijkstra_path(self.env.graph, self.registration_nodes[0], self.registration_nodes[1])
+        route_between_nodes_of_registration = nx.shortest_path(self.env.graph, self.registration_nodes[0], self.registration_nodes[1])
         lock_edge_geometry = self.env.vessel_traffic_service.provide_trajectory(route_between_nodes_of_registration[0],route_between_nodes_of_registration[-1])
         lock_edge_geometry_m = self.env.vessel_traffic_service.transform_geometry(lock_edge_geometry)
 
@@ -3265,6 +3265,12 @@ class IsLockComplex(IsLockMaster):
                                   "Waiting for other vessel in lock operation stop",
                                   "Waiting for lock operation start",
                                   "Waiting for lock operation stop",
+                                  "Waiting for lock gate closing start",
+                                  "Waiting for lock gate closing stop",
+                                  "Waiting for lock levelling start",
+                                  "Waiting for lock levelling stop",
+                                  "Waiting for lock gate opening start",
+                                  "Waiting for lock gate opening stop",
                                   "Sailing to first lock doors start",
                                   "Sailing to first lock doors stop",
                                   "Sailing to position in lock start",
@@ -3285,30 +3291,42 @@ class IsLockComplex(IsLockMaster):
             distances = []
             vessel_df = pd.DataFrame(vessel.logbook)
             vessel_df["Geometry"] = vessel_df["Geometry"].apply(lambda x: self.env.vessel_traffic_service.transform_geometry(x))
-            x_correction = 0.0
+            x_correction = None
             for index, message_info in vessel_df.iterrows():
                 time = message_info.Timestamp
                 distance = lock_edge_geometry_m.line_locate_point(message_info.Geometry)
                 route = vessel.route
                 if self.start_node not in route or self.end_node not in route:
-                    continue
+                    break
 
                 if message_info.Message in accepted_messages:
-                    if message_info.Message == f"Sailing from node {self.start_node} to node {self.end_node} start":
+                    if message_info.Message == f"Sailing from node {route_between_nodes_of_registration[0]} to node {route_between_nodes_of_registration[1]} start":
                         x_correction = x_correction_indirection
-                    elif message_info.Message == f"Sailing from node {self.end_node} to node {self.start_node} start":
+                    elif message_info.Message == f"Sailing from node {route_between_nodes_of_registration[-1]} to node {route_between_nodes_of_registration[-2]} start":
                         x_correction = x_correction_outdirection
-                    times.append(time)
-                    distances.append(distance)
+                    elif x_correction is None:
+                        continue
 
+                elif x_correction is not None:
+                    break
+
+                else:
+                    continue
+
+                times.append(time)
+                distances.append(distance)
+
+            if x_correction is None:
+                continue
             distances = np.array(distances) - x_correction
             all_times.append(times)
             all_distances.append(distances)
-
+            
             # Add vessel trace with vessel.name in legend
             if method == 'Plotly':
                 traces.append(go.Scatter(x=distances, y=times, mode='lines', name=vessel.name))
 
+        new_fig = False
         if ax is not None:
             for index, (distances, times) in enumerate(zip(all_distances, all_times)):
                 if index == 0:
@@ -3322,10 +3340,12 @@ class IsLockComplex(IsLockMaster):
 
         elif method == 'Matplotlib':
             fig, ax = plt.subplots()
+            new_fig = True
             for distances, times in zip(all_distances, all_times):
                 ax.plot(distances, times)
         elif method == 'Plotly':
             fig = go.Figure(data=traces)
+            new_fig = True
 
         # Determine y-axis limits
         all_y_values = [t for sublist in all_times for t in sublist]
@@ -3398,7 +3418,7 @@ class IsLockComplex(IsLockMaster):
         xlabel = "Distance from Lock Complex [m]"
         ylabel = "Timestamp"
         title = "Time-Distance Plot of Vessel Movements"
-        if ax is not None:
+        if not new_fig:
             pass
         elif method == 'Matplotlib':
             ax.axvline(-sailing_distance_to_crossing_point, color="lightgrey", zorder=0)
