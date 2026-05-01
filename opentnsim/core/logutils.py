@@ -155,7 +155,7 @@ def logbook2eventtable(objs):
     df.loc[df['is_subprocess'] == False, 'main activity name'] = df.loc[df['is_subprocess'] == False, 'activity name']
     df.loc[df['is_subprocess'], 'subactivity name'] = df['activity name']
     df['main activity name'] = df['main activity name'].ffill()
-
+    
     # Container for gap segments
     gap_segments = []
 
@@ -171,7 +171,6 @@ def logbook2eventtable(objs):
 
         current_start = main_row['start time']
         current_start_loc = main_row['start location']
-
         gap_count = 1
 
         for _, sub in subs.iterrows():
@@ -240,7 +239,7 @@ def logbook2eventtable(objs):
             gap_row = main_row.copy()
 
             gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
-            gap_row['subactivity name'] = sub['subactivity name']
+            gap_row['subactivity name'] = ""
 
             gap_row['start time'] = current_start
             gap_row['stop time'] = main_row['stop time']
