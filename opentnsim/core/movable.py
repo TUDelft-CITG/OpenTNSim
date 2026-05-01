@@ -459,9 +459,6 @@ class Movable(Locatable, Routable, Log):
         distance = get_length_of_edge(self.graph, edge)
         self.distance_left_on_edge = distance
 
-        # calculate velocity based on depth and power, if possible.
-        self.v = self._compute_velocity_on_edge(origin, destination)
-
         # Check if the edge has current info
         # NB: positive current is directed from origin to destination
         current = self._get_current(origin, destination)
@@ -496,8 +493,11 @@ class Movable(Locatable, Routable, Log):
         for on_pass_edge_function in self.on_pass_edge_functions:
             yield from on_pass_edge_function(origin, destination)
 
+        # calculate velocity based on depth and power, if possible.
+        speed = self._compute_velocity_on_edge(origin, destination)
+
         # default velocity based on current speed.
-        timeout = self.distance_left_on_edge / (self.current_speed + current)
+        timeout = self.distance_left_on_edge / (speed + current)
         yield self.env.timeout(timeout)
         self.distance += self.distance_left_on_edge
 
@@ -581,10 +581,9 @@ class Movable(Locatable, Routable, Log):
         destination: str
             the destination node of the edge
         """
-
         edge = (origin, destination)
         if hasattr(self,'overruled_speed') and edge in self.overruled_speed.index:
-            overruled_speed = self.overruled_speed.loc[edge]
+            overruled_speed = self.overruled_speed.loc[edge, 'Speed']
             return overruled_speed
 
         # check if we have the energy mixin and ptot_given

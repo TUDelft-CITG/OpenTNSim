@@ -386,6 +386,7 @@ class IsLockChamberOperator:
         # unpacks the lock and vessel and operation planning
         lock = vessel.multidigraph.edges[origin, destination, k]["Lock"][0]
         vessel_planning = lock.vessel_planning
+        vessel.overruled_speed = vessel.overruled_speed.iloc[0:0]
 
         # determines information of the lock operation
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
@@ -1598,7 +1599,6 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         # if there is an overruled speed on the edge, use this speed
         if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
             speed = vessel.overruled_speed.loc[edge, "Speed"]
-
         return speed
 
     def vessel_sailing_out_speed(self, vessel, direction, P_used=None, h0=17, until_crossing_point=False):
@@ -1627,11 +1627,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
 
         # determine the speed of the vessel over the edge
         speed = vessel._compute_velocity_on_edge(edge[0], edge[1])
-
         # if there is an overruled speed on the edge, use this speed
         if 'overruled_speed' in dir(vessel) and edge in vessel.overruled_speed.index:
             speed = vessel.overruled_speed.loc[edge, 'Speed']
-
         return speed
 
     def _directional_edge(self, direction):

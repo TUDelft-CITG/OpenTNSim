@@ -5,7 +5,7 @@ import pyproj
 from scipy.ndimage import rotate
 from scipy.spatial import ConvexHull
 from shapely import reverse
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import transform, linemerge, split, snap
 from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
                                    create_transformer, get_trajectory, find_closest_node, find_closest_edge,
@@ -241,18 +241,17 @@ def calculate_distance_between_locations_along_edges(graph, location_1, location
     edge_1 = find_closest_edge(graph, location_1)
     edge_2 = find_closest_edge(graph, location_2)
     route = get_largest_route_between_edges(graph, edge_1, edge_2)
-    geometry, length_m = get_trajectory(graph, route[0], route[-1])
-    geometry_length = geometry.length
+    geometry = get_trajectory(graph, route[0], route[-1])[0]
+    epsg_out = 'EPSG:4087'
+    if hasattr(graph,'crs_m'):
+        epsg_out = graph.crs_m
+    geometry_m = transform_geometry(geometry, epsg_in = "EPSG:4326", epsg_out = epsg_out)
+    location_1_m = transform_geometry(location_1, epsg_in = "EPSG:4326", epsg_out = epsg_out)
+    location_2_m = transform_geometry(location_2, epsg_in = "EPSG:4326", epsg_out = epsg_out)
 
-    distance_1 = geometry.project(location_1)
-    distance_2 = geometry.project(location_2)
-    fraction_1 = distance_1 / geometry_length
-    fraction_2 = distance_2 / geometry_length
-
-    distance_m_1 = fraction_1 * length_m
-    distance_m_2 = fraction_2 * length_m
-
-    distance_m = round(np.abs(distance_m_1 - distance_m_2),2)
+    distance_1_m = geometry_m.project(location_1_m)
+    distance_2_m = geometry_m.project(location_2_m)
+    distance_m = np.abs(distance_2_m - distance_1_m)
     return distance_m
 
 

@@ -1158,10 +1158,11 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         if waiting_area.name == 'waiting_area_A':
             direction = 0
             distance_left_on_edge = lock.distance_waiting_area_A_to_end_edge_waiting_area_A
+            lock_end_node = lock.edge[1]
         else:
             direction = 1
             distance_left_on_edge = lock.distance_waiting_area_B_to_end_edge_waiting_area_B
-
+            lock_end_node = lock.edge[0]
 
         # unpacks the lock complex master's vessel and lock planning
         vessel_planning = lock.lock_complex.vessel_planning
@@ -1246,7 +1247,9 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             lock.overrule_vessel_speed(self,lock_end_node,waiting_time=waiting_time_while_sailing)
             self.process.interrupt()
 
-        self.overruled_speed.loc[waiting_area.edge, 'Speed'] = lock.vessel_sailing_in_speed(self, direction)
+        route_to_lock_chamber = nx.shortest_path(self.env.graph, self.current_node, lock_end_node)
+        for edge in zip(route_to_lock_chamber[:-1],route_to_lock_chamber[1:]):
+            self.overruled_speed.loc[edge, 'Speed'] = lock.vessel_sailing_in_speed(self, direction)
         self.distance_left_on_edge = distance_left_on_edge
 
 
