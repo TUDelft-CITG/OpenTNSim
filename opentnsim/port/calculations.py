@@ -737,6 +737,9 @@ def calculate_combined_tidal_windows(tidal_window_1, tidal_window_2):
     tidal_accessibility = tidal_accessibility.iloc[tidal_window_indexes]
     return tidal_accessibility
 
+
+
+
 def calculate_minimum_available_water_depth_along_route(vessel, route, time_start, time_end, delay=0):
     """Function: calculates the minimum available water depth (predicted/modelled/measured water level
               minus the local maintained bed level) along the route over time,
@@ -751,55 +754,54 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         to sail (can be different than vessel.route)
         - delay:
     """
-    hydrodynamic_information = vessel.env.vessel_traffic_service.hydrodynamic_information
-    time_start_index = np.max([0, np.absolute(hydrodynamic_information.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
-    time_end_index = np.absolute(hydrodynamic_information.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
-    net_ukc = pd.DataFrame()
-    times = hydrodynamic_information["TIME"].values[time_start_index:time_end_index]
-    t_step = times[1] - times[0]
-    t_boundaries = []
+    def min_ukc_route(t0, f_ukc, sailing_times, n=30):
+        min_val = np.inf
+
+        for i in range(len(f_ukc) - 1):
+            t_start = t0 + sailing_times[i]
+            t_end   = t0 + sailing_times[i + 1]
+
+            t = np.linspace(t_start, t_end, n)
+            s = (t - t_start) / (t_end - t_start)
+
+            fA = f_ukc[i]
+            fB = f_ukc[i + 1]
+
+            ukc_seg = (1 - s) * fA(t) + s * fB(t)
+
+            min_val = min(min_val, ukc_seg.min())
+
+        return min_val
+
+    hydrodynamic_data = vessel.env.vessel_traffic_service.hydrodynamic_information
+    t = hydrodynamic_data['TIME'].values
+    time_start_index = np.max([0, np.absolute(t - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
+    time_end_index = np.absolute(t - (time_end + np.timedelta64(int(delay), "s"))).argmin()
+    net_ukc_dict = {}
+
     # Start of calculation by looping over the nodes of the route
-    for route_index, node_name in enumerate(route):
-        node_index = list(hydrodynamic_information["STATION"].values).index(node_name)
-        sailing_time_to_next_node = vessel.env.vessel_traffic_service.provide_sailing_time(vessel, route[: (route_index + 1)])
-        time_correction_index = int(np.round(sailing_time_to_next_node["Time"].sum() / (t_step / np.timedelta64(1, "s"))))
-        time_end_index = np.min([len(hydrodynamic_information["Water level"][node_index])-1,time_end_index + time_correction_index])
-        times = hydrodynamic_information["TIME"].values[time_start_index:time_end_index]
-        water_level = hydrodynamic_information["Water level"][node_index].values[time_start_index:time_end_index]
+    for node_name in route:
+        station_data = hydrodynamic_data.sel(STATION=node_name)
+        water_level = station_data["Water level"].values[time_start_index:(time_end_index+1)]
         _, _, _, required_water_depth, _, _ = calculate_ukc_clearance(vessel, node_name, delay)
-        MBL = hydrodynamic_information["MBL"][node_index].values[time_start_index:time_end_index]
+        MBL = station_data["MBL"].values[time_start_index:(time_end_index+1)]
         water_depth = water_level + MBL
-        net_ukc_node = pd.DataFrame([available_water_depth - required_water_depth for available_water_depth in water_depth],columns=[node_name],index=times)
-        net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
-        t_boundaries.append(time_correction_index)
+        net_ukc = water_depth - required_water_depth
+        net_ukc_dict[node_name] = net_ukc
+    net_ukc_df = pd.DataFrame(net_ukc_dict, index=hydrodynamic_data["TIME"].values[time_start_index:(time_end_index+1)])
 
-    min_net_ukc = net_ukc.min(axis=1).min()
-    net_ukc_corrected = net_ukc.copy()
-    window = False
-    column_index = 0
-    window_stop = 0
-    for column_index,(boundary_start,boundary_stop) in enumerate(zip(t_boundaries[:-1],t_boundaries[1:])):
-        window_start = boundary_start
-        window_stop = int(np.ceil(np.mean([boundary_start,boundary_stop])))
-        window = window_stop - window_start
-        net_UKC_node_start = net_ukc.iloc[:, column_index]
-        if window:
-            net_UKC_node_start = net_ukc.iloc[:, column_index].rolling(window=window, center=False).min().shift(-window_start-window)
-        window_start = int(np.floor(np.mean([boundary_start,boundary_stop])))
-        window_stop = boundary_stop
-        window = window_stop - window_start
-        net_UKC_node_stop = net_ukc.iloc[:, column_index]
-        if window:
-            net_UKC_node_stop = net_ukc.iloc[:, column_index].rolling(window=window,center=False).min().shift(-window_start)
-        net_ukc_node = pd.concat([net_UKC_node_start, net_UKC_node_stop], axis=1)
-        net_ukc_node_min = net_ukc_node.min(axis=1)
-        net_ukc_corrected[route[column_index]] = net_ukc_node_min
+    t_s = (t - t[0]) / np.timedelta64(1, 's')
+    t_s_intp = t_s[time_start_index:(time_end_index+1)]
+    
+    f_ukc = [interp1d(t_s_intp, net_ukc_df[col].values, kind='linear', fill_value="extrapolate") for col in net_ukc_df.columns]
 
-    if window:
-        net_ukc_corrected.iloc[:,column_index+1] = net_ukc.iloc[:, -1].rolling(window=window,center=False).min().shift(-window_stop)
-    net_ukc = net_ukc_corrected.ffill().fillna(min_net_ukc)
-    net_ukc["min_net_ukc"] = net_ukc.min(axis=1)
-    return net_ukc
+    segment_sailing_times = vessel.env.vessel_traffic_service.provide_sailing_time(vessel, route)['Time'].values.tolist()
+    sailing_times = np.concatenate([[0.], np.cumsum(segment_sailing_times)])
+    
+    t_grid = t_s[time_start_index:time_end_index+1]
+    min_net_ukc_route = [min_ukc_route(t_i, f_ukc, sailing_times) for t_i in t_grid]
+    net_ukc_df["min_net_ukc"] = min_net_ukc_route
+    return net_ukc_df
 
 
 def calculate_ukc_clearance(vessel, node, delay=0):
