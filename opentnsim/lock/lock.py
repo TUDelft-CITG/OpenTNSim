@@ -1219,7 +1219,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         waiting_time = planned_start_time_entering_lock-time_at_approach
 
         # determine the waiting time that a vessel can do by decreasing it sailing speed and the waiting time that the vessel has to wait stationary in the waiting area (due to a minimum required speed for safe manoeuvrability)
-        # remaining_static_waiting_time, waiting_time_while_sailing = lock.determine_waiting_time_while_sailing_to_lock(self,direction,waiting_time.total_seconds()) TODO: kijken waarom deze uitgecommand is, en of we deze toch wel willen gebruiken
+        # remaining_static_waiting_time, waiting_time_while_sailing = lock.determine_waiting_time_while_sailing_to_lock(self,direction,waiting_time.total_seconds()) #TODO: kijken waarom deze uitgecommand is, en of we deze toch wel willen gebruiken
         remaining_static_waiting_time = waiting_time.total_seconds()
         waiting_time_while_sailing = 0.
 
@@ -2880,8 +2880,8 @@ class IsLockComplex(IsLockMaster):
                  effective_lineup_area_B_length=None,           # a float that is the effective length of line-up area B that can be requested by a vessel [m]
                  passing_allowed_in_lineup_area_A=False,        # a bool to indicate that ... ?
                  passing_allowed_in_lineup_area_B=False,        # a bool to indicate that ... ?
-                 speed_reduction_factor_waiting_area_A=0.75,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
-                 speed_reduction_factor_waiting_area_B=0.75,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
+                 speed_reduction_factor_waiting_area_A=None,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
+                 speed_reduction_factor_waiting_area_B=None,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
                  speed_reduction_factor_lineup_area_A=0.75,     # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
                  speed_reduction_factor_lineup_area_B=0.75,     # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
                  P_used_to_break_before_lock=None,              # a float that is the breaking power used by the vessel to gradually decelerate in front of the lock [kW]
@@ -2889,7 +2889,7 @@ class IsLockComplex(IsLockMaster):
                  P_used_to_accelerate_in_lock=None,             # a float that is the acceleration power used by the vessel to gradually accelerate inside the lock chamber [kW]
                  P_used_to_accelerate_after_lock=None,          # a float that is the acceleration power used by the vessel to gradually accelerate to sail way from the lock chamber [kW]
                  k = 0,                                         # a int that is the identifier of the edge between two nodes at which the lock complex is located on the multidigraph network
-                 mandatory_waiting_time_before_lock = 0,
+                 mandatory_waiting_time_before_lock = None,
                  speed_reduction_length_before_waiting_area = 0,
                  *args,
                  **kwargs):

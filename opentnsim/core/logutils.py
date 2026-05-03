@@ -180,6 +180,7 @@ def logbook2eventtable(objs):
 
                 gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
                 gap_row['subactivity name'] = sub['subactivity name']
+                # gap_row['subactivity name'] = ""
 
                 gap_row['start time'] = sub['start time']
                 gap_row['stop time'] = sub['stop time']

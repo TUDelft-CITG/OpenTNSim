@@ -330,6 +330,7 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, env):
         # Filter only rows that are part of lock activities
         target_msgs = [
             'Sailing to position in lock',
+            'Waiting for lock operation',
             'Waiting for lock gate closing',
             'Waiting for lock levelling',
             'Waiting for lock gate opening',
