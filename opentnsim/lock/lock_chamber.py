@@ -480,6 +480,7 @@ class IsLockChamberOperator:
         # log that sailing out of the lock complex is stopping and set that no distance has to be sailed along the edge (vessel is at end of lock complex)
         vessel.log_entry_v0("Sailing to lock complex exit stop", vessel.env.now, vessel.output.copy(), exit_geom,)
         vessel.distance_left_on_edge = 0
+        vessel.passed_waiting_area = False
 
     def allow_vessel_to_sail_into_lock(self, origin, destination, vessel=None, k=0):
         """Allows the vessel to sail into the lock chamber
@@ -495,7 +496,6 @@ class IsLockChamberOperator:
         k : int
             identifier of the edge between two nodes in a multidigraph network
         """
-
         # checks if lock is present on the edge
         if "Lock" not in vessel.multidigraph.edges[origin, destination, k].keys():
             return
@@ -575,6 +575,7 @@ class IsLockChamberOperator:
         vessel.position_in_lock = vessel.env.vessel_traffic_service.provide_location_over_edges(lock_start_node, lock_end_node, distance_to_position_in_lock)
 
         # let vessel sail to the assigned location in the lock chamber
+        start_sailing = vessel.env.now
         vessel_speed = lock.vessel_sailing_speed_in_lock(vessel)
         remaining_sailing_time = vessel.distance_position_from_first_lock_doors / vessel_speed
         while remaining_sailing_time > 0:

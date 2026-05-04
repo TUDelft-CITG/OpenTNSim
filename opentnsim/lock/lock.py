@@ -987,7 +987,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
 
         # determine which part of the route we still need to consider: if the route does not pass the lock complex, then skip function (vessel should not interact with the lock complex)
         route_to_come = self.route_ahead
-        if len(route_to_come) <= 1:
+        if len(route_to_come) <= 1 or (hasattr(self,'passed_waiting_area') and self.passed_waiting_area):
             return
 
         # TODO: misschien losse functie maken hier
@@ -1009,7 +1009,13 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 waiting_area = lock.waiting_area_B
 
             # if the origin of the vessel has not reached the waiting area edge, then skip this function
-            if origin != waiting_area.edge[0]:
+            for registration_node in lock.registration_nodes:
+                lock_found = False
+                route_to_waiting_area = nx.shortest_path(self.env.graph, registration_node, waiting_area.edge[1])
+                if origin in route_to_waiting_area:
+                    lock_found = True
+                    break
+            if not lock_found:
                 return
 
             # unpack the vessel and lock operation planning of the lock
@@ -1021,13 +1027,40 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             operation_index = vessel_planning.loc[vessel_planning_index,'operation_index']
 
             # calculate the sailing duration left to the waiting area
-            sailing_time_to_waiting_area, sailing_distance_to_waiting_area, vessel_speed,_ = lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)
-            sailing_time_to_waiting_area = sailing_time_to_waiting_area.total_seconds()
+            continue_sailing_to_waiting_area = False
+            self.passed_waiting_area = False
+            if hasattr(self,'remaining_distance_to_waiting_area_without_speed_reduction'):
+                if self.remaining_distance_to_waiting_area_without_speed_reduction:
+                    continue_sailing_to_waiting_area = True
+                    vessel_speed = self.v
+                    speed_reduction_length = waiting_area.speed_reduction_length
+                    non_speed_reduction_length = self.remaining_distance_to_waiting_area_without_speed_reduction
+                    sailing_time_to_waiting_area = speed_reduction_length/vessel_speed
+                    
+                elif self.remaining_distance_to_waiting_area_with_speed_reduction:
+                    continue_sailing_to_waiting_area = True
+                    vessel_speed = self.v
+                    speed_reduction_length = self.remaining_distance_to_waiting_area_with_speed_reduction
+                    non_speed_reduction_length = 0.
+                    sailing_time_to_waiting_area = speed_reduction_length/vessel_speed
+            else:
+                self.remaining_distance_to_waiting_area_without_speed_reduction = 0.
+                self.remaining_distance_to_waiting_area_with_speed_reduction = 0.
+
+            if not continue_sailing_to_waiting_area:
+                sailing_time_to_waiting_area, sailing_distance_to_waiting_area, vessel_speed, sailing_df = lock.calculate_sailing_time_to_waiting_area(self, direction, overwrite=False)
+                sailing_time_to_waiting_area = sailing_time_to_waiting_area.total_seconds()
+                speed_reduction_length = waiting_area.speed_reduction_length
+                non_speed_reduction_length = sailing_distance_to_waiting_area - speed_reduction_length
 
             # if there is still sailing time left to the waiting area then continue sailing and log this process (here the locking module takes over the function of the movable)
             if sailing_time_to_waiting_area:
-                speed_reduction_length = waiting_area.speed_reduction_length
-                non_speed_reduction_length = sailing_distance_to_waiting_area - speed_reduction_length
+                if self.distance_left_on_edge < non_speed_reduction_length:
+                    self.remaining_distance_to_waiting_area_without_speed_reduction = non_speed_reduction_length - self.distance_left_on_edge
+                    non_speed_reduction_length = self.distance_left_on_edge
+                else:
+                    self.remaining_distance_to_waiting_area_without_speed_reduction = 0.
+                
                 speed = self._compute_velocity_on_edge(*waiting_area.edge)
                 if non_speed_reduction_length:
                     self.log_entry_v0("Sailing to waiting area start", self.env.now, self.output.copy(), self.logbook[-1]['Geometry'],)
@@ -1042,11 +1075,20 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                     if not speed_reduction_length:
                         geometry = waiting_area.location
                     else:
-                        geometry = self.env.vessel_traffic_service.provide_location_over_edges(waiting_area.edge[0], waiting_area.edge[1], non_speed_reduction_length)
-                    self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),geometry,)
+                        geometry = self.env.vessel_traffic_service.provide_location_over_edges(origin, waiting_area.edge[1], non_speed_reduction_length)
+                    self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(), geometry,)
+                    self.distance_left_on_edge -= non_speed_reduction_length
+                    if self.remaining_distance_to_waiting_area_without_speed_reduction > 0.:
+                        return                      
 
                 if speed_reduction_length:
-                    self.log_entry_v0("Sailing to waiting area start (with reduced speed)", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'], )
+                    if self.distance_left_on_edge < speed_reduction_length:
+                        self.remaining_distance_to_waiting_area_with_speed_reduction = speed_reduction_length - self.distance_left_on_edge
+                        speed_reduction_length = self.distance_left_on_edge
+                    else:
+                        self.remaining_distance_to_waiting_area_with_speed_reduction = 0.
+
+                    self.log_entry_v0("Sailing to waiting area (with reduced speed) start", self.env.now, self.output.copy(),self.logbook[-1]['Geometry'], )
                     start_sailing = self.env.now
                     reduced_speed = speed*waiting_area.speed_reduction_factor
                     try:
@@ -1056,20 +1098,26 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                         sailing_time_to_waiting_area -= self.env.now - start_sailing
                         remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
                         sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
-                    self.log_entry_v0("Sailing to waiting area stop (with reduced speed)", self.env.now, self.output.copy(),waiting_area.location, )
-
+                    if self.remaining_distance_to_waiting_area_with_speed_reduction == 0.:
+                        self.log_entry_v0("Sailing to waiting area (with reduced speed) stop", self.env.now, self.output.copy(), waiting_area.location, )
+                    else:
+                        geometry = self.env.vessel_traffic_service.provide_location_over_edges(origin, waiting_area.edge[1], non_speed_reduction_length)
+                    self.distance_left_on_edge -= speed_reduction_length
+                    if self.remaining_distance_to_waiting_area_with_speed_reduction > 0.:
+                        return
+                        
 
             # the sailing process can be interrupted, as vessel can be subject to changes in its speed, then the remaining sailing time is determined and continued with the changed speed -> when sailing to the waiting area has been completed: log the process
-            while sailing_time_to_waiting_area:
-                start_sailing = self.env.now
-                try:
-                    yield self.env.timeout(sailing_time_to_waiting_area)
-                    sailing_time_to_waiting_area = 0.
-                except simpy.Interrupt as e:
-                    sailing_time_to_waiting_area -= self.env.now - start_sailing
-                    remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
-                    sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
-                self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),waiting_area.location,)
+            # while sailing_time_to_waiting_area:
+            #     start_sailing = self.env.now
+            #     try:
+            #         yield self.env.timeout(sailing_time_to_waiting_area)
+            #         sailing_time_to_waiting_area = 0.
+            #     except simpy.Interrupt as e:
+            #         sailing_time_to_waiting_area -= self.env.now - start_sailing
+            #         remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
+            #         sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
+            #     self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.output.copy(),waiting_area.location,)
 
             # let vessel wait in the waiting area TODO: can we decouple this?
             start_waiting = self.env.now
@@ -1086,9 +1134,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             self.on_pass_edge_functions.append(allow_vessel_to_sail_into_lock)
             self.on_pass_edge_functions.append(initiate_levelling)
             self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
-
-            # correct distance left on edge with the already covered distance through this function (to communicate with the move function)
-            #self.distance_left_on_edge -= sailing_distance_to_waiting_area
+            self.passed_waiting_area = True
 
             # on continuing sailing to the lock complex, determine the current time and whether the vessel is the first vessel or will arrive after another vessel
             current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
@@ -1101,6 +1147,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
             door_is_closed, doors_required_to_be_open, operation_time = lock.determine_if_door_is_closed(
                 self, operation_index, direction, first_in_lock=first_in_lock, between_arrivals=between_arrivals
             )
+
             # if door is open, then the vessel can continue normally
             if not door_is_closed:
                 return
@@ -1136,6 +1183,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                 ).argmin()
                 station_index = np.where(np.array(list((hydromanager.hydrodynamic_data["STATION"]))) == lock.node_open)[0]
                 lock.water_level[time_index:] = hydromanager.hydrodynamic_data["Water level"][station_index, time_index:]
+
 
     def wait_in_waiting_area(self, waiting_area):
         """
@@ -1219,7 +1267,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
         waiting_time = planned_start_time_entering_lock-time_at_approach
 
         # determine the waiting time that a vessel can do by decreasing it sailing speed and the waiting time that the vessel has to wait stationary in the waiting area (due to a minimum required speed for safe manoeuvrability)
-        # remaining_static_waiting_time, waiting_time_while_sailing = lock.determine_waiting_time_while_sailing_to_lock(self,direction,waiting_time.total_seconds()) #TODO: kijken waarom deze uitgecommand is, en of we deze toch wel willen gebruiken
+        # remaining_static_waiting_time, waiting_time_while_sailing = lock.determine_waiting_time_while_sailing_to_lock(self,direction,waiting_time.total_seconds()) TODO: kijken waarom deze uitgecommand is, en of we deze toch wel willen gebruiken
         remaining_static_waiting_time = waiting_time.total_seconds()
         waiting_time_while_sailing = 0.
 
@@ -1831,7 +1879,6 @@ class IsLockMaster(SimpyObject, HasLockPlanning):
 
         # calculation of the sailing information (time, distance, speed) per edge on route to the waiting area
         sailing_to_waiting_area = calculate_sailing_time(vessel, route=route_to_waiting_area, distance_sailed_on_last_edge=distance_to_waiting_area_on_last_edge)
-
         sailing_to_waiting_area['cum_distance'] = sailing_to_waiting_area['Distance'].cumsum()
         total_distance = sailing_to_waiting_area['Distance'].sum()
 
@@ -2880,8 +2927,8 @@ class IsLockComplex(IsLockMaster):
                  effective_lineup_area_B_length=None,           # a float that is the effective length of line-up area B that can be requested by a vessel [m]
                  passing_allowed_in_lineup_area_A=False,        # a bool to indicate that ... ?
                  passing_allowed_in_lineup_area_B=False,        # a bool to indicate that ... ?
-                 speed_reduction_factor_waiting_area_A=None,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
-                 speed_reduction_factor_waiting_area_B=None,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
+                 speed_reduction_factor_waiting_area_A=0.75,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
+                 speed_reduction_factor_waiting_area_B=0.75,    # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
                  speed_reduction_factor_lineup_area_A=0.75,     # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area A
                  speed_reduction_factor_lineup_area_B=0.75,     # a float that is the reduction factor for the vessel speed from its original speed when sailing towards the lock chamber from line-up area B
                  P_used_to_break_before_lock=None,              # a float that is the breaking power used by the vessel to gradually decelerate in front of the lock [kW]
@@ -2889,7 +2936,7 @@ class IsLockComplex(IsLockMaster):
                  P_used_to_accelerate_in_lock=None,             # a float that is the acceleration power used by the vessel to gradually accelerate inside the lock chamber [kW]
                  P_used_to_accelerate_after_lock=None,          # a float that is the acceleration power used by the vessel to gradually accelerate to sail way from the lock chamber [kW]
                  k = 0,                                         # a int that is the identifier of the edge between two nodes at which the lock complex is located on the multidigraph network
-                 mandatory_waiting_time_before_lock = None,
+                 mandatory_waiting_time_before_lock = 0,
                  speed_reduction_length_before_waiting_area = 0,
                  *args,
                  **kwargs):
@@ -3262,8 +3309,8 @@ class IsLockComplex(IsLockMaster):
 
         accepted_messages.extend(["Sailing to waiting area start",
                                   "Sailing to waiting area stop",
-                                  "Sailing to waiting area start (with reduced speed)",
-                                  "Sailing to waiting area stop (with reduced speed)",
+                                  "Sailing to waiting area (with reduced speed) start",
+                                  "Sailing to waiting area (with reduced speed) stop",
                                   "Waiting for other vessel in lock operation start",
                                   "Waiting for other vessel in lock operation stop",
                                   "Waiting for lock operation start",

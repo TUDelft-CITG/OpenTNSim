@@ -267,7 +267,7 @@ class Movable(Locatable, Routable, Log):
 
         """
         self.position_on_route = position_on_route
-        self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
+        #self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
 
     # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
     def move(self):
@@ -481,15 +481,20 @@ class Movable(Locatable, Routable, Log):
                     self.distance,
                     orig,
                 )
+            self.geometry = orig
 
+        if not hasattr(self, 'geometry'):
+            self.geometry = orig
+        
         self.log_entry_v0(
             "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
             self.env.now,
             self.distance,
-            orig,
+            self.geometry,
         )
 
         # on pass edge functions
+        self.geometry = dest
         for on_pass_edge_function in self.on_pass_edge_functions:
             yield from on_pass_edge_function(origin, destination)
 
@@ -505,9 +510,8 @@ class Movable(Locatable, Routable, Log):
             "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
             self.env.now,
             self.distance,  # TODO distance klopt nu  niet na een sluismodule
-            dest,
+            self.geometry,
         )
-        self.geometry = dest
 
         # release resource if needed
         if "Resources" in edge_info.keys():

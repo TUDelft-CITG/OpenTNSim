@@ -180,7 +180,6 @@ def logbook2eventtable(objs):
 
                 gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
                 gap_row['subactivity name'] = sub['subactivity name']
-                # gap_row['subactivity name'] = ""
 
                 gap_row['start time'] = sub['start time']
                 gap_row['stop time'] = sub['stop time']
@@ -204,8 +203,7 @@ def logbook2eventtable(objs):
             # Move start pointer forward
             current_start = max(current_start, sub['stop time'])
             current_start_loc = sub['stop location']
-
-            if sub['start time'] > current_start and sub['stop time'] < main_row['stop time']:
+            if sub['start time'] > current_start and sub['stop time'] <= main_row['stop time']:
                 # Copy the main row and adjust columns for the gap
                 gap_row = main_row.copy()
 
@@ -240,7 +238,7 @@ def logbook2eventtable(objs):
             gap_row = main_row.copy()
 
             gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
-            gap_row['subactivity name'] = ""
+            gap_row['subactivity name'] = "" #sub['subactivity name']
 
             gap_row['start time'] = current_start
             gap_row['stop time'] = main_row['stop time']
