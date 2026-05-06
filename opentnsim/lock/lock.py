@@ -1099,7 +1099,7 @@ class PassesLockComplex(Movable, HasMultiDiGraph):
                         remaining_sailing_distance = vessel_speed * sailing_time_to_waiting_area
                         sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
                     if self.remaining_distance_to_waiting_area_with_speed_reduction > 0.:
-                        geometry = self.env.vessel_traffic_service.provide_location_over_edges(origin, waiting_area.edge[1], speed_reduction_length)
+                        geometry = self.env.vessel_traffic_service.provide_location_over_edges(origin, waiting_area.edge[1], speed_reduction_length + non_speed_reduction_length)
                     else:
                         geometry = waiting_area.location
                     self.log_entry_v0("Sailing to waiting area (with reduced speed) stop", self.env.now, self.output.copy(), geometry)
