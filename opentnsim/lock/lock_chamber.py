@@ -1345,6 +1345,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         priority_rules=None,  # maybe obsolete ???
         used_as_one_way_traffic_regulation=False,  # maybe obsolete ???
         seed_nr=None,  # a int for the seed to fix the determination of the node_open when node_open is None
+        P_berthing_perc = None,
+        P_berthed_perc = None,
+        P_deberthing_perc = None,
         *args,
         **kwargs,
     ):
@@ -1399,6 +1402,9 @@ class IsLockChamber(IsLockChamberOperator, HasResource, HasLength, Identifiable,
         self.distance_from_end_node_to_lock_doors_B = distance_from_end_node_to_lock_doors_B
         self.used_as_one_way_traffic_regulation = used_as_one_way_traffic_regulation
         self.converting_chamber = False
+        self.P_berthing_perc = P_berthing_perc
+        self.P_berthed_perc = P_berthed_perc
+        self.P_deberthing_perc = P_deberthing_perc
 
         # TODO: checken of de seed_nr en de random functie worden gebruikt.
         if seed_nr is not None:

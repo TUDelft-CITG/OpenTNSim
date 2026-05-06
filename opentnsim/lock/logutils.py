@@ -351,7 +351,7 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, env):
         # Iterate over lock groups per vessel
         for lock_group, df_group in df_lock.groupby('lock_group'):
             # df_group contains all rows for this lock group
-            df_ref_group = df_group[df_group['subactivity name'] == 'Waiting for lock levelling']
+            df_ref_group = df_group[df_group['subactivity name'].isin(['Waiting for lock gate closing', 'Waiting for lock levelling', 'Waiting for lock gate opening'])]
             # Assign actual lock chamber values for levelling rows
             for index, row in df_ref_group.iterrows():
                 main_event = row['main activity name']
@@ -377,6 +377,16 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, env):
                         df_eventtable_energy.loc[index, 'waterdepth (m)'] = lock_chamber.lock_depth
                         df_eventtable_energy.loc[index, 'waterway width (m)'] = lock_chamber.lock_width
                         break  # Stop once we found the correct lock chamber
+
+                P_installed = df_eventtable_energy.loc[index, 'P_installed (kW)']
+                if row['subactivity name'] == 'Waiting for lock gate closing' and lock_chamber.P_berthing_perc is not None:
+                    df_eventtable_energy.loc[index, 'P_tot (kW)'] = P_installed*lock_chamber.P_berthing_perc
+                    df_eventtable_energy.loc[index, 'P_given (kW)'] = P_installed*lock_chamber.P_berthing_perc
+                elif row['subactivity name'] == 'Waiting for lock gate opening' and lock_chamber.P_deberthing_perc is not None:
+                    df_eventtable_energy.loc[index, 'P_tot (kW)'] = P_installed*lock_chamber.P_deberthing_perc
+                    df_eventtable_energy.loc[index, 'P_given (kW)'] = P_installed*lock_chamber.P_deberthing_perc
+                elif lock_chamber.P_berthed_perc is not None:
+                    df_eventtable_energy.loc[index, 'P_given (kW)'] = P_installed*lock_chamber.P_berthed_perc
 
             # Now propagate these values to the other rows in this lock group
             df_target_group = df_group[df_group['subactivity name'] != 'Waiting for lock levelling'].copy()
