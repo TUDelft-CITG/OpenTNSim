@@ -3,7 +3,7 @@ import math
 import networkx as nx
 import numpy as np
 import pandas as pd
-import pyzsf
+
 from shapely.geometry import Point, Polygon
 from shapely import affinity
 import datetime
@@ -449,7 +449,10 @@ def calculate_sailing_time_to_waiting_area(waiting_area, vessel):
     # calculation of the sailing time, distance, and average speed to the waiting area
     sailing_to_waiting_area_time = sailing_to_waiting_area[0]
     sailing_distance = sailing_to_waiting_area[1]
-    average_sailing_speed = sailing_distance / sailing_to_waiting_area_time.total_seconds()
+    try:
+        average_sailing_speed = sailing_distance / sailing_to_waiting_area_time.total_seconds()
+    except:
+        average_sailing_speed = 0.
 
     return sailing_to_waiting_area_time, sailing_distance, average_sailing_speed
 
@@ -1621,10 +1624,11 @@ def calculate_ZSF_eventttable(lock_chamber):
         return pd.DataFrame()
 
     df_operations = get_levelling_cycles(lock_chamber)
-    df_vessels = get_vessels_per_cycle(lock_chamber)
     df_operations['vessels'] = [[]]*len(df_operations)
-
     df_operations['volume_of_vessels_in_lock'] = 0.
+    vessel_info = get_vessels_per_cycle(lock_chamber)
+    df_vessels = pd.DataFrame(vessel_info)
+
     if not df_vessels.empty:
         for operation_nr, operation_info in df_operations.iterrows():
             vessel_ids = df_vessels[df_vessels.cycle_nr == operation_nr].vessel_id.to_list()
@@ -1775,6 +1779,8 @@ def calculate_exchange_current_speed(lock_chamber, state_a, parameters_b, side='
 
 
 def calculate_water_exchange_fluxes(lock_chamber, zsf_events = None):
+    import pyzsf
+    
     zsf_events_was_none = False
     if zsf_events is None:
         zsf_events_was_none = True

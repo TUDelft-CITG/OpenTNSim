@@ -314,10 +314,11 @@ class Movable(Locatable, Routable, Log):
         yield from self._move_to_start()
 
         # Set edge_route based on route
-        if not (hasattr(self, "edge_route") and self.edge_route[0][0] == self.route[0]):
+        if not hasattr(self, "edge_route") or not len(self.edge_route):
+            self.edge_route = node_path_to_edge_path(self.graph, self.route)  
+        elif self.edge_route[0][0] != self.route[0]:
             self.edge_route = node_path_to_edge_path(self.graph, self.route)
             
-
         # look ahead to first node
         self.position_on_route = 0
         yield from self.look_ahead_to_node(self.route[0])

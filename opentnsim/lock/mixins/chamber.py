@@ -301,7 +301,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         return event_durations
 
 
-    def plot(self, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, offset_x = 0., method = 'Matplotlib', boundary_nodes = None, fig=None, ax=None, legend=True):
+    def plot(self, xlimmin, xlimmax, ylimmin, ylimmax, offset_x = 0., method = 'Matplotlib', boundary_nodes = None, fig=None, ax=None, legend=True):
         fig = create_time_distance_plot(self, xlimmin=xlimmin, xlimmax=xlimmax, ylimmin=ylimmin, ylimmax=ylimmax, offset_x = offset_x,
                                         method = method, boundary_nodes = boundary_nodes, fig=fig, ax=ax, legend = legend)
         return fig

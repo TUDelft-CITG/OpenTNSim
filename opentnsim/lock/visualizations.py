@@ -60,7 +60,7 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, time_axis = 'x', m
                           name=name, row=ax[0], col=ax[1])
 
 
-def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=None, ylimmax=None, offset_x=0.,
+def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, offset_x=0.,
                               method='Matplotlib', boundary_nodes = None, fig=None, ax=None, legend=True):
     """Create a time-distance plot of vessels passing a lock complex
 
@@ -83,7 +83,9 @@ def create_time_distance_plot(lock_chamber, xlimmin=None, xlimmax=None, ylimmin=
 
     """
     lock_complex = lock_chamber.lock_complex
-    vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber, t_start = ylimmin, t_stop = ylimmax)
+    vessels = _get_vessels_that_passed_the_lock_chamber(lock_chamber, 
+                                                        t_start = ylimmin - pd.Timedelta(hours=6), 
+                                                        t_stop = ylimmax)
 
     if boundary_nodes is None:
         boundary_nodes = lock_complex.registration_nodes

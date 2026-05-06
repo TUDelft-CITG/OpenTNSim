@@ -838,6 +838,7 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
     # update the next lock operations if the previous lock operation caused a delay
     next_planned_operations = _get_next_operations(lock_chamber, operation_index)
     for next_operation_info in next_planned_operations.itertuples():
+        next_operation_index = next_operation_info.operation_index
         next_operation_planning_index = next_operation_info.Index
 
         # determine time delay of the process of sailing into the lock if the next operation in the planning confict with the delayed operation
@@ -846,7 +847,6 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
             sailing_in_delay = lock_departure_information["time_potential_lock_gate_closure_start"] - next_operation_info.time_potential_lock_gate_opening_stop
         elif lock_departure_information["time_lock_operation_stop"] > next_operation_info.time_lock_operation_start:
             sailing_in_delay = lock_departure_information["time_lock_operation_stop"] - next_operation_info.time_lock_operation_start
-        
         # break loop if there is no delay (next operations will then also not experience a delay)
         if not sailing_in_delay > pd.Timedelta(seconds=0):
             break
@@ -877,7 +877,7 @@ def _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber
         
         next_direction = next_operation_info.direction
         levelling_information = opentnsim.lock.calculations.calculate_lock_operation_times(lock_chamber,
-                                                               operation_index=next_operation_planning_index,
+                                                               operation_index=next_operation_index,
                                                                start_time=time_gate_closing,
                                                                vessel=next_vessel,
                                                                direction=next_direction,)

@@ -135,7 +135,9 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
         sailing_time_to_waiting_area = sailing_time_to_waiting_area.total_seconds()
 
         # if there is still sailing time left to the waiting area then continue sailing and log this process (here the locking module takes over the function of the movable)
+        had_sailing_time = False
         if sailing_time_to_waiting_area:
+            had_sailing_time = True
             self.log_entry_v0("Sailing to waiting area start", self.env.now, self.distance, self.logbook[-1]['Geometry'],)
 
         # the sailing process can be interrupted, as vessel can be subject to changes in its speed, then the remaining sailing time is determined and continued with the changed speed -> when sailing to the waiting area has been completed: log the process
@@ -150,7 +152,8 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
                 sailing_time_to_waiting_area = remaining_sailing_distance / self.current_speed
         
         self.distance += sailing_distance_to_waiting_area
-        self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.distance, waiting_area.geometry)
+        if had_sailing_time:
+            self.log_entry_v0("Sailing to waiting area stop", self.env.now, self.distance, waiting_area.geometry)
 
         yield from self.request_to_pass_waiting_area(lock_chamber, waiting_area)
 

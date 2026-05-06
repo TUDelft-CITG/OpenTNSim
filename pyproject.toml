@@ -56,7 +56,6 @@ dependencies = [
     "folium >=0.16.0",
     "mapclassify >= 2.6.1",
     "netCDF4 >=1.6.5",
-    "pyzsf",
 ]
 
 # Extras 
