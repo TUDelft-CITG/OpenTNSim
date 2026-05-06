@@ -5,6 +5,7 @@ Core utiltities related to logging.
 # %% IMPORT DEPENDENCIES
 # generic
 import pandas as pd
+import numpy as np
 
 from shapely import Point
 
@@ -100,8 +101,6 @@ def logbook2eventtable(objs):
             else:
                 distance_meters = None
 
-
-
             events.append(
                 {
                     "object id": obj.id,
@@ -109,8 +108,8 @@ def logbook2eventtable(objs):
                     "activity name": activity,
                     "start location": start_location,
                     "stop location": stop_location,
-                    "start time": start_time.round('s'),
-                    "stop time": stop_time.round('s'),
+                    "start time": start_time,
+                    "stop time": stop_time,
                     "distance (m)": distance_meters,
                     "duration (s)": duration_seconds,
                 }
@@ -130,7 +129,7 @@ def logbook2eventtable(objs):
                 (df['object id'] == main_row['object id']) &
                 (df['start time'] >= main_row['start time']) &
                 (df['stop time'] <= main_row['stop time']) &
-                (df.index != i)
+                (df.index > i)
         )
         df.loc[mask, 'is_subprocess'] = True
 
@@ -173,7 +172,36 @@ def logbook2eventtable(objs):
         current_start_loc = main_row['start location']
         gap_count = 1
 
+
         for _, sub in subs.iterrows():
+            if sub['start time'] == current_start and sub['stop time'] == main_row['stop time']:
+                # Copy the main row and adjust columns for the gap
+                gap_row = main_row.copy()
+
+                gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
+                gap_row['subactivity name'] = sub['subactivity name']
+
+                gap_row['start time'] = sub['start time']
+                gap_row['stop time'] = sub['stop time']
+
+                gap_row['start location'] = sub['start location']
+                gap_row['stop location'] = sub['stop location']
+                gap_row['distance (m)'] = calculate_distance_between_locations_along_edges(
+                    graph,
+                    gap_row['start location'],
+                    gap_row['stop location']
+                )
+                gap_row['duration (s)'] = (sub['stop time'] - sub['start time']).total_seconds()
+
+                gap_row['is_subprocess'] = False
+                gap_row['has_subprocesses'] = False
+
+                gap_segments.append(gap_row)
+
+                current_start = max(current_start, sub['stop time'])
+                current_start_loc = sub['stop location']
+                break
+
             if sub['start time'] == current_start and sub['stop time'] < main_row['stop time']:
                 # Copy the main row and adjust columns for the gap
                 gap_row = main_row.copy()
@@ -230,11 +258,11 @@ def logbook2eventtable(objs):
                 gap_count += 1
 
             # Move start pointer forward
-            current_start = max(current_start, sub['stop time'])
+            current_start = np.max([current_start, sub['stop time']])
             current_start_loc = sub['stop location']
 
         # Gap after last subprocess
-        if current_start < main_row['stop time']:
+        if current_start < main_row['stop time'] and not current_start == main_row['start time']:
             gap_row = main_row.copy()
 
             gap_row['activity name'] = f"{main_row['activity name']} ({gap_count})"
@@ -258,6 +286,7 @@ def logbook2eventtable(objs):
             gap_row['has_subprocesses'] = False
 
             gap_segments.append(gap_row)
+        
 
     # Convert gap segments to DataFrame
     gaps_df = pd.DataFrame(gap_segments)
