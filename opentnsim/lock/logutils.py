@@ -380,13 +380,19 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, env):
 
                 P_installed = df_eventtable_energy.loc[index, 'P_installed (kW)']
                 if row['subactivity name'] == 'Waiting for lock gate closing' and lock_chamber.P_berthing_perc is not None:
-                    df_eventtable_energy.loc[index, 'P_tot (kW)'] = P_installed*lock_chamber.P_berthing_perc
-                    df_eventtable_energy.loc[index, 'P_given (kW)'] = P_installed*lock_chamber.P_berthing_perc
+                    P_tot = P_given = P_installed*lock_chamber.P_berthing_perc
+                    total_energy = P_tot * row["duration (s)"] / 3600
                 elif row['subactivity name'] == 'Waiting for lock gate opening' and lock_chamber.P_deberthing_perc is not None:
-                    df_eventtable_energy.loc[index, 'P_tot (kW)'] = P_installed*lock_chamber.P_deberthing_perc
-                    df_eventtable_energy.loc[index, 'P_given (kW)'] = P_installed*lock_chamber.P_deberthing_perc
+                    P_tot = P_given = P_installed*lock_chamber.P_deberthing_perc
+                    total_energy = P_tot * row["duration (s)"] / 3600
                 elif lock_chamber.P_berthed_perc is not None:
-                    df_eventtable_energy.loc[index, 'P_given (kW)'] = P_installed*lock_chamber.P_berthed_perc
+                    P_tot = P_given = P_installed*lock_chamber.P_berthed_perc
+                    total_energy= P_tot * row["duration (s)"] / 3600
+                else:
+                    continue
+                df_eventtable_energy.loc[index, 'P_tot (kW)'] = P_tot
+                df_eventtable_energy.loc[index, 'P_given (kW)'] = P_given
+                df_eventtable_energy.loc[index, 'total_energy (kWh)'] = total_energy
 
             # Now propagate these values to the other rows in this lock group
             df_target_group = df_group[df_group['subactivity name'] != 'Waiting for lock levelling'].copy()
