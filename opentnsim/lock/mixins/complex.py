@@ -1,7 +1,9 @@
 """This is the lock module as part of the OpenTNSim package. See the locking examples in the book for detailed descriptions."""
 
+import functools
 import math
 import networkx as nx
+import numpy as np
 import pandas as pd
 import simpy
 
@@ -259,16 +261,59 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
     def leave_lock_complex(self, lock_chamber, direction):
         # determines the geometry objects of the lock based on the direction of the vessel TODO: function?
         if not direction:
+            lock_chamber_edge = lock_chamber.edge
             lock_gate_position = lock_chamber.gate_B.geometry
-            remaining_distance = lock_chamber.distance_from_end_node_to_lock_gate_B
-            exit_geom = self.env.graph.nodes[lock_chamber.end_node]["geometry"]
+            distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point_B
+            distance_on_lock_edge = lock_chamber.distance_from_end_node_to_lock_gate_B
         else:
+            lock_chamber_edge = (lock_chamber.edge[1], lock_chamber.edge[0]) + lock_chamber.edge[2:]
             lock_gate_position = lock_chamber.gate_A.geometry
-            remaining_distance = lock_chamber.distance_from_start_node_to_lock_gate_A
-            exit_geom = self.env.graph.nodes[lock_chamber.start_node]["geometry"]
+            distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point_A
+            distance_on_lock_edge = lock_chamber.distance_from_start_node_to_lock_gate_A
+            
+        if self.current_edge == lock_chamber_edge:
+            start_geom = lock_gate_position
+            distance_on_edge = distance_on_lock_edge
+            distance_to_be_sailed = distance_to_crossing_point
+        else:
+            start_geom = self.env.graph.nodes[self.current_node]["geometry"]
+            distance_on_edge = self.env.graph.edges[self.current_edge]['length_m']
+            lock_edge_route_index = self.edge_route.index(lock_chamber_edge)
+            current_edge_route_index = self.edge_route.index(self.current_edge)
+            edge_route_sailed_from_lock_gate = self.edge_route[(lock_edge_route_index+1):current_edge_route_index]
+            distance_sailed_from_lock_gate = calculate_distance_along_geometry_to_nodes_of_edge(self.env.graph, None, None, edge_route_sailed_from_lock_gate)
+            distance_sailed_from_lock_gate += distance_on_lock_edge
+            distance_to_be_sailed = distance_to_crossing_point - distance_sailed_from_lock_gate
+        
+        remaining_distance = np.min([distance_on_edge, distance_to_be_sailed])
+        if distance_on_edge < distance_to_be_sailed:
+            if not hasattr(self, 'leaving_lock_complex'):
+                self.leaving_lock_complex = True
+                allow_vessel_to_sail_out_of_lock = functools.partial(lock_chamber.allow_vessel_to_sail_out_of_lock, vessel=self, direction=direction)
+                self.on_pass_edge_functions.append(allow_vessel_to_sail_out_of_lock)
+            stop_geom = self.env.graph.nodes[self.current_edge[1]]["geometry"]
+            self.distance_left_on_edge = 0
+        else:
+            remove_functions = [lock_chamber.allow_vessel_to_sail_out_of_lock]
+            remove_on_pass_edge_functions = []
+            for index, function in enumerate(self.on_pass_edge_functions):
+                if isinstance(function, functools.partial):
+                    if function.func in remove_functions:
+                        remove_on_pass_edge_functions.append(function)
+                elif function in remove_functions:
+                    remove_on_pass_edge_functions.append(function)
+            for function in remove_on_pass_edge_functions:
+                self.on_pass_edge_functions.remove(function)
+            if hasattr(self, 'leaving_lock_complex'):
+                delattr(self, 'leaving_lock_complex')
+                
+            edge = (self.current_edge[1],self.current_edge[0]) + self.current_edge[2:]
+            distance_left_on_edge = distance_on_edge - distance_to_be_sailed
+            stop_geom = calculate_location_over_edges(self.env.graph, edge, distance_left_on_edge, crs_m = lock_chamber.crs_m)
+            self.distance_left_on_edge = distance_left_on_edge
 
         # log that sailing out of the lock complex is starting
-        self.log_entry_v0("Sailing to lock complex exit start", self.env.now, self.distance, lock_gate_position)
+        self.log_entry_v0("Sailing to lock complex exit start", self.env.now, self.distance, start_geom)
 
         # let the vessel sail to the end of the lock complex
         vessel_speed = _get_vessel_sailing_out_speed(lock_chamber, self, direction)
@@ -283,9 +328,9 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
                 remaining_sailing_distance = vessel_speed * sailing_out_time
                 sailing_out_time = remaining_sailing_distance / self.current_speed
         self.distance += remaining_distance
+
         # log that sailing out of the lock complex is stopping and set that no distance has to be sailed along the edge (vessel is at end of lock complex)
-        self.log_entry_v0("Sailing to lock complex exit stop", self.env.now, self.distance, exit_geom, )
-        self.distance_left_on_edge = 0
+        self.log_entry_v0("Sailing to lock complex exit stop", self.env.now, self.distance, stop_geom, )
 
 
 @inherit_docstring

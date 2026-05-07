@@ -188,7 +188,7 @@ class IsLockChamberOperator:
             self.close_gate_between_arrivals_if_necessary(vessel, direction, operation_index)
 
 
-    def allow_vessel_to_sail_out_of_lock(self, edge, vessel=None):
+    def allow_vessel_to_sail_out_of_lock(self, edge,vessel=None, direction = None):
         """Allows the vessel to sail out of the lock chamber
 
         Parameters
@@ -204,23 +204,33 @@ class IsLockChamberOperator:
         ------
         Vessel to sail to the end of the edge at which the lock chamber is located, and initiates new processes: i.e. closing gate or empty lock operation
         """
-        lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, edge)
-        if not lock_chamber_is_next_up:
+        if vessel is None:
             return
-
+        if not hasattr(vessel, 'leaving_lock_complex'):
+            lock_chamber_is_next_up = _check_if_lock_chamber_is_next_lock_complex_object(self, edge)
+            if not lock_chamber_is_next_up:
+                return
+        
         # unpacks the vessel planning
-        vessel_planning = self.lock_complex.vessel_planning
-        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
-        operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
-        direction = vessel_planning.loc[vessel_planning_index, "direction"]
-        yield from self.communicate_vessel_to_sail_out_of_lock_chamber(vessel, direction)
-        yield self.length.put(vessel.L)
-        yield self.resource.release(vessel.request_to_enter_lock)
+        if not hasattr(vessel, 'leaving_lock_complex'):
+            vessel_planning = self.lock_complex.vessel_planning
+            vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+            operation_index = vessel_planning.loc[vessel_planning_index, "operation_index"]
+            if direction is None:
+                direction = vessel_planning.loc[vessel_planning_index, "direction"]
+            yield from self.communicate_vessel_to_sail_out_of_lock_chamber(vessel, direction)
+            yield self.length.put(vessel.L)
+            yield self.resource.release(vessel.request_to_enter_lock)
 
-        # determine if the lock has to be levelled
-        self.prepare_next_lock_operation(operation_index, direction, vessel)
+            # determine if the lock has to be levelled
+            self.prepare_next_lock_operation(operation_index, direction, vessel)
 
-        yield from self.communicate_vessel_to_leave_lock_complex(vessel, direction)
+        lock_chamber_edge = self.edge
+        if direction:
+            lock_chamber_edge = (self.edge[1], self.edge[0]) + self.edge[2:]
+
+        if not hasattr(vessel, 'leaving_lock_complex') or vessel.current_edge != lock_chamber_edge:
+            yield from self.communicate_vessel_to_leave_lock_complex(vessel, direction)
 
 
     def allow_vessel_to_pass_waiting_area(self, vessel, lock_chamber, waiting_area):
