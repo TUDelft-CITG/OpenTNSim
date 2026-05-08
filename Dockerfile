@@ -16,4 +16,4 @@ RUN pip install --upgrade pip
 RUN pip install -e .
 
 # and the testing dependencies
-RUN pip install -e .[testing]
+RUN pip install -e .[testing,zsf]
