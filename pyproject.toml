@@ -91,6 +91,10 @@ testing = [
     "mapclassify>=2.10.0",
 ]
 
+zsf = [
+    "pyzsf"
+]
+
 [project.scripts]
 opentnsim = "opentnsim.cli:cli"
 
