@@ -36,10 +36,15 @@ ENV PROJ_DATA=/opt/conda/share/proj
 
 COPY . /OpenTNSim
 
-RUN pip install --upgrade pip setuptools wheel
+#RUN pip install --upgrade pip setuptools wheel
+RUN python -m pip install --upgrade pip setuptools wheel
+
+RUN python -m pip install coverage coverage-badge
 
 # install package
-RUN pip install -e .
+RUN python -m pip install -e .
+#RUN pip install -e .
 
 # install extras
-RUN pip install -e .[testing,zsf]
+RUN python -m pip install -e ".[testing,zsf]"
+#RUN pip install -e .[testing,zsf]

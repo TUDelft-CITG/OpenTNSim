@@ -9,10 +9,10 @@ jobs:
           name: Build and start container
           command: docker-compose up -d
 
-      - run:
-          name: Install coverage badge beforte running tests
-          command: |
-            docker exec -it opentnsim bash -c "pip install coverage coverage-badge "
+      # - run:
+      #     name: Install coverage badge beforte running tests
+      #     command: |
+      #       docker exec -it opentnsim bash -c "pip install coverage coverage-badge "
 
       - run:
           name: Run tests - Pytest
@@ -30,9 +30,11 @@ jobs:
       - run:
           name: Generate coverage badge
           command: |
-            docker exec -it opentnsim bash -c "coverage-badge -o coverage.svg"
+            docker exec opentnsim bash -c "python -m coverage_badge -o coverage.svg"
             docker cp opentnsim:/OpenTNSim/coverage.svg /tmp/artifacts/
-          
+
+#            docker exec -it opentnsim bash -c "coverage-badge -o coverage.svg"
+
       - run: 
           name: Generate book
           command: |
