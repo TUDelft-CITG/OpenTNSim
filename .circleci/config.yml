@@ -6,38 +6,36 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Build and start container
-          command: docker-compose up -d
-
-      - run:
-          name: Install coverage badge beforte running tests
+          name: Rebuild clean Docker environment
           command: |
-            docker exec -it opentnsim bash -c "pip install coverage coverage-badge "
+            docker-compose down -v
+            docker-compose build --no-cache
+            docker-compose up -d
 
       - run:
           name: Run tests - Pytest
           command: |
-            docker exec -it opentnsim bash -c "pytest"
+            docker exec opentnsim bash -c "pytest"
             docker cp opentnsim:/OpenTNSim/htmlcov /tmp/artifacts
 
       - run:
           name: Build docs
           command: |
-            docker exec -it opentnsim bash -c "pip install sphinx"
-            docker exec -it opentnsim bash -c "sphinx-build -b html docs docs/_build/html"
+            docker exec opentnsim bash -c "pip install sphinx"
+            docker exec opentnsim bash -c "sphinx-build -b html docs docs/_build/html"
             docker cp opentnsim:/OpenTNSim/docs/_build/html /tmp/artifacts/docs
 
       - run:
           name: Generate coverage badge
           command: |
-            docker exec -it opentnsim bash -c "coverage-badge -o coverage.svg"
+            docker exec opentnsim bash -c "python -m coverage_badge -o coverage.svg"
             docker cp opentnsim:/OpenTNSim/coverage.svg /tmp/artifacts/
           
       - run: 
           name: Generate book
           command: |
-            docker exec -it opentnsim bash -c "pip install sphinx"
-            docker exec -it opentnsim bash -c "make book"
+            docker exec opentnsim bash -c "pip install sphinx"
+            docker exec opentnsim bash -c "make book"
             docker cp opentnsim:/OpenTNSim/book/_build/html /tmp/artifacts/book
 
       - store_artifacts:
@@ -56,7 +54,7 @@ jobs:
       - run:
           name: Test notebooks
           command: |
-            docker exec -it opentnsim bash -c "pytest --nbmake ./notebooks/0*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students"
+            docker exec opentnsim bash -c "pytest --nbmake ./notebooks/0*.ipynb --nbmake-kernel=python3 --ignore ./notebooks/.ipynb_checkpoints --ignore ./notebooks/cleanup --ignore ./notebooks/students"
       
       - store_artifacts:
           path: /tmp/artifacts
