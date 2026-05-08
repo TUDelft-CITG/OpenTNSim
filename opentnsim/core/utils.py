@@ -238,7 +238,7 @@ def generate_vessels_from_distribution(
         fleet_probs = np.array(list(fleet_composition.values()), dtype=float)
         fleet_probs = fleet_probs / fleet_probs.sum()
 
-        fleet_specs = fleet_data.set_index("RWS_class")
+        fleet_specs = fleet_data.set_index("Class")
 
     for i in range(number_of_vessels):
 
@@ -260,7 +260,7 @@ def generate_vessels_from_distribution(
             resolved_params = {}
 
             for out_key, source_key in vessel_parameters.items():
-                if source_key == "RWS_class":
+                if source_key == "Class":
                     resolved_params[out_key] = vessel_class
                 elif source_key in class_row.index:
                     resolved_params[out_key] = class_row[source_key]

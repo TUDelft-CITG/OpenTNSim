@@ -297,13 +297,16 @@ def calculate_lock_operation_start_information(lock_chamber, vessel, operation_i
     minimum_advance_to_open_gate = pd.Timedelta(seconds=0)
     if vessel is not None:
         minimum_advance_to_open_gate = lock_chamber.minimum_advance_to_open_gate
+        
     time_potential_lock_gate_opening_stop = time_lock_entry_start - minimum_advance_to_open_gate
     previous_planned_operations = _get_previous_operations(lock_chamber, operation_index)
     if not previous_planned_operations.empty:
         previous_operation = previous_planned_operations.iloc[-1]
+        if len(previous_operation.vessels):
+            time_potential_lock_gate_opening_stop = time_lock_operation_start
         if time_potential_lock_gate_opening_stop < previous_operation.time_lock_operation_stop:
-            new_operation_start = previous_operation.time_lock_operation_stop
-            operation_delay = new_operation_start - time_lock_operation_start
+            previous_operation_stop = previous_operation.time_lock_operation_stop
+            operation_delay = previous_operation_stop - time_potential_lock_gate_opening_stop
             time_lock_operation_start += operation_delay
             time_lock_entry_start += operation_delay
             time_potential_lock_gate_opening_stop += operation_delay

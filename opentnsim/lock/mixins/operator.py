@@ -37,7 +37,7 @@ class IsLockChamberOperator:
                  clustering_time=0.5 * 60 * 60,
                  water_level_difference_limit_to_open_gate=0.05,
                  start_sailing_out_time_after_gate_have_been_opened=0.0, # a float that is the time that the vessel wait to start sailing out of the lock after the gate have been opened after levelling [s]
-                 minimum_advance_to_open_gate=600.0, # a float that is the time that the gate are opened before a vessel arrives at the gate [s]
+                 minimum_advance_to_open_gate=180.0, # a float that is the time that the gate are opened before a vessel arrives at the gate [s]
                  minimum_delay_to_close_gate=120.0, # a float that is the time that the gate are closed after a vessel has sailed through the gate [s]
                  minimum_time_between_operations=0.0, # a float that is the minimum required time between lock operations that the lock gate can be both closed (to reduce salt intrusion) [s]
                  sailing_in_time_gap_through_gate=180.0, # a float that is the time gap after which the next vessel can sail into the lock through the lock gate (after another vessel has sailed through to enter the lock) [s]
