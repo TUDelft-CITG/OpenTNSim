@@ -54,7 +54,7 @@ class HasResource(SimpyObject):
 
         else:
             self.resource = {}
-            for resource_name,capacity in independent_resources.items():
+            for resource_name, capacity in parallel_resources.items():
                 self.resource[resource_name] = simpy.PriorityResource(self.env, capacity=capacity)
 
 
@@ -64,7 +64,7 @@ class Neighbours:
     - travel_to: list of locatables to which can be travelled
     """
 
-    def ___init(self, travel_to, *args, **kwargs):
+    def __init__(self, travel_to, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.neighbours = travel_to
@@ -145,14 +145,12 @@ class Routable(SimpyObject):
 
     def __init__(self, origin, destination, next_destinations=[], *args, **kwargs):
         """Initialization"""
-        super().__init__(*args, **kwargs)
         env = kwargs.get("env")
         super().__init__(*args, **kwargs)
         self.origin = origin
         self.destination = destination
         self.next_destinations = next_destinations
         self.route = nx.dijkstra_path(env.FG, origin, self.destination)
-        # start at start of route
         self.position_on_route = 0
 
     @property
@@ -199,9 +197,9 @@ class WithCurrent:
           v_c = speed with current
           v_g = speed over ground
         """
-        v_w = getattr(self, "v", 0.0)
+        v_g = self.v
         v_c = self.get_edge_current(edge)
-        v_g = v_w + v_c
+        v_w = v_g - v_c
 
         self.v_w = v_w
         self.v_c = v_c
@@ -213,7 +211,7 @@ class WithCurrent:
 
     
 
-class Movable(Locatable, Routable, Log):
+class Movable(WithCurrent, Locatable, Routable, Log):
     """Mixin class: Something can move.
 
     Used for object that can move with a fixed speed
@@ -232,6 +230,11 @@ class Movable(Locatable, Routable, Log):
         self.on_pass_edge_functions = []
         self.on_complete_pass_edge_functions = []
         self.on_look_ahead_to_node_functions = []
+        self.on_pass_node = self.on_pass_node_functions
+        self.on_pass_edge = self.on_pass_edge_functions
+        self.on_complete_pass_edge = self.on_complete_pass_edge_functions
+        self.on_look_ahead_to_node = self.on_look_ahead_to_node_functions
+
         self.wgs84 = pyproj.Geod(ellps="WGS84")
         
         self.v_c = 0.0   # current speed (m/s)
@@ -244,10 +247,14 @@ class Movable(Locatable, Routable, Log):
         """
 
         # time-out if arrival time lies in future
-        yield self.env.timeout((self.metadata['arrival_time'] - self.env.simulation_start).total_seconds())
-        self.arrival_time = self.env.now
-        self.metadata['arrival_time'] = self.env.simulation_start  # resets delay
-
+        if hasattr(self, "metadata") and "arrival_time" in self.metadata \
+            and hasattr(self.env, "simulation_start"):
+                delay = (self.metadata['arrival_time'] - self.env.simulation_start).total_seconds()
+                if delay > 0:
+                    yield self.env.timeout(delay)
+                self.arrival_time = self.env.now
+                self.metadata['arrival_time'] = self.env.simulation_start
+                
         # default distance to next node
         self.distance = 0
 
@@ -332,6 +339,7 @@ class Movable(Locatable, Routable, Log):
 ##################################################################
     def pass_edge(self, origin, destination, end_location):
         edge = self.graph.edges[origin, destination]
+        orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
         
         md = self.multidigraph.edges[origin, destination, k]
@@ -382,8 +390,8 @@ class Movable(Locatable, Routable, Log):
 
 
             # Here the upperbound is used to estimate the actual velocity
-            power_used = min(self.P_tot_given, upperbound)
-            self.v = self.power2v(self, edge, power_used)
+            self.v = self.power2v(self, edge, upperbound)
+            power_used = self.P_tot_given
             
             # store upperbound velocity
             # TODO: remove these three fields after debugging

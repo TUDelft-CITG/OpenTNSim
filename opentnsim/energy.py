@@ -535,10 +535,12 @@ class ConsumesEnergy:
 
         self.karpov(v, h_0)
 
+        v_eff = self.V_2
         assert self.g >= 0, f"g should be positive: {self.g}"
         assert self.L >= 0, f"L should be positive: {self.L}"
 
-        self.F_rL = v / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
+
+        self.F_rL = v_eff / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
 
         # parameter c_7 is determined by the B/L ratio
         # Van Koningsveld et al (2023) - Part IV Table 5.1
@@ -616,14 +618,15 @@ class ConsumesEnergy:
 
         self.karpov(v, h_0)
 
-        self.V_2 = v
+        self.F_rL = self.V_2 / np.sqrt(self.g * self.L)
+
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nT = self.V_2 / np.sqrt(
-            2 * self.g * self.A_T / (self.B + self.B * self.C_WP)
-        )  # Froude number based on transom immersion
+        2 * self.g * self.A_T / (self.B + self.B * self.C_WP)
+        )
         assert not isinstance(self.F_nT, complex), f"residual? froude number should not be complex: {self.F_nT}"
 
-        self.c_6 = 0.2 * (1 - 0.2 * self.F_nT)  # Assuming F_nT < 5, this is the expression for coefficient c_6
+        self.c_6 = 0.2 * (1 - 0.2 * self.F_nT)
 
         self.R_TR = (0.5 * self.rho * (self.V_2**2) * self.A_T * self.c_6) / 1000
 

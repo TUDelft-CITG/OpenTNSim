@@ -140,7 +140,7 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.graph, route=self.route)
+            h_min = graph.get_minimum_depth(graph=self.graph, route=self.route)
 
         return h_min
 
