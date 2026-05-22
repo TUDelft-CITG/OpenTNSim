@@ -1,4 +1,4 @@
-from opentnsim.core import  Identifiable, Log, Movable, PriorityFilterStore
+from opentnsim.core import  Identifiable, Log, Movable, PriorityFilterStore, VesselProperties
 from opentnsim.graph.utils import get_sailing_time, node_path_to_edge_path
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.mixins.berth import IsQuay, IsJetty, IsBerth
@@ -11,7 +11,7 @@ import networkx as nx
 import simpy
 
 
-class HasTerminal(Movable):
+class HasTerminal(Movable, Identifiable, VesselProperties):
     def __init__(self,
                  terminal,
                  berthing_time,
@@ -47,6 +47,7 @@ class HasTerminal(Movable):
         if not self.berth in berths:
             return
 
+        self.port_accessed = False
         yield from self.request_berth_access()
         yield from self.berthing(destination)
         yield from self.loading(destination)

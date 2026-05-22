@@ -1,7 +1,7 @@
 from opentnsim.port.visualizations import (create_plot_vertical_tidal_window,
                                            create_plot_horizontal_tidal_window,
                                            plot_tidal_windows)
-
+from opentnsim.core import VesselProperties
 
 def find_route_with_restrictions(self):
     routes_with_restrictions = []
@@ -18,7 +18,7 @@ def find_route_with_restrictions(self):
     return routes_with_restrictions
 
 
-class HasDraughtRestrictions:
+class HasDraughtRestrictions(VesselProperties):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.bound = 'inbound'

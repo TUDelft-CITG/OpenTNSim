@@ -72,9 +72,11 @@ def logbook2eventtable(objs):
                                        "start time", "stop time", "distance (m)", "duration (s)"])
     for obj in objs:
         df = pd.DataFrame.from_dict(obj.logbook)
-        df.sort_values(by="Timestamp", inplace=True)
+        
         if df.empty:
             continue
+
+        df.sort_values(by="Timestamp", inplace=True)
 
         for i in range(0, len(df)):
             start_row = df.iloc[i]

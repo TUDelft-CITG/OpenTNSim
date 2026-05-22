@@ -723,7 +723,6 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
         t_boundaries.append(time_correction_index)
 
-    from IPython.display import display
     min_net_ukc = net_ukc.min(axis=1).min()
     net_ukc_corrected = net_ukc.copy()
     window = False
@@ -1025,7 +1024,6 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
     for port_entry_node in berth.terminal.port.port_entry_nodes:
         routes_to_terminal.append(nx.dijkstra_path(berth.env.graph,port_entry_node,berth.node))
 
-    routes = []
     berth_waiting_time_causes = {}
     total_waiting_time_at_berth = pd.Timedelta(seconds=0)
     for _,vessel_berth_info in occupied_df.iterrows():

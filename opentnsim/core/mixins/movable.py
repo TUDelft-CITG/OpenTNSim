@@ -332,6 +332,11 @@ class Movable(Locatable, Routable, Log):
             try:
                 yield from self.pass_node(self.current_node)
             except simpy.exceptions.Interrupt as e:
+                if 'move to anchorage' in e.cause:
+                    _, waiting_events, total_waiting_time = self.port.replan_vessel_trip(self, self.current_node)
+                    if total_waiting_time:
+                        yield from self.port.communicate_vessel_to_wait(self, self.current_node, waiting_events, total_waiting_time)
+                    raise e
                 break
 
             # are we already at destination?
@@ -345,11 +350,13 @@ class Movable(Locatable, Routable, Log):
             try:
                 yield from self.pass_edge(edge)
             except simpy.exceptions.Interrupt as e:
+                print('Interrupted 2')
                 break
 
             try:
                 yield from self.complete_pass_edge(self.next_node)
             except simpy.exceptions.Interrupt as e:
+                print('Interrupted 3')
                 break
 
             # we arrived at destination
@@ -357,7 +364,12 @@ class Movable(Locatable, Routable, Log):
             self.update_position(index + 1)
 
             # look ahead to next node
-            yield from self.look_ahead_to_node(self.current_node)
+            try:
+                yield from self.look_ahead_to_node(self.current_node)
+            except simpy.exceptions.Interrupt as e:
+                print('Interrupted 4')
+                break
+
 
         # arrived at end of route. release resource if needed
         if self.req is not None:
@@ -542,13 +554,46 @@ class Movable(Locatable, Routable, Log):
 
         # default velocity based on current speed.
         timeout = self.distance_left_on_edge / (self.current_speed + current)
-        yield self.env.timeout(timeout)
+        time_start = datetime.datetime.fromtimestamp(self.env.now)
+        try:
+            yield self.env.timeout(timeout)
+        except simpy.exceptions.Interrupt as e:
+            cause = e.cause
+            time_stop = datetime.datetime.fromtimestamp(self.env.now)
+            time_sailed = (time_stop - time_start).total_seconds()
+            distance_sailed = time_sailed * (self.current_speed + current)
+            if 'complete pass edge' in cause:
+                yield self.env.timeout(timeout - time_sailed)
+                cause = cause.replace('complete pass edge', '')
+                distance_sailed = self.distance_left_on_edge
+            else:
+                self.distance_left_on_edge -= distance_sailed
+                # TODO: fix dest
+            
+            self.log_entry_v0(
+                "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+                self.env.now,
+                distance_sailed,
+                dest,
+            )
+            
+            if 'move to anchorage':
+                self.position_on_route += 1
+                self.geometry = dest
+                self.distance = distance_sailed
+                cause = cause.replace('move to anchorage', '')
+                _, waiting_events, total_waiting_time = self.port.replan_vessel_trip(self, self.current_node)
+                if total_waiting_time:
+                    yield from self.port.communicate_vessel_to_wait(self, self.current_node, waiting_events, total_waiting_time)
+                else:
+                    return
+            raise simpy.exceptions.Interrupt(cause)
         self.distance += self.distance_left_on_edge
 
         self.log_entry_v0(
             "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
             self.env.now,
-            self.distance,  # TODO distance klopt nu  niet na een sluismodule
+            self.distance,
             dest,
         )
         self.geometry = dest

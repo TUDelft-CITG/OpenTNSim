@@ -1,114 +1,212 @@
+from dataclasses import dataclass
+from typing import Callable, Any, List
 from enum import Enum
+import ast
+import inspect
+
+OPERATOR_MAP = {
+    "Gt": ">",
+    "Lt": "<",
+    "GtE": ">=",
+    "LtE": "<=",
+    "Eq": "==",
+    "NotEq": "!=",
+}
+
+class RuleParser(ast.NodeVisitor):
+
+    def __init__(self, namespace=None):
+        self.namespace = namespace or {}
 
 
-class vessel_characteristics(Enum):
-    min_ge_Length = ['minLength', '>=']
-    min_gt_Length = ['minLength', '>']
-    max_le_Length = ['maxLength', '<=']
-    max_lt_Length = ['maxLength', '<']
-    min_ge_Draught = ['minDraught', '>=']
-    min_gt_Draught = ['minDraught', '>']
-    max_le_Draught = ['maxDraught', '<=']
-    max_lt_Draught = ['maxDraught', '<']
-    min_ge_Beam = ['minBeam', '>=']
-    min_gt_Beam = ['minBeam', '>']
-    max_le_Beam = ['maxBeam', '<=']
-    max_lt_Beam = ['maxBeam', '<']
-    min_ge_UKC = ['minUKC', '>=']
-    min_gt_UKC = ['minUKC', '>']
-    max_le_UKC = ['maxUKC', '<=']
-    max_lt_UKC = ['maxUKC', '<']
-    type = ['Type', '==']
-    terminal = ['Terminal','.isin(']
-    visited_terminal = ['Previous terminal','.isin(']
+    def visit_Call(self, node):
+        from opentnsim.port.utils import extract_return_expr
+        # any(...)
+        if isinstance(node.func, ast.Name) and node.func.id == "any":
+
+            return AnyOf(
+                expr=self.visit(node.args[0])
+            )
+
+        # normal function call
+        if isinstance(node.func, ast.Name):
+
+            fn_name = node.func.id
+
+            # try lambda globals
+            fn = self.namespace.get(fn_name)
+
+            # fallback: current module globals
+            if fn is None:
+                fn = globals().get(fn_name)
+
+            # recursively inline restriction functions
+            if inspect.isfunction(fn):
+
+                try:
+                    expr = extract_return_expr(fn)
+
+                    # map function params -> actual args
+                    params = fn.__code__.co_varnames[:fn.__code__.co_argcount]
+
+                    args = [ast.unparse(a) for a in node.args]
+
+                    mapping = dict(zip(params, args))
+
+                    # substitute variables
+                    expr = ParameterSubstituter(mapping).visit(expr)
+
+                    ast.fix_missing_locations(expr)
+
+                    return self.visit(expr)
+
+                except Exception as e:
+                    print(f"Could not expand {fn_name}: {e}")
+
+        # fallback
+        return Call(
+            name=ast.unparse(node.func),
+            args=[ast.unparse(a) for a in node.args]
+        )
 
 
-class vessel_direction(Enum):
-    inbound = 'inbound'
-    outbound = 'outbound'
+    def visit_GeneratorExp(self, node):
+        return self.visit(node.elt)
 
 
-class vessel_type(Enum):
-    GeneralCargo = 'GeneralCargo'
-    LiquidBulk = 'LiquidBulk'
-    Container = 'Container'
-    DryBulk = 'DryBulk'
-    MultiPurpose = 'MultiPurpose'
-    Reefer = 'Reefer'
-    RoRo = 'RoRo'
-    Barge = 'Barge'
+    def visit_Compare(self, node):
+        left = ast.unparse(node.left)
+
+        op = type(node.ops[0]).__name__
+        op = OPERATOR_MAP.get(op, op)
+
+        right = ast.unparse(node.comparators[0])
+
+        return Compare(
+            left=left,
+            op=op,
+            right=right
+        )
 
 
-class MathematicalOperator(Enum):
-    sum_of = "sum_of"
-    max_of = "max_of"
+    def visit_BoolOp(self, node):
 
-    def apply(self, expr):
-        return AggregateExpr(self, expr)
+        values = [self.visit(v) for v in node.values]
 
+        if isinstance(node.op, ast.And):
+            return And(items=values)
 
-class MathematicalOperator(Enum):
-    smaller_than = '<'
+        if isinstance(node.op, ast.Or):
+            return Or(items=values)
 
-    def __call__(self):
-        return Operator(self)
+        return values
 
 
-class VesselParameter(Enum):
-    length = 'Vessel_length'
-    beam = 'Vessel_beam'
+class ParameterSubstituter(ast.NodeTransformer):
 
-    def __call__(self):
-        return Parameter(self)
+    def __init__(self, mapping):
+        self.mapping = mapping
 
+    def visit_Name(self, node):
 
-class WaterwayParameter(Enum):
-    length = 'waterway_length'
-    width = 'waterway_width'
+        if node.id in self.mapping:
+            return ast.copy_location(
+                ast.Name(id=self.mapping[node.id], ctx=node.ctx),
+                node
+            )
 
-    def __call__(self):
-        return Parameter(self)
+        return node
+    
 
-
-class Parameter:
-    def __init__(self, param):
-        self.param = param
-        self.alias = param.value
-
-    def render(self):
-        return self.alias
+@dataclass
+class Node:
+    pass
 
 
-class Operator:
-    def __init__(self, symbol: MathematicalOperator):
-        self.symbol = symbol
-        self.alias = symbol.value
-
-    def render(self):
-        return self.alias
+@dataclass
+class And(Node):
+    items: List[Node]
 
 
-class Expr:
-    def render(self):
-        raise NotImplementedError
+@dataclass
+class Or(Node):
+    items: List[Node]
 
 
-class ComparisonExpr(Expr):
-    def __init__(self, left: Parameter, op: Operator, right: Parameter):
-        self.left = left
-        self.op = op
-        self.right = right
-
-    def render(self):
-        return f"{self.left.render()} {self.op.render()} {self.right.render()}"
+@dataclass
+class Compare(Node):
+    left: str
+    op: str
+    right: str
 
 
-class AggregateExpr(ComparisonExpr):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+@dataclass
+class Group(Node):
+    expr: Node
+
+@dataclass
+class AnyOf(Node):
+    expr: Any
 
 
-class IsRule:
-    def __init__(self, expression, *args, **kwargs):
-        self.expression = expression
-        super().__init__(*args, **kwargs)
+@dataclass
+class Call(Node):
+    name: str
+    args: list
+
+
+@dataclass
+class Rule:
+    condition: Callable
+    policy: Any
+
+
+class RuleEngine:
+
+    def __init__(self, default):
+        self.rules = []
+        self.default = default
+
+    def add_rule(self, condition, policy):
+
+        self.rules.append(
+            Rule(
+                condition=condition,
+                policy=policy
+            )
+        )
+
+    def evaluate(self, obj):
+
+        for rule in self.rules:
+
+            if rule.condition(obj):
+                return rule.policy(obj)
+
+        return self.default(obj)
+    
+    
+    def overview(self):
+        from opentnsim.port.utils import parse_rule, render_rule
+        output = []
+
+        for rule in self.rules:
+
+            tree = parse_rule(rule.condition)
+
+            output.append(
+                f"{rule.condition.__name__}\n"
+                f"{render_rule(tree)}"
+            )
+
+        print("\n\n".join(output))
+
+
+class TrafficRules(Enum):
+
+    prohibited = lambda v: 1
+    allowed = lambda v: 0
+
+    def __call__(self, vessel):
+        return self.value(vessel)
+

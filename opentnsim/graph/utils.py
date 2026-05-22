@@ -1063,8 +1063,7 @@ def get_sailing_time(vessel, edge_route):
         times[i] = t
 
         total_time += t
-
-    # --- Build DataFrame once ---
+    
     sailing_distance_df = pd.DataFrame({
         "node_start": node_start,
         "node_stop": node_stop,

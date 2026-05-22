@@ -1,4 +1,4 @@
-from opentnsim.core import Movable
+from opentnsim.core import Movable, Identifiable, VesselProperties
 from opentnsim.waiting_area import IsWaitingArea
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.utils import determine_nearest_anchorage_area
@@ -7,7 +7,7 @@ import simpy
 import pandas as pd
 import networkx as nx
 
-class PassesAnchorage(Movable):
+class PassesAnchorage(Movable, Identifiable, VesselProperties):
 
     def __init__(self,*args,**kwargs):
         self.anchorage_areas = []
@@ -24,15 +24,17 @@ class PassesAnchorage(Movable):
         """
 
         # Set some default parameters:
-        anchorage_area = determine_nearest_anchorage_area(self, node)
+        anchorage_area = determine_nearest_anchorage_area(self, node, route = self.route_ahead)
         yield from anchorage_area.request_anchorage_area_access(vessel=self)
         self.route_to_anchorage_area = nx.dijkstra_path(self.env.graph, node, anchorage_area.node)
         self.route_after_anchorage_area = nx.dijkstra_path(self.env.graph, anchorage_area.node, self.route[-1])
         if len(self.route_to_anchorage_area) > 1:
             self.routes_sailed.append(self.route_to_anchorage_area)
             self.route = self.route_to_anchorage_area
-            self.env.process(self.move())
-            raise simpy.exceptions.Interrupt('Route of vessel has changed.')
+            try:
+                yield self.env.process(self.move())
+            except simpy.exceptions.Interrupt as e:
+                raise e
         self.on_pass_node_functions.append(self.pass_anchorage)
 
 
@@ -44,11 +46,12 @@ class PassesAnchorage(Movable):
             return
 
         yield from []
+
         self.route = self.route_after_anchorage_area
         delattr(self,'route_to_anchorage_area')
         delattr(self,'route_after_anchorage_area')
         self.env.process(self.move())
-        raise simpy.exceptions.Interrupt('Route of vessel has changed.')
+        #raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
 
 class IsAnchorage(IsWaitingArea, IsPortComponent):
@@ -62,7 +65,9 @@ class IsAnchorage(IsWaitingArea, IsPortComponent):
         self.register_waiting_area()
 
         self.port.anchorage_areas.append(self)
-        self.env.graph.nodes[self.node]['Anchorage'] = self
+        if 'Anchorage' not in self.env.graph.nodes[self.node].keys():
+            self.env.graph.nodes[self.node]['Anchorage'] = []
+        self.env.graph.nodes[self.node]['Anchorage'].append(self)
 
     def request_anchorage_area_access(self, vessel):
         vessel.anchorage_area_request = self.resource.request()
