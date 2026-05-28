@@ -63,16 +63,54 @@ def sort_data(graph, hydrodynamic_data):
     return hydrodynamic_data
 
 
-def get_water_depth(vessel, node, delay=0):
+def station_contains_node(station, node):
+
+    node = str(node)
+
+    # station is already tuple
+    if isinstance(station, tuple):
+        return node in station
+
+    # fallback if it's accidentally a string
+    if isinstance(station, str):
+        if station.startswith("("):
+            parts = station.strip("()").split(",")
+            parts = [p.strip() for p in parts]
+            return node in parts
+        return station == node
+
+    return False
+
+
+def find_station(node):
     hydromanager = HydrodynamicDataManager()
     stations = hydromanager.hydrodynamic_data["STATION"].values
-    station_index = {s: i for i, s in enumerate(stations)}
-    node_index = station_index[node]
-    current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now + delay)).to_datetime64()
-    time_index = np.absolute(hydromanager.hydrodynamic_data['TIME'].values - current_time).argmin()
-    water_level = hydromanager.hydrodynamic_data["Water level"][node_index, time_index].values
-    MBL = hydromanager.hydrodynamic_data["Nautical depth"][node_index, time_index].values
+    return next(
+        (s for s in stations if station_contains_node(s, node)),
+        None
+    )
+
+
+def get_water_depth(vessel, node, delay=0):
+
+    hydromanager = HydrodynamicDataManager()
+    ds = hydromanager.hydrodynamic_data
+    station = find_station(node)
+
+    if station is None:
+        raise ValueError(f"No station found for node: {node}")
+    
+    current_time = pd.Timestamp(
+        datetime.datetime.fromtimestamp(vessel.env.now + delay)
+    ).to_datetime64()
+
+    time_index = np.abs(ds["TIME"].values - current_time).argmin()
+
+    water_level = ds["Water level"].sel(STATION=station).isel(TIME=time_index).values
+    MBL = ds["Nautical depth"].sel(STATION=station).isel(TIME=time_index).values
+
     available_water_depth = water_level - MBL
+
     return MBL, water_level, available_water_depth
 
 
@@ -299,6 +337,22 @@ def overwrite_data_on_node_with_data_from_another_node(ds, source_station, targe
         ds[var].loc[dict(STATION=target_station)] = ds[var].sel(STATION=source_station)
 
     return ds
+
+
+def get_nearest_time_index(times, target):
+    target = np.datetime64(target)
+    idx = np.searchsorted(times, target)
+
+    if idx == 0:
+        return 0
+    if idx == len(times):
+        return len(times) - 1
+
+    before = idx - 1
+
+    if abs(times[idx] - target) < abs(times[before] - target):
+        return idx
+    return before
 
 
 def set_station_value(ds, station, variable, value):

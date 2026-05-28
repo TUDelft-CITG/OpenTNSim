@@ -14,7 +14,7 @@ from shapely.geometry import Point, Polygon
 from scipy.spatial import ConvexHull
 
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.environment.utils import get_governing_current_velocity
+from opentnsim.environment.utils import get_governing_current_velocity, get_nearest_time_index
 from opentnsim.graph.utils import get_sailing_time
 from opentnsim.port.calculations import calculate_interpolated_depth_values
 from opentnsim.port.utils import create_logbook_with_directed_distances
@@ -226,18 +226,28 @@ def plot_turning_basins(turning_basins, m = None, longitude = 0, latitude = 0, z
     folium.GeoJson(turning_basins.set_crs('EPSG:4326'),style_function=lambda x:style_turning_basin,
                    tooltip=tooltip_turning_basin,popup=popup_turning_basin).add_to(m)
     
+
+def plot_vertical_tidal_window( 
+        vessel,
+        vertical_tidal_windows, 
+        net_ukcs,
+        route, 
+        time_start, 
+        time_end, 
+        draught, 
+        bound,
+        plot = True):
     
-def create_plot_vertical_tidal_window(vessel, trip_index = 0, plot = False):
-    tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
-    time_start_index = tidal_window_calculation_results['time_start_index']
-    time_end_index = tidal_window_calculation_results['time_end_index']
-    route = tidal_window_calculation_results['route']
-    bound = tidal_window_calculation_results['bound']
-    draught = tidal_window_calculation_results['draught']
-    vertical_tidal_windows = tidal_window_calculation_results['vertical_tidal_windows']
-    net_ukcs = tidal_window_calculation_results['net_ukcs']
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_information = hydromanager.hydrodynamic_data
+
+    times = hydrodynamic_information.TIME.values
+    time_start_index = time_start
+    if not isinstance(time_start, int):
+        time_start_index = get_nearest_time_index(times, time_start)
+    time_end_index = time_end
+    if not isinstance(time_end, int):
+        time_end_index = get_nearest_time_index(times, time_end)
 
     fig, ax = plt.subplots(figsize=[16 * 2 / 3, 6])
     ax.set_facecolor('none')
@@ -247,6 +257,8 @@ def create_plot_vertical_tidal_window(vessel, trip_index = 0, plot = False):
     minimum_required_net_ukc = ax.axhline(0, color="C0", linestyle="--", linewidth=2)
 
     for node in route:
+        if node not in net_ukcs.columns:
+            continue
         ax.plot(net_ukcs[node], color='grey', zorder=1)
 
     if not net_ukcs["min_net_ukc"].empty:
@@ -307,6 +319,33 @@ def create_plot_vertical_tidal_window(vessel, trip_index = 0, plot = False):
         plt.close(fig)
     else:
         plt.close(fig)
+    return fig, legend_handles, legend_labels
+    
+    
+def create_plot_vertical_tidal_window(vessel, trip_index = 0, plot = False):
+    try:
+        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
+    except:
+        return None, None, None
+    
+    for waterway, results in tidal_window_calculation_results.iterrows():
+        time_start_index = results['time_start_index']
+        time_end_index = results['time_end_index']
+        route = results['route']
+        bound = results['bound']
+        draught = results['draught']
+        vertical_tidal_windows = results['vertical_tidal_windows']
+        net_ukcs = results['net_ukcs']
+        fig, legend_handles, legend_labels = plot_vertical_tidal_window(
+            vessel,
+            vertical_tidal_windows,
+            net_ukcs, 
+            route, 
+            int(time_start_index), 
+            int(time_end_index), 
+            draught, 
+            bound,
+            plot)
     return fig, legend_handles, legend_labels
 
 

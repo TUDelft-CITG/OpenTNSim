@@ -219,9 +219,9 @@ class HydrodynamicData(SimpyObject):
         check_hydrodynamic_data_coordinates(hydrodynamic_data)
         check_hydrodynamic_data_variables(hydrodynamic_data)
         check_hydrodynamic_data_temporal_coverage(self.env, hydrodynamic_data)
-        check_hydrodynamic_data_spatial_coverage(self.env.graph, hydrodynamic_data)
+        # check_hydrodynamic_data_spatial_coverage(self.env.graph, hydrodynamic_data)
         hydrodynamic_data = transpose_data_in_accepted_order(hydrodynamic_data)
-        hydrodynamic_data = sort_data(self.env.graph, hydrodynamic_data)
+        # hydrodynamic_data = sort_data(self.env.graph, hydrodynamic_data)
         self.env.hydrodynamics = True
         hydro_manager = HydrodynamicDataManager()
         hydro_manager.hydrodynamic_data = hydrodynamic_data

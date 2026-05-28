@@ -1,5 +1,3 @@
-from turtle import delay
-
 import pandas as pd
 import networkx as nx
 import numpy as np
@@ -12,16 +10,18 @@ from opentnsim.core import SimpyObject, Identifiable, Movable, VesselProperties
 #Imports from the port-module
 from opentnsim.graph.utils import get_sailing_distance, get_sailing_time, node_path_to_edge_path 
 from opentnsim.port.utils import get_vessel_direction_with_waterway
+from opentnsim.port.mixins.port import IsPortComponent
 
 
 class WaterwayTraversable(Movable, Identifiable, VesselProperties):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_node_functions.append(self.access_waterway)
+        self.on_pass_edge_functions.append(self.access_waterway)
         self.on_complete_pass_edge_functions.append(self.leave_waterway)
 
 
-    def access_waterway(self, origin):
+    def access_waterway(self, edge):
+        origin = edge[0]
         if 'Waterway' not in self.env.graph.nodes[origin]:
             return
         
@@ -43,13 +43,13 @@ class WaterwayTraversable(Movable, Identifiable, VesselProperties):
         yield from []
 
 
-class IsWaterway(SimpyObject, Identifiable):
+class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
     def __init__(
             self, 
             node_start, 
             node_stop, 
-            width, 
-            safety_margin = pd.Timedelta(minutes=10), 
+            width = 200., 
+            safety_margin = pd.Timedelta(minutes=15), 
             priority_rules = None,
             *args, 
             **kwargs
@@ -57,12 +57,13 @@ class IsWaterway(SimpyObject, Identifiable):
         self.node_start = node_start
         self.node_stop = node_stop
         self.width = width
-        self.passing_vessels = pd.DataFrame(columns=['Vessel_length','Vessel_beam','Vessel_draught','Time_passage_start','Time_passage_stop','Direction','Priority', 'Passing'])
+        self.passing_vessels = pd.DataFrame(columns=['Vessel_length','Vessel_beam','Vessel_draught','Time_of_registration','Time_passage_start','Time_passage_stop','Direction','Priority', 'Passing'])
         self.passing_vessels_per_edge = pd.DataFrame(columns=['Vessel_id','Edge','Time_start','Time_stop','Direction'])
         self.queue = self.passing_vessels.copy()
         self.safety_margin = safety_margin
         self.priority_rules = priority_rules
         super().__init__(*args, **kwargs)
+        self.port.waterways[self.name] = self
         self.graph = self.env.graph
         self.variables = {"waterway_width": self.width}
 
@@ -122,7 +123,8 @@ class IsWaterway(SimpyObject, Identifiable):
             route_over_waterway = self.route_reversed
             direction = 1
 
-        current_time = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds=delay)
+        current_current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+        current_time = current_current_time + pd.Timedelta(seconds=delay)
         edge_route_to_waterway = node_path_to_edge_path(vessel.env.graph, route_to_waterway)
         edge_route_over_waterway = node_path_to_edge_path(vessel.env.graph, route_over_waterway)
         sailing_time_to_waterway, _ = get_sailing_time(vessel,edge_route_to_waterway)
@@ -152,15 +154,19 @@ class IsWaterway(SimpyObject, Identifiable):
         
         priority = 0
         priority = self.priority_rules(vessel) if self.priority_rules else priority
+        vessel.priority = priority
         if not added_to_planning:
-            df.loc[vessel.id] = [vessel.L, vessel.B, vessel.T, time_passage_start, time_passage_stop, direction, priority, False]
+            df.loc[vessel.id] = [
+                vessel.L, vessel.B, vessel.T, current_current_time, time_passage_start, time_passage_stop, direction, priority, False]
+            df['Time_of_registration'] = df['Time_of_registration'].astype('datetime64[ns]')
             df['Time_passage_start'] = df['Time_passage_start'].astype('datetime64[ns]')
             df['Time_passage_stop'] = df['Time_passage_stop'].astype('datetime64[ns]')
-            df.sort_values("Time_passage_start",inplace=True)
+            df.sort_values(by=['Time_of_registration'], ascending=[True],inplace=True)
         else:
-            df.loc[vessel.id] = [vessel.L, vessel.B, vessel.T, time_passage_start, time_passage_stop, direction, priority, False]
+            df.loc[vessel.id] = [
+                vessel.L, vessel.B, vessel.T, current_current_time, time_passage_start, time_passage_stop, direction, priority, False]
+            df.sort_values(by=['Priority'], ascending=[False],inplace=True)
         
-
 
     def update_passing_vessels_planning(
             self, 
@@ -190,39 +196,47 @@ class IsWaterway(SimpyObject, Identifiable):
             return port_availability_df, waiting_events, total_waiting_time
         
         vessel_ids_to_pass_waterway = df[~df.Passing].index.to_list()
-        new_planning_df = df.loc[vessel_ids_to_pass_waterway,:]
-        is_first = new_planning_df.index[0] == last_added_vessel.id
-
+        modifiable_planning_df = df.loc[vessel_ids_to_pass_waterway,:]
+        is_first = modifiable_planning_df.index[0] == last_added_vessel.id
         if is_first:
             return port_availability_df, waiting_events, total_waiting_time
 
-        new_planning_df = new_planning_df.sort_values(by=["Priority", "Time_passage_start"], ascending=[False, True])
-        static_df = self.passing_vessels[self.passing_vessels.Passing].copy()
-        dynamic_df = self.passing_vessels[~self.passing_vessels.Passing].copy()
-        dynamic_df = dynamic_df.sort_values(by=['Priority','Time_passage_start'], ascending=[False, True])
-        self.passing_vessels = pd.concat([static_df,dynamic_df])
-        for vessel_id, _ in new_planning_df.iterrows():
+        modifiable_planning_df = modifiable_planning_df.sort_values(by=["Priority", "Time_passage_start"], ascending=[False, True])
+        for vessel_id, _ in modifiable_planning_df.iterrows():
             vessel = self.env.vessels[vessel_id]
-            if vessel_id != last_added_vessel.id:
-                try:
-                    vessel.mission.interrupt("Replanning vessel (complete pass edge, move to anchorage)")
-                except:
-                    pass
+            if vessel_id != last_added_vessel.id:   
+                if not vessel.waiting and "communicate_vessel_to_wait" in repr(vessel.on_pass_node_functions): 
+                    vessel.on_pass_node_functions = [cb for cb in vessel.on_pass_node_functions if "communicate_vessel_to_wait" not in repr(cb)]
+                vessel.port.communicate_port_accessibility_info(vessel, vessel.current_node)
+                if vessel.waiting:
+                    vessel.mission.interrupt('Changed waiting event')
             else:
-                port_availability_df, waiting_events, total_waiting_time = vessel.port.replan_vessel_trip(vessel, vessel.current_node)
-
+                (
+                    port_availability_df_per_waterway, 
+                    waiting_events_per_waterway, 
+                    total_waiting_time_per_waterway
+                    ) = vessel.port.replan_vessel_trip(vessel, vessel.current_node)
+                port_availability_df = port_availability_df_per_waterway[self.name]
+                waiting_events = waiting_events_per_waterway[self.name]
+                total_waiting_time = total_waiting_time_per_waterway[self.name]
+                self.passing_vessels.sort_values('Priority', ascending=False, inplace=True)
+        self.passing_vessels.sort_values(by=['Time_of_registration','Priority'], ascending=[True, False], inplace=True)
         return port_availability_df, waiting_events, total_waiting_time
 
     def check_for_encountering_conflicts(self, edge, vessels):
-        restriction = self.env.graph.edges[edge]["Traffic_encountering_restriction"].evaluate(vessels)
-        reservation_v1 = reservation_v2 = 0
-        if "Traffic_reservation" in self.env.graph.edges[edge].keys():
-            reservation_v1 = self.env.graph.edges[edge]["Traffic_reservation"].evaluate(vessels[0])
-            reservation_v2 = self.env.graph.edges[edge]["Traffic_reservation"].evaluate(vessels[1])
-        if reservation_v1 or reservation_v2:
-            restriction = 1
-        elif restriction and "Traffic_encountering_exception" in self.env.graph.edges[edge].keys():
-            restriction = self.env.graph.edges[edge]["Traffic_encountering_exception"].evaluate(vessels)
+        restriction = 0
+        try:
+            restriction = self.env.graph.edges[edge]["Traffic_encountering_restriction"].evaluate(vessels)
+            reservation_v1 = reservation_v2 = 0
+            if "Traffic_reservation" in self.env.graph.edges[edge].keys():
+                reservation_v1 = self.env.graph.edges[edge]["Traffic_reservation"].evaluate(vessels[0])
+                reservation_v2 = self.env.graph.edges[edge]["Traffic_reservation"].evaluate(vessels[1])
+            if reservation_v1 or reservation_v2:
+                restriction = 1
+            elif restriction and "Traffic_encountering_exception" in self.env.graph.edges[edge].keys():
+                restriction = self.env.graph.edges[edge]["Traffic_encountering_exception"].evaluate(vessels)
+        except:
+            pass
         return restriction
 
 
@@ -240,7 +254,6 @@ class IsWaterway(SimpyObject, Identifiable):
         new_vessel_priority = self.priority_rules(new_vessel) if self.priority_rules else 0
         passing_vessels_per_edge_df = self.passing_vessels_per_edge.copy()
         passing_vessels_per_edge_df = passing_vessels_per_edge_df[passing_vessels_per_edge_df.Vessel_id != new_vessel.id]
-        
         for edge, group in passing_vessels_per_edge_df.groupby('Edge'):
             if ("Traffic_encountering_restriction" not in self.env.graph.edges[edge].keys() 
                 and "Traffic_overtaking_restriction" not in self.env.graph.edges[edge].keys()):
@@ -271,7 +284,7 @@ class IsWaterway(SimpyObject, Identifiable):
         return encountering_conflicts, overtaking_conflicts
     
 
-    def get_waterway_passage_information_for_vessel(self, vessel, origin, delay = 0.):
+    def get_waterway_passage_information_for_vessel(self, vessel, origin):
         route_to_node_start = nx.dijkstra_path(self.graph, origin, self.node_start)
         route_to_node_stop = nx.dijkstra_path(self.graph, origin, self.node_stop)
         route_to_waterway = route_to_node_start
@@ -282,12 +295,10 @@ class IsWaterway(SimpyObject, Identifiable):
             route_over_waterway = self.route_reversed
             direction = 1
 
-        current_time = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds=delay)
-        edge_route_to_waterway = node_path_to_edge_path(vessel.env.graph, route_to_waterway)
+        current_time = datetime.datetime.fromtimestamp(vessel.env.now)
         edge_route_over_waterway = node_path_to_edge_path(vessel.env.graph, route_over_waterway)
-        sailing_time_to_waterway, _ = get_sailing_time(vessel,edge_route_to_waterway)
         _, sailing_time_over_waterway_df = get_sailing_time(vessel,edge_route_over_waterway)
-        time_passage_start = current_time + pd.Timedelta(seconds=sailing_time_to_waterway)
+        time_passage_start = current_time
         sailing_time_over_waterway_df['time_start'] = sailing_time_over_waterway_df['time'].shift(1).cumsum().astype('timedelta64[s]')
         sailing_time_over_waterway_df.loc[0,'time_start'] = np.timedelta64(0,'s')
         sailing_time_over_waterway_df['time_stop'] = sailing_time_over_waterway_df['time'].cumsum().astype('timedelta64[s]')
@@ -310,11 +321,11 @@ class IsWaterway(SimpyObject, Identifiable):
             ):
         sailing_time_over_waterway_df, time_passage_start = self.get_waterway_passage_information_for_vessel(
             vessel, 
-            origin, 
-            delay)
-                
+            origin)
+
+
         records = []
-        current_time = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds=delay)
+        current_time = datetime.datetime.fromtimestamp(vessel.env.now)
         event_map = (sailing_time_over_waterway_df.set_index("edge")[["time_start", "time_stop"]])
         event_map.index = pd.MultiIndex.from_tuples(event_map.index)
         eps = pd.Timedelta(milliseconds=10)

@@ -5,17 +5,22 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pyproj
-from pyproj.transformer import Transformer
+import simpy
+from dataclasses import dataclass, field
 from scipy.interpolate import interp1d, CubicSpline
 from scipy.signal import find_peaks
-from shapely.ops import linemerge, transform
-from shapely.geometry import LineString, MultiLineString
 import xarray as xr
 
-from opentnsim.graph.utils import get_sailing_time, get_longest_common_subroute, node_path_to_edge_path
+from opentnsim.graph.utils import (
+    get_sailing_time, 
+    get_sailing_information_on_edge_to_distance_on_another_edge, 
+    get_longest_common_subroute, 
+    node_path_to_edge_path,
+)
+from opentnsim.port.utils import find_waterways_to_be_passed, get_vessel_direction_with_waterway
 from opentnsim.graph.calculations import transform_geometry, transform_route_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity
+from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity, find_station
 
 
 def calculate_total_waiting_time(waiting_events):
@@ -172,23 +177,33 @@ def calculate_vertical_tidal_windows(vessel, route, time_start, time_end, delay=
         elif net_ukc[bisect.bisect_right(time_net_ukc, root)] < 0:
             vertical_tidal_accessibility.loc[root, :] = [0, "Inaccessible"]
 
+    # time_simulation_start = np.datetime64(vessel.env.simulation_start.replace(tzinfo=None))
+    # if time_simulation_start >= time_start:
+    #     time_start = time_simulation_start
+    
+    # time_simulation_end = np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None))
+    # if time_simulation_end >= time_end:
+    #     time_end = time_simulation_end
+
     # Default values
+    vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
     if vertical_tidal_accessibility.empty:
         if not len(net_ukc) or np.max(net_ukc) < 0.0:
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Inaccessible"]
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Inaccessible",]
+            vertical_tidal_accessibility.loc[time_start, :] = [0, "Inaccessible"]
+            vertical_tidal_accessibility.loc[time_end, :] = [0,"Inaccessible",]
         else:
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0, "Accessible"]
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0, "Accessible"]
+            vertical_tidal_accessibility.loc[time_start, :] = [0, "Accessible"]
+            vertical_tidal_accessibility.loc[time_end, :] = [0, "Accessible"]
     else:
         if vertical_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0,"Accessible",]
+            vertical_tidal_accessibility.loc[time_start, :] = [0,"Accessible",]
         else:
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [0,"Inaccessible",]
+            vertical_tidal_accessibility.loc[time_start, :] = [0,"Inaccessible",]
+        vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
         if vertical_tidal_accessibility.iloc[-1].Accessibility == "Inaccessible":
-            vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Accessible",]
+            vertical_tidal_accessibility.loc[time_end, :] = [0, "Accessible",]
         else:
-                vertical_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [0,"Inaccessible",]
+            vertical_tidal_accessibility.loc[time_end, :] = [0," Inaccessible",]
 
     # Return the sail-in or -out-times given the vertical tidal restrictions over the route of the vessel
     vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
@@ -261,7 +276,7 @@ def determine_tidal_window_restriction(vessel, route, specifications, node, dela
             if restriction_type[1].find("Beam") != -1:
                 value = getattr(vessel, "B")
             if restriction_type[1].find("UKC") != -1:
-                value, _, _, _, _, _ = calculate_ukc_clearance(vessel, node, delay)
+                value, _, _, _, _, _, _ = calculate_ukc_clearance(vessel, node, delay)
             if restriction_type[1].find("Type") != -1:
                 value = getattr(vessel, "type")
             # Determine if the value for the property satisfies the condition of the restriction type
@@ -541,19 +556,19 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
     horizontal_tidal_accessibility = pd.DataFrame(columns=["Limit", "Condition", "Accessibility"])
     horizontal_tidal_window = False
     for route_index, node_name in enumerate(route):
-        if "Horizontal tidal restriction" in vessel.env.graph.nodes[node_name].keys():
+        if "Current_restricton" in vessel.env.graph.nodes[node_name].keys():
             horizontal_tidal_window = True
             edge_route = node_path_to_edge_path(vessel.env.graph, route[: (route_index + 1)])
             sailing_time_to_next_node, _ = get_sailing_time(vessel, edge_route)
-            specifications = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Specification"]
+            specifications = vessel.env.graph.nodes[node_name]["Current_restriciton"]["Specification"]
             restriction_index, no_tidal_window = determine_tidal_window_restriction(
                 vessel, route, specifications, node_name, delay=delay
             )
             if no_tidal_window:
                 continue
-            hydrodynamic_data = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Data"][restriction_index]
-            cross_current_limit = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Limit"][restriction_index]
-            window_specifications = vessel.env.graph.nodes[node_name]["Horizontal tidal restriction"]["Type"][restriction_index]
+            hydrodynamic_data = vessel.env.graph.nodes[node_name]["Current_restriciton"]["Data"][restriction_index]
+            cross_current_limit = vessel.env.graph.nodes[node_name]["Current_restriciton"]["Limit"][restriction_index]
+            window_specifications = vessel.env.graph.nodes[node_name]["Current_restriciton"]["Type"][restriction_index]
             time_start_index = np.max([0, np.absolute(hydrodynamic_data.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2,])
             time_end_index = np.absolute(hydrodynamic_data.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
             if window_specifications.window_method == "Maximum":
@@ -613,37 +628,37 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
                 )
     if horizontal_tidal_accessibility.empty or not horizontal_tidal_window:
         horizontal_tidal_accessibility = pd.DataFrame(columns=["Limit", "Condition", "Accessibility"])
-        horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [
+        horizontal_tidal_accessibility.loc[time_start, :] = [
             0,
             "Current velocity",
             "Accessible",
         ]
-        horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [
+        horizontal_tidal_accessibility.loc[time_end, :] = [
             0,
             "Current velocity",
             "Accessible",
         ]
     else:
         if horizontal_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
-            horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [
+            horizontal_tidal_accessibility.loc[time_start, :] = [
                 0,
                 "Current velocity",
                 "Accessible",
             ]
         else:
-            horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_start.replace(tzinfo=None)), :] = [
+            horizontal_tidal_accessibility.loc[time_start, :] = [
                 0,
                 "Current velocity",
                 "Inaccessible",
             ]
         if horizontal_tidal_accessibility.iloc[-1].Accessibility == "Inaccessible":
-            horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [
+            horizontal_tidal_accessibility.loc[time_end, :] = [
                 0,
                 "Current velocity",
                 "Accessible",
             ]
         else:
-            horizontal_tidal_accessibility.loc[np.datetime64(vessel.env.simulation_stop.replace(tzinfo=None)), :] = [
+            horizontal_tidal_accessibility.loc[time_end, :] = [
                 0,
                 "Current velocity",
                 "Inaccessible",
@@ -705,56 +720,96 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
     net_ukc = pd.DataFrame()
     times = hydrodynamic_data["TIME"].values[time_start_index:time_end_index]
     t_step = times[1] - times[0]
-    t_boundaries = []
+    #t_boundaries = []
+
     # Start of calculation by looping over the nodes of the route
-    for route_index, node_name in enumerate(route):
-        node_index = list(hydrodynamic_data["STATION"].values).index(node_name)
-        edge_route = node_path_to_edge_path(vessel.env.graph, route[: (route_index + 1)])
-        sailing_time_to_next_node, _ = get_sailing_time(vessel, edge_route)
+    edge_route = node_path_to_edge_path(vessel.env.graph, route)
+    for edge_route_index, edge in enumerate(edge_route):
+        edge_rev = (edge[1], edge[0]) + edge[2:]
+        node_start = edge[0]
+        node_stop = edge[1]
+        station = find_station(node_start)
+        if station is None:
+            station = find_station(node_stop)
+        if station is None:
+            continue
+        
+        if isinstance(station, tuple) and station != edge and station != edge_rev:
+            continue
+
+        edge_route_to_node = edge_route[:edge_route_index]
+        _, _, _, required_water_depth, _, distance_to_restriction = calculate_ukc_clearance(vessel, edge, delay)
+        sailing_time_to_next_node_df = get_sailing_information_on_edge_to_distance_on_another_edge(
+            vessel, edge_route_to_node, distance_to_be_sailed_on_last_edge = distance_to_restriction)
+        sailing_time_to_next_node = sailing_time_to_next_node_df['time'].sum()
+
+        wlev_series = hydrodynamic_data["Water level"].sel(STATION=station)
+        mbl_series = hydrodynamic_data["Nautical depth"].sel(STATION=station)
+
         time_correction_index = int(np.round(sailing_time_to_next_node / (t_step / np.timedelta64(1, "s"))))
-        time_end_index_node = np.min([len(hydrodynamic_data["Water level"][node_index])-1,
-                                      time_end_index + time_correction_index])
+        time_end_index_node = np.min([len(wlev_series)-1, time_end_index + time_correction_index])
+
         times = hydrodynamic_data["TIME"].values[time_start_index:time_end_index_node]
-        water_level = hydrodynamic_data["Water level"][node_index].values[time_start_index:time_end_index_node]
-        _, _, _, required_water_depth, _, _ = calculate_ukc_clearance(vessel, node_name, delay)
-        MBL = hydrodynamic_data["Nautical depth"][node_index].values[time_start_index:time_end_index_node]
-        water_depth = water_level + MBL
-        net_ukc_node = pd.DataFrame([available_water_depth - required_water_depth for available_water_depth in water_depth],columns=[node_name],index=times)
+        water_level = wlev_series.values[time_start_index:time_end_index_node]
+        
+        if required_water_depth is None:
+            continue
+
+        MBL = mbl_series.values[time_start_index:time_end_index_node]
+        water_depth = water_level - MBL
+        net_ukc_node = pd.DataFrame([available_water_depth - required_water_depth for available_water_depth in water_depth],columns=[node_start],index=times)
+        net_ukc_node = net_ukc_node.shift(-time_correction_index)
         net_ukc = pd.concat([net_ukc,net_ukc_node],axis=1)
-        t_boundaries.append(time_correction_index)
+        net_ukc = net_ukc.dropna()
 
-    min_net_ukc = net_ukc.min(axis=1).min()
-    net_ukc_corrected = net_ukc.copy()
-    window = False
-    column_index = 0
-    window_stop = 0
-    for column_index,(boundary_start,boundary_stop) in enumerate(zip(t_boundaries[:-1],t_boundaries[1:])):
-        window_start = boundary_start
-        window_stop = int(np.ceil(np.mean([boundary_start,boundary_stop])))
-        window = window_stop - window_start
-        net_UKC_node_start = net_ukc.iloc[:, column_index]
+    # min_net_ukc = net_ukc.min(axis=1).min()
+    # net_ukc_corrected = net_ukc.copy()
+    # window = False
+    # column_index = 0
+    # window_stop = 0
+    # for column_index,(boundary_start, boundary_stop) in enumerate(zip(t_boundaries[:-1],t_boundaries[1:])):
+    #      window_start = boundary_start
+    #      window_stop = int(np.ceil(np.mean([boundary_start, boundary_stop])))
+    #     window = window_stop - window_start
+    #     net_UKC_node_start = net_ukc.iloc[:, column_index]
 
-        if window:
-            net_UKC_node_start = net_ukc.iloc[:, column_index].rolling(window=window, center=False).min().shift(-window_start-window)
-        window_start = int(np.floor(np.mean([boundary_start,boundary_stop])))
-        window_stop = boundary_stop
-        window = window_stop - window_start
+    #     if window:
+    #         net_UKC_node_start = net_ukc.iloc[:, column_index].rolling(window=window, center=False).min().shift(-window_start-window)
+    #     window_start = int(np.floor(np.mean([boundary_start,boundary_stop])))
+    #     window_stop = boundary_stop
+    #     window = window_stop - window_start
 
-        net_UKC_node_stop = net_ukc.iloc[:, column_index]
-        if window:
-            net_UKC_node_stop = net_ukc.iloc[:, column_index].rolling(window=window,center=False).min().shift(-window_start)
-        net_ukc_node = pd.concat([net_UKC_node_start, net_UKC_node_stop], axis=1)
-        net_ukc_node_min = net_ukc_node.min(axis=1)
-        net_ukc_corrected[route[column_index]] = net_ukc_node_min
+    #     net_UKC_node_stop = net_ukc.iloc[:, column_index]
+    #     if window:
+    #         net_UKC_node_stop = net_ukc.iloc[:, column_index].rolling(window=window,center=False).min().shift(-window_start)
+    #     net_ukc_node = pd.concat([net_UKC_node_start, net_UKC_node_stop], axis=1)
+    #     net_ukc_node_min = net_ukc_node.min(axis=1)
+    #     net_ukc_corrected[route[column_index]] = net_ukc_node_min
 
-    if window:
-        net_ukc_corrected.iloc[:,column_index+1] = net_ukc.iloc[:, -1].rolling(window=window,center=False).min().shift(-window_stop)
-    net_ukc = net_ukc_corrected.ffill().fillna(min_net_ukc)
+    # if window:
+    #     net_ukc_corrected.iloc[:,column_index+1] = net_ukc.iloc[:, -1].rolling(window=window,center=False).min().shift(-window_stop)
+    #net_ukc = net_ukc_corrected.ffill().fillna(min_net_ukc)
     net_ukc["min_net_ukc"] = net_ukc.min(axis=1)
     return net_ukc
 
 
-def calculate_ukc_clearance(vessel, node, delay=0):
+def estimate_required_water_depth(env, edge, draught):
+
+    @dataclass
+    class TestVessel:
+        env: object
+        T: float
+
+    test_vessel = TestVessel(env=env, T=draught)
+
+    _, _, _, required_water_depth, _, _ = calculate_ukc_clearance(
+        test_vessel,
+        edge
+    )
+
+    return required_water_depth
+
+def calculate_ukc_clearance(vessel, edge, delay=0):
     """Function: calculates the sail-in-times for a specific vssel with certain properties
     and a pre-determined route and provides this information to the vessel
 
@@ -764,64 +819,81 @@ def calculate_ukc_clearance(vessel, node, delay=0):
         - components_calc:
 
     """
-    MBL, _, available_water_depth = get_water_depth(vessel, node, delay)
-    ukc_s, ukc_p, ukc_r, fwa = np.zeros(4)
-    if "Vertical tidal restriction" in vessel.env.graph.nodes[node].keys():
-        ukcs_s, ukcs_p, ukcs_r, fwas = vessel.env.graph.nodes[node]["Vertical tidal restriction"]["Type"]
-        specifications = vessel.env.graph.nodes[node]["Vertical tidal restriction"]["Specification"]
+    node_1 = edge[0]
+    MBL, _, available_water_depth = get_water_depth(vessel, node_1, delay)
+    ukc = 0
+    distance_to_restriction = 0
+    if "Depth_restriction" in vessel.env.graph.nodes[node_1].keys():
+        ukc = vessel.env.graph.nodes[node_1]["Depth_restriction"].evaluate(vessel)
+    elif "Depth_restriction" in vessel.env.graph.edges[edge].keys():
+        ukc = vessel.env.graph.edges[edge]["Depth_restriction"].evaluate(vessel)
+        distance_to_restriction = vessel.env.graph.edges[edge]["Depth_restriction_at_distance"](edge)
+    else:
+        return None, None, None, None, None, None
 
-        # Determine which restriction applies to vessel
-        restriction_index, _ = determine_tidal_window_restriction(vessel, [node], specifications, node, delay=delay)
-
-        # Calculate ukc policy based on the applied restriction
-        ukc_s = ukcs_s[restriction_index]
-        ukc_p = ukcs_p[restriction_index] * vessel.T
-        ukc_r = ukcs_r[restriction_index][0] * (vessel.T - ukcs_r[restriction_index][1])
-        fwa = fwas[restriction_index] * vessel.T
-    extra_ukc = 0.
     if 'metadata' in dir(vessel) and "ukc" in vessel.metadata.keys():
-        extra_ukc = vessel.metadata["ukc"]
-    ship_related_factors = {"ukc_s": ukc_s, "ukc_p": ukc_p, "ukc_r": ukc_r, "fwa": fwa, "extra_ukc": extra_ukc}
-    required_water_depth = vessel.T + sum(ship_related_factors.values())
+        ukc += vessel.metadata["ukc"]
+
+    required_water_depth = vessel.T + ukc
     net_ukc = available_water_depth - required_water_depth
     gross_ukc = available_water_depth - vessel.T
-    return net_ukc, gross_ukc, available_water_depth, required_water_depth, ship_related_factors, MBL
+    return net_ukc, gross_ukc, available_water_depth, required_water_depth, -1*MBL, distance_to_restriction
 
 
 def calculate_tidal_windows(vessel, route, time_start, time_end, delay=0):
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_data = hydromanager.hydrodynamic_data
-    time_start_index = np.max([0, np.absolute(hydrodynamic_data.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2, ])
-    time_end_index = np.absolute(hydrodynamic_data.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
+    tidal_window_results_per_waterway = []
+    passing_waterways = find_waterways_to_be_passed(vessel)
+    for waterway_name, waterway in passing_waterways.items():
+        waterway_route = waterway.route
+        direction = get_vessel_direction_with_waterway(waterway_route, route)
+        route_over_waterway = waterway_route
+        if direction:
+            route_over_waterway = waterway.route_reversed
+        start_node_waterway = route_over_waterway[0]
+        route_to_waterway_index = route.index(start_node_waterway) + 1
+        route_to_waterway = route[:route_to_waterway_index]
+        edge_route_to_waterway = list(zip(route_to_waterway[:-1],route_to_waterway[1:]))
+        sailing_time_to_waterway, _ = get_sailing_time(vessel, edge_route_to_waterway)
 
-    vertical_tidal_accessibility, \
-    vertical_tidal_windows, \
-    net_ukcs = calculate_vertical_tidal_windows(vessel, route, time_start, time_end, delay)
+        time_start += np.timedelta64(int(sailing_time_to_waterway*10**9), 'ns')
+        time_end += np.timedelta64(int(sailing_time_to_waterway*10**9), 'ns')
 
-    horizontal_tidal_accessibility,\
-    horizontal_tidal_windows,\
-    horizontal_tidal_restriction_nodes,\
-    horizontal_tidal_restriction_stations,\
-    window_specifications = calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, delay)
+        time_start_index = np.max([0, np.absolute(hydrodynamic_data.TIME.values - (time_start + np.timedelta64(int(delay), "s"))).argmin() - 2, ])
+        time_end_index = np.absolute(hydrodynamic_data.TIME.values - (time_end + np.timedelta64(int(delay), "s"))).argmin()
 
-    tidal_accessibility = calculate_combined_tidal_windows(vertical_tidal_accessibility, horizontal_tidal_accessibility)
-    tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(tidal_accessibility.iloc[:-1].iterrows(), tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == "Accessible"]
+        vertical_tidal_accessibility, \
+        vertical_tidal_windows, \
+        net_ukcs = calculate_vertical_tidal_windows(vessel, route_over_waterway, time_start, time_end, delay)
 
-    tidal_window_results = {'time_start_index':time_start_index,
-                            'time_end_index':time_end_index,
-                            'route':route,
-                            'bound':vessel.bound,
-                            'draught':vessel.T,
-                            'vertical_tidal_accessibility':vertical_tidal_accessibility,
-                            'vertical_tidal_windows':vertical_tidal_windows,
-                            'net_ukcs':net_ukcs,
-                            'horizontal_tidal_accessibility':horizontal_tidal_accessibility,
-                            'horizontal_tidal_windows':horizontal_tidal_windows,
-                            'horizontal_tidal_restriction_nodes':horizontal_tidal_restriction_nodes,
-                            'horizontal_tidal_restriction_stations':horizontal_tidal_restriction_stations,
-                            'window_specifications':window_specifications,
-                            'tidal_accessibility':tidal_accessibility,
-                            'tidal_windows':tidal_windows}
+        horizontal_tidal_accessibility,\
+        horizontal_tidal_windows,\
+        horizontal_tidal_restriction_nodes,\
+        horizontal_tidal_restriction_stations,\
+        window_specifications = calculate_horizontal_tidal_windows(vessel, route_over_waterway, time_start, time_end, delay)
+
+        tidal_accessibility = calculate_combined_tidal_windows(vertical_tidal_accessibility, horizontal_tidal_accessibility)
+        tidal_windows = [[window_start[0], window_end[0]] for window_start, window_end in zip(tidal_accessibility.iloc[:-1].iterrows(), tidal_accessibility.iloc[1:].iterrows()) if window_start[1].Accessibility == "Accessible"]
+
+        tidal_window_results = {'waterway':waterway_name,
+                                'time_start_index':time_start_index,
+                                'time_end_index':time_end_index,
+                                'route':route_over_waterway,
+                                'bound':vessel.bound,
+                                'draught':vessel.T,
+                                'vertical_tidal_accessibility':vertical_tidal_accessibility,
+                                'vertical_tidal_windows':vertical_tidal_windows,
+                                'net_ukcs':net_ukcs,
+                                'horizontal_tidal_accessibility':horizontal_tidal_accessibility,
+                                'horizontal_tidal_windows':horizontal_tidal_windows,
+                                'horizontal_tidal_restriction_nodes':horizontal_tidal_restriction_nodes,
+                                'horizontal_tidal_restriction_stations':horizontal_tidal_restriction_stations,
+                                'window_specifications':window_specifications,
+                                'tidal_accessibility':tidal_accessibility,
+                                'tidal_windows':tidal_windows}
+        tidal_window_results_per_waterway.append(tidal_window_results)
+    tidal_window_results = pd.DataFrame(tidal_window_results_per_waterway).set_index("waterway")
     return tidal_window_results
 
 

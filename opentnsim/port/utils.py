@@ -11,7 +11,6 @@ import re
 import ast
 from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to_edge_path
 from opentnsim.graph.calculations import transform_geometry
-from opentnsim.port.calculations import calculate_tidal_windows, calculate_ukc_clearance
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.port.mixins.rules import RuleEngine, And, Or, Compare, AnyOf, TrafficRules
 pd.options.mode.chained_assignment = None
@@ -73,7 +72,8 @@ def determine_nearest_anchorage_area(vessel, node, route = None):
     capacity_of_anchorages = []
     anchorage_area_found = False
     while not anchorage_area_found:
-        for anchorage_area in vessel.port.anchorage_areas:
+        anchorage_area_names = []
+        for anchorage_area_name, anchorage_area in vessel.port.anchorage_areas.items():
             if route is not None and anchorage_area.node not in route:
                 continue
 
@@ -86,8 +86,10 @@ def determine_nearest_anchorage_area(vessel, node, route = None):
             anchorage_intensity = anchorage_area.resource.count
             anchorage_level = anchorage_capacity - anchorage_intensity
             capacity_of_anchorages.append(anchorage_level > 0)
+            anchorage_area_names.append(anchorage_area_name)
         anchorage_selection_df = pd.DataFrame({'Sailing time': sailing_time_to_anchorages,
-                                            'Capacity': capacity_of_anchorages})
+                                               'Capacity': capacity_of_anchorages},
+                                               index = anchorage_area_names)
         if anchorage_selection_df.empty:
             route = None
         else:
@@ -139,14 +141,14 @@ def determine_new_route_for_vessel(vessel):
     return new_route
 
 
-def determine_vessel_waiting_events(port_accessed, vessel, port_availability_df):
-    port_availability_df['Combined'] = port_availability_df.all(axis=1)
+def determine_vessel_waiting_events(port_accessed, vessel, port_availability_df, delay = 0.):
+    df = port_availability_df.copy()
+    df['Combined'] = df.all(axis=1)
     with pd.option_context("future.no_silent_downcasting", True):
-        port_availability_df = port_availability_df.ffill()
-        port_availability_df = port_availability_df.bfill()
-    port_availability_df = port_availability_df[port_availability_df != port_availability_df.shift()].dropna(how='all')
+        df = df.ffill().bfill()
+    df = df[df != df.shift()].dropna(how='all')
     with pd.option_context("future.no_silent_downcasting", True):
-        port_availability_df = port_availability_df.ffill()
+        df = df.ffill()
 
     def get_waiting_time_reason(lst):
         if not lst:
@@ -156,29 +158,29 @@ def determine_vessel_waiting_events(port_accessed, vessel, port_availability_df)
         else:
             return ", ".join(lst[:-1]) + " and " + lst[-1]
 
-    current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-    previous_events = port_availability_df[port_availability_df.index <= current_time]
-    future_events = port_availability_df[port_availability_df.index > current_time]
+    current_time = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds = delay)
+    previous_events = df[df.index <= current_time]
+    future_events = df[df.index > current_time]
     last_previous_event_index = previous_events.index.max()
     if pd.isna(last_previous_event_index):
-        previous_event = port_availability_df.iloc[0:0]
+        previous_event = df.iloc[0:0]
     else:
-        previous_event = port_availability_df.loc[[last_previous_event_index]]
-    port_availability_df = pd.concat([previous_event, future_events])
-    idx = port_availability_df.index.to_list()
+        previous_event = df.loc[[last_previous_event_index]]
+    df = pd.concat([previous_event, future_events])
+    idx = df.index.to_list()
     idx[0] = current_time
-    port_availability_df.index = idx
+    df.index = idx
 
-    cols_to_check = port_availability_df.columns.drop('Combined')
-    port_availability_df['Reason'] = port_availability_df[cols_to_check].apply(
+    cols_to_check = df.columns.drop('Combined')
+    df['Reason'] = df[cols_to_check].apply(
         lambda row: get_waiting_time_reason(list(row[row.eq(False)].index)),
         axis=1)
 
-    port_available_df = port_availability_df[port_availability_df['Combined'] == True]
+    port_available_df = df[df['Combined'] == True]
     if port_available_df.empty:
         return None
     waiting_time_end = port_available_df.iloc[0].name
-    waiting_events = port_availability_df.loc[:waiting_time_end]
+    waiting_events = df.loc[:waiting_time_end]
     waiting_reasons = waiting_events['Reason'][:-1]
     waiting_times = (waiting_events.index.to_series().shift(-1) - waiting_events.index).apply(lambda x: x.total_seconds())
     waiting_events = {}
@@ -200,28 +202,65 @@ def determine_vessel_priority(vessel, tide_bound = False, leaving_port = False):
 
 
 def get_accessibility_info(vessel, origin, berth = None, leaving_port = False):
-    df_tidal_availability = get_tidal_availability_info(vessel)
+    df_tidal_availability_per_waterway = get_tidal_availability_info(vessel)
     df_terminal_availability = get_terminal_availability_info(vessel, origin, berth, leaving_port)
-    df_waterways_availability = get_waterway_availability_info(vessel, origin)
+    df_waterway_availability_per_waterway = get_waterway_availability_info(vessel, origin)
+
+    waterways = find_waterways_to_be_passed(vessel)
 
     #Combine the dataframes
-    current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-    port_availability_df = pd.concat([df_tidal_availability,df_terminal_availability,df_waterways_availability])
-    port_availability_df = port_availability_df[port_availability_df.index >= current_time]
-    port_availability_df = port_availability_df.sort_index()
-    port_availability_df = port_availability_df.ffill().bfill()
-    return port_availability_df
+    current_time = datetime.datetime.fromtimestamp(vessel.env.now) - pd.Timedelta(hours=24)
+    dfs = []
+    for waterway_name in waterways.keys():
+        df_tidal_availability = df_tidal_availability_per_waterway[waterway_name]
+        df_waterway_availability = df_waterway_availability_per_waterway[waterway_name]
+        df_waterway_availability = df_waterway_availability.rename('Traffic')
+        port_availability_df = pd.concat(
+            [
+                df_tidal_availability,
+                df_terminal_availability,
+                df_waterway_availability,
+            ]
+        )
+
+        port_availability_df = (
+            port_availability_df[port_availability_df.index >= current_time]
+            .sort_index()
+            .ffill()
+            .bfill()
+        )
+
+        port_availability_df.columns = pd.MultiIndex.from_product(
+            [[waterway_name], port_availability_df.columns]
+        )
+
+        dfs.append(port_availability_df)
+
+    port_availability_per_waterway = pd.concat(dfs, axis=1)
+    return port_availability_per_waterway
 
 
 def find_waterways_to_be_passed(vessel):
     passing_waterways = {}
+
     for node in vessel.route:
         waterway = None
         if "Waterway" in vessel.env.graph.nodes[node]:
             waterway = vessel.env.graph.nodes[node]["Waterway"]
+        else:
+            continue
 
-        if waterway and waterway.name not in passing_waterways.keys():
+        if vessel.position_on_route:
+            previous_index = vessel.position_on_route - 1
+            previous_node = vessel.route[previous_index]
+            if "Waterway" in vessel.env.graph.nodes[previous_node]:
+                previous_waterway = vessel.env.graph.nodes[previous_node]["Waterway"]
+                if previous_waterway.name == waterway.name:
+                    continue
+
+        if waterway.name not in passing_waterways.keys():
             passing_waterways[waterway.name] = waterway
+
     return passing_waterways
 
 
@@ -231,15 +270,18 @@ def get_waterway_availability_info(vessel, origin):
     availability_dfs = []
 
     for waterway in passing_waterways.values():
-        availability_df = waterway.check_waterway_availability_info(vessel, origin)
+        waterway_route = get_oriented_waterway_route(waterway, vessel)
+        index_waterway_route_start = vessel.route.index(waterway_route[0])+1
+        route_to_waterway_start = vessel.route[:index_waterway_route_start]
+        edge_route_to_waterway_start = list(zip(route_to_waterway_start[:-1],route_to_waterway_start[1:]))
+        sailing_time_to_waterway, _ = get_sailing_time(vessel, edge_route_to_waterway_start)
+        availability_df = waterway.check_waterway_availability_info(vessel, origin, sailing_time_to_waterway)
         availability_df = availability_df.rename(columns={'Traffic': waterway.name})
         availability_dfs.append(availability_df)
-
+    
     df_waterways_availability = pd.concat(availability_dfs)
     df_waterways_availability = df_waterways_availability.sort_index()
     df_waterways_availability = df_waterways_availability.ffill().bfill()
-    df_waterways_availability["Traffic"] = df_waterways_availability.all(axis=1)
-    df_waterways_availability = df_waterways_availability[["Traffic"]]
     if df_waterways_availability.empty:
         current_time = datetime.datetime.fromtimestamp(vessel.env.now)
         df_waterways_availability.loc[current_time,'Traffic'] = True
@@ -255,34 +297,73 @@ def get_terminal_availability_info(vessel, origin, berth = None, leaving_port = 
 
 def check_if_route_contains_restrictions(vessel):
     contains_restriction = False
-    for node in vessel.route:
-        if 'Vertical tidal restriction' in vessel.env.graph.nodes[node].keys():
+    for node_start, node_end in zip(vessel.route[:-1],vessel.route[1:]):
+        edge = (node_start, node_end)
+        if 'Depth_restriction' in vessel.env.graph.nodes[node_start].keys():
+            contains_restriction = True
+            break
+        elif 'Depth_restriction' in vessel.env.graph.nodes[node_end].keys():
+            contains_restriction = True
+            break
+        elif 'Depth_restriction' in vessel.env.graph.edges[edge].keys():
             contains_restriction = True
             break
     return contains_restriction
 
 
 def get_tidal_availability_info(vessel):
+    from opentnsim.port.calculations import calculate_tidal_windows
+
     has_tidal_window_policy = check_if_route_contains_restrictions(vessel)
     route = vessel.route
-    time_start = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now))
+    time_start = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now)) - np.timedelta64(12,'h')
+
     edge_route = node_path_to_edge_path(vessel.env.graph, route)
     sailing_time, _ = get_sailing_time(vessel, edge_route)
-    sailing_time = np.max([pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=48)])
-    time_end = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time)
-    df_tidal_availability = pd.DataFrame(columns=['Accessibility'])
-    if vessel.trip_index in vessel.tidal_window_calculations.keys() and len(vessel.tidal_window_calculations[vessel.trip_index]):
-        df_tidal_availability = vessel.tidal_window_calculations[vessel.trip_index]['tidal_accessibility']
-    elif has_tidal_window_policy:
+    sailing_time = max(pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=96))
+
+    time_end = np.datetime64(
+        datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time
+    )
+
+    tidal_window_results = pd.DataFrame(columns=["Accessibility"])
+    if has_tidal_window_policy:
         tidal_window_results = calculate_tidal_windows(vessel, route, time_start, time_end)
-        df_tidal_availability = tidal_window_results['tidal_accessibility']
         vessel.tidal_window_calculations[vessel.trip_index] = tidal_window_results
-    df_tidal_availability['Tide'] = df_tidal_availability['Accessibility'] == 'Accessible'
-    df_tidal_availability = df_tidal_availability[['Tide']]
-    if df_tidal_availability.empty:
+
+    frames = []
+
+    for waterway_name, sub_trip in tidal_window_results.iterrows():
+        df_tidal_availability = (
+            sub_trip["tidal_accessibility"][["Accessibility"]]
+            .eq("Accessible")
+            .rename(columns={"Accessibility": "Tide"})
+        )
+
+        # convert to MultiIndex: (waterway_name, Tide)
+        df_tidal_availability.columns = pd.MultiIndex.from_product(
+            [[waterway_name], df_tidal_availability.columns]
+        )
+
+        frames.append(df_tidal_availability)
+
+    if frames:
+        df_tidal_availability_waterways = pd.concat(frames, axis=1)
+    else:
         current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-        df_tidal_availability.loc[current_time,'Tide'] = True
-    return df_tidal_availability
+        df_tidal_availability_waterways = pd.DataFrame(
+            {("single_waterway", "Tide"): [True]},
+            index=[current_time],
+        )
+
+    df_tidal_availability_waterways = (
+        df_tidal_availability_waterways
+        .sort_index(axis=1)
+        .ffill()
+        .bfill()
+    )
+
+    return df_tidal_availability_waterways
 
 
 def provide_trajectory(env, node_1, node_2):
@@ -306,6 +387,7 @@ def provide_waiting_time_for_inbound_tidal_window(vessel, route, time_start=None
         - delay: a delay that can be included to calculate a future situation
 
     """
+    from opentnsim.port.calculations import calculate_tidal_windows
 
     # Create sub-routes based on anchorage areas on the route
     if not time_start:
@@ -338,6 +420,7 @@ def provide_waiting_time_for_outbound_tidal_window(vessel, route, delay=0):
 
 
 def provide_nearest_anchorage_area(vessel, node):
+    from opentnsim.port.calculations import calculate_ukc_clearance
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_information = hydromanager.hydrodynamic_data
     nodes_of_anchorages = []
@@ -391,7 +474,7 @@ def provide_nearest_anchorage_area(vessel, node):
     return node_anchorage
 
 
-def add_ukc_policy_to_edge(graph, edge, rules):
+def add_ukc_policy_to_edge(graph, edge, rules, distance_of_series = None):
 
     u, v = edge[:2]
 
@@ -399,13 +482,18 @@ def add_ukc_policy_to_edge(graph, edge, rules):
     if not graph.has_edge(u, v):
         route = nx.dijkstra_path(graph, u, v)
         edge_route = list(zip(route[:-1],route[1:]))
-        
+    
+    if distance_of_series is None:
+        distance_of_series = graph.edges[edge]['length_m']/2
+    
+    distance_of_series_rev = graph.edges[edge]['length_m'] - distance_of_series
     for edge in edge_route:
-        if "UKC_policy" not in graph.edges[edge]:
-            graph.edges[edge]["UKC_policy"] = RuleEngine(default = lambda v: 0.0)
+        if "Depth_restriction" not in graph.edges[edge]:
+            graph.edges[edge]["Depth_restriction"] = RuleEngine(default = lambda v: 0.0)
+            graph.edges[edge]["Depth_restriction_at_distance"] = lambda e: distance_of_series if e == edge else distance_of_series_rev
     
         for rule in rules:
-            graph.edges[edge]["UKC_policy"].add_rule(
+            graph.edges[edge]["Depth_restriction"].add_rule(
                 condition=rule.condition,
                 policy=rule.policy
             )
@@ -541,3 +629,9 @@ def get_vessel_direction_with_waterway(routeA, routeB):
     direction = 0 if A_shared == B_shared else 1
     return direction
 
+def get_oriented_waterway_route(waterway, vessel):
+    waterway_route = waterway.route
+    direction = get_vessel_direction_with_waterway(waterway_route, vessel.route)
+    if direction:
+        waterway_route = waterway.route_reversed
+    return waterway_route

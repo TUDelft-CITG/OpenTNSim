@@ -64,7 +64,7 @@ class IsAnchorage(IsWaitingArea, IsPortComponent):
 
         self.register_waiting_area()
 
-        self.port.anchorage_areas.append(self)
+        self.port.anchorage_areas[self.name] = self
         if 'Anchorage' not in self.env.graph.nodes[self.node].keys():
             self.env.graph.nodes[self.node]['Anchorage'] = []
         self.env.graph.nodes[self.node]['Anchorage'].append(self)

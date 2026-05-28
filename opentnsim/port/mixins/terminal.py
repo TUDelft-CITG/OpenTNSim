@@ -152,7 +152,7 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent):
             berth.terminal = self
             self.berths.put(berth)
         super().__init__(env=env, *args, **kwargs)
-        self.port.terminals.append(self)
+        self.port.terminals[self.name] = self
         self.queue = pd.DataFrame(columns=["Vessel_L","Vessel_B","Vessel_T","Berth","Waiting_start_time","Waiting_stop_time","Arrival_time_at_berth"])
 
 
