@@ -12,7 +12,7 @@ import ast
 from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to_edge_path
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.port.mixins.rules import RuleEngine, And, Or, Compare, AnyOf, TrafficRules
+from opentnsim.port.mixins.rules import RuleEngine, TrafficRules
 pd.options.mode.chained_assignment = None
 
 
@@ -29,7 +29,7 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
     first_index = 0
     df = pd.DataFrame(vessel.logbook)
     corrected_df = pd.DataFrame()
-    for index, route_sailed in enumerate(vessel.routes_sailed):
+    for _, route_sailed in enumerate(vessel.routes_sailed):
         selected_route = [node for node in route_sailed if node in route]
         route_geometry, _ = get_trajectory(vessel.env.graph,route[0],route[-1])
         route_geometry_m = transform_geometry(route_geometry, epsg_out = epsg_out)
@@ -43,7 +43,6 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
         gdf_route = gpd.GeoDataFrame(df_route,geometry='Geometry',crs="EPSG:4326")
         gdf_route = gdf_route.to_crs(epsg_out)
         df_route['Value'] = gdf_route['Geometry'].apply(lambda x: route_geometry_m.project(x))
-        maximum_sailed_distance = df_route.Value.max()
         first_index = last_index + 1
         corrected_df = pd.concat([corrected_df, df_route])
     corrected_df = corrected_df.ffill()
@@ -53,7 +52,7 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
 def update_terminal_planning(vessel, delay=0.):
     #TODO: this probably does not work any longer
     vessel.terminal.replan_vessels_terminal_berths(vessel,delay)
-    for queued_vessel_id,vessel_info in vessel.terminal.queue.iterrows():
+    for queued_vessel_id, _ in vessel.terminal.queue.iterrows():
         queued_vessel = get_vessel_from_id(vessel.env, [queued_vessel_id])[0]
         if hasattr(queued_vessel,'waiting_event') and queued_vessel.waiting_event.is_alive:
             queued_vessel.waiting_event.interrupt()
@@ -135,9 +134,7 @@ def determine_new_route_for_vessel(vessel):
         destination = vessel.next_destination
         new_route = nx.dijkstra_path(vessel.env.graph,origin,destination)
     elif len(vessel.next_terminals):
-        next_terminal = vessel.next_terminals[-1]
         vessel.next_terminals = vessel.next_terminals[1:]
-        berth = vessel.request_terminal_access(vessel, origin)
     return new_route
 
 

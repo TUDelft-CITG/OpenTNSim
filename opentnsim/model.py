@@ -22,7 +22,7 @@ import networkx as nx
 
 
 # import core from self
-import opentnsim.core as core
+from opentnsim.core import Identifiable
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ class VesselGenerator:
             vessel.process = process
 
 
-class Simulation(core.Identifiable):
+class Simulation:
     """
     A class to generate vessels from a database
 

@@ -1,13 +1,12 @@
-from opentnsim.core import Movable, Identifiable, VesselProperties
-from opentnsim.waiting_area import IsWaitingArea
+from opentnsim.core import Movable, Identifiable, VesselProperties, HasResource, Log, Locatable
 from opentnsim.port.mixins.port import IsPortComponent
 from opentnsim.port.utils import determine_nearest_anchorage_area
+from opentnsim.graph.mixins import OnNode
 
 import simpy
-import pandas as pd
 import networkx as nx
 
-class PassesAnchorage(Movable, Identifiable, VesselProperties):
+class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
 
     def __init__(self,*args,**kwargs):
         self.anchorage_areas = []
@@ -54,16 +53,15 @@ class PassesAnchorage(Movable, Identifiable, VesselProperties):
         #raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
 
-class IsAnchorage(IsWaitingArea, IsPortComponent):
+class IsAnchorage(IsPortComponent, OnNode, HasResource, Log, Identifiable, Locatable):
     """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
             creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
 
-    def __init__(self, depth, *args, **kwargs):
+    def __init__(self, depth, capacity, *args,**kwargs):
         self.depth = depth
-        super().__init__(*args, **kwargs)
+        super().__init__(nr_resources=capacity, *args, **kwargs)
 
-        self.register_waiting_area()
-
+        self.env.graph.nodes[self.node]['Waiting Area'] = self
         self.port.anchorage_areas[self.name] = self
         if 'Anchorage' not in self.env.graph.nodes[self.node].keys():
             self.env.graph.nodes[self.node]['Anchorage'] = []
@@ -75,3 +73,4 @@ class IsAnchorage(IsWaitingArea, IsPortComponent):
 
     def release_anchorage_area_access(self, vessel):
         yield self.resource.release(vessel.anchorage_area_request)
+        

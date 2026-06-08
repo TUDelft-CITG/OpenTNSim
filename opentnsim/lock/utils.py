@@ -1237,7 +1237,7 @@ def _get_directional_edge(lock_chamber, direction):
     return edge
 
 
-def _get_vessel_sailing_speed_in_lock(lock_chamber, vessel):
+def _get_vessel_sailing_speed_in_lock(lock_chamber, vessel, direction):
     """
     Calculates the average speed in the lock when entering
 
@@ -1258,12 +1258,12 @@ def _get_vessel_sailing_speed_in_lock(lock_chamber, vessel):
     """
     # TODO: sailing_in_speed_B zou A of B moeten zijn. Checken of deze eigenschap vaker voorkomt.
     speed = lock_chamber.sailing_in_speed_B
-    if vessel.bound == 'inbound':
+    if not direction:
         speed = lock_chamber.sailing_in_speed_A
 
     return speed
 
-def _get_vessel_sailing_speed_out_lock(lock_chamber, vessel):
+def _get_vessel_sailing_speed_out_lock(lock_chamber, vessel, direction):
     """
     Calculates the average speed to in the lock when leaving
 
@@ -1283,7 +1283,7 @@ def _get_vessel_sailing_speed_out_lock(lock_chamber, vessel):
 
     """
     speed = lock_chamber.sailing_out_speed_A
-    if vessel.bound == 'inbound':
+    if not direction:
         speed = lock_chamber.sailing_out_speed_B
 
     return speed

@@ -329,16 +329,16 @@ def calculate_lock_operation_start_information(lock_chamber, vessel, operation_i
 
 def calculate_lock_departure_information(lock_chamber, vessel, operation_index, direction, levelling_information):
     is_last_vessel = _check_if_vessel_is_last_vessel(lock_chamber, vessel, operation_index)
-    time_lock_departure_start = calculate_vessel_departure_start_time(lock_chamber, vessel, operation_index, levelling_information["time_gate_opening_stop"])
+    time_lock_departure_start = calculate_vessel_departure_start_time(lock_chamber, vessel, operation_index, direction, levelling_information["time_gate_opening_stop"])
 
     correction = None
     if is_last_vessel:
         correction = time_lock_departure_start
-    time_lock_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, levelling_information["time_gate_opening_stop"], correction)
+    time_lock_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, direction, levelling_information["time_gate_opening_stop"], correction)
 
     if is_last_vessel:
         time_lock_operation_stop = calculate_lock_operation_stop_time(lock_chamber, vessel, operation_index, direction, levelling_information["time_gate_opening_stop"])
-        time_lock_gate_closing_start = calculate_lock_gate_closing_time(lock_chamber, vessel, operation_index, levelling_information["time_gate_opening_stop"])
+        time_lock_gate_closing_start = calculate_lock_gate_closing_time(lock_chamber, vessel, operation_index, direction, levelling_information["time_gate_opening_stop"])
     else:
         time_lock_operation_stop = time_lock_departure_stop
         time_lock_gate_closing_start = time_lock_departure_stop
@@ -601,7 +601,7 @@ def calculate_sailing_time_to_pass_lock(lock_chamber, vessel):
     return pd.Timedelta(seconds=sailing_to_lock_chamber_time)
 
 
-def calculate_sailing_time_in_lock(lock_chamber, vessel, operation_index):
+def calculate_sailing_time_in_lock(lock_chamber, vessel, operation_index, direction):
     """
     Calculates the time duration that a vessel needs to enter the lock until laying still
 
@@ -629,7 +629,7 @@ def calculate_sailing_time_in_lock(lock_chamber, vessel, operation_index):
 
 
     # determine the sailing speed of the vessel in the lock
-    sailing_speed_into_lock = _get_vessel_sailing_speed_in_lock(lock_chamber, vessel)
+    sailing_speed_into_lock = _get_vessel_sailing_speed_in_lock(lock_chamber, vessel, direction)
 
     # calculate the time required to complete the process of sailing from the lock gate to laying still in the lock chamber on the assigned longitudinal coordinate (x)
     sailing_time_into_lock = pd.Timedelta(seconds=sailing_distance_from_lock_gate / sailing_speed_into_lock)
@@ -861,7 +861,7 @@ def calculate_vessel_entry_stop_time(lock_chamber, vessel, operation_index, dire
     vessel_entry_start_time = calculate_vessel_entry_duration(lock_chamber, vessel, direction)
 
     # determine the time duration of the vessel in the lock
-    sailing_time_in_lock = calculate_sailing_time_in_lock(lock_chamber, vessel, operation_index)
+    sailing_time_in_lock = calculate_sailing_time_in_lock(lock_chamber, vessel, operation_index, direction)
 
     # calculate the moment in time that the vessel stops entering the lock
     vessel_entry_stop_time = vessel_entry_start_time + sailing_time_in_lock
@@ -993,7 +993,7 @@ def calculate_lock_operation_times(lock_chamber, operation_index, start_time, ve
     return levelling_information
 
 
-def calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index, operation_stop_time):
+def calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index, direction, operation_stop_time):
     """
     Calculates the delay for a vessel to start leaving the lock
 
@@ -1027,7 +1027,7 @@ def calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index
         sailing_out_stop_v0 = vessel_planning.loc[index_v0, 'time_lock_departure_stop']
         sailing_out_stop_v1 = vessel_planning.loc[index_v1, 'time_lock_departure_stop']
         if vessel_1.id == vessel.id:
-            sailing_time_out_of_lock = calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_index)
+            sailing_time_out_of_lock = calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_index, direction)
             sailing_out_stop_v1 = operation_stop_time + sailing_time_out_of_lock
 
         sailing_out_gap = sailing_out_stop_v1 - sailing_out_stop_v0
@@ -1036,7 +1036,7 @@ def calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index
     return delay_to_departure
 
 
-def calculate_vessel_departure_start_time(lock_chamber, vessel, operation_index, operation_stop_time):
+def calculate_vessel_departure_start_time(lock_chamber, vessel, operation_index, direction, operation_stop_time):
     """
     Calculates the moment in time that a vessel can start leaving the lock
 
@@ -1054,12 +1054,12 @@ def calculate_vessel_departure_start_time(lock_chamber, vessel, operation_index,
     departure_start_time : pd.Timestamp
         the time that a vessel's departure process out of the lock can start
     """
-    delay_to_departure = calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index, operation_stop_time)
+    delay_to_departure = calculate_vessel_departure_start_delay(lock_chamber, vessel, operation_index, direction, operation_stop_time)
     departure_start_time = operation_stop_time + delay_to_departure
     return departure_start_time
 
 
-def calculate_lock_departure_start_time(lock_chamber, vessel, operation_index, operation_stop_time):
+def calculate_lock_departure_start_time(lock_chamber, vessel, operation_index, direction, operation_stop_time):
     """
     Calculates the moment in time the departure can start of a lock operation
 
@@ -1080,11 +1080,11 @@ def calculate_lock_departure_start_time(lock_chamber, vessel, operation_index, o
         the time that a lock operation's departure process can start
     """
     first_vessel = _get_first_vessel_of_lock_operation(lock_chamber, vessel, operation_index)
-    time_departure_start = calculate_vessel_departure_start_time(lock_chamber, first_vessel, operation_index, operation_stop_time)
+    time_departure_start = calculate_vessel_departure_start_time(lock_chamber, first_vessel, operation_index, direction, operation_stop_time)
     return time_departure_start
 
 
-def calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_index):
+def calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_index, direction):
     """
     Calculates the sailing time for a vessel to sail from its position in the lock to the lock gate that have to be passed to sail out of the lock
 
@@ -1103,14 +1103,14 @@ def calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_in
     vessels = _get_vessels_from_planned_operation(lock_chamber, operation_index=operation_index,)
     vessel_index = vessels.index(vessel)
     distance_to_lock = np.sum([vessel.L for vessel in vessels[:vessel_index]]) + 0.5 * vessel.L
-    vessel_speed = _get_vessel_sailing_speed_out_lock(lock_chamber, vessel)
+    vessel_speed = _get_vessel_sailing_speed_out_lock(lock_chamber, vessel, direction)
     sailing_out_time = pd.Timedelta(seconds=0.)
     if vessel_speed:
         sailing_out_time = pd.Timedelta(seconds=distance_to_lock / vessel_speed)
     return sailing_out_time
 
 
-def calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, operation_stop_time, time_departure_start = None):
+def calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, direction, operation_stop_time, time_departure_start = None):
     """
     Calculates the moment in time the departure process of a vessel stops
 
@@ -1133,13 +1133,13 @@ def calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, 
     if vessel is None:
         return operation_stop_time
     if time_departure_start is None:
-        time_departure_start = calculate_vessel_departure_start_time(lock_chamber, vessel, operation_index, operation_stop_time)
-    sailing_out_time = calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_index)
+        time_departure_start = calculate_vessel_departure_start_time(lock_chamber, vessel, operation_index, direction, operation_stop_time)
+    sailing_out_time = calculate_vessel_sailing_time_out_of_lock(lock_chamber, vessel, operation_index, direction)
     time_departure_stop = time_departure_start + sailing_out_time
     return time_departure_stop
 
 
-def calculate_lock_departure_stop_time(lock_chamber, vessel, operation_index, operation_stop_time):
+def calculate_lock_departure_stop_time(lock_chamber, vessel, operation_index, direction, operation_stop_time):
     """
     Calculates the moment in time the departure process of a lock operation stops
 
@@ -1162,7 +1162,7 @@ def calculate_lock_departure_stop_time(lock_chamber, vessel, operation_index, op
     if vessel is None:
         return operation_stop_time
     last_vessel = _get_last_vessel_of_lock_operation(lock_chamber, vessel, operation_index)
-    time_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, last_vessel, operation_index, operation_stop_time)
+    time_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, last_vessel, operation_index, direction, operation_stop_time)
     return time_departure_stop
 
 
@@ -1186,7 +1186,7 @@ def calculate_vessel_passing_stop_time(lock_chamber, vessel, operation_index, di
     time_departure_stop : pd.Timestamp
         the moment in time the vessel has reached the approach point at the other side of the lock
     """
-    time_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, operation_stop_time)
+    time_departure_stop = calculate_vessel_departure_stop_time(lock_chamber, vessel, operation_index, direction, operation_stop_time)
     vessel_speed = _get_vessel_sailing_out_speed(lock_chamber, vessel, direction)
 
     sailing_distance_from_entry = lock_chamber.sailing_distance_to_crossing_point_B
@@ -1225,7 +1225,7 @@ def calculate_lock_operation_stop_time(lock_chamber, vessel, operation_index, di
     return time_operation_stop
 
 
-def calculate_lock_gate_closing_time(lock_chamber, vessel, operation_index, operation_stop_time):
+def calculate_lock_gate_closing_time(lock_chamber, vessel, operation_index, direction, operation_stop_time):
     """
     Calculates the moment in time a new lock operation can start
 
@@ -1245,7 +1245,7 @@ def calculate_lock_gate_closing_time(lock_chamber, vessel, operation_index, oper
     time_operation_stop : pd.Timestamp
         the moment in time a new lock operation can start
     """
-    lock_gate_closing_time = calculate_lock_departure_stop_time(lock_chamber, vessel, operation_index, operation_stop_time)
+    lock_gate_closing_time = calculate_lock_departure_stop_time(lock_chamber, vessel, operation_index, direction, operation_stop_time)
     lock_gate_closing_time += lock_chamber.minimum_delay_to_close_gate
     return lock_gate_closing_time
 

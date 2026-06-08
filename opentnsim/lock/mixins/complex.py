@@ -219,7 +219,7 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
                                                               distance_to_position_in_lock, crs_m=lock_chamber.crs_m)
 
         # let vessel sail to the assigned location in the lock chamber
-        vessel_speed = _get_vessel_sailing_speed_in_lock(lock_chamber, self)
+        vessel_speed = _get_vessel_sailing_speed_in_lock(lock_chamber, self, direction)
         remaining_sailing_time = self.distance_position_from_first_lock_gate / vessel_speed
         start_sailing = self.env.now
         while remaining_sailing_time > 0:
@@ -244,7 +244,7 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
         distance_in_lock_from_position = lock_chamber.lock_length - self.distance_position_from_first_lock_gate
 
         # determine the process of sailing to the lock gate that have to be passed (distance to these gate divided by the sailing out speed of the vessel)
-        vessel_speed = _get_vessel_sailing_speed_out_lock(lock_chamber, self)
+        vessel_speed = _get_vessel_sailing_speed_out_lock(lock_chamber, self, direction)
         sailing_out_time = distance_in_lock_from_position / vessel_speed
         sailing_out_start = self.env.now
         while sailing_out_time:

@@ -11,7 +11,7 @@ import networkx as nx
 import simpy
 
 
-class HasTerminal(Movable, Identifiable, VesselProperties):
+class TerminalHandable(Movable, Identifiable, VesselProperties):
     def __init__(self,
                  terminal,
                  berthing_time,

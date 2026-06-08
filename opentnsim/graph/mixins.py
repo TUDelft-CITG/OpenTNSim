@@ -16,6 +16,7 @@ import io
 # spatial libraries
 import pyproj
 import requests
+import requests_cache
 import shapely.geometry
 from shapely.geometry import LineString
 from shapely.ops import transform
@@ -34,6 +35,21 @@ logging.basicConfig(level=logging.INFO)
 
 # Determine the wgs84 geoid
 wgs84 = pyproj.Geod(ellps="WGS84")
+
+# inject caching
+requests_cache.install_cache("fis_cache")
+
+fis_urls = {
+    "0.2": "https://zenodo.org/record/4578289/files/network_digital_twin_v0.2.pickle",
+    "0.3": "https://zenodo.org/record/6673604/files/network_digital_twin_v0.3.pickle",
+}
+euris_urls = {
+    "0.1": "https://zenodo.org/records/17298014/files/export-graph-v0.1.0.pickle"
+}
+networks = {
+    "fis": fis_urls,
+    "euris": euris_urls,
+}
 
 
 class OnNode(SimpyObject):
@@ -323,5 +339,35 @@ class FIS:
             with open(fname, "wb") as pkl_file:
                 pickle.dump(graph, pkl_file)
                 pkl_file.close()
+
+        return graph
+    
+
+    def load_network(network="fis", version="0.3"):
+        """load the pickle version of the fairway information system network
+
+        Parameters
+        ----------
+        network : str
+            The network to load. Choose "fis" or "euris". Default is "fis".
+        version : str
+            The version of the network to load. Choose 0.2 or 0.3. Default is "0.3".
+        """
+        urls = networks[network]
+        url = urls[version]
+        resp = requests.get(url)
+        # convert the response to a file
+        f = io.BytesIO(resp.content)
+
+        # read the graph
+        graph = pickle.load(f)
+
+        # convert the edges and nodes geometry to shapely objects
+        for e in graph.edges:
+            edge = graph.edges[e]
+            edge["geometry"] = shapely.geometry.shape(edge["geometry"])
+        for n in graph.nodes:
+            node = graph.nodes[n]
+            node["geometry"] = shapely.geometry.shape(node["geometry"])
 
         return graph

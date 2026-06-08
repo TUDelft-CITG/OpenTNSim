@@ -26,7 +26,7 @@ import simpy
 import datetime
 
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
-import opentnsim.strategy
+import opentnsim.energy.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
@@ -671,7 +671,7 @@ class Movable(Locatable, Routable, Log):
         edge_width = self._get_general_width(edge)
         edge_width = edge_width if edge_width is not None else 150  # default width if not set
 
-        upperbound = opentnsim.strategy.get_upperbound_for_power2v_optim(self, width=edge_width, depth=depth, margin=0)
+        upperbound = opentnsim.energy.strategy.get_upperbound_for_power2v_optim(self, width=edge_width, depth=depth, margin=0)
         # Here the upperbound is used to estimate the actual velocity
         power_used = min(self.P_tot_given, upperbound)
         return self.power2v(self, edge, power_used)

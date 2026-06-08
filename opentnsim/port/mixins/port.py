@@ -147,9 +147,9 @@ class IsPortAuthority:
             )
 
             total_waiting_time = calculate_total_waiting_time(waiting_events)
-
+            total_foreseen_waiting_time += total_waiting_time
             waterway.add_vessel_to_passing_vessels(
-                vessel, origin, delay=total_waiting_time
+                vessel, origin, delay=total_foreseen_waiting_time
             )
             
             port_availability_df, waiting_events, total_waiting_time = (
@@ -165,7 +165,6 @@ class IsPortAuthority:
             port_availability_df_per_waterway[waterway_name] = port_availability_df
             waiting_events_per_waterway[waterway_name] = waiting_events
             total_waiting_time_per_waterway[waterway_name] = total_waiting_time
-            total_foreseen_waiting_time += total_waiting_time
         return (
             port_availability_df_per_waterway,
             waiting_events_per_waterway,
