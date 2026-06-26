@@ -265,29 +265,37 @@ class IsLockMaster:
         vessel_information = calculate_vessel_approach_information(self, vessel, direction)
         _update_lock_vessel_planning(self, vessel_planning_index, vessel_information)
 
-        if new_operation:
-            new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index + 1, direction)
-            _, empty_lock_operation_to_be_requested, lock_operation_to_be_executed = new_lockage_info
-            if empty_lock_operation_to_be_requested:
-                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1,
-                                                                                   1 - direction)
-                if lock_operation_to_be_executed:
-                    self.request_empty_levelling(lock_chamber, direction)
-
         # information of lock chamber
         lock_operation_information = calculate_lock_operation_information_and_update_planning(lock_chamber,
                                                                                               vessel,
                                                                                               operation_index,
                                                                                               direction)
 
+
         # update the next lock operations if the previous lock operation caused a delay
         _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                         lock_operation_information)
 
+        if new_operation:
+            new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index + 1, direction)
+            _, empty_lock_operation_to_be_requested, lock_operation_to_be_executed = new_lockage_info
+            if empty_lock_operation_to_be_requested:
+                print('hiii', vessel.name)
+                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1,
+                                                                                   1 - direction)
+                lock_chamber.lock_complex.operation_planning.sort_values('time_lock_operation_start', inplace=True)
+                if lock_operation_to_be_executed:
+                    node_of_approach, _ = _get_lock_operation_to_and_from_node(lock_chamber, direction)
+                    empty_levelling_process = lock_chamber.convert_chamber(new_level=node_of_approach, direction=1 - direction)
+                    self.env.process(empty_levelling_process)
+
+        if lock_chamber.closing_gate_in_between_operations:
+            lock_chamber.prepare_lock_operation(operation_index, direction, vessel)
+
         if not route_goes_through_lock:
             vessel.has_registered = True
             raise simpy.exceptions.Interrupt('Route of vessel has changed.')
-        
+
         return operation_index
 
 
@@ -351,11 +359,4 @@ class IsLockMaster:
         vessel.process.interrupt()
         vessel.gate_open_request.interrupt(str(delay))
         yield from []
-
-
-    def request_empty_levelling(self, lock_chamber, direction):
-        # TODO: check if this can be done differently
-        node_of_approach, _ = _get_lock_operation_to_and_from_node(lock_chamber, direction)
-        empty_levelling_process = lock_chamber.convert_chamber(new_level=node_of_approach, direction=1 - direction)
-        self.env.process(empty_levelling_process)
 

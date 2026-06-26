@@ -54,7 +54,6 @@ def calculate_z(
     start_node,
     end_node,
     node_open,
-    epoch,
 ):
     # set default time and water level difference series
     z = np.zeros_like(t)
@@ -63,14 +62,10 @@ def calculate_z(
     t_start = time_to_numpy(t_start)
 
     hydromanager = HydrodynamicDataManager()
+    
     # determine the actual water levels
-    time_index = hydromanager._get_time_index_of_hydrodynamic_data(t_start)
-    t_simulation_start = np.datetime64(epoch)
-    H_A = hydromanager._get_hydrodynamic_data_series(t_simulation_start, start_node, "Water level")
-    H_B = hydromanager._get_hydrodynamic_data_series(t_simulation_start, end_node, "Water level")
-    H_A_init = H_A[time_index]
-    H_B_init = H_B[time_index]
-
+    H_A_init = hydromanager._get_interpolated_hydrodynamic_series(t_start, start_node, "Water level")[0]
+    H_B_init = hydromanager._get_interpolated_hydrodynamic_series(t_start, end_node, "Water level")[0]
     if wlev_init is None:
         operation_planning_lock = operation_planning[operation_planning.lock_chamber == lock_chamber.name]
         last_operations = operation_planning_lock[operation_planning_lock.operation_index < operation_index]
@@ -91,8 +86,7 @@ def calculate_z(
         z[0:] = H_B_init - wlev_init
     else:
         z[0:] = H_A_init - wlev_init
-
-    return z, H_A, H_B
+    return z, wlev_init
 
 
 def levelling_time_equation(
@@ -107,8 +101,9 @@ def levelling_time_equation(
     dt,
     direction,
     water_level_difference_limit_to_open_gate,
-    H_A,
-    H_B,
+    lock_start_node,
+    lock_end_node,
+    wlev_init,
 ):
     """Calculates the levelling time of a lock operation based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
     This function is called by get_levelling_time()
@@ -129,32 +124,35 @@ def levelling_time_equation(
     A_s = np.linspace(0, opening_area, int(T1 / float(dt)))  # sluice opening area over time when opening [m^2] (time-dependent)
     A_s = np.append(A_s, [opening_area] * (len(z) - len(A_s)))  # sluice opening over full levelling process [m^2] (time-dependent)
     hydromanager = HydrodynamicDataManager()
-    H_time = hydromanager.hydrodynamic_data['TIME'].values.astype('datetime64[s]').astype(float)  # time series of the hydrodynamic data [s]
+    interp_times = [t_start + pd.Timedelta(seconds=dt) for dt in t]
+    H_A = hydromanager._get_interpolated_hydrodynamic_series(interp_times,lock_start_node,'Water level')
+    H_B = hydromanager._get_interpolated_hydrodynamic_series(interp_times,lock_end_node,'Water level')
+    H_A_init = H_A[0]
+    H_B_init = H_B[0]
+
+    if not direction:
+        factor = 1
+        if wlev_init > H_B_init:
+            factor = -1
+    else:
+        factor = 1
+        if wlev_init > H_A_init:
+            factor = -1
+
     # time-integration by (sefl-coded) Euler's method TODO Checken of we een standaard solver kunnen gebruiken. En of we dit algoritme los kunnen maken van de klasse.
-    t0 = t_start.astype('datetime64[s]').astype(float)
-    wlev_change = 0
+    z = abs(z)
+    
     for i in range(len(t) - 1):
-        interp_time_i = t0 + i*dt
-        interp_time_ii = t0 + (i + 1)*dt
-        H_Ai = np.interp(interp_time_i, H_time, H_A)  # water level at side A at time = i
-        H_Aii = np.interp(interp_time_ii, H_time, H_A)   # water level at side A at time = i + 1
-        H_Bi = np.interp(interp_time_i, H_time, H_B)   # water level at side B at time = i
-        H_Bii = np.interp(interp_time_ii, H_time, H_B)   # water level at side B at time = i + 1
-        deltaH_A = H_Aii - H_Ai  # water level difference at side A between time = i and time = i + 1
-        deltaH_B = H_Bii - H_Bi  # water level difference at side B between time = i and time = i + 1
+        deltaH_A = H_A[i + 1] - H_A[i]  # water level difference at side A between time = i and time = i + 1
+        deltaH_B = H_B[i + 1] - H_B[i]  # water level difference at side B between time = i and time = i + 1
+        
         # determine the contribution to the change in water level difference outside of the lock (i.e., due to tides) in the water level difference at time = i + 1
         if not direction:
-            to_wlev_change = deltaH_B
+            to_wlev_change = deltaH_B*factor
         else:
-            to_wlev_change = deltaH_A
+            to_wlev_change = deltaH_A*factor
 
-        # calculate change in water level difference between time = i and time = i + 1
-        z_i = abs(z[i])  # absolute water level difference at time = i
-
-        dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z_i])) / A_ch  # change in water level difference over time [m/s]
-        if z[i] < 0:  # correct if water level difference is negative
-            to_wlev_change = -to_wlev_change
-            dz_dt = -dz_dt
+        dz_dt = -m * A_s[i] * np.sqrt(2 * g * np.max([0, z[i]])) / A_ch  # change in water level difference over time [m/s]
         dz = dz_dt * float(dt)
 
         # calculate the new water level difference at time = i + 1
@@ -171,6 +169,8 @@ def levelling_time_equation(
         levelling_time = t[np.argwhere(np.isnan(z))[0]][0]
     else:
         levelling_time = t[-1]
+
+    z = factor*z
     return levelling_time, t, z
 
 
@@ -207,13 +207,20 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
     t = np.arange(0, t_final + float(dt), float(dt))
     t_start = time_to_numpy(t_start)
     # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
-    # if there is no hydrodynamic data included in the run, use the constant levelling time included in the lock object
     if not hasattr(lock_chamber.env,'hydrodynamics'):
         levelling_time = lock_chamber.levelling_time
         z = np.zeros(len(t))
         return levelling_time, t, z
 
-    z, H_A, H_B = calculate_z(
+    node_open=lock_chamber.gate_open_at_node,
+    if prediction:
+        node_open = lock_chamber.start_node
+        if direction:
+            node_open = lock_chamber.end_node
+
+    import time as timepy
+
+    z, wlev_init = calculate_z(
         lock_chamber,
         t=t,
         t_start=t_start,
@@ -223,8 +230,7 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
         operation_planning=lock_chamber.lock_complex.operation_planning,
         start_node=lock_chamber.start_node,
         end_node=lock_chamber.end_node,
-        node_open=lock_chamber.gate_open_at_node,
-        epoch=lock_chamber.env.epoch,
+        node_open=node_open,
     )
 
     # if a function has been included to predict the levelling time based on the water level difference: calculate the levelling time based on the initial water level difference
@@ -233,6 +239,8 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
         return levelling_time, t, z
 
     # if no function has been included: compute the levelling time based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
+    hydromanager = HydrodynamicDataManager()
+
     levelling_time, t, z = levelling_time_equation(
         t=t,
         z=z,
@@ -245,14 +253,16 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
         dt=dt,
         direction=direction,
         water_level_difference_limit_to_open_gate=lock_chamber.water_level_difference_limit_to_open_gate,
-        H_A=H_A,
-        H_B=H_B,
+        lock_start_node=lock_chamber.start_node,
+        lock_end_node=lock_chamber.end_node,
+        wlev_init=wlev_init,
     )
 
     # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber
     time_series = lock_chamber.time
     t_start = t_start.astype('datetime64[s]')
     t_index_lock = np.abs(time_series - t_start).argmin()
+
     if not prediction:
         hydromanager = HydrodynamicDataManager()
         node = lock_chamber.edge[0]
@@ -266,19 +276,21 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
 
         t_final = t_start + np.timedelta64(int(levelling_time),'s')
         t_index_final_lock = np.abs(time_series - t_final).argmin()
-        t_index_final_harbour = hydromanager._get_time_index_of_hydrodynamic_data(t_final)
-        time_series = hydromanager.hydrodynamic_data.TIME.values
-        interp_time = lock_chamber.time[t_index_final_lock:]
+        interp_time = time_series[t_index_final_lock:]
+        H_A = hydromanager.hydrodynamic_data['Water level'].sel({'STATION':lock_chamber.start_node}).values
+        H_B = hydromanager.hydrodynamic_data['Water level'].sel({'STATION':lock_chamber.end_node}).values
+        H_time = hydromanager.hydrodynamic_data['TIME'].values.astype('datetime64[ns]').astype('int64')
+
         if not direction:
             lock_chamber.water_level[t_index_final_lock:] = np.interp(
                 interp_time.astype('datetime64[ns]').astype('int64'),
-                time_series[t_index_final_harbour:].astype('datetime64[ns]').astype('int64'),
-                H_B[t_index_final_harbour:])
+                H_time,
+                H_B)
         else:
             lock_chamber.water_level[t_index_final_lock:] = np.interp(
                 interp_time.astype('datetime64[ns]').astype('int64'),
-                time_series[t_index_final_harbour:].astype('datetime64[ns]').astype('int64'),
-                H_A[t_index_final_harbour:])
+                H_time,
+                H_A)
 
     return levelling_time, t, z
 
@@ -897,7 +909,8 @@ def calculate_lock_entry_stop_time(lock_chamber, vessel, operation_index, direct
     return lock_entry_stop_time
 
 
-def calculate_lock_operation_times(lock_chamber, operation_index, start_time, vessel = None, direction=None):
+def calculate_lock_operation_times(
+        lock_chamber, operation_index, start_time, vessel = None, direction=None, wlev_init = None, new_operation = False):
     """
     Calculates the moments in time of the start and stop of the operation steps of the lock: (1) gate closing, (2) levelling, (3) gate opening
 
@@ -943,8 +956,7 @@ def calculate_lock_operation_times(lock_chamber, operation_index, start_time, ve
     except:
         vessel_goes_with_previous_operation = False
 
-    if vessel_goes_with_previous_operation:
-        
+    if vessel_goes_with_previous_operation and not new_operation:
         time_gate_closing_start = operation_row["time_gate_closing_start"]
         time_gate_closing_stop = operation_row["time_gate_closing_stop"]
         time_levelling_start = operation_row["time_levelling_start"]
@@ -955,10 +967,6 @@ def calculate_lock_operation_times(lock_chamber, operation_index, start_time, ve
     else:
         # set default time gate closing start as start time
         time_gate_closing_start = start_time
-
-        # overwrite the time gate closing start if there is a rule that the gate can close before a vessel is laying still and there are vessels in the lock
-        # if lock_chamber.close_gate_before_vessel_is_laying_still and vessel is not None:
-        #     time_gate_closing_start = last_entering_time + lock_chamber.minimum_delay_to_close_gate
 
         # determine the new closing stop times of the gate and the time that the levelling can hence start
         time_gate_closing_stop = time_gate_closing_start + pd.Timedelta(seconds=lock_chamber.gate_closing_time)
@@ -975,7 +983,14 @@ def calculate_lock_operation_times(lock_chamber, operation_index, start_time, ve
                 time_levelling_start = time_levelling_start
 
         # determine levelling stop time and gate opening start and stop times
-        time_levelling_stop,_,_ = calculate_levelling_time(lock_chamber, t_start=time_levelling_start, operation_index=operation_index, direction=direction, prediction=True)
+        time_levelling_stop,_,_ = calculate_levelling_time(
+            lock_chamber, 
+            t_start=time_levelling_start, 
+            operation_index=operation_index,
+            direction = direction, 
+            wlev_init = wlev_init,
+            prediction=True)
+
         time_levelling_stop = time_levelling_start + pd.Timedelta(seconds=time_levelling_stop)
         time_gate_opening_start = time_levelling_stop
         time_gate_opening_stop = time_levelling_stop + pd.Timedelta(seconds=lock_chamber.gate_opening_time)
@@ -1357,10 +1372,11 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
         vessel_planning_info = vessel_planning.loc[vessel_planning_index]
         vessel_planning.loc[vessel_planning_index, 'operation_index'] = operation_index
     assigned_operation = _get_operation_info(lock_chamber, operation_index)
-    if assigned_operation.empty:
-        index = len(operation_planning)
-        operation_planning.loc[index, 'operation_index'] = operation_index
-        operation_planning.loc[index, 'lock_chamber'] = lock_chamber.name
+    index = len(operation_planning)
+    if not assigned_operation.empty:
+        index = assigned_operation.name
+    operation_planning.loc[index, 'operation_index'] = operation_index
+    operation_planning.loc[index, 'lock_chamber'] = lock_chamber.name
     lock_operation_information = _get_information_for_lock_operation(lock_chamber, operation_index, direction)
     if vessel is not None:
         lock_operation_information["capacity_L"] -= vessel.L
@@ -1396,6 +1412,7 @@ def calculate_lock_operation_information_and_update_planning(lock_chamber, vesse
                                                            start_time=arrival_information["time_lock_entry_stop"],
                                                            vessel=vessel,
                                                            direction=direction)
+
     if vessel is not None:
         _update_lock_vessel_planning(lock_chamber, vessel_planning_index, levelling_information)
 
@@ -1582,7 +1599,8 @@ def calculate_and_check_lock_dimensions(lock_chamber):
             )
 
 
-def calculate_time_to_open_gate(lock_chamber, operation_index, direction, gate_required_to_be_open):
+def calculate_time_to_open_gate(
+        lock_chamber, operation_index, direction, gate_required_to_be_open, wlev_init = None, new_operation = False):
     """
     Determines the time to finish the levelling process and the gate opening process
 
@@ -1601,23 +1619,17 @@ def calculate_time_to_open_gate(lock_chamber, operation_index, direction, gate_r
         the time to finish the levelling process and the gate opening process
     """
     operation_start_time = gate_required_to_be_open - pd.Timedelta(seconds=lock_chamber.gate_opening_time)
+
     levelling_information = calculate_lock_operation_times(
         lock_chamber,
         operation_index=operation_index,
         start_time=operation_start_time,
         direction=direction,
+        wlev_init = wlev_init,
+        new_operation = new_operation,
     )
 
     levelling_time = levelling_information["time_levelling_stop"] - levelling_information["time_levelling_start"]
-    wlev_before, wlev_after = levelling_information["wlev_A"], levelling_information["wlev_B"]
-
-    levelling_required = True
-    if abs(wlev_after - wlev_before) < 0.1:
-        levelling_required = False
-
-    if not levelling_required:
-        levelling_time = pd.Timedelta(seconds=0.0)
-
     operation_time = levelling_time + pd.Timedelta(seconds=lock_chamber.gate_opening_time)
     return operation_time
 

@@ -167,6 +167,10 @@ class HydrodynamicDataManager:
         interpolated_series : np.ndarray
             Interpolated values at target_times
         """
+        if not isinstance(target_times, np.ndarray):
+            if not isinstance(target_times, list):
+                target_times = [target_times]
+            target_times = np.array(target_times)
 
         if self.hydrodynamic_data is None:
             return np.array([])

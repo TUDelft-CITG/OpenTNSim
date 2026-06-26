@@ -46,7 +46,7 @@ def _get_lock_object_on_registration_node(graph, registration_node):
 
     Parameters
     ----------
-    _find_available_lock_operationultidigraph : nx.MultiDiGraph
+    multidigraph : nx.MultiDiGraph
         the graph of the simulation as MultiDiGraph-version (to allow for parallel locks between the same node pair)
     registration_node : str
         node name (that has to be in the graph) on which the vessel is currently starting to navigate an edge
@@ -134,7 +134,7 @@ def _get_vessels_from_planned_operation(lock_chamber, operation_index = None):
 
     operation_info = _get_operation_info(lock_chamber, operation_index)
 
-    if operation_info is None or getattr(operation_info, "empty", False):
+    if operation_info.empty:
         return []
 
     vessels = operation_info.get("vessels", None)
@@ -275,7 +275,8 @@ def _get_distance_to_lock(lock_chamber, direction):
 def _check_if_vessel_is_first_vessel(lock_chamber, vessel, operation_index):
     is_first_vessel = False
     if vessel is None:
-        return is_last_vessel
+        return is_first_vessel
+    
     first_vessel = _get_first_vessel_of_lock_operation(lock_chamber, vessel, operation_index)
 
     if vessel.id == first_vessel.id:
@@ -508,7 +509,7 @@ def _create_operational_hours(start_times,stop_times):
     return operational_hours
 
 
-def _get_water_levels_before_and_after_levelling(lock, levelling_start, levelling_stop, direction):
+def _get_water_levels_before_and_after_levelling(lock, levelling_start, levelling_stop, direction, wlev_init = None):
     """
     Determines the water level at both sides of the lock
 
@@ -533,11 +534,15 @@ def _get_water_levels_before_and_after_levelling(lock, levelling_start, levellin
     t_start = np.datetime64(levelling_start)
     t_stop = np.datetime64(levelling_stop)
     if not direction:
-        wlev_A = hydromanager._get_hydrodynamic_data_value(t_start, lock.start_node, "Water level")
+        wlev_A = wlev_init
+        if wlev_init is None:
+            wlev_A = hydromanager._get_hydrodynamic_data_value(t_start, lock.start_node, "Water level")
         wlev_B = hydromanager._get_hydrodynamic_data_value(t_stop, lock.end_node, "Water level")
     else:
         wlev_A = hydromanager._get_hydrodynamic_data_value(t_stop, lock.start_node, "Water level")
-        wlev_B = hydromanager._get_hydrodynamic_data_value(t_start, lock.end_node, "Water level")
+        wlev_B = wlev_init
+        if wlev_init is None:
+            wlev_B = hydromanager._get_hydrodynamic_data_value(t_start, lock.end_node, "Water level")
 
     return wlev_A, wlev_B
 
@@ -561,6 +566,7 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
     current_time = datetime.datetime.fromtimestamp(lock_chamber.env.now)
     empty_lock_operation_to_be_requested = False
     lock_operation_to_be_executed = False
+    display(previous_planned_operations)
     if not previous_planned_operations.empty:
         operations_yet_to_be_processed = previous_planned_operations[
         previous_planned_operations['time_lock_operation_stop'] > current_time
@@ -575,6 +581,11 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
         lock_operation_to_be_executed = True
         empty_lock_operation_to_be_requested = True
         operation_index += 1
+        if lock_chamber.closing_gate_in_between_operations:
+            lock_operation_to_be_executed = False
+            empty_lock_operation_to_be_requested = False
+            operation_index -= 1
+
     return operation_index, empty_lock_operation_to_be_requested, lock_operation_to_be_executed
 
 def _update_vessel_planning_for_delayed_arrival(lock_complex, vessel, delay):
@@ -710,7 +721,6 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
                 last_time_lock_operation_stop = last_operation.time_lock_operation_stop
                 time_lock_operation_start = (last_time_lock_operation_stop - current_time) + sailing_time_to_lock
                 if last_operation.direction == direction:
-                    time_lock_operation_start += pd.Timedelta(minutes=30)
                     operation_index += 1
                     empty_operation_required = True
             else:
@@ -718,7 +728,6 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
                 time_lock_operation_start = sailing_time_to_lock
                 if lock_chamber.gate_open_at_node != lock_edge[0]:
                     empty_operation_required = True
-                    time_lock_operation_start += pd.Timedelta(minutes=30)
                     operation_index += 1
 
         else:
@@ -1044,7 +1053,8 @@ def determine_if_gate_can_be_closed(lock_chamber, vessel, direction, operation_i
     return gate_can_be_closed
 
 
-def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel = None, first_in_lock=False, between_arrivals=False):
+def determine_if_gate_is_closed(
+        lock_chamber, operation_index, direction, vessel = None, first_in_lock=False, between_arrivals=False, new_operation = False):
     """
     Determines if the gate are closed
 
@@ -1071,15 +1081,17 @@ def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel
         the time duration required to perform the lock operation
     """
     from opentnsim.lock.calculations import calculate_time_to_open_gate
-    operation_planning = lock_chamber.lock_complex.operation_planning
     vessel_planning = lock_chamber.lock_complex.vessel_planning
     this_operation = _get_operation_info(lock_chamber, operation_index)
-    vessels = this_operation["vessels"]
-    vessel_index = 0
-    if vessel is not None:
-        vessel_index = vessels.index(vessel)
-    else:
-        first_in_lock = True
+    previous_operation = pd.Series()
+    first_in_lock = True
+    if not this_operation.empty:
+        vessels = this_operation["vessels"]
+        vessel_index = 0
+        if vessel is not None:
+            vessel_index = vessels.index(vessel)
+            if vessel_index != 0:
+                first_in_lock = False
 
     if between_arrivals and not lock_chamber.closing_gate_in_between_arrivals:
         return False, None, None
@@ -1087,27 +1099,17 @@ def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel
     if not between_arrivals and not lock_chamber.closing_gate_in_between_operations:
         return False, None, None
 
-    last_lockage_was_empty = False
-    if operation_index - 2 in operation_planning.index:
-
-        last_lockage_was_empty = len(operation_planning.loc[operation_index - 1, "vessels"]) == 0
-    if last_lockage_was_empty:
-        return False, None, None
-
-    if not first_in_lock and vessel_index:
+    if not first_in_lock:
         previous_vessel_id = this_operation["vessels"][vessel_index - 1].id
         previous_vessel_planning_index = vessel_planning[vessel_planning.id == previous_vessel_id].iloc[-1].name
-        last_time_gate_closed = vessel_planning.loc[previous_vessel_planning_index,
-                                                    "time_potential_lock_gate_closure_start"] + \
-                                pd.Timedelta(seconds=lock_chamber.gate_closing_time)
+        last_time_gate_closed = vessel_planning.loc[previous_vessel_planning_index, "time_potential_lock_gate_closure_start"] + pd.Timedelta(seconds=lock_chamber.gate_closing_time)
     elif operation_index == 0:
         last_time_gate_closed = datetime.datetime.fromtimestamp(lock_chamber.env.now)
     else:
         previous_operations = _get_previous_operations(lock_chamber, operation_index)
-        if previous_operations.empty:
+        if not previous_operations.empty:
             previous_operation = previous_operations.iloc[-1]
-            last_time_gate_closed = previous_operation.time_potential_lock_gate_closure_start + \
-                                    pd.Timedelta(seconds=lock_chamber.gate_closing_time)
+            last_time_gate_closed = previous_operation.time_potential_lock_gate_closure_start + pd.Timedelta(seconds=lock_chamber.gate_closing_time)
         elif not lock_chamber.closing_gate_in_between_operations:
             last_time_gate_closed = datetime.datetime.fromtimestamp(lock_chamber.env.now)
         else:
@@ -1119,14 +1121,42 @@ def determine_if_gate_is_closed(lock_chamber, operation_index, direction, vessel
         vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
         gate_required_to_be_open = vessel_planning.loc[vessel_planning_index, "time_potential_lock_gate_opening_stop"]
 
-    operation_time = calculate_time_to_open_gate(lock_chamber, operation_index, direction, gate_required_to_be_open)
+    last_direction = 1 if lock_chamber.gate_open_at_node_init == lock_chamber.start_node else 0
+    req_side = lock_chamber.start_node if not direction else lock_chamber.end_node
+    if not previous_operation.empty: 
+        last_direction = previous_operation.direction
+        req_side = lock_chamber.end_node
+        if not direction:
+            req_side = lock_chamber.start_node
+
+    wlev_diff = 0.
+    door_open_time = pd.Timedelta(seconds=lock_chamber.gate_opening_time)
+    if hasattr(lock_chamber, 'water_level'):
+        time_index = lock_chamber.time.searchsorted(np.datetime64(last_time_gate_closed, "ns"), side="right") - 1
+        wlev_init = lock_chamber.water_level[time_index]
+        hydromanager = HydrodynamicDataManager()
+        required_wlev = hydromanager._get_interpolated_hydrodynamic_series(gate_required_to_be_open - door_open_time, req_side, 'Water level')[0]
+        wlev_diff = abs(required_wlev - wlev_init)
+
+    operation_time = calculate_time_to_open_gate(lock_chamber, operation_index, 1 - direction, gate_required_to_be_open, wlev_init, new_operation = new_operation)
     gate_are_closed = False
     gates_are_closed1 = gate_required_to_be_open - operation_time > last_time_gate_closed
     gates_are_closed2 = gate_required_to_be_open - last_time_gate_closed  > lock_chamber.minimum_time_between_operations
     if gates_are_closed1 and gates_are_closed2:
         gate_are_closed = True
 
-    return gate_are_closed, gate_required_to_be_open, operation_time
+    levelling_required = False  
+    if gate_are_closed:
+        if wlev_diff > lock_chamber.water_level_difference_limit_to_open_gate:
+            levelling_required = True
+        elif first_in_lock and direction == last_direction: 
+            levelling_required = True
+        elif lock_chamber.gate_open_at_node != _get_directional_edge(lock_chamber, direction)[:2][0]:
+            levelling_required = True
+
+    if not levelling_required:
+        operation_time = door_open_time
+    return gate_are_closed, gate_required_to_be_open, operation_time, levelling_required
 
 
 def check_lock_complex_geometry(lock_complex):

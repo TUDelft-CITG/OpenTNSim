@@ -15,20 +15,28 @@ from opentnsim.lock.utils import _get_vessels_that_passed_the_lock_chamber
 import folium
 from IPython.display import display, HTML
 
-def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, time_axis = 'x', method='Matplotlib'):
+def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis = 'x', method='Matplotlib'):
     lock_df = pd.DataFrame(lock_chamber.logbook)
+    gate_A_df = pd.DataFrame(lock_chamber.gate_A.logbook)
+    gate_B_df = pd.DataFrame(lock_chamber.gate_B.logbook)
     for index, message_info in lock_df.iterrows():
         message_found = False
         if message_info.Message == "Lock gate opening stop" and index != 0:
             time_start = lock_df.loc[index - 1, "Timestamp"]
             time_stop = message_info.Timestamp
-            color = "darkgrey"
+            gate_A = gate_A_df[gate_A_df.Timestamp == time_stop]
+            color = "violet"
+            if gate_A.empty:
+                color = 'purple'      
             name = "Lock gate opening"
             message_found = True
         if message_info.Message == "Lock gate closing stop" and index != 0:
             time_start = lock_df.loc[index - 1, "Timestamp"]
             time_stop = message_info.Timestamp
-            color = "darkgrey"
+            gate_B = gate_B_df[gate_B_df.Timestamp == time_stop]
+            color = "purple"
+            if gate_B.empty:
+                color = 'violet'  
             name = "Lock gate closing"
             message_found = True
         if message_info.Message == "Lock levelling stop" and index != 0:
@@ -58,6 +66,110 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, time_axis = 'x', m
                           fillcolor=color, opacity=0.5,
                           layer="below", line_width=0,
                           name=name, row=ax[0], col=ax[1])
+    
+    for df in [gate_A_df, gate_B_df]:
+        if df.empty:
+            continue
+        df.loc[-1,:] = ['Start', ylims[0], df.loc[0,'Value'], df.loc[0,'Geometry']]
+        df.loc[len(df),:] = ['Stop', ylims[-1], df.loc[-1,'Value'], df.loc[-1,'Geometry']]
+        df.sort_index(inplace=True)
+    gate_A_df.rename(columns={'Value': 'Status Gate A'}, inplace = True)
+    gate_B_df.rename(columns={'Value': 'Status Gate B'}, inplace = True)
+
+    gates_df = pd.concat([gate_A_df,gate_B_df])
+    if not gates_df.empty:
+        gates_df.sort_values('Timestamp', inplace = True)
+        gates_df = gates_df.bfill().ffill()
+        gates_df = gates_df.reset_index(drop = True)
+        gates_df['Doors closed'] = (
+            (gates_df['Status Gate A'] == 0) &
+            (gates_df['Status Gate B'] == 0)
+        )
+        df = gates_df[['Timestamp','Doors closed']].copy()
+        group = (df['Doors closed'] != df['Doors closed'].shift()).cumsum()
+        events = (
+            df[df['Doors closed']]
+            .groupby(group[df['Doors closed']])
+            .agg(
+                start=('Timestamp', 'first'),
+                stop=('Timestamp', 'last')
+            )
+            .reset_index(drop=True)
+        )
+
+        for _, event in events.iterrows():
+            time_start = event.start
+            time_stop = event.stop
+            if method == 'Matplotlib':
+                if time_axis == 'y':
+                    ax.fill(extend, [time_start, time_stop, time_stop, time_start], color='darkgrey', zorder=-2)
+                else:
+                    ax.fill([time_start, time_stop, time_stop, time_start], extend, color='darkgrey', zorder=-2)
+            elif method == 'Plotly':
+                x_data = [time_start,time_stop]
+                y_data = extend
+                if time_axis == 'y':
+                    x_data = extend
+                    y_data = [time_start,time_stop]
+                fig.add_shape(type="rect",
+                            x0=x_data[0],
+                            x1=x_data[-1],
+                            y0=y_data[0],
+                            y1=y_data[-1],
+                            fillcolor='darkgrey', opacity=0.5,
+                            layer="below", line_width=0,
+                            name=name, row=ax[0], col=ax[1])
+
+        gate_A_df.rename(columns={'Status Gate A': 'Value'}, inplace = True)
+        gate_B_df.rename(columns={'Status Gate B': 'Value'}, inplace = True)
+        for index, df in enumerate([gate_A_df, gate_B_df]):  
+            if index:
+                index = -1
+            s = df['Value'].reset_index(drop=True)
+            events = []
+            i = 0
+            while i < len(s):
+                if s.iloc[i] == 0:
+                    start_zero = i
+
+                    while i + 1 < len(s) and s.iloc[i + 1] == 0:
+                        i += 1
+
+                    end_zero = i
+                    if end_zero > start_zero:
+
+                        start_event = max(0, start_zero - 1)
+                        end_event = min(len(s) - 1, end_zero + 1)
+
+                        events.append({
+                            'start': df.iloc[start_event]['Timestamp'],
+                            'end': df.iloc[end_event]['Timestamp']
+                        })
+                i += 1
+            events = pd.DataFrame(events)
+
+            for _, event in events.iterrows():
+                time_start = event.start
+                time_stop = event.end
+                if method == 'Matplotlib':
+                    if time_axis == 'y':
+                        ax.plot([extend[index],extend[index]], [time_start, time_stop], color='black', zorder=-1)
+                    else:
+                        ax.plot([time_start, time_stop], [extend[index],extend[index]], color='black', zorder=-1)
+                elif method == 'Plotly':
+                    x_data = [time_start,time_stop]
+                    y_data = [extend[index],extend[index]]
+                    if time_axis == 'y':
+                        x_data = [extend[index],extend[index]]
+                        y_data = [time_start,time_stop]
+                    fig.add_shape(type="line",
+                                x0=x_data[0],
+                                x1=x_data[-1],
+                                y0=y_data[0],
+                                y1=y_data[-1],
+                                line=dict(color='black'), layer="below",
+                                name=name, row=ax[0], col=ax[1])
+
 
 
 def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, offset_x=0.,
@@ -346,24 +458,25 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
                       name="Lock Geometry")
 
     # plot the lock phases
+    ylims = [ylimmin, ylimmax]
     if method == 'Matplotlib':
         if ncols > 1:
             for index, ax in enumerate(axes):
                 extend_x = lock_extend_x
                 if index:
                     extend_x = ax.get_xlim()
-                    add_locking_phases_to_plot(lock_chamber, fig, ax, extend_x, time_axis='y', method=method)
+                    add_locking_phases_to_plot(lock_chamber, fig, ax, extend_x, ylims, time_axis='y', method=method)
                 else:
-                    add_locking_phases_to_plot(lock_chamber, fig, ax, lock_extend_x, time_axis='y', method=method)
+                    add_locking_phases_to_plot(lock_chamber, fig, ax, lock_extend_x, ylims, time_axis='y', method=method)
         else:
-            add_locking_phases_to_plot(lock_chamber, fig, axes, lock_extend_x, time_axis='y', method=method)
+            add_locking_phases_to_plot(lock_chamber, fig, axes, lock_extend_x, ylims, time_axis='y', method=method)
     elif method == 'Plotly':
-        add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, time_axis='y', method=method)
+        add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, ylims, time_axis='y', method=method)
         if lock_chamber.has_water_level:
-            add_locking_phases_to_plot(lock_chamber, fig, col_wlev, extend_x_wlev, time_axis='y', method=method)
+            add_locking_phases_to_plot(lock_chamber, fig, col_wlev, extend_x_wlev, ylims,time_axis='y', method=method)
         if lock_chamber.has_salinity:
-            add_locking_phases_to_plot(lock_chamber, fig, col_sal, extend_x_sal, time_axis='y', method=method)
-            add_locking_phases_to_plot(lock_chamber, fig, col_sm, extend_x_sm, time_axis='y', method=method)
+            add_locking_phases_to_plot(lock_chamber, fig, col_sal, extend_x_sal, ylims, time_axis='y', method=method)
+            add_locking_phases_to_plot(lock_chamber, fig, col_sm, extend_x_sm, ylims, time_axis='y', method=method)
 
     # plot the approach points
     xlabel = "Distance from Lock Complex [m]"
