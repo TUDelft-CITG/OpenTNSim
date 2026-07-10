@@ -369,61 +369,76 @@ def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot 
     # Plot vertical tidal windows
     horizontal_tidal_window = None
     for window in horizontal_tidal_windows:
-        (horizontal_tidal_window,) = ax.fill(
-            [window[0], window[0], window[1], window[1]],
-            [-1.5, 1.5, 1.5, -1.5],
-            facecolor="firebrick",
-            alpha=0.25,
-            edgecolor="none",
-        )
+        try:
+            (horizontal_tidal_window,) = ax.fill(
+                [window[0], window[0], window[1], window[1]],
+                [-1.5, 1.5, 1.5, -1.5],
+                facecolor="firebrick",
+                alpha=0.25,
+                edgecolor="none",
+            )
+        except:
+            pass
 
     # Plot governing current velocity
     current_velocity = None
     for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
-        governing_current_velocity, _ = get_governing_current_velocity(vessel,station,time_start_index,time_end_index)
-        sailing_time, _ = get_sailing_time(vessel, route[: (route.index(node) + 1)]) + delay
-        horizontal_tidal_accessibility_time_correction = np.timedelta64(int(sailing_time), "s")
-        horizontal_tidal_accessibility_time = hydrodynamic_information.TIME.values[time_start_index:time_end_index]
-        horizontal_tidal_accessibility_time -= horizontal_tidal_accessibility_time_correction
-        (current_velocity,) = ax.plot(horizontal_tidal_accessibility_time, governing_current_velocity,
-                                      color="firebrick", linewidth=3,)
+        try:
+            governing_current_velocity, _ = get_governing_current_velocity(vessel,station,time_start_index,time_end_index)
+            sailing_time, _ = get_sailing_time(vessel, route[: (route.index(node) + 1)]) + delay
+            horizontal_tidal_accessibility_time_correction = np.timedelta64(int(sailing_time), "s")
+            horizontal_tidal_accessibility_time = hydrodynamic_information.TIME.values[time_start_index:time_end_index]
+            horizontal_tidal_accessibility_time -= horizontal_tidal_accessibility_time_correction
+            (current_velocity,) = ax.plot(horizontal_tidal_accessibility_time, governing_current_velocity,
+                                        color="firebrick", linewidth=3,)
+        except:
+            pass
     ax.axhline(0, color="k", linewidth=.5)
 
     # Calculate vertical and horizontal tidal windows
     horizontal_tidal_window_polygons = []
     for window in horizontal_tidal_windows:
-        horizontal_tidal_window_polygon = Polygon(
-            [Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]),
-             Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-             Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-             Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
-        )
-        horizontal_tidal_window_polygons.append(horizontal_tidal_window_polygon)
+        try:
+            horizontal_tidal_window_polygon = Polygon(
+                [Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]),
+                Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+                Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+                Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
+            )
+            horizontal_tidal_window_polygons.append(horizontal_tidal_window_polygon)
+        except:
+            pass
 
     # Plot horizontal tidal windows
     for polygon in horizontal_tidal_window_polygons:
-        polygon_x = []
-        for timestamp in polygon.exterior.xy[0]:
-            polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
-        polygon_y = list(polygon.exterior.xy[1])
-        color = lighten_color("firebrick", alpha=0.25)
-        (horizontal_tidal_window,) = ax.fill(polygon_x, polygon_y,
-                                             facecolor=color, edgecolor="none",
-                                             zorder=-1)
+        try:
+            polygon_x = []
+            for timestamp in polygon.exterior.xy[0]:
+                polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
+            polygon_y = list(polygon.exterior.xy[1])
+            color = lighten_color("firebrick", alpha=0.25)
+            (horizontal_tidal_window,) = ax.fill(polygon_x, polygon_y,
+                                                facecolor=color, edgecolor="none",
+                                                zorder=-1)
+        except:
+            pass
 
     # Figure bounds
-    ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
-                hydrodynamic_information.TIME.values[time_end_index - 36])
-    ax.set_ylim(-1.5, 1.5)
+    try:
+        ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
+                    hydrodynamic_information.TIME.values[time_end_index - 36])
+        ax.set_ylim(-1.5, 1.5)
 
-    # Figure ticks
-    ax.set_xticks(ax.get_xticks())
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
+        # Figure ticks
+        ax.set_xticks(ax.get_xticks())
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
 
-    # Figure axes
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Current velocity [m/s]")
+        # Figure axes
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Current velocity [m/s]")
+    except:
+        pass
 
     # Legend
     handles = [current_velocity, horizontal_tidal_window]
@@ -434,10 +449,13 @@ def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot 
         if handle is not None:
             legend_handles.append(handle)
             legend_labels.append(label)
-    #
+            
     # Figure bounds
-    ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
-                hydrodynamic_information.TIME.values[time_end_index - 36], )
+    try:
+        ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
+                    hydrodynamic_information.TIME.values[time_end_index - 36], )
+    except:
+        pass
 
     if plot:
         ax.legend(legend_handles, legend_labels, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
@@ -451,6 +469,7 @@ def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot 
         plt.close(fig)
     else:
         plt.close(fig)
+    
     return fig, legend_handles, legend_labels
 
 

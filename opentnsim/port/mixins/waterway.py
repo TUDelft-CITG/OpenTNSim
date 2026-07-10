@@ -67,7 +67,6 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
         self.variables = {"waterway_width": self.width}
 
         # Compute route (shortest path by default)
-        print(self.node_start, self.node_stop)
         self.route = nx.dijkstra_path(self.graph, self.node_start, self.node_stop)
         self.route_reversed = list(reversed(self.route))
 
@@ -103,7 +102,9 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             .sort_values("distance")
             .reset_index(drop=True)
         )
+        
         self.node_distances = node_distance_df
+        self.node_distance = node_distance_df.set_index("node")["distance"]
         self.edge_distances = edge_distance_df
         super().__init__(*args, **kwargs)
 
@@ -202,17 +203,22 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
         last_added_vessel_pos = modifiable_planning_df.index.get_loc(last_added_vessel.id)
         vessel_selection_df = modifiable_planning_df.iloc[:last_added_vessel_pos].loc[lambda x: x["Priority"] < priority_last_added_vessel]
         modifiable_planning_df = pd.concat([vessel_selection_df, modifiable_planning_df.loc[[last_added_vessel.id]]])
-        if last_added_vessel.name == 'vessel_6' and self.name == 'Canal Punta Indio':
-            print('modifiable planning che')
-            display(modifiable_planning_df)
         is_first = modifiable_planning_df.index[0] == last_added_vessel.id
         if is_first:
             return port_availability_df, waiting_events, total_waiting_time
 
         modifiable_planning_df = modifiable_planning_df.sort_values(by=["Priority", "Time_passage_start"], ascending=[False, True])
-        for vessel_id, _ in modifiable_planning_df.iterrows():
+        last_added_vessel_info = modifiable_planning_df.loc[last_added_vessel.id]
+        for vessel_id, vessel_info in modifiable_planning_df.iterrows():
             vessel = self.env.vessels[vessel_id]
             if vessel_id != last_added_vessel.id:   
+                # check_for_conflicts = self.check_for_overtaking_conflicts
+                # if vessel_info.direction == last_added_vessel_info.direction:
+                #     check_for_conflicts = self.check_for_encountering_conflicts
+                # for _, edge_info in self.edge_distances.iterrows():
+                #     edge = (edge_info.node_start, edge_info.node_stop)
+                #     conflict = check_for_conflicts(edge, vessels)
+
                 if not vessel.waiting and "communicate_vessel_to_wait" in repr(vessel.on_pass_node_functions): 
                     vessel.on_pass_node_functions = [cb for cb in vessel.on_pass_node_functions if "communicate_vessel_to_wait" not in repr(cb)]
                 vessel.port.communicate_port_accessibility_info(vessel, vessel.current_node)
@@ -259,12 +265,13 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
         overtaking_conflicts = []
         encountering_conflicts = []
         new_vessel_direction = get_vessel_direction_with_waterway(self.route,new_vessel.route)
+        start_node = self.node_distance.index[0]
+        end_node = self.node_distance.index[-1]
+        if new_vessel_direction:
+            start_node, end_node = end_node, start_node
         new_vessel_priority = self.priority_rules(new_vessel) if self.priority_rules else 0
         passing_vessels_per_edge_df = self.passing_vessels_per_edge.copy()
         passing_vessels_per_edge_df = passing_vessels_per_edge_df[passing_vessels_per_edge_df.Vessel_id != new_vessel.id]
-        if new_vessel.name == 'vessel_6' and self.name == 'Canal Punta Indio':
-            display(self.passing_vessels)
-            display(passing_vessels_per_edge_df[passing_vessels_per_edge_df.Direction == new_vessel_direction])
         for edge, group in passing_vessels_per_edge_df.groupby('Edge'):
             if ("Traffic_encountering_restriction" not in self.env.graph.edges[edge].keys() 
                 and "Traffic_overtaking_restriction" not in self.env.graph.edges[edge].keys()):
@@ -298,11 +305,9 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
     def get_waterway_passage_information_for_vessel(self, vessel, origin):
         route_to_node_start = nx.dijkstra_path(self.graph, origin, self.node_start)
         route_to_node_stop = nx.dijkstra_path(self.graph, origin, self.node_stop)
-        route_to_waterway = route_to_node_start
         route_over_waterway = self.route
         direction = 0
         if len(route_to_node_start) > len(route_to_node_stop):
-            route_to_waterway = route_to_node_stop
             route_over_waterway = self.route_reversed
             direction = 1
 
@@ -348,12 +353,17 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             for edge, time_start0, time_stop0 in conflicts:
                 event = event_map.loc[edge]
 
+                time_stop = event.time_stop
+                time_start = event.time_start
+                if conflict_type == "overtaking":
+                    time_stop = event.time_start
+
                 time_start_not_available = (
-                    time_start0 - (event.time_stop - current_time)
+                    time_start0 - (time_stop - current_time)
                 )
 
                 time_stop_not_available = (
-                    time_stop0 - (event.time_start - current_time)
+                    time_stop0 - (time_start - current_time)
                 )
                 edge = edge + (conflict_type,)
                 records.extend([
@@ -452,11 +462,22 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             if len(df) == prev_len:
                 break
 
-        waterway_availability_df = df
-        if vessel.name == 'vessel_6' and self.name == 'Canal Punta Indio':
-            print(pd.Timedelta(seconds=delay), datetime.datetime.fromtimestamp(vessel.env.now))
-            print(encountering_conflicts)
-            print(overtaking_conflicts)
-            display(waterway_availability_df)
+        # Times where Traffic is True
+        true_times = df.index[df['Traffic']]
+
+        # Time difference to previous and next True
+        prev_diff = true_times.to_series().diff()
+        next_diff = true_times.to_series().shift(-1) - true_times.to_series()
+
+        # Mark True events that are within 1 minute of another True
+        remove = (
+            prev_diff.lt(pd.Timedelta('1min')).fillna(False) |
+            next_diff.lt(pd.Timedelta('1min')).fillna(False)
+        )
+
+        # Set those True events to False
+        df.loc[true_times[remove], 'Traffic'] = False
+        
+        waterway_availability_df = df.copy()
         return waterway_availability_df
 
