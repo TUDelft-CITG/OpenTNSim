@@ -55,10 +55,10 @@ def plot_vessels_over_route(env, node_start, node_stop, vessels, ddistance=1000,
     fig, ax = plt.subplots()
     plt.close()
     if vessels is None:
-        vessels = env.vessels
+        vessels = env.vessels.values()
 
     for idx, vessel in enumerate(vessels):
-        fig_vessel = vessel.plot_time_distance_diagram(route)
+        fig_vessel = plot_time_distance_diagram_vessel(vessel, route)
         if not idx:
             ymin = fig_vessel.axes[0].get_ylim()[0]
         ymax = fig_vessel.axes[0].get_ylim()[-1]
@@ -120,7 +120,7 @@ def plot_vessels_over_route(env, node_start, node_stop, vessels, ddistance=1000,
     return fig
 
 
-def plot_time_distance_diagram(vessel, route):
+def plot_time_distance_diagram_vessel(vessel, route):
     df = create_logbook_with_directed_distances(vessel, route)
     fig, ax  = plt.subplots()
     ax.plot(df.Value, df.Timestamp, label=vessel.name, linewidth=2, zorder=1)
@@ -322,13 +322,33 @@ def plot_vertical_tidal_window(
     return fig, legend_handles, legend_labels
     
     
-def create_plot_vertical_tidal_window(vessel, trip_index = 0, plot = False):
+def create_plot_vertical_tidal_window(vessel, canal = None, trip_index = 0, plot = False):
     try:
         tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
     except:
         return None, None, None
-    
-    for waterway, results in tidal_window_calculation_results.iterrows():
+
+    if canal is not None:
+        for waterway, results in tidal_window_calculation_results.iterrows():
+            time_start_index = results['time_start_index']
+            time_end_index = results['time_end_index']
+            route = results['route']
+            bound = results['bound']
+            draught = results['draught']
+            vertical_tidal_windows = results['vertical_tidal_windows']
+            net_ukcs = results['net_ukcs']
+            fig, legend_handles, legend_labels = plot_vertical_tidal_window(
+                vessel,
+                vertical_tidal_windows,
+                net_ukcs, 
+                route, 
+                int(time_start_index), 
+                int(time_end_index), 
+                draught, 
+                bound,
+                plot)
+    else:
+        results = tidal_window_calculation_results
         time_start_index = results['time_start_index']
         time_end_index = results['time_end_index']
         route = results['route']
@@ -349,7 +369,7 @@ def create_plot_vertical_tidal_window(vessel, trip_index = 0, plot = False):
     return fig, legend_handles, legend_labels
 
 
-def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot = False):
+def create_plot_horizontal_tidal_window(vessel, canal, trip_index = 0, delay = 0.,plot = False):
     tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
     time_start_index = tidal_window_calculation_results['time_start_index']
     time_end_index = tidal_window_calculation_results['time_end_index']
@@ -491,8 +511,8 @@ def plot_tidal_windows(vessel, canal = None, trip_index = 0, plot_all = False):
     ax_left.set_facecolor('none')
 
     # Plot governing current velocity
-    fig_left, ax_left_handles, ax_left_labels = vessel.create_plot_vertical_tidal_window(trip_index, plot_all)
-    fig_right, ax_right_handles, ax_right_labels = vessel.create_plot_horizontal_tidal_window(trip_index, plot_all)
+    fig_left, ax_left_handles, ax_left_labels = vessel.create_plot_vertical_tidal_window(canal, trip_index, plot_all)
+    fig_right, ax_right_handles, ax_right_labels = vessel.create_plot_horizontal_tidal_window(canal, trip_index, plot_all)
 
     for fig_target, ax_target in zip([fig_left, fig_right], [ax_left, ax_right]):
         for ax_old in fig_target.get_axes():

@@ -19,7 +19,7 @@ pd.options.mode.chained_assignment = None
 def get_vessel_from_id(env, vessel_ids):
     vessels = []
     for vessel_id in vessel_ids:
-        for vessel in env.vessels:
+        for vessel in env.vessels.values():
             if vessel.id == vessel_id:
                 vessels.append(vessel)
     return vessels
@@ -589,37 +589,41 @@ def get_tidal_availability_info(vessel):
         tidal_window_results = calculate_tidal_windows(vessel, route, time_start, time_end)
         vessel.tidal_window_calculations[vessel.trip_index] = tidal_window_results
 
-    frames = []
+    if not isinstance(tidal_window_results, dict):
+        frames = []
+        for waterway_name, sub_trip in tidal_window_results.iterrows():
+            df_tidal_availability = (
+                sub_trip["tidal_accessibility"][["Accessibility"]]
+                .eq("Accessible")
+                .rename(columns={"Accessibility": "Tide"})
+            )
 
-    for waterway_name, sub_trip in tidal_window_results.iterrows():
-        df_tidal_availability = (
-            sub_trip["tidal_accessibility"][["Accessibility"]]
-            .eq("Accessible")
-            .rename(columns={"Accessibility": "Tide"})
+            # convert to MultiIndex: (waterway_name, Tide)
+            df_tidal_availability.columns = pd.MultiIndex.from_product(
+                [[waterway_name], df_tidal_availability.columns]
+            )
+
+            frames.append(df_tidal_availability)
+
+        if frames:
+            df_tidal_availability_waterways = pd.concat(frames, axis=1)
+        else:
+            current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+            df_tidal_availability_waterways = pd.DataFrame(
+                {"Tide": [True]},
+                index=[current_time],
+            )
+
+        df_tidal_availability_waterways = (
+            df_tidal_availability_waterways
+            .sort_index(axis=1)
+            .ffill()
+            .bfill()
         )
 
-        # convert to MultiIndex: (waterway_name, Tide)
-        df_tidal_availability.columns = pd.MultiIndex.from_product(
-            [[waterway_name], df_tidal_availability.columns]
-        )
-
-        frames.append(df_tidal_availability)
-
-    if frames:
-        df_tidal_availability_waterways = pd.concat(frames, axis=1)
     else:
-        current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-        df_tidal_availability_waterways = pd.DataFrame(
-            {"Tide": [True]},
-            index=[current_time],
-        )
-
-    df_tidal_availability_waterways = (
-        df_tidal_availability_waterways
-        .sort_index(axis=1)
-        .ffill()
-        .bfill()
-    )
+        df_tidal_availability_waterways = tidal_window_results['tidal_accessibility']['Accessibility']  == 'Accessible'
+        df_tidal_availability_waterways = df_tidal_availability_waterways.to_frame(name="Tide")
 
     return df_tidal_availability_waterways
 

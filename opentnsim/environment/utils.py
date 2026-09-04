@@ -65,14 +65,20 @@ def sort_data(graph, hydrodynamic_data):
 
 def station_contains_node(station, node):
 
-    node = str(node)
+    if isinstance(node, int):
+        node = np.int64(node)
 
+    
     # station is already tuple
     if isinstance(station, tuple):
         return node in station
 
+    if isinstance(station, np.int64):
+        return node == station
+
     # fallback if it's accidentally a string
     if isinstance(station, str):
+        node = str(node)
         if station.startswith("("):
             parts = station.strip("()").split(",")
             parts = [p.strip() for p in parts]

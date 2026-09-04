@@ -68,6 +68,7 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
 
 
     def berthing(self, origin):
+        self.trip_index += 1
         self.log_entry_v0("Berthing start",
                           self.env.now,
                           self.distance,
