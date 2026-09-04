@@ -5,7 +5,6 @@
 import pathlib
 import pandas as pd
 import opentnsim.core
-import opentnsim.strategy
 import itertools
 import tqdm
 import networkx as nx
