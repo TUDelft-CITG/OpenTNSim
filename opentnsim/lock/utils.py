@@ -566,7 +566,6 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
     current_time = datetime.datetime.fromtimestamp(lock_chamber.env.now)
     empty_lock_operation_to_be_requested = False
     lock_operation_to_be_executed = False
-    display(previous_planned_operations)
     if not previous_planned_operations.empty:
         operations_yet_to_be_processed = previous_planned_operations[
         previous_planned_operations['time_lock_operation_stop'] > current_time

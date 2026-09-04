@@ -473,8 +473,11 @@ def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot 
     return fig, legend_handles, legend_labels
 
 
-def plot_tidal_windows(vessel, canal, trip_index = 0, plot_all = False):
-    tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index].loc[canal]
+def plot_tidal_windows(vessel, canal = None, trip_index = 0, plot_all = False):
+    if canal is not None:
+        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index].loc[canal]
+    else:
+        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
     route = tidal_window_calculation_results['route']
     bound = tidal_window_calculation_results['bound']
     draught = tidal_window_calculation_results['draught']

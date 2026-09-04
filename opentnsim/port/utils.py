@@ -437,10 +437,39 @@ def get_accessibility_info(vessel, origin, berth = None, leaving_port = False):
     #Combine the dataframes
     current_time = datetime.datetime.fromtimestamp(vessel.env.now) - pd.Timedelta(hours=24)
     dfs = []
-    for waterway_name in waterways.keys():
-        df_tidal_availability = df_tidal_availability_per_waterway[waterway_name]
-        df_waterway_availability = df_waterway_availability_per_waterway[waterway_name]
-        df_waterway_availability = df_waterway_availability.rename('Traffic')
+    if len(waterways):
+        for waterway_name in waterways.keys():
+            df_tidal_availability = df_tidal_availability_per_waterway[waterway_name]
+            df_waterway_availability = df_waterway_availability_per_waterway[waterway_name]
+            df_waterway_availability = df_waterway_availability.rename('Traffic')
+            port_availability_df = pd.concat(
+                [
+                    df_tidal_availability,
+                    df_terminal_availability,
+                    df_waterway_availability,
+                ]
+            )
+
+            port_availability_df = (
+                port_availability_df[port_availability_df.index >= current_time]
+                .sort_index()
+                .ffill()
+                .bfill()
+            )
+
+            port_availability_df.columns = pd.MultiIndex.from_product(
+                [[waterway_name], port_availability_df.columns]
+            )
+
+            dfs.append(port_availability_df)
+
+        port_availability_per_waterway = pd.concat(dfs, axis=1)
+    else:
+        df_tidal_availability = df_tidal_availability_per_waterway
+        df_waterway_availability = df_waterway_availability_per_waterway
+        if not df_waterway_availability.empty:
+            df_waterway_availability = df_waterway_availability.rename('Traffic')
+
         port_availability_df = pd.concat(
             [
                 df_tidal_availability,
@@ -449,20 +478,15 @@ def get_accessibility_info(vessel, origin, berth = None, leaving_port = False):
             ]
         )
 
-        port_availability_df = (
+        port_availability_per_waterway = (
             port_availability_df[port_availability_df.index >= current_time]
             .sort_index()
             .ffill()
             .bfill()
         )
 
-        port_availability_df.columns = pd.MultiIndex.from_product(
-            [[waterway_name], port_availability_df.columns]
-        )
+        conflicts_dfs = []
 
-        dfs.append(port_availability_df)
-
-    port_availability_per_waterway = pd.concat(dfs, axis=1)
     return port_availability_per_waterway, conflicts_dfs
 
 
@@ -508,13 +532,17 @@ def get_waterway_availability_info(vessel, origin):
         availability_df = availability_df[[waterway.name]]
         availability_dfs.append(availability_df)
         conflicts_dfs.append(conflicts_df)
-    
+
+
+    if not len(passing_waterways):
+        return df_waterways_availability, conflicts_dfs
     df_waterways_availability = pd.concat(availability_dfs)
     df_waterways_availability = df_waterways_availability.sort_index()
     df_waterways_availability = df_waterways_availability.ffill().bfill()
     if df_waterways_availability.empty:
         current_time = datetime.datetime.fromtimestamp(vessel.env.now)
         df_waterways_availability.loc[current_time,'Traffic'] = True
+    
     return df_waterways_availability, conflicts_dfs
 
 
@@ -582,7 +610,7 @@ def get_tidal_availability_info(vessel):
     else:
         current_time = datetime.datetime.fromtimestamp(vessel.env.now)
         df_tidal_availability_waterways = pd.DataFrame(
-            {("single_waterway", "Tide"): [True]},
+            {"Tide": [True]},
             index=[current_time],
         )
 
@@ -702,6 +730,19 @@ def provide_nearest_anchorage_area(vessel, node):
             break
 
     return node_anchorage
+
+def add_ukc_policy_to_node(graph, node, rules):
+
+    if "Depth_restriction" not in graph.nodes[node]:
+        graph.nodes[node]["Depth_restriction"] = RuleEngine(default = lambda v: 0.0)
+        graph.nodes[node]["Depth_restriction_at_distance"] = 0.
+
+    for rule in rules:
+        graph.nodes[node]["Depth_restriction"].add_rule(
+            condition=rule.condition,
+            policy=rule.policy,
+            name=rule.name,
+        )
 
 
 def add_ukc_policy_to_edge(graph, edge, rules, distance_of_series = None):

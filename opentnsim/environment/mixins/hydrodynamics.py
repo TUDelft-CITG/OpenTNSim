@@ -201,7 +201,6 @@ class HydrodynamicDataManager:
             original_times_num,
             series
         )
-
         return interpolated_series
 
 from opentnsim.environment.utils import (

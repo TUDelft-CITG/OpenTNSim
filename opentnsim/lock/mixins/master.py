@@ -277,10 +277,9 @@ class IsLockMaster:
                                                                         lock_operation_information)
 
         if new_operation:
-            new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index + 1, direction)
+            new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, direction)
             _, empty_lock_operation_to_be_requested, lock_operation_to_be_executed = new_lockage_info
             if empty_lock_operation_to_be_requested:
-                print('hiii', vessel.name)
                 _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1,
                                                                                    1 - direction)
                 lock_chamber.lock_complex.operation_planning.sort_values('time_lock_operation_start', inplace=True)

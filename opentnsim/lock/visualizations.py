@@ -161,6 +161,7 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis =
                     y_data = [extend[index],extend[index]]
                     if time_axis == 'y':
                         x_data = [extend[index],extend[index]]
+                        
                         y_data = [time_start,time_stop]
                     fig.add_shape(type="line",
                                 x0=x_data[0],
@@ -169,7 +170,6 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis =
                                 y1=y_data[-1],
                                 line=dict(color='black'), layer="below",
                                 name=name, row=ax[0], col=ax[1])
-
 
 
 def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, offset_x=0.,

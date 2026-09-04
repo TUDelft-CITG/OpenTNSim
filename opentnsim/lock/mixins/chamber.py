@@ -191,20 +191,20 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
             self.has_salinity = False
 
         if self.has_water_level:
-            time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))        
-            wlev_series = hydromanager._get_interpolated_hydrodynamic_series(time_series,self.gate_open_at_node, "Water level",)
+            time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))      
+            wlev_series = hydromanager._get_interpolated_hydrodynamic_series(np.array(time_series),self.gate_open_at_node, "Water level",)
             if self.closing_gate_in_between_operations:
                 if water_level_init is None:
-                    water_level_init = wlev_series[0][0]
+                    water_level_init = wlev_series[0]
                 wlev_series = water_level_init * np.ones(len(time_series))
             self.time = time_series
             self.water_level = wlev_series
         if self.has_salinity:
             time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
-            sal_series = hydromanager._get_interpolated_hydrodynamic_series(time_series, self.gate_open_at_node,"Salinity", )
+            sal_series = hydromanager._get_interpolated_hydrodynamic_series(np.array(time_series), self.gate_open_at_node,"Salinity", )
             if self.closing_gate_in_between_operations and salinity_init is not None:
                 if salinity_init is None:
-                    salinity_init = sal_series[0][0]
+                    salinity_init = sal_series[0]
                 sal_series = salinity_init * np.ones(len(time_series))
             self.time = time_series
             self.salinity = sal_series

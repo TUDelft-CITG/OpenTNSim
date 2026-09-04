@@ -906,7 +906,9 @@ def calculate_tidal_windows(vessel, route, time_start, time_end, delay=0):
                                 'tidal_accessibility':tidal_accessibility,
                                 'tidal_windows':tidal_windows}
         tidal_window_results_per_waterway.append(tidal_window_results)
-    tidal_window_results = pd.DataFrame(tidal_window_results_per_waterway).set_index("waterway")
+    tidal_window_results = pd.DataFrame(tidal_window_results_per_waterway)
+    if "waterway" in tidal_window_results.columns:
+        tidal_window_results = tidal_window_results.set_index("waterway")
     return tidal_window_results
 
 

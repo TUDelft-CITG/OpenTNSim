@@ -40,7 +40,7 @@ class HasPortAccess(Movable, Identifiable):
         self.accessibility_info = pd.DataFrame()
         self.waiting_df = pd.DataFrame(columns = ['time_start', 'time_stop', 'reason', 'conflict_edge', 'conflict_type', 'conflict_vessels', 'conflict_rule', 'conflict_downtime'])
 
-    def request_port_entry(self, origin, at_terminal = False, leaving_port = False):
+    def request_port_entry(self, origin, at_terminal = False, leaving_port = False, parallel_process = None, process_stop_time = pd.Timestamp('NaT')):
         if not at_terminal:
             if hasattr(self,'port_accessed') and self.port_accessed:
                 return
@@ -59,15 +59,20 @@ class HasPortAccess(Movable, Identifiable):
         berth = None
         if hasattr(self, 'terminal'):
             berth = self.select_berth(origin)
-        
-        port.communicate_port_accessibility_info(
-            self, 
-            origin, 
-            berth, 
-            leaving_port=leaving_port,
-        )
-        self.port_accessed = True
-        yield from []
+        if parallel_process is not None and not pd.isna(process_stop_time):
+            try:
+                yield from port.communicate_port_accessibility_info(self, origin, berth, leaving_port=leaving_port,
+                                                                    parallel_process=parallel_process, process_stop_time=process_stop_time)
+            except simpy.exceptions.Interrupt as e:
+                raise e
+        else:
+            yield from port.communicate_port_accessibility_info(
+                self, 
+                origin, 
+                berth, 
+                leaving_port=leaving_port,
+            )
+            self.port_accessed = True
 
 
     def select_berth(self, origin, leaving_port = False):
@@ -80,9 +85,9 @@ class HasPortAccess(Movable, Identifiable):
         return berth
 
 
-    def request_port_exit(self, origin):
+    def request_port_exit(self, origin, parallel_process = None, process_stop_time = pd.Timestamp('NaT')):
         try:
-            yield from self.request_port_entry(origin, at_terminal = True, leaving_port = True)
+            yield from self.request_port_entry(origin, at_terminal = True, leaving_port = True, parallel_process=parallel_process, process_stop_time = process_stop_time)
         except simpy.Interrupt:
             return
 
@@ -230,7 +235,10 @@ class IsPortAuthority:
         origin,
         berth=None,
         leaving_port=False,
+        parallel_process = None, 
+        process_stop_time = pd.Timestamp('NaT')
     ):
+
         (df, 
          waiting_events_per_waterway, 
          total_waiting_time_per_waterway,
@@ -243,6 +251,11 @@ class IsPortAuthority:
                 vessel, origin, berth, leaving_port
             )
         )
+        if not parallel_process is None:
+            try:
+                yield from self.communicate_vessel_to_hold_position(vessel, origin, parallel_process,leaving_port=leaving_port, process_stop_time = process_stop_time)
+            except simpy.exceptions.Interrupt as e:
+                raise e  
 
         # if trip is not possible: stop vessel
         for _, waiting_events in waiting_events_per_waterway.items():
@@ -291,6 +304,27 @@ class IsPortAuthority:
                 )
         vessel.accessibility_info = df
 
+    def communicate_vessel_to_hold_position(self, vessel, origin, parallel_process, leaving_port=False, process_stop_time = pd.Timestamp('NaT')):
+        while not parallel_process.processed:
+            port_availability_df, _ = get_accessibility_info(vessel, origin, leaving_port=leaving_port)
+            port_availability_df['Combined'] = port_availability_df.all(axis=1)
+            if pd.isna(process_stop_time):
+                process_stop_time = datetime.datetime.fromtimestamp(vessel.env.now)
+            current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+            future_events = port_availability_df[
+                (port_availability_df.index >= process_stop_time)&(port_availability_df.Combined)
+                ]
+            waiting_time = pd.Timedelta(seconds=3600.)
+            if not future_events.empty:
+                future_event = future_events.iloc[0]
+                waiting_time = future_event.name - current_time
+                if len(future_events) > 1:
+                    vessel.berth.update_planning(vessel, new_release_time = future_event.name)
+                    update_terminal_planning(vessel, delay = waiting_time.total_seconds())
+            try:
+                yield vessel.env.timeout(waiting_time.total_seconds())
+            except simpy.exceptions.Interrupt as e:
+                raise e
 
     def communicate_trip_not_possible(self, vessel, leaving_port):
         if leaving_port:
