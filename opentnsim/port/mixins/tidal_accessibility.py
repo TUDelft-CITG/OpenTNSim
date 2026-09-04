@@ -42,6 +42,6 @@ class HasDraughtRestrictions(VesselProperties):
         return fig, legend_handles, legend_labels
 
 
-    def plot_tidal_windows(self, trip_index = 0, plot_all = False):
-        fig_final = plot_tidal_windows(self, trip_index, plot_all)
+    def plot_tidal_windows(self, canal, trip_index = 0, plot_all = False):
+        fig_final = plot_tidal_windows(self, canal, trip_index, plot_all)
         return fig_final

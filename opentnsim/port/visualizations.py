@@ -268,10 +268,10 @@ def plot_vertical_tidal_window(
     vertical_tidal_window_polygons = []
     for window in vertical_tidal_windows:
         vertical_tidal_window_polygon = Polygon(
-            [Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]),
-             Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-             Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-             Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
+            [Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]),
+             Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+             Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+             Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
         )
         vertical_tidal_window_polygons.append(vertical_tidal_window_polygon)
 
@@ -296,7 +296,7 @@ def plot_vertical_tidal_window(
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
 
     handles = [net_UKC, minimum_required_net_ukc, vertical_tidal_window]
-    labels = ["Net UKC", "Minimum required net UKC", "Vertical tidal windows"]
+    labels = ["Margin to minimum required water depth", "Minimum required water depth margin", "Vertical tidal windows"]
     legend_handles = []
     legend_labels = []
     for handle, label in zip(handles, labels):
@@ -305,15 +305,15 @@ def plot_vertical_tidal_window(
             legend_labels.append(label)
 
     ax.set_xlabel("Start time of trip")
-    ax.set_ylabel("Minimum net UKC experienced over entire vessel route [m]")
+    ax.set_ylabel("Margin to minimum required water depth [m]")
 
     if plot:
         ax.legend(legend_handles, legend_labels, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
-        ax.set_title(
-            f"Vertical tidal windows of {vessel.type}-class vessel '{vessel.name}' with "
-            f"a draught of {np.round(draught, 2)}m and\na length of {np.round(vessel.L)}m sailing {bound} from"
-            f" node '{route[0]}' to node '{route[-1]}'."
-        )
+        # ax.set_title(
+        #     f"Vertical tidal windows of {vessel.type}-class vessel '{vessel.name}' with "
+        #     f"a draught of {np.round(draught, 2)}m and\na length of {np.round(vessel.L)}m sailing {bound} from"
+        #     f" node '{route[0]}' to node '{route[-1]}'."
+        # )
         fig.tight_layout()
         plt.show()
         plt.close(fig)
@@ -400,10 +400,10 @@ def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot 
     for window in horizontal_tidal_windows:
         try:
             horizontal_tidal_window_polygon = Polygon(
-                [Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]),
-                Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-                Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-                Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
+                [Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]),
+                Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+                Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+                Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
             )
             horizontal_tidal_window_polygons.append(horizontal_tidal_window_polygon)
         except:
@@ -473,8 +473,8 @@ def create_plot_horizontal_tidal_window(vessel, trip_index = 0, delay = 0.,plot 
     return fig, legend_handles, legend_labels
 
 
-def plot_tidal_windows(vessel, trip_index = 0, plot_all = False):
-    tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
+def plot_tidal_windows(vessel, canal, trip_index = 0, plot_all = False):
+    tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index].loc[canal]
     route = tidal_window_calculation_results['route']
     bound = tidal_window_calculation_results['bound']
     draught = tidal_window_calculation_results['draught']
@@ -547,10 +547,10 @@ def plot_tidal_windows(vessel, trip_index = 0, plot_all = False):
     tidal_window_polygons = []
     for window in tidal_windows:
         tidal_window_polygon = Polygon(
-                [Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                 Point((window[0] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                 Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                 Point((window[1] - np.datetime64("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),]
+                [Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                 Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                 Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                 Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),]
             )
         tidal_window_polygons.append(tidal_window_polygon)
 
@@ -633,4 +633,1133 @@ def plot_berth_planning(berth):
     elif isinstance(berth, IsJetty):
         plt.xlabel("Berth length [m]")
     plt.close()
+    return fig
+
+
+
+import plotly.graph_objects as go
+import numpy as np
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from matplotlib import colors as mcolors
+from collections import defaultdict
+from itertools import combinations
+
+def get_vessels_by_name(env, vessel_mmsis):
+    return [env.vessels[name] for name in vessel_mmsis if name in env.vessels]
+
+def add_point_tidal_window_to_plotly(
+    fig,
+    waterway,
+    hydrodynamic_data,
+    determinantes,
+    draught=10.5,
+    draught_range=None,
+    offset=200,
+    start_distance=0,
+    hydro_property="water depth",
+    time_start=None,
+    time_end=None,
+    colorscale=None,
+    showscale=True,
+):
+    """
+    Add tidal window bands to an existing Plotly figure.
+
+    Parameters
+    ----------
+    fig : go.Figure
+    waterway : Waterway
+    hydrodynamic_data : xr.Dataset
+    determinantes : dict
+        {(node_start, node_stop): distance_along_edge}
+    """
+    if draught_range is None:
+        draught_range = [draught]
+
+    if time_start is None:
+        time_start = pd.Timestamp(hydrodynamic_data.TIME.min().values)
+
+    if time_end is None:
+        time_end = pd.Timestamp(hydrodynamic_data.TIME.max().values)
+
+    edge_route = list(
+        zip(
+            waterway.edge_distances["node_start"],
+            waterway.edge_distances["node_stop"],
+        )
+    )
+
+    # --------------------------------------------------------------
+    # Determine common color normalization
+    # --------------------------------------------------------------
+
+    if hydro_property == "water depth":
+
+        global_min = np.inf
+        global_max = -np.inf
+
+        for edge in determinantes:
+
+            if edge not in edge_route:
+                continue
+
+            ds = hydrodynamic_data.sel(
+                TIME=slice(time_start, time_end),
+                STATION=edge,
+            )
+
+            wd = (
+                ds["Water level"]
+                - ds["Nautical depth"]
+            ).values
+
+            global_min = min(global_min, np.nanmin(wd))
+            global_max = max(global_max, np.nanmax(wd))
+
+        zmin = global_min
+        zmax = global_max
+        colorscale = colorscale or "Blues"
+
+    elif hydro_property == "Margen neto de seguridad mínimo bajo la quilla [m]":
+
+        zmin = -0.5
+        zmax = 0.5
+        colorscale = colorscale or "RdBu"
+
+    elif hydro_property == "Margen bruto de seguridad mínimo bajo la quilla [m]":
+
+        zmin = -1
+        zmax = 1
+        colorscale = colorscale or "RdBu"
+
+    else:
+
+        zmin = None
+        zmax = None
+        colorscale = colorscale or "Blues"
+
+    xticks = []
+    xticklabels = []
+
+    # --------------------------------------------------------------
+    # Draw each determining point
+    # --------------------------------------------------------------
+    trace_groups = []
+
+    for current_draught in draught_range:
+    
+        current_group = []
+    
+        for edge, distance in determinantes.items():
+
+            if edge not in edge_route:
+                continue
+    
+            distance_info = waterway.edge_distances[
+                (waterway.edge_distances["node_start"] == edge[0])
+                & (waterway.edge_distances["node_stop"] == edge[1])
+            ].iloc[0]
+    
+            xmid = (
+                distance_info["distance_start"]
+                + distance
+                + start_distance
+            )
+    
+            x0 = xmid - offset
+            x1 = xmid + offset
+    
+            xticks.append(xmid)
+            xticklabels.append(edge)
+    
+            required_depth = estimate_required_water_depth(
+                waterway.env,
+                edge,
+                current_draught,
+            )
+    
+            ds = hydrodynamic_data.sel(
+                TIME=slice(time_start, time_end),
+                STATION=edge,
+            )
+    
+            wl = ds["Water level"].values
+            wd = wl - ds["Nautical depth"].values
+    
+            if hydro_property == "Margen neto de seguridad mínimo bajo la quilla [m]":
+                values = wd - required_depth
+    
+            elif hydro_property == "Margen bruto de seguridad mínimo bajo la quilla [m]":
+                values = wd - current_draught
+    
+            else:
+                values = wd
+    
+            times = pd.to_datetime(ds.TIME.values)
+    
+            # Two identical columns to create a vertical strip
+            z = np.column_stack([values, values])
+    
+            fig.add_trace(
+                go.Heatmap(
+                    x=[x0, x1],
+                    y=times,
+                    z=z,
+                    colorscale=colorscale,
+                    zmin=zmin,
+                    zmax=zmax,
+                    visible=(current_draught == draught),
+                    hovertemplate=(
+                        "Distance: %{x:.0f} m<br>"
+                        "Time: %{y}<br>"
+                        "Value: %{z:.2f}<extra></extra>"
+                    ),
+                    showscale=(
+                        True 
+                        if (current_draught == draught_range[0]
+                            and len(current_group) == 0
+                            and showscale)
+                        else False
+                    ),
+                    colorbar=dict(
+                        title='',
+                        thickness=8,
+                        len=0.75,
+                        y=0.5,
+                        yanchor="middle",
+                        x=1.45,          # just left of the legend
+                        xanchor="left",
+                    ),
+                )
+            )
+            current_group.append(len(fig.data)-1)
+            
+            # Only show one colorbar
+            showscale = False
+        trace_groups.append(current_group)
+
+    fig.add_annotation(
+        x=1.45,
+        y=0.5,
+        xref="paper",
+        yref="paper",
+        text=hydro_property,
+        textangle=-90,
+        showarrow=False,
+        xanchor="right",
+        yanchor="middle",
+        font=dict(size=14),
+    )
+
+    return {
+        "fig": fig,
+        "xticks": xticks,
+        "xticklabels": xticklabels,
+        "draught_groups": trace_groups,
+        "all_heatmap_traces": [
+            idx 
+            for group in trace_groups
+            for idx in group
+        ],
+    }
+
+# ADDED algorithm
+from opentnsim.port.utils import get_vessel_direction_with_waterway
+from opentnsim.port.calculations import estimate_required_water_depth
+import matplotlib.colors as mcolors
+from copy import copy
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.ticker import FuncFormatter
+from itertools import combinations
+from matplotlib.lines import Line2D
+import textwrap
+
+
+def get_vessel_logbook_through_waterway(vessel, waterway, extra_nodes = None):
+    vessel_df = pd.DataFrame(vessel.logbook)
+    if vessel_df.empty:
+        return vessel_df
+    vessel_df[["node_start", "node_stop"]] = (
+        vessel_df["Message"]
+        .str.extract(r"from node (.*?) to node (.*)")
+        .apply(lambda col: col.str.replace(r"\s+(start|stop)$", "", regex=True))
+    )
+
+    n = len(vessel_df)
+    keep = pd.Series(False, index=vessel_df.index)
+
+    waterway_route = copy(waterway.route)
+    if extra_nodes is not None:
+        waterway_route.extend(extra_nodes)
+    
+    is_waiting = vessel_df["Message"].str.contains("Waiting for", na=False)
+    valid_sailing = (
+        vessel_df["node_start"].isin(waterway_route)
+        & vessel_df["node_stop"].isin(waterway_route)
+    )
+    keep = keep | valid_sailing
+    first_valid_sailing_idx = vessel_df.index[valid_sailing].min()
+
+    pre_sailing = vessel_df.index < first_valid_sailing_idx
+    waiting_pre = vessel_df[pre_sailing & is_waiting].copy()
+
+    gap = waiting_pre.index.to_series().diff().fillna(1) != 1
+    group = gap.cumsum()
+    last_group = group.max()
+    last_block_idx = waiting_pre.index[group == last_group]
+    try:
+        if last_block_idx[-1]+1 == first_valid_sailing_idx:
+            keep.loc[last_block_idx] = True
+    except:
+        pass
+
+    vessel_df_waterway = vessel_df[keep]
+    if vessel_df_waterway.empty:
+        return vessel_df_waterway
+    vessel_df_waterway = vessel_df_waterway.sort_values('Timestamp')
+    vessel_df_waterway['Value'] -= vessel_df_waterway['Value'].iloc[0]
+    direction = get_vessel_direction_with_waterway(waterway.route, vessel.route)
+    if direction:
+        vessel_df_waterway['Value'] -= vessel_df_waterway['Value'].iloc[-1]
+        vessel_df_waterway['Value'] = vessel_df_waterway['Value']*-1
+    return vessel_df_waterway
+
+def add_point_tidal_window_to_plot(
+    ax,
+    waterway,
+    determinantes,
+    hydrodynamic_data,
+    time_start=None,
+    time_end=None,
+    ylim=None,
+    draught=10.5,
+    offset=200,
+    start_distance = 0,
+    hydro_property="water depth",
+    zorder = 1,
+):
+
+    if time_start is not None and time_end is not None:
+        ylim = (time_start, time_end)
+
+    if ylim is None:
+        ylim = ax.get_ylim()
+    else:
+        ax.set_ylim(ylim)
+        ylim = ax.get_ylim()
+
+    t0, t1 = mdates.num2date(ylim)
+    t0 = pd.Timestamp(t0).tz_localize(None)
+    t1 = pd.Timestamp(t1).tz_localize(None)
+
+    edge_route = list(
+        zip(
+            waterway.edge_distances["node_start"],
+            waterway.edge_distances["node_stop"],
+        )
+    )
+
+    global_min = np.inf
+    global_max = -np.inf
+
+    if hydro_property == "water depth":
+
+        for edge, distance in determinantes.items():
+
+            if edge not in edge_route:
+                continue
+
+            hydrodynamic_data_sel = hydrodynamic_data.sel(
+                TIME=slice(t0, t1),
+                STATION=edge
+            )
+
+            wl = (
+                hydrodynamic_data_sel["Water level"]
+                - hydrodynamic_data_sel["Nautical depth"]
+            ).values
+
+            global_min = min(global_min, np.nanmin(wl))
+            global_max = max(global_max, np.nanmax(wl))
+        
+        shared_norm = mcolors.Normalize(
+            vmin=global_min,
+            vmax=global_max
+        )
+
+    elif hydro_property == "Margen neto de seguridad mínimo bajo la quilla [m]":
+
+        shared_norm = mcolors.Normalize(-0.5, 0.5)
+
+    elif hydro_property == "Margen bruto de seguridad mínimo bajo la quilla [m]":
+
+        shared_norm = mcolors.Normalize(-1, 1)
+
+    else:
+        shared_norm = None
+
+    pcm = None
+
+    xticks = []
+    xticklabels = []
+    for edge, distance in determinantes.items():
+        if edge not in edge_route:
+            continue
+
+        distance_info_edge = waterway.edge_distances[
+            (waterway.edge_distances["node_start"] == edge[0]) &
+            (waterway.edge_distances["node_stop"] == edge[1])
+        ].iloc[0]
+
+        distance_determinante = (
+            distance_info_edge["distance_start"] + distance + start_distance
+        )
+
+        required_depth = estimate_required_water_depth(
+            waterway.env,
+            edge,
+            draught
+        )
+
+        x0 = distance_determinante - offset
+        x01 = distance_determinante
+        x1 = distance_determinante + offset
+        xticks.append(x01)
+        xticklabels.append(edge)
+        
+        hydrodynamic_data_sel = hydrodynamic_data.sel(
+            TIME=slice(t0, t1),
+            STATION=edge
+        )
+
+        wl = hydrodynamic_data_sel["Water level"].values
+        wd = wl - hydrodynamic_data_sel["Nautical depth"].values
+
+        cmap = "Blues"
+        if hydro_property == "Margen neto de seguridad mínimo bajo la quilla [m]":
+            wl = wd - required_depth
+            cmap = "RdBu"
+
+        elif hydro_property == "Margen bruto de seguridad mínimo bajo la quilla [m]":
+            wl = wd - draught
+            cmap = "RdBu"
+
+        elif hydro_property == "Profundidad [m]":
+            wl = wd
+
+        y = pd.to_datetime(hydrodynamic_data_sel.TIME.values)
+
+        X, Y = np.meshgrid([x0, x1], y)
+        C = np.tile(wl[:, None], (1, 2))
+        pcm = ax.pcolormesh(
+            X,
+            Y,
+            C,
+            shading="auto",
+            cmap=cmap,
+            norm=shared_norm,
+            zorder = zorder,
+        )
+
+    return pcm, xticks, xticklabels
+
+
+def plot_time_distance_diagram(waterway,  time_start, time_end, draught, hydro_property, color_function = None):
+    if time_start is not None and time_end is not None:
+        ylim = (time_start, time_end)
+        
+    fig, ax = plt.subplots(figsize=[16,3])    
+    
+
+    for _, vessel in waterway.env.vessels.items():
+        vessel_df_waterway = get_vessel_logbook_through_waterway(vessel, waterway)
+        color = None
+        if color_function is not None:
+            color = color_function(vessel)
+        
+        if not vessel_df_waterway.empty:
+            if color is not None:
+                ax.plot(vessel_df_waterway.Value, vessel_df_waterway.Timestamp, color=color)
+            else:
+                ax.plot(vessel_df_waterway.Value, vessel_df_waterway.Timestamp)
+    for _, node_info in waterway.node_distances.iterrows():
+        ax.axvline(node_info.distance, color = 'k', linestyle = '--', linewidth = 1)
+
+    ax.set_xticks(waterway.node_distances.distance.to_list());
+    ax.set_xticklabels(waterway.node_distances.node, rotation=45, ha='right');
+    ax.set_ylim(ylim)
+    xlim = ax.get_xlim()
+    offset = (xlim[-1] - xlim[0])/500
+    pcm, _, _ = add_point_tidal_window_to_plot(ax, waterway, time_start, time_end, ylim, draught, offset, hydro_property)
+    ax.yaxis_date()
+    ax.yaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    fig.colorbar(pcm, ax=ax, label=hydro_property)
+    return fig
+
+def compute_waterway_offsets(waterways):
+    offsets = {}
+    current_offset = 0
+
+    for w in waterways:
+        max_dist = w.node_distances.distance.max()
+        offsets[id(w)] = current_offset
+        current_offset += max_dist
+
+    return offsets
+
+def plot_time_distance_diagram_multi(
+    waterways,
+    hydrodynamic_data,
+    determinantes,
+    time_start,
+    time_end,
+    draught,
+    hydro_property,
+    start_distance,
+    offset,
+    vessels = None,
+    vessels_to_show_rules = None,
+    show_rules = False,
+    xlim = None,
+    extra_nodes = None,
+    color_function = None,
+    figsize = (12,4)
+):
+
+    fig = plt.figure(figsize=figsize, constrained_layout=False)
+    gs = fig.add_gridspec(
+        1, 4,
+        width_ratios=[100, 1, 10, 5],  # plot | colorbar | legend
+        wspace=0.05
+    )
+    
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = ax1.twiny()
+    ylim = (time_start, time_end)
+    
+    cax = fig.add_subplot(gs[0, 1])
+    spacer = fig.add_subplot(gs[0, 2])  # invisible gap
+    lax = fig.add_subplot(gs[0, 3])
+
+    offsets = compute_waterway_offsets(waterways)
+    
+    pcm = None
+
+    xticks = []
+    xticklabels = []
+    xticks2 = []
+    xticklabels2 = []
+    for waterway in waterways:
+
+        x_shift = offsets[id(waterway)] + start_distance
+
+        if vessels is None:
+            vessels = list(waterway.env.vessels.values())
+
+        for vessel in vessels:
+            color = None
+            if color_function is not None:
+                color = color_function(vessel)
+            vessel_df = get_vessel_logbook_through_waterway(vessel, waterway, extra_nodes)
+            if not vessel_df.empty:
+                if color is not None:
+                    ax1.plot(
+                        vessel_df.Value + x_shift,
+                        vessel_df.Timestamp,
+                        color=color,
+                        zorder = 2,
+                    )
+                else:
+                    ax1.plot(
+                        vessel_df.Value + x_shift,
+                        vessel_df.Timestamp,
+                        zorder = 2,
+                    )
+
+        for _, node_info in waterway.node_distances.iterrows():
+            label = node_info['node'].replace('_','')
+            if 'KM' not in label:
+                label += f' KM{int((node_info.distance + x_shift)/1000)}.0'
+            elif '.' not in label:
+                label += '.0'
+            if label not in xticklabels:
+                xticks.append(node_info.distance + x_shift)
+                xticklabels.append(label)
+            ax1.axvline(
+                node_info.distance + x_shift,
+                color="k",
+                linestyle="--",
+                linewidth=1,
+                alpha=0.5,
+                zorder = 0,
+            )
+
+        
+        pcm, xtick, xticklabel = add_point_tidal_window_to_plot(
+            ax=ax1,
+            waterway=waterway,
+            hydrodynamic_data=hydrodynamic_data,
+            determinantes=determinantes,
+            time_start=time_start,
+            time_end=time_end,
+            ylim=ylim,
+            draught=draught,
+            offset=offset,
+            start_distance = x_shift,
+            hydro_property=hydro_property,
+            zorder = 1,
+        )
+        
+        xticks2.extend(xtick)
+        xticklabels2.extend(xticklabel)
+
+    ax1.set_ylim(ylim)
+    ax1.yaxis_date()
+    ylim = ax1.get_ylim()
+    locator = mdates.HourLocator(byhour=range(0, 24, 3), interval=1)
+
+    handle = None
+    if show_rules:
+        edge_df = waterway.edge_distances
+        vessels_show_rules = get_vessels_by_name(waterway.env, vessels_to_show_rules)
+        vessel_pairs = list(combinations(vessels_show_rules, 2))
+        restriction_per_edge = {}
+    
+        for vessel_pair in vessel_pairs:
+            for edge in zip(edge_df["node_start"], edge_df["node_stop"]):
+    
+                restriction, _, _ = waterway.check_for_encountering_conflicts(
+                    edge,
+                    vessel_pair
+                )
+    
+                # Keep edge restricted if any vessel pair has a conflict
+                if restriction:
+                    restriction_per_edge[edge] = True
+
+        for _, edge_info in edge_df.iterrows():
+            edge = (edge_info.node_start,edge_info.node_stop)
+            if edge not in restriction_per_edge.keys():
+                continue
+            if not restriction_per_edge[edge]:
+                continue
+            x0 = edge_info.distance_start + x_shift
+            x1 = edge_info.distance_stop + x_shift
+            handle = ax1.fill([x0, x0, x1, x1],[ylim[0],ylim[1],ylim[1],ylim[0]], zorder = -1, color='none', edgecolor="indianred", hatch="//",label='Zonas de prohibición de\ncruces o adelantamientos')
+        
+    def custom_fmt(x, pos):
+        dt = mdates.num2date(x)
+    
+        # show date only at midnight
+        if dt.hour == 0 and dt.minute == 0:
+            return dt.strftime('%d-%b %H:%M')
+        else:
+            return dt.strftime('%H:%M')
+    
+    ax1.yaxis.set_major_locator(locator)
+    ax1.yaxis.set_major_formatter(FuncFormatter(custom_fmt))
+
+    if pcm is not None:
+        wrapped = textwrap.fill(hydro_property, width=30)
+        fig.colorbar(pcm, cax=cax, label= "Margen neto de profundidad [m]")
+
+    ax1.set_xticks(xticks);
+    #xticklabels = [textwrap.fill(label, 18) for label in xticklabels]
+    ax1.set_xticklabels(xticklabels,ha='center', rotation = 90)
+    ax2.set_xticks(xticks2)
+    xticklabels2 = [
+        'Determinante\nCanal Intermedio\nKM83 (10.6 m)',
+        'Determinante\nPaso Banco Chico\nKM58.4 (10.8 m)',
+        'Determinante\nCanal Punta Indio\nKM155 (10.5 m)']
+    #xticklabels2 = [textwrap.fill(label, 18) for label in xticklabels2]
+    ax2.set_xticklabels(xticklabels2, rotation = 90, ha='left')
+    ax1.set_xlabel('Distancia [KM]')
+    ax1.set_ylabel('Fecha y hora')
+    if xlim is not None:
+        ax1.set_xlim(xlim)
+        ax2.set_xlim(xlim)
+
+    legend_items = {
+    'Buque Clase A': '#00AFDD',
+    'Buque Clase B': '#E6362A',
+    'Buque Clase C': '#0F68AE',
+    'Buque con reserva del canal': 'k'
+    }
+    
+    handles = [
+        Line2D([0], [0], color=color, lw=2, label=label)
+        for label, color in legend_items.items()
+    ]
+
+    if handle is not None:
+        handles.append(handle[0])
+    
+    lax.legend(handles=handles, loc='center left', frameon = False)
+    lax.axis('off')
+    spacer.axis('off')
+    fig.subplots_adjust(bottom=0.35)
+    return fig, ax1
+
+
+def plot_time_distance_diagram_multi_plotly(
+    waterways,
+    draught_values = np.arange(9.5, 11.6, 0.1),
+    time_start=None,
+    time_end=None,
+    hydrodynamic_data = None,
+    determinantes = None,
+    hydro_property = None,
+    vessels=None,
+    start_distance=0,
+    xlim=None,
+    extra_nodes=None,
+    height=1000,
+    width=900,
+    show_rules = False,
+    color_function = None,
+    vessels_to_show_rules = [],
+):
+
+    fig = go.Figure()
+
+    offsets = compute_waterway_offsets(waterways)
+    xticks = []
+    xticklabels = []
+    xmin = None
+    xmax = None
+    shown_vessels = set()
+    trace_to_vessel = []
+    vessel_times = {}
+    vessel_trace_indices = defaultdict(list)
+    background_trace_indices = []
+    heatmap_draught_groups = {
+        i: []
+        for i in range(len(draught_values))
+    }
+    initial_time = None
+    for waterway in waterways:
+
+        x_shift = offsets[id(waterway)] + start_distance
+
+        if hydrodynamic_data is not None:
+            heatmap_info = add_point_tidal_window_to_plotly(
+                fig=fig,
+                waterway=waterway,
+                hydrodynamic_data=hydrodynamic_data,
+                determinantes=determinantes,
+                time_start=time_start,
+                time_end=time_end,
+                start_distance=x_shift,      # include the offset
+                draught=10.5,
+                draught_range=draught_values,
+                offset=200,
+                hydro_property=hydro_property,
+                showscale=True,
+            )
+
+            for i, group in enumerate(heatmap_info["draught_groups"]):
+                heatmap_draught_groups[i].extend(group)
+                        
+            background_trace_indices.extend(
+                heatmap_info["all_heatmap_traces"]
+            )
+
+        current_vessels = (
+            list(waterway.env.vessels.values())
+            if vessels is None else vessels
+        )
+
+        for vessel in current_vessels:
+            color = None
+            if color_function is not None:
+                color = color_function(vessel)
+
+            vessel_df = get_vessel_logbook_through_waterway(
+                vessel,
+                waterway,
+                extra_nodes,
+            )
+
+            if vessel_df.empty:
+                continue
+
+            customdata = np.column_stack([
+                np.full(len(vessel_df), getattr(vessel, "id", "")),
+                np.full(len(vessel_df), getattr(vessel, "name", "").split('(')[0]),
+                np.full(len(vessel_df), vessel.type),
+                np.full(len(vessel_df), vessel.classification),
+                np.full(len(vessel_df), getattr(vessel, "L", np.nan)),
+                np.full(len(vessel_df), getattr(vessel, "B", np.nan)),
+                np.full(len(vessel_df), getattr(vessel, "T", np.nan)),
+            ])
+
+            vessel_name = vessel.name
+            start_time = vessel_df.Timestamp.min()
+            end_time = vessel_df.Timestamp.max()
+            if initial_time is None or start_time < initial_time:
+                initial_time = start_time
+            
+            if vessel_name not in vessel_times:
+                vessel_times[vessel_name] = {
+                    "start": start_time,
+                    "end": end_time,
+                }
+            else:
+                vessel_times[vessel_name]["start"] = min(
+                    vessel_times[vessel_name]["start"],
+                    start_time,
+                )
+                vessel_times[vessel_name]["end"] = max(
+                    vessel_times[vessel_name]["end"],
+                    end_time,
+                )
+            if color is not None:
+                fig.add_trace(
+                    go.Scattergl(
+                        x=vessel_df.Value + x_shift,
+                        y=vessel_df.Timestamp,
+                        mode="lines",
+                        line=dict(color=color, width=2),
+                        name=vessel.name,
+                        legendgroup=vessel.id,
+                        showlegend=vessel.id not in shown_vessels,
+                        customdata=customdata,
+                        hovertemplate=(
+                            "<b>%{customdata[0]}</b><br>"
+                            "MMSI: %{customdata[1]}<br>"
+                            "Type: %{customdata[2]}<br>"
+                            "Class: %{customdata[3]}<br>"
+                            "Length: %{customdata[4]} m<br>"
+                            "Beam: %{customdata[5]} m<br>"
+                            "Draught: %{customdata[6]} m<br>"
+                            "Distance: %{x:.0f} m<br>"
+                            "Time: %{y|%d-%b-%Y %H:%M:%S}"
+                            "<extra></extra>"
+                        ),
+                    )
+                )
+            else:
+                fig.add_trace(
+                    go.Scattergl(
+                        x=vessel_df.Value + x_shift,
+                        y=vessel_df.Timestamp,
+                        mode="lines",
+                        line=dict(width=2),
+                        name=vessel.name,
+                        legendgroup=vessel.id,
+                        showlegend=vessel.id not in shown_vessels,
+                        customdata=customdata,
+                        hovertemplate=(
+                            "<b>%{customdata[0]}</b><br>"
+                            "MMSI: %{customdata[1]}<br>"
+                            "Type: %{customdata[2]}<br>"
+                            "Class: %{customdata[3]}<br>"
+                            "Length: %{customdata[4]} m<br>"
+                            "Beam: %{customdata[5]} m<br>"
+                            "Draught: %{customdata[6]} m<br>"
+                            "Distance: %{x:.0f} m<br>"
+                            "Time: %{y|%d-%b-%Y %H:%M:%S}"
+                            "<extra></extra>"
+                        ),
+                    )
+                )
+            trace_index = len(fig.data) - 1
+            vessel_trace_indices[vessel.id].append(trace_index)
+            trace_to_vessel.append(vessel.id)
+            shown_vessels.add(vessel.id)
+
+        # Node lines
+        for _, node_info in waterway.node_distances.iterrows():
+
+            x = node_info.distance + x_shift
+            if xmin is None:
+                xmin = x
+            elif x < xmin:
+                xmin = x
+
+            if xmax is None:
+                xmax = x
+            elif x > xmax:
+                xmax = x
+                
+            label = node_info["node"].replace("_", "")
+
+            if "KM" not in label:
+                label += f" KM{int(x/1000)}.0"
+            elif "." not in label:
+                label += ".0"
+
+            if label not in xticklabels:
+                xticks.append(x)
+                xticklabels.append(label)
+
+            fig.add_vline(
+                x=x,
+                line_dash="dash",
+                line_color="black",
+                line_width=1,
+                opacity=0.4,
+            )
+
+    fig.update_xaxes(
+        tickvals=xticks,
+        ticktext=xticklabels,
+        tickangle=90,
+        title="Distance [m]",
+    )
+
+    if time_start is not None and time_end is not None:
+        fig.update_yaxes(
+            range=[time_start, time_end],
+            title="Date and time",
+        )
+    else:
+        yaxis_kwargs = dict(
+            title="Date and time",
+            autorange=True,
+        )
+        
+        # If requested, use a fixed time window
+        if time_start is not None and time_end is not None:
+            yaxis_kwargs["range"] = [time_start, time_end]
+            yaxis_kwargs["autorange"] = False
+        
+        fig.update_yaxes(**yaxis_kwargs)
+            
+
+    fig.update_layout(
+        template="simple_white",
+    
+        width=width,
+        height=height,
+    
+        hovermode="closest",
+    
+        dragmode="pan",          # drag to move through time
+        uirevision=True,         # preserve zoom when updating
+    
+        margin=dict(
+            l=80,
+            r=30,
+            t=30,
+            b=180,
+        ),
+    
+        legend_title="Vessels",
+    )
+
+    # Allow vertical zoom/pan
+    if time_start is not None:
+        initial_time = time_start
+    if time_end is not None:
+        initial_end = time_end
+    else:
+        initial_end = initial_time + pd.Timedelta(days = 2)
+
+    for waterway in waterways:
+
+        x_shift = offsets[id(waterway)] + start_distance
+
+        if show_rules:
+            edge_df = waterway.edge_distances
+
+            vessels_show_rules = get_vessels_by_name(waterway.env, vessels_to_show_rules)
+            vessel_pairs = list(combinations(vessels_show_rules, 2))
+            restriction_per_edge = {}
+        
+            for vessel_pair in vessel_pairs:
+                for edge in zip(edge_df["node_start"], edge_df["node_stop"]):
+        
+                    restriction, _, _ = waterway.check_for_encountering_conflicts(
+                        edge,
+                        vessel_pair
+                    )
+        
+                    # Keep edge restricted if any vessel pair has a conflict
+                    if restriction:
+                        restriction_per_edge[edge] = True
+
+            for edge, restricted in restriction_per_edge.items():
+        
+                if not restricted:
+                    continue
+        
+                edge_info = edge_df[
+                    (edge_df.node_start == edge[0]) &
+                    (edge_df.node_stop == edge[1])
+                ].iloc[0]
+        
+                x0 = edge_info.distance_start + x_shift
+                x1 = edge_info.distance_stop + x_shift
+                
+                # vertical rectangle spanning full time axis
+                fig.add_shape(
+                    type="rect",
+                    x0=x0,
+                    x1=x1,
+                    y0=0,
+                    y1=1,
+                    xref="x",
+                    yref="paper",
+                    fillcolor="rgba(205,92,92,0.25)",
+                    line=dict(
+                        color="indianred",
+                        width=1,
+                    ),
+                    layer="below",
+                )
+        
+    # Limit horizontal navigation
+    fig.update_xaxes(
+        range=[xmin, xmax],
+        minallowed=xmin,
+        maxallowed=xmax,
+        fixedrange=False,
+    )
+    
+    fig.update_yaxes(
+        range=[initial_time, initial_end],
+        fixedrange=False,
+        autorange=False,
+    )
+
+    # Final layout
+    fig.update_layout(
+        dragmode="pan",
+        uirevision=True,
+        legend=dict(
+            itemclick="toggle",
+            itemdoubleclick="toggleothers",
+        )
+    )
+
+    unique_times = sorted(
+        set(
+            [v["start"] for v in vessel_times.values()] +
+            [v["end"] for v in vessel_times.values()]
+        )
+    )
+    
+        
+    def get_visibility(min_time, max_time):
+    
+        visible = [True] * len(fig.data)   # everything visible initially
+    
+        # Vessel traces
+        for vessel, times in vessel_times.items():
+    
+            show = (
+                times["start"] <= max_time
+                and times["end"] >= min_time
+            )
+    
+            for idx in vessel_trace_indices[vessel]:
+                visible[idx] = show
+    
+        # Heatmaps (and any other background traces) remain visible
+        for idx in background_trace_indices:
+            visible[idx] = (
+                idx in heatmap_draught_groups[5]
+            )
+            
+        return visible
+        
+    
+    # --- Minimum time slider ---
+    steps_min = []
+    for t in unique_times:
+        steps_min.append(
+            dict(
+                method="update",
+                args=[
+                    {
+                        "visible": get_visibility(
+                            t,
+                            unique_times[-1],
+                        )
+                    }
+                ],
+                label=t.strftime("%d-%b %H:%M"),
+            )
+        )
+    
+    # --- Maximum time slider ---
+    steps_max = []
+    
+    for t in unique_times:
+    
+        steps_max.append(
+            dict(
+                method="update",
+                args=[
+                    {
+                        "visible": get_visibility(
+                            unique_times[0],
+                            t,
+                        )
+                    }
+                ],
+                label=t.strftime("%d-%b %H:%M"),
+            )
+        )
+
+    draught_steps = []
+
+    for i, draught in enumerate(draught_values):
+    
+        visible = [True] * len(fig.data)
+    
+        # hide all heatmaps
+        for idx in background_trace_indices:
+            visible[idx] = False
+    
+        # activate selected draught
+        for idx in heatmap_draught_groups[i]:
+            visible[idx] = True
+    
+        draught_steps.append(
+            dict(
+                method="update",
+                args=[
+                    {
+                        "visible": visible
+                    }
+                ],
+                label=f"{draught:.1f} m",
+            )
+        )
+    
+    fig.update_layout(
+        sliders=[
+            dict(
+                active=5,
+                currentvalue=dict(
+                    prefix="Draught: ",
+                    #suffix=" m",
+                    font=dict(size=12),
+                ),
+                pad=dict(t=30),
+                x=0,
+                y=1.2,
+                len=0.4,
+                steps=draught_steps,
+            ),
+        ]
+    )
+
+    fig.show(
+        config={
+            "displayModeBar": True,
+            "scrollZoom": False,
+            "modeBarButtonsToAdd": [
+                "zoom2d",
+                "pan2d",
+            ],
+        }
+    )
+    
     return fig

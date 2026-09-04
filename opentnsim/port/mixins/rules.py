@@ -7,6 +7,7 @@ from enum import Enum
 class Rule:
     condition: Callable
     policy: Any
+    name: str
 
 
 class RuleEngine:
@@ -15,23 +16,24 @@ class RuleEngine:
         self.rules = []
         self.default = default
 
-    def add_rule(self, condition, policy):
+    def add_rule(self, condition, policy, name):
 
         self.rules.append(
             Rule(
                 condition=condition,
-                policy=policy
+                policy=policy,
+                name=name,
             )
         )
 
     def evaluate(self, obj):
-
+        rules = {}
         for rule in self.rules:
-
             if rule.condition(obj):
-                return rule.policy(obj)
-
-        return self.default(obj)
+                rules[rule.name] = rule.policy(obj)
+            else:
+                rules[rule.name] = self.default(obj)
+        return rules
     
     
     def overview(self):

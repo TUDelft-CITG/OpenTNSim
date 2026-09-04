@@ -195,6 +195,13 @@ def calculate_vertical_tidal_windows(vessel, route, time_start, time_end, delay=
             vertical_tidal_accessibility.loc[time_start, :] = [0, "Accessible"]
             vertical_tidal_accessibility.loc[time_end, :] = [0, "Accessible"]
     else:
+        time_0 = vertical_tidal_accessibility.iloc[0].name
+        time_1 = vertical_tidal_accessibility.iloc[-1].name
+        if time_0 <= time_start:
+            time_start = time_0 - pd.Timedelta(hours=1)
+        if time_1 >= time_end:
+            time_end = time_1 + pd.Timedelta(hours=1)
+
         if vertical_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
             vertical_tidal_accessibility.loc[time_start, :] = [0,"Accessible",]
         else:
@@ -204,7 +211,7 @@ def calculate_vertical_tidal_windows(vessel, route, time_start, time_end, delay=
             vertical_tidal_accessibility.loc[time_end, :] = [0, "Accessible",]
         else:
             vertical_tidal_accessibility.loc[time_end, :] = [0," Inaccessible",]
-
+        
     # Return the sail-in or -out-times given the vertical tidal restrictions over the route of the vessel
     vertical_tidal_accessibility = vertical_tidal_accessibility.sort_index()
     vertical_tidal_accessibility["Condition"] = "Water level"
@@ -639,6 +646,12 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
             "Accessible",
         ]
     else:
+        time_0 = horizontal_tidal_accessibility.iloc[0].name
+        time_1 = horizontal_tidal_accessibility.iloc[-1].name
+        if time_0 <= time_start:
+            time_start = time_0 - pd.Timedelta(hours=1)
+        if time_1 >= time_end:
+            time_end = time_1 + pd.Timedelta(hours=1)
         if horizontal_tidal_accessibility.iloc[0].Accessibility == "Inaccessible":
             horizontal_tidal_accessibility.loc[time_start, :] = [
                 0,
@@ -684,7 +697,7 @@ def calculate_horizontal_tidal_windows(vessel, route, time_start, time_end, dela
 def calculate_combined_tidal_windows(tidal_window_1, tidal_window_2):
     tidal_accessibility = pd.concat([tidal_window_1,tidal_window_2],axis=1)
     with pd.option_context("future.no_silent_downcasting", True):
-        tidal_accessibility = tidal_accessibility.bfill().infer_objects(copy=False)
+        tidal_accessibility = tidal_accessibility.ffill().infer_objects(copy=False)
     tidal_accessibility = tidal_accessibility.sort_index()
     tidal_accessibility_limit = [limit_1 if not math.isnan(limit_1) else limit_2 for limit_1, limit_2 in tidal_accessibility.Limit.to_numpy()]
     tidal_accessibility_condition = [condition_1 if isinstance(condition_1, str) else condition_2 for condition_1, condition_2 in tidal_accessibility.Condition.to_numpy()]
@@ -824,9 +837,9 @@ def calculate_ukc_clearance(vessel, edge, delay=0):
     ukc = 0
     distance_to_restriction = 0
     if "Depth_restriction" in vessel.env.graph.nodes[node_1].keys():
-        ukc = vessel.env.graph.nodes[node_1]["Depth_restriction"].evaluate(vessel)
+        ukc = next(iter(vessel.env.graph.nodes[node_1]["Depth_restriction"].evaluate(vessel).values()))
     elif "Depth_restriction" in vessel.env.graph.edges[edge].keys():
-        ukc = vessel.env.graph.edges[edge]["Depth_restriction"].evaluate(vessel)
+        ukc = next(iter(vessel.env.graph.edges[edge]["Depth_restriction"].evaluate(vessel).values()))
         distance_to_restriction = vessel.env.graph.edges[edge]["Depth_restriction_at_distance"](edge)
     else:
         return None, None, None, None, None, None
