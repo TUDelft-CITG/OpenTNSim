@@ -100,6 +100,7 @@ C_P1_MOTOR = 0.04            # Spitzer (2021), Eq. 14 motor set
 
 BASE_RESISTANCE_MODELS = ("auto", "holtrop", "spitzer")
 W_BARGE, T_BARGE = 0.30, 0.20  # van de Kaa (1978) Sec. 4.2 and Eq. 24, loaded push tows (Luthra 1974)
+W_MOTOR, T_MOTOR = 0.24, 0.27  # VBD Rep. 788 via Kulczyk and Tabaczek (2014) Table 2, motor vessel, mean of 4 tests/ Kulczyk and Tabaczek (2014): https://www.transnav.eu/Article_Coefficients_of_Propeller-hull_Kulczyk,31,520.html
 CONFINEMENT_HULLS = ("barge", "barge_spitzer", "motor")
 CONFINEMENT_MODES = ("none", "drawdown", "full")
 
@@ -489,7 +490,7 @@ class ConsumesEnergy:
     - C_year: construction year of the engine [y]
     - D_s: propeller diameter [m]; None gives 0.7 T, the rule of Segers (2021) Appendix C
     - wake_fraction, thrust_deduction: fixed w and t [-]. None gives 0.30 and 0.20 for vessel_type
-      "Barge" (van de Kaa 1978) and Segers (2021) Eq. C.1 for motor vessels
+        "Barge" (van de Kaa 1978) and 0.24 and 0.27 for motor vessels (VBD Rep. 788)
     - confinement_mode: "none" (default) keeps the original resistance, R_tot = R_base.
       "drawdown" adds the drawdown term, "full" also the return-flow friction. Both need the
       waterway width (edge GeneralWidth) and use GeneralCrossSectionArea when present; both
@@ -1220,11 +1221,14 @@ class ConsumesEnergy:
         self.D_s_used = self.D_s if self.D_s is not None else 0.7 * self.T
         self.w = 0.11 * (0.16 / self.x) * self.C_B * np.sqrt(self.delta ** (1 / 3) / self.D_s_used) - self.dw
 
-        # Barges: measured pair of van de Kaa (1978), since Eq. C.1 gives w near 0.02 for full hulls
+
+        # Measured pair per hull family, since Eq. C.1 gives w near 0.02 for full inland hulls
         barge = default_hull(getattr(self, "vessel_type", None)) == "barge"
-        w_fixed = self.wake_fraction if self.wake_fraction is not None else (W_BARGE if barge else None)
+        w_pair, t_pair = (W_BARGE, T_BARGE) if barge else (W_MOTOR, T_MOTOR)
+        w_fixed = self.wake_fraction if self.wake_fraction is not None else w_pair
         t_fixed = self.thrust_deduction if self.thrust_deduction is not None else (
-            T_BARGE if barge and self.wake_fraction is None else None)
+            t_pair if self.wake_fraction is None else None)
+        
         if w_fixed is not None:
             self.w = w_fixed
 
