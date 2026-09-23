@@ -26,6 +26,7 @@ import simpy
 from openclsim.core import Identifiable, Locatable, SimpyObject, Log
 
 import opentnsim.energy
+import opentnsim.strategy
 import opentnsim.graph as graph_module
 
 
@@ -197,9 +198,13 @@ class WithCurrent:
           v_c = speed with current
           v_g = speed over ground
         """
-        v_g = self.v
+        v_w = self.v                     
         v_c = self.get_edge_current(edge)
-        v_w = v_g - v_c
+        v_g = v_w + v_c                  
+        if v_g <= 0:
+            raise ValueError(
+                f"Current {v_c} m/s cancels water speed {v_w} m/s on edge "
+                f"{edge.get('u')}–{edge.get('v')}; ground speed <= 0.")
 
         self.v_w = v_w
         self.v_c = v_c
@@ -336,7 +341,6 @@ class Movable(WithCurrent, Locatable, Routable, Log):
         for on_pass_node_function in self.on_pass_node_functions:
             yield from on_pass_node_function(node)
 
-##################################################################
     def pass_edge(self, origin, destination, end_location):
         edge = self.graph.edges[origin, destination]
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
@@ -360,7 +364,6 @@ class Movable(WithCurrent, Locatable, Routable, Log):
         else:
             raise ValueError("No distance found for this edge")
 
-####################################################################
         next_node = None
         if self.route[-1] != destination:
             next_node = self.route[self.route.index(destination)+1]
@@ -374,30 +377,44 @@ class Movable(WithCurrent, Locatable, Routable, Log):
         # This is the case if we are sailing on power
         value = 0
         if getattr(self, "P_tot_given", None) is not None:
-            edge = self.graph.edges[origin, destination]
-            depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
+            read_edge = opentnsim.energy._edge_hydraulic_value
+            depth = read_edge(edge, "GeneralDepth")
+            width = read_edge(edge, "GeneralWidth")
+            channel_area = read_edge(edge, "GeneralCrossSectionArea")
 
 
+            if depth is None or not np.isfinite(depth) or depth <= 0:
+                raise ValueError(f"A positive GeneralDepth is required on edge "f"{origin!r} -> {destination!r}; received {depth!r}.")
+ 
+            needs_width = bool(getattr(self, "requires_waterway_width", False))
+ 
+            if width is None or not np.isfinite(width) or width <= 0:
+                if needs_width:
+                    raise ValueError(f"A positive GeneralWidth is required for push-tow "
+                        f"resistance on edge {origin!r} -> {destination!r}; "
+                        f"received {width!r}.")
+ 
+                # Preserve the historical fallback only.
+                width_for_grounding = 150.0
+                logger.warning("No positive GeneralWidth on edge %r -> %r; using the "
+                    "historical 150 m width only for the grounding/squat speed limit.",
+                    origin, destination,)
+            else:
+                width_for_grounding = float(width)
+ 
+            depth = float(depth)
 
-            # You can input more power than is realistic
-            # There are two mechanisms that reduce the power given:
-            # 1. The grounding speed:
-            (
-                upperbound,
-                selected,
-                results_df,
-            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
+            channel_area_clean = (None if channel_area is None or not np.isfinite(channel_area) or channel_area <= 0 else float(channel_area))
+            upperbound = opentnsim.strategy.get_upperbound_for_power2v_optim(self, width=width_for_grounding, depth=depth, margin=0,channel_area=channel_area_clean,)
 
+            self.upperbound = float(upperbound)
 
             # Here the upperbound is used to estimate the actual velocity
-            self.v = self.power2v(self, edge, upperbound)
+            self.v = self.power2v(self, edge, self.upperbound)
             power_used = self.P_tot_given
             
             # store upperbound velocity
             # TODO: remove these three fields after debugging
-            self.selected = selected
-            self.results_df = results_df
-            self.upperbound = upperbound
             # use upperbound power (used to compute the sailing speed)
             value = power_used
 
@@ -433,6 +450,7 @@ class Movable(WithCurrent, Locatable, Routable, Log):
         e["u"] = origin
         e["v"] = destination
         v_w, v_c, v_g = self.compute_speeds_on_edge(e)
+
         #v_w, v_c, v_g = self.compute_speeds_on_edge(edge)
         timeout = self.distance / v_g
         yield self.env.timeout(timeout)

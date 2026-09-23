@@ -5,14 +5,6 @@ The vessel-waterway interaction is complex, since the vessel's sailing behaviors
 This package combine with "optimal sailing stratigies notebook" provides stratigies for preventing ship grounding, optimizing cargo capacity, optimizing fuel usage, reducing emissions, considering sailing duration, etc.
 """
 
-# To Do in this pacakge:
-# 1) add "burning lighter" function to monitor the fuel weight decreasing along the route. For the battery-container or electricity powered vessel, the "fuel weight" is constant.
-# 2）add "refueling heavier" function to show the fuel weight increased again at the refueling stations. For the battery-container or electricy powered vessel, the "fuel weight" is constant.
-# 3) add "get_fuel_weight" function which call both the "burning lighter" and "refueling heavier" functions to take into account the influence of the variation of fuel weight to the actual draught and payload.
-# 4) add "get_refueling_duration" function. For the battery-container, the duration is the unloading and loading time for the battery-containers.
-# 5) add "get_optimal_refueling_amount" function. It's not always beneficial to be fully refueled with fuel for sailing, since more fuel on board leads to less cargo and there might still be residual fuel in the tank after a round trip if refuel too much. Therefore, it's needed to calculate the optimal refuling amount for each unique sailing case (route, vessel size & type, payload, time plan, refueling spots along the route).  The optimal refueling amount for a transport case determined by both the fuel consumption in time and space and the locations of refuling spots.
-# 6) consider writting the "fix power or fix speed" example which is in the paper as a function into this pacakge in the future or Figure 10 -12 notebooks are enough already? What might it benefit if adds this function?
-
 
 import functools
 import itertools
@@ -246,7 +238,7 @@ def get_v(vessel, width, depth, margin, bounds):
         max_sinkage = vessel.calculate_max_sinkage(v=v, h_0=depth, width=width)
 
         # calculate available underkeel clearance (vessel in rest)
-        available_clearance = depth - vessel._T
+        available_clearance = depth - vessel.T
 
         # compute difference between the sinkage and the space available for sinkage (including safety margin)
         diff = available_clearance - max_sinkage - margin
@@ -335,3 +327,69 @@ def get_upperbound_for_power2v(vessel, width, depth, margin=0, bounds=(0, 20)):
     upperbound = selected.Powerallowed_v.max()
 
     return upperbound, selected, results_df
+
+
+def _power_difference(v, vessel, width, depth, channel_area=None):
+    if v <= 1e-6:
+        return float(vessel.P_installed) - float(vessel.P_hotel)
+    vessel.calculate_resistance_for_waterway(v=float(v), h_0=float(depth), width=width, channel_area=channel_area,)
+    vessel.calculate_total_power_required(v=float(v), h_0=vessel.h_resistance)
+    return float(vessel.P_installed) - float(vessel.P_tot)   # UNCAPPED
+
+
+
+# errors that mean "no valid model result at this speed" (grounding, critical speed, NaN, complex)
+_MODEL_ERRORS = (ValueError, ArithmeticError, RuntimeError, AssertionError, TypeError)
+
+
+def _power_margin_or_none(v, vessel, width, depth, channel_area=None):
+    """P_installed - P_tot at v, or None when the model has no valid result there."""
+    try:
+        margin = _power_difference(v, vessel, width, depth, channel_area)
+    except _MODEL_ERRORS:
+        return None
+    return margin if np.isfinite(margin) else None
+
+
+def _scan_power_upperbound(vessel, width, depth, v_hi, channel_area=None, v_lo=0.01, n_scan=41, v_tol=1e-5):
+    """Largest speed up to v_hi covered by the installed power: coarse scan, then bisection."""
+    v_hi = float(v_hi)
+    if not np.isfinite(v_hi) or v_hi <= 0.0:
+        return 0.0
+
+    lo = 0.0
+    for v in np.linspace(min(float(v_lo), 0.5 * v_hi), v_hi, int(n_scan)):
+        margin = _power_margin_or_none(float(v), vessel, width, depth, channel_area)
+        if margin is not None and margin >= 0.0:
+            lo = float(v)
+            continue
+        hi = float(v)
+        while hi - lo > v_tol:
+            mid = 0.5 * (lo + hi)
+            margin = _power_margin_or_none(mid, vessel, width, depth, channel_area)
+            lo, hi = (mid, hi) if margin is not None and margin >= 0.0 else (lo, mid)
+        break
+    return lo
+
+
+def get_upperbound_for_power2v_optim(vessel, width, depth, margin=0, bounds=(0, 20), channel_area=None):
+    """Upper bound for power2v: grounding speed, then the hydraulic limits, then the power limit.
+
+    Brentq gives the speed where P_tot reaches P_installed; _scan_power_upperbound is the fallback.
+    """
+    grounding_v, _, _ = get_v(vessel, width, depth, margin=margin, bounds=bounds)
+    grounding_v = vessel.limit_power2v_upperbound(upperbound=grounding_v, h_0=depth, width=width, channel_area=channel_area)
+    if grounding_v <= 1e-6:
+        return 0.0
+    v_min = 1e-6
+    try:
+        if _power_difference(v_min, vessel, width, depth, channel_area) < 0:
+            return 0.0
+        if _power_difference(grounding_v, vessel, width, depth, channel_area) >= 0:
+            return grounding_v
+        sol = scipy.optimize.root_scalar(_power_difference, args=(vessel, width, depth, channel_area), method="brentq", bracket=[v_min, grounding_v],)
+        if sol.converged and _power_margin_or_none(sol.root, vessel, width, depth, channel_area) is not None:
+            return sol.root
+    except _MODEL_ERRORS:
+        pass
+    return _scan_power_upperbound(vessel, width, depth, grounding_v, channel_area=channel_area)

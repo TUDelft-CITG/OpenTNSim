@@ -46,7 +46,10 @@ class VesselProperties:
     - renewable_fuel_mass: renewable fuel mass on board [kg]
     - renewable_fuel_volume: renewable fuel volume on board [m3]
     - renewable_fuel_required_space: renewable fuel required storage space (consider packaging factor) on board  [m3]
+
     """
+ 
+   
 
     def __init__(
         self,
@@ -107,7 +110,7 @@ class VesselProperties:
         if self._T is not None:
             # if we were passed a T value, use that one
             T = self._T
-        elif self.T_f is not None and self.T_e is not None:
+        elif getattr(self, "T_f", None) is not None and getattr(self, "T_e", None) is not None:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
         elif self.payload is not None and self.vessel_type is not None:
@@ -117,7 +120,13 @@ class VesselProperties:
                 vessel_type=self.vessel_type,
                 bounds=(0, 5),
             )  # this need to be tested
-        # todo: for later possibly include Payload2T
+        else:
+            # PATCH P7: fail with a message instead of an UnboundLocalError
+            raise ValueError(
+                f"Cannot determine draught for vessel "
+                f"{getattr(self, 'name', getattr(self, 'id', '?'))}: provide T, "
+                "or (T_e, T_f) with filling_degree, or (payload, vessel_type)."
+            )
 
         return T
 
@@ -127,11 +136,18 @@ class VesselProperties:
         This will default to using the draught passed by the constructor. If it is None it will try to find one in the super class.
         """
         if self._H is not None:
-            # if we were passed a T value, use that one
+            # if we were passed an H value, use that one
             H = self._H
-        elif self.H_f is not None and self.H_e is not None:
-            # base draught on filling degree
+        elif getattr(self, "H_f", None) is not None and getattr(self, "H_e", None) is not None:
+            # base height on filling degree
             H = self.filling_degree * (self.H_f - self.H_e) + self.H_e
+        else:
+            # PATCH P7: fail with a message instead of an UnboundLocalError
+            raise ValueError(
+                f"Cannot determine height for vessel "
+                f"{getattr(self, 'name', getattr(self, 'id', '?'))}: provide H "
+                "or (H_e, H_f) with filling_degree."
+            )
 
         return H
 

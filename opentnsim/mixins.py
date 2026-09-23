@@ -8,6 +8,7 @@ import os
 import pickle
 import uuid
 from itertools import cycle
+import io
 
 # matplotlib
 import matplotlib.pyplot as plt
@@ -24,7 +25,7 @@ import shapely.geometry
 import simpy
 from opentnsim.core import Identifiable, Locatable
 # OpenTNSim
-from opentnsim import mixins as graph_module
+
 from opentnsim import utils
 from plotly.offline import init_notebook_mode, iplot
 from shapely.geometry import LineString, Point
@@ -620,10 +621,10 @@ def compute_distance(edge, orig, dest):
         sub_dest = shapely.geometry.Point(edge_route[index + 1][0], edge_route[index + 1][1])
 
         distance += wgs84.inv(
-            shapely.geometry.asShape(sub_orig).x,
-            shapely.geometry.asShape(sub_orig).y,
-            shapely.geometry.asShape(sub_dest).x,
-            shapely.geometry.asShape(sub_dest).y,
+            sub_orig.x,
+            sub_orig.y,
+            sub_dest.x,
+            sub_dest.y,
         )[2]
     return distance
 
@@ -741,7 +742,7 @@ def plot_graph(graph, static: bool = False):
     for u, v in graph.edges():
         origin = graph.nodes[u]['geometry']
         destination = graph.nodes[v]['geometry']
-        distance_m = graph_module.calculate_distance(origin, destination)
+        distance_m = calculate_distance(origin, destination)
         edge_labels[(u, v)] = f"{int(distance_m)} m"
 
     # Edge traces and arrow annotations

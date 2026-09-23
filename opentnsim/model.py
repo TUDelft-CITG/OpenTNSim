@@ -1,4 +1,9 @@
-"""Vessel generator."""
+"""Vessel generator.
+
+PATCHED (see CHANGES.md):
+ - P9a: scenario filter is applied to the database BEFORE sampling one row
+ - P9b: the vessel is instantiated exactly once
+"""
 
 # package(s) related to time, space and id
 import json
@@ -44,21 +49,28 @@ class VesselGenerator:
     def generate(self, environment, vessel_name, fleet_distribution=None, scenario=None):
         """ Generate a vessel """
 
+        # PATCH P9a: filter on scenario BEFORE sampling, so a sampled row can
+        # never be filtered away afterwards (which crashed on .values[0])
+        database = self.vessel_database
+        if scenario:
+            database = database[database["scenario"] == scenario]
+            if len(database) == 0:
+                raise ValueError(
+                    f"No vessels with scenario '{scenario}' in the vessel database."
+                )
+
         if fleet_distribution == None:
-            vessel_info = self.vessel_database.sample(
+            vessel_info = database.sample(
                 n=1, random_state=int(1000 * random.random())
             )
         else:
-            vessel_info = self.vessel_database.sample(
-                n=1, weights=fleet_distribution,random_state=int(1000 * random.random())
+            vessel_info = database.sample(
+                n=1, weights=fleet_distribution, random_state=int(1000 * random.random())
             )
         vessel_data = {}
 
         vessel_data["env"] = environment
         vessel_data["name"] = vessel_name
-
-        if scenario:
-            vessel_info = vessel_info[vessel_info["scenario"] == scenario]
 
         for key in vessel_info:
             if key == "vessel_id":
@@ -75,7 +87,7 @@ class VesselGenerator:
                 vessel_data["level"] = 0
         vessel_data["route"] = None
         vessel_data["geometry"] = None
-        self.vessel_type(**vessel_data)
+        # PATCH P9b: instantiate the vessel once (was instantiated twice, first discarded)
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
@@ -188,29 +200,9 @@ class Simulation(core.Identifiable):
 
         if not vessel_speed_data:
             vessel_speed_data = None
-            # vessel_speed_data = pd.DataFrame(columns=['edge', 'speed'])
-            # for idx, edge in enumerate(graph.edges):
-            #     vessel_speed_data.at[idx, 'edge'] = edge
-            #     vessel_speed_data.at[idx, 'speed'] = np.NaN
-            # vessel_speed_data.set_index('edge')
 
         if not hydrodynamic_data:
             hydrodynamic_data = None
-            # hydrodynamic_data = xr.Dataset()
-            # stations = list(graph.nodes)
-            # times = [simulation_start, simulation_stop]
-            # layers = [0]
-            # static_data = [np.NaN] * len(graph.nodes)
-            # dynamic_time_data = [[np.NaN, np.NaN]] * len(graph.nodes)
-            # dynamic_time_layer_data = [[[np.NaN], [np.NaN]]] * len(graph.nodes)
-            # MBL = xr.DataArray(data=static_data, dims='STATION', coords=dict(STATION=stations))
-            # wlev = xr.DataArray(data=dynamic_time_data, dims=['STATION', 'TIME'],
-            #                     coords=dict(STATION=stations, TIME=times))
-            # cvel = xr.DataArray(data=dynamic_time_layer_data, dims=['STATION', 'TIME', 'LAYER'],
-            #                     coords=dict(STATION=stations, TIME=times, LAYER=layers))
-            # hydrodynamic_data['MBL'] = MBL
-            # hydrodynamic_data['Water level'] = wlev
-            # hydrodynamic_data['Current velocity'] = cvel
 
         self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data,vessel_speed_data)
 

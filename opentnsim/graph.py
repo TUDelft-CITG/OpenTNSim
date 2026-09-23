@@ -322,10 +322,10 @@ def compute_distance(edge, orig, dest):
         sub_dest = shapely.geometry.Point(edge_route[index + 1][0], edge_route[index + 1][1])
 
         distance += wgs84.inv(
-            shapely.geometry.asShape(sub_orig).x,
-            shapely.geometry.asShape(sub_orig).y,
-            shapely.geometry.asShape(sub_dest).x,
-            shapely.geometry.asShape(sub_dest).y,
+            sub_orig.x,
+            sub_orig.y,
+            sub_dest.x,
+            sub_dest.y,
         )[2]
     return distance
 

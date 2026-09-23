@@ -1,22 +1,33 @@
+from __future__ import annotations
+
 import pathlib
 import logging
+import warnings
 import functools
 import pyproj
 import numpy as np
 import pandas as pd
 import scipy.optimize
+from typing import Any
+
 
 # OpenTNSim
 import opentnsim
 import opentnsim.strategy
 
+from collections.abc import Mapping
+
 logger = logging.getLogger(__name__)
+
+KARPOV_ALPHA_MIN = 0.5   # chart minimum (conservative)
+KARPOV_ALPHA_MAX = 1.0   # alpha_xx > 1 is nonphysical
+
+
 
 
 def load_partial_engine_load_correction_factors():
     """read correction factor from package directory"""
 
-    # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent / "data"
     correctionfactors_path = data_dir / "Correctionfactors.csv"
     df = pd.read_csv(correctionfactors_path, comment="#")
@@ -27,7 +38,6 @@ def load_partial_engine_load_correction_factors():
 def karpov_smooth_curves():
     """read correction factor from package directory"""
 
-    # Can't get this  to work with pkg_resourcs
     data_dir = pathlib.Path(__file__).parent.parent / "data"
     karpov_smooth_curves_path = data_dir / "KarpovSmoothCurves.csv"
     df = pd.read_csv(karpov_smooth_curves_path, comment="#")
@@ -47,51 +57,385 @@ def find_closest_node(G, point):
     return name_node, distance_node
 
 
-def power2v(vessel, edge, upperbound):
-    """Compute vessel velocity given an edge and power (P_tot_given)
+def _edge_hydraulic_value(edge, key):
+    """Read a hydraulic value from an edge or its nested ``Info`` mapping."""
 
-    bounds is the limits where to look for a solution for the velocity [m/s]
-    returns velocity [m/s]
+    if edge is None:
+        return None
+ 
+    value = edge.get(key, None)
+    if value is not None:
+        return value
+ 
+    info = edge.get("Info", {})
+    if isinstance(info, dict):
+        return info.get(key, None)
+ 
+    return None
+
+
+# Restricted water (channel width). With confinement_mode "drawdown" or "full", ConsumesEnergy adds
+# to the chain (Holtrop-Mennen, Zeng, Karpov):
+#     R_confinement = c_f [C_F(V + V_R) rho/2 (V + V_R)^2 - C_F(V) rho/2 V^2] S + c_z rho g A_M Z
+# The first term is the return-flow friction ("full" only), the second the drawdown term.
+# Hydraulics: 1D continuity and Bernoulli (Schijf 1949; van de Kaa 1978, Eqs. 1-3; Spitzer 2021,
+# Eqs. 8-13). Valid below the critical speed V_cr and with a positive clearance h - T - Z.
+
+
+RHO_FRESH_WATER = 1000.0      # water density [kg/m3]
+G = 9.81                      # gravity [m/s2]
+NU_WATER_15C = 1.139e-6       # kinematic viscosity of fresh water at 15 degC [m2/s]
+
+C_GLOBAL_BARGE = 1.35         # Spitzer Eq. 25, barge set
+C_P0_BARGE = 0.67
+C_GLOBAL_MOTOR = 1.45         # Spitzer Eq. 21, motorvessel set
+C_P0_MOTOR = 0.075
+DELTA_CF_SPITZER = 0.0004     # roughness allowance, Spitzer (2021)
+DELTA_CF_VAN_DE_KAA = 2.5e-4  # roughness allowance, van de Kaa (1978)
+FROUDE_EC_M0 = 0.684          # Spitzer Eq. 19
+
+CONFINEMENT_HULLS = ("barge", "barge_spitzer", "motor")
+CONFINEMENT_MODES = ("none", "drawdown", "full")
+
+class HydraulicSolutionError(RuntimeError):
+    """No subcritical drawdown solution for this speed and section."""
+
+
+def _pos(name, value):
+    """Value as a positive, finite float."""
+    value = float(value)
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be positive and finite; received {value!r}.")
+    return value
+
+
+def _nonneg(name, value):
+    """Value as a finite float that is not negative."""
+    value = float(value)
+    if not np.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be finite and >= 0; received {value!r}.")
+    return value
+
+
+def c_shallow_barge(h, T):
+    """Shallow-water factor of a barge convoy, Spitzer Eq. 25. h is the depth alongside the vessel."""
+    h = _pos("h", h)
+    T = _pos("T", T)
+    return 2.125 - 0.75 * (h / T) if h / T < 1.5 else 1.0
+
+
+def c_shallow_motor(h, T):
+    """Shallow-water factor of a motor ship, Spitzer Eq. 21. h is the depth alongside the vessel."""
+    h = _pos("h", h)
+    T = _pos("T", T)
+    return 1.96 - 0.64 * (h / T) if h / T < 1.5 else 1.0
+
+
+def c_friction_ittc(V_rel, L_friction, nu=NU_WATER_15C, delta_cf=DELTA_CF_SPITZER):
+    """C_F, ITTC-1957 line with roughness allowance, Spitzer Eq. 4. V_rel = V + V_R."""
+    V_rel = _pos("V_rel", V_rel)
+    L_friction = _pos("L_friction", L_friction)
+    nu = _pos("nu", nu)
+    denominator = np.log10(V_rel * L_friction / nu) - 2.0
+    if not np.isfinite(denominator) or abs(denominator) < 1e-12:
+        raise ValueError(f"Invalid ITTC-1957 denominator for V_rel={V_rel:.6g} and L={L_friction:.6g}.")
+    return 0.075 / denominator ** 2 + float(delta_cf)
+
+
+def economic_speed(h_mean, blockage_ratio, g=G):
+    """Economic speed V_ec [m/s], Spitzer Eq. 19. h_mean = A_C / W, blockage m = A_M / A_C."""
+    h_mean = _pos("h_mean", h_mean)
+    m = float(blockage_ratio)
+    if not 0.0 <= m < 1.0:
+        raise ValueError(f"blockage_ratio must lie in [0, 1); received {m!r}.")
+    return FROUDE_EC_M0 * (1.0 - m) ** 1.854 * np.sqrt(g * h_mean)
+
+
+def critical_speed(h_mean, blockage_ratio, g=G):
+    """Schijf critical speed V_cr [m/s], Spitzer Eq. 17."""
+    h_mean = _pos("h_mean", h_mean)
+    m = float(blockage_ratio)
+    if not 0.0 <= m < 1.0:
+        raise ValueError(f"blockage_ratio must lie in [0, 1); received {m!r}.")
+    return np.sqrt(g * h_mean) * (2.0 * np.sin(np.arcsin(1.0 - m) / 3.0)) ** 1.5
+
+
+def _solve_A_W(A_C, A_M, W, V, g, alpha):
+    """Flow area A_W, the largest real root in (0, A_C - A_M] of the cubic form of Spitzer Eq. 9."""
+    k = V * V / (2.0 * g)
+    A_free = A_C - A_M
+    roots = np.roots([1.0, -(A_free + W * k), 0.0, W * k * alpha * A_C ** 2])
+    real = roots[np.abs(roots.imag) < 1e-8 * max(1.0, np.abs(roots.real).max())].real
+    valid = real[(real > 0.0) & (real <= A_free * (1.0 + 1e-12))]
+    if valid.size == 0:
+        raise HydraulicSolutionError("No subcritical root: the speed is at or above the critical regime.")
+    return float(min(valid.max(), A_free))
+
+
+def drawdown_return_flow(V, h, B, T, W, channel_area_m2=None, midship_area_m2=None, mean_depth_m=None, alpha=1.0, g=G):
+    """Drawdown Z and return flow V_R, Spitzer Eqs. 8, 9 and 13.
+
+    V is the speed through the water, h the depth alongside the vessel, W the water-surface width.
+    A_C defaults to W * h, A_M to B * T, the mean depth to A_C / W.
+    """
+    V = _nonneg("V", V)
+    h = _pos("h", h)
+    B = _pos("B", B)
+    T = _pos("T", T)
+    W = _pos("W", W)
+    g = _pos("g", g)
+    alpha = _pos("alpha", alpha)
+    if h <= T:
+        raise ValueError(f"Insufficient depth: h={h:.3f} m must exceed T={T:.3f} m.")
+    if W <= B:
+        raise ValueError(f"Width W={W:.3f} m must exceed the beam B={B:.3f} m.")
+
+    A_C = W * h if channel_area_m2 is None else _pos("channel_area_m2", channel_area_m2)
+    A_M = B * T if midship_area_m2 is None else _pos("midship_area_m2", midship_area_m2)
+    h_mean = A_C / W if mean_depth_m is None else _pos("mean_depth_m", mean_depth_m)
+    if A_M >= A_C:
+        raise ValueError(f"Midship area A_M={A_M:.3f} m2 must be smaller than channel area A_C={A_C:.3f} m2.")
+    m = A_M / A_C
+
+    if V == 0.0:
+        Z = 0.0
+        V_R = 0.0
+        A_W = A_C - A_M
+        dynamic_ukc = h - T
+    else:
+        A_W = _solve_A_W(A_C, A_M, W, V, g, alpha)
+        Z = (A_C - A_M - A_W) / W
+        V_R = V * (np.sqrt(1.0 + 2.0 * g * Z / V ** 2) - 1.0)
+        dynamic_ukc = h - T - Z
+        if not np.isfinite(V_R) or V_R < 0.0:
+            raise HydraulicSolutionError(f"Invalid return velocity V_R={V_R!r}.")
+        if dynamic_ukc <= 0.0:
+            raise HydraulicSolutionError(f"Non-positive dynamic UKC {dynamic_ukc:.4f} m at h={h:.3f} m, "
+                                         f"T={T:.3f} m, Z={Z:.4f} m.")
+
+    return {"Z_m": Z, "V_R_ms": V_R, "blockage_ratio": m, "dynamic_ukc_m": dynamic_ukc,
+            "channel_area_m2": A_C, "midship_area_m2": A_M, "available_flow_area_m2": A_W,
+            "water_depth_m": h, "mean_depth_m": h_mean}
+
+
+def default_hull(vessel_type):
+    """Coefficient set of a vessel_type: "Barge" gives "barge", every other type "motor"."""
+    return "barge" if str(vessel_type).strip().lower() == "barge" else "motor"
+
+
+def increment_coefficients(hull, h, T):
+    """Coefficients c_f, c_z and delta_cf of the increment, with C_Shallow
+
+    - "barge": van de Kaa (1978) Eq. 21, thus c_f = c_z = 1
+    - "motor": Spitzer (2021) Eq. 21, thus c_f = 1.45 C_Shallow and c_z = 0.075 c_f
+    - "barge_spitzer": Spitzer Eq. 25
+    """
+    if hull == "barge":
+        return {"c_f": 1.0, "c_z": 1.0, "delta_cf": DELTA_CF_VAN_DE_KAA, "C_Shallow": 1.0}
+    if hull == "barge_spitzer":
+        c_sh = c_shallow_barge(h, T)
+        scale = C_GLOBAL_BARGE * c_sh
+        return {"c_f": scale, "c_z": C_P0_BARGE * scale, "delta_cf": DELTA_CF_SPITZER, "C_Shallow": c_sh}
+    if hull == "motor":
+        c_sh = c_shallow_motor(h, T)
+        scale = C_GLOBAL_MOTOR * c_sh
+        return {"c_f": scale, "c_z": C_P0_MOTOR * scale, "delta_cf": DELTA_CF_SPITZER, "C_Shallow": c_sh}
+    raise ValueError(f"Unknown hull {hull!r}; use one of {CONFINEMENT_HULLS}.")
+
+
+def _section(h, B, T, W, channel_area_m2=None, midship_area_m2=None, mean_depth_m=None):
+    """Return A_C, A_M, the mean depth A_C / W and the blockage m, as drawdown_return_flow does."""
+    h = _pos("h", h)
+    B = _pos("B", B)
+    T = _pos("T", T)
+    W = _pos("W", W)
+    if h <= T:
+        raise ValueError(f"Insufficient depth: h={h:.3f} m must exceed T={T:.3f} m.")
+    if W <= B:
+        raise ValueError(f"Width W={W:.3f} m must exceed the beam B={B:.3f} m.")
+    A_C = W * h if channel_area_m2 is None else _pos("channel_area_m2", channel_area_m2)
+    A_M = B * T if midship_area_m2 is None else _pos("midship_area_m2", midship_area_m2)
+    h_mean = A_C / W if mean_depth_m is None else _pos("mean_depth_m", mean_depth_m)
+    if A_M >= A_C:
+        raise ValueError(f"Midship area A_M={A_M:.3f} m2 must be smaller than channel area A_C={A_C:.3f} m2.")
+    return A_C, A_M, h_mean, A_M / A_C
+
+
+def hydraulic_speed_limits(h, B, T, W, channel_area_m2=None, midship_area_m2=None,
+                           mean_depth_m=None, g=G):
+    """V_cr and V_ec of the section, from the mean depth A_C / W and the blockage A_M / A_C."""
+    A_C, A_M, h_mean, m = _section(h, B, T, W, channel_area_m2, midship_area_m2, mean_depth_m)
+    return {"V_cr_ms": float(critical_speed(h_mean, m, g=g)),
+            "V_ec_ms": float(economic_speed(h_mean, m, g=g)),
+            "blockage_ratio": m, "mean_depth_m": h_mean,
+            "channel_area_m2": A_C, "midship_area_m2": A_M}
+
+
+def max_speed_for_ukc(h, B, T, W, ukc_min=0.01, channel_area_m2=None, midship_area_m2=None,
+                      mean_depth_m=None, alpha=1.0, g=G, v_tol=1e-4):
+    """Highest speed with dynamic clearance h - T - Z >= ukc_min, by bisection below 0.999 V_cr."""
+    ukc_min = float(ukc_min)
+    if h - T <= ukc_min:
+        return 0.0
+    lim = hydraulic_speed_limits(h, B, T, W, channel_area_m2=channel_area_m2,
+                                 midship_area_m2=midship_area_m2, mean_depth_m=mean_depth_m, g=g)
+    kw = dict(channel_area_m2=channel_area_m2, midship_area_m2=midship_area_m2,
+              mean_depth_m=mean_depth_m, alpha=alpha, g=g)
+
+    def ok(v):
+        try:
+            return drawdown_return_flow(v, h, B, T, W, **kw)["dynamic_ukc_m"] >= ukc_min
+        except HydraulicSolutionError:
+            return False
+
+    hi = 0.999 * lim["V_cr_ms"]
+    if ok(hi):
+        return float(hi)
+    lo = 0.0
+    while hi - lo > v_tol:
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if ok(mid) else (lo, mid)
+    return float(lo)
+
+
+def confinement_resistance_increment(V, h, L, B, T, W, S, hull="motor", mode="full",
+                                     channel_area_m2=None, midship_area_m2=None, mean_depth_m=None,
+                                     alpha=1.0, rho=RHO_FRESH_WATER, g=G, nu=NU_WATER_15C,
+                                     delta_cf=None, c_f=None, c_z=None):
+    """Resistance increment of a channel of finite width, in N and kN
+
+    - V: speed through the water; L, B, T: length, beam and real draught; W: water-surface width
+    - S: wetted surface
+    - hull: "barge", "motor" or "barge_spitzer"; mode: "drawdown" or "full"
+    - delta_cf, c_f, c_z: overrides of the coefficient set, for sensitivity runs
+
+    The result also carries the hydraulics (Z, V_R, m, dynamic clearance) and the speed limits
+    for the event table. A speed at or above V_cr, or a clearance of zero, raises
+    HydraulicSolutionError.
+    """
+    if mode not in ("drawdown", "full"):
+        raise ValueError(f"Unknown mode {mode!r}; use 'drawdown' or 'full' (ConsumesEnergy handles 'none').")
+    V = _nonneg("V", V)
+    L = _pos("L", L)
+    S = _pos("S", S)
+    rho = _pos("rho", rho)
+    g = _pos("g", g)
+    nu = _pos("nu", nu)
+
+    coef = increment_coefficients(hull, h, T)
+    k_f = coef["c_f"] if c_f is None else float(c_f)
+    k_z = coef["c_z"] if c_z is None else float(c_z)
+    dcf = coef["delta_cf"] if delta_cf is None else float(delta_cf)
+
+    hyd = drawdown_return_flow(V, h, B, T, W, channel_area_m2=channel_area_m2,
+                               midship_area_m2=midship_area_m2, mean_depth_m=mean_depth_m,
+                               alpha=alpha, g=g)
+    V_R = float(hyd["V_R_ms"])
+    Z = float(hyd["Z_m"])
+    A_M = float(hyd["midship_area_m2"])
+    h_mean = float(hyd["mean_depth_m"])
+    m = float(hyd["blockage_ratio"])
+
+    if V == 0.0:
+        C_F_channel = C_F_open = float("nan")
+        dR_friction = 0.0
+        dR_drawdown = 0.0
+    else:
+        C_F_channel = float(c_friction_ittc(V + V_R, L, nu=nu, delta_cf=dcf))
+        C_F_open = float(c_friction_ittc(V, L, nu=nu, delta_cf=dcf))
+        dR_friction = k_f * 0.5 * rho * S * (C_F_channel * (V + V_R) ** 2 - C_F_open * V ** 2)
+        dR_drawdown = k_z * rho * g * A_M * Z
+    if mode == "drawdown":
+        dR_friction = 0.0
+    dR = dR_friction + dR_drawdown
+
+    V_cr = float(critical_speed(h_mean, m, g=g))
+    V_ec = float(economic_speed(h_mean, m, g=g))
+
+    return {"confinement_model": f"confinement_{hull}", "hull": hull, "mode": mode,
+            "dR_N": dR, "dR_kN": dR / 1000.0, "dR_friction_N": dR_friction, "dR_drawdown_N": dR_drawdown,
+            "c_f": k_f, "c_z": k_z, "delta_cf": dcf, "C_Shallow": coef["C_Shallow"],
+            "C_F_channel": C_F_channel, "C_F_open": C_F_open,
+            "V_R_ms": V_R, "Z_m": Z, "V_relative_ms": V + V_R, "blockage_ratio": m,
+            "dynamic_ukc_m": float(hyd["dynamic_ukc_m"]), "channel_area_m2": float(hyd["channel_area_m2"]),
+            "midship_area_m2": A_M, "water_depth_m": float(hyd["water_depth_m"]), "mean_depth_m": h_mean,
+            "h_over_T": float(hyd["water_depth_m"]) / float(T),
+            "V_cr_ms": V_cr, "V_ec_ms": V_ec, "V_over_V_cr": V / V_cr, "V_over_V_ec": V / V_ec,
+            "econ_speed_exceeded": bool(V > V_ec)}
+
+
+
+def power2v(vessel, edge, upperbound):
+    """Compute vessel speed for a prescribed total engine-power setting.
+
+    The resistance calculation is delegated to ``vessel.calculate_resistance_for_waterway``.
+    ``confinement_mode="none"`` (default): Barrass squat depth, then Holtrop/Zeng/Karpov.
+    ``"drawdown"`` or ``"full"``: raw depth, Holtrop/Zeng/Karpov and the channel-width increment.
     """
 
     assert isinstance(vessel, opentnsim.vessel.VesselProperties), "vessel should be an instance of VesselProperties"
     assert vessel.C_B is not None, "C_B cannot be None"
+ 
+    h_raw = _edge_hydraulic_value(edge, "GeneralDepth")
+    waterway_width = _edge_hydraulic_value(edge, "GeneralWidth")
+    # When the real wetted area is available, the channel hydraulics use h for C_Shallow/UKC and A_C/W for V_cr/V_ec.
+    # Absent -> A_C = W*h
 
-    def seek_v_given_power(v, vessel, edge):
+    channel_area = _edge_hydraulic_value(edge, "GeneralCrossSectionArea")
+    if channel_area is not None and (not np.isfinite(channel_area) or channel_area <= 0):
+        channel_area = None
+ 
+    if h_raw is None or not np.isfinite(h_raw) or h_raw <= 0:
+        raise ValueError(f"A positive GeneralDepth is required for power2v; received {h_raw!r}.")
+ 
+    # confinement_mode "drawdown" / "full": the limit stays below the critical speed and the dynamic-UKC speed. "none": the input, unchanged.
+    upperbound = vessel.limit_power2v_upperbound(upperbound=upperbound, h_0=float(h_raw), width=waterway_width, channel_area=channel_area,)
+
+    if not np.isfinite(upperbound) or upperbound <= 0:
+        raise ValueError(f"Invalid power2v upper bound: {upperbound!r}.")
+
+
+    def seek_v_given_power(v):
         """function to optimize"""
         # TODO: check it this needs to be made more general, now relies on ['Info'] to be present
         # water depth from the edge
-        h_0 = edge["Info"]["GeneralDepth"]
-        try:
-            h_0 = vessel.calculate_h_squat(v, h_0)
-        except AttributeError:
-            # no squat available
-            pass
+
+        if v <= 0:
+            return np.inf
+        
+        # h_0 = edge["Info"]["GeneralDepth"]
+        # try:
+        #     h_0 = vessel.calculate_h_squat(v, h_0)
+        # except AttributeError:
+        #     # no squat available
+        #     pass
         # TODO: consider precomputing a range v/h combinations for the ship before the simulation starts
-        vessel.calculate_total_resistance(v, h_0)
+        #vessel.calculate_total_resistance(v, h_0)
 
-        # compute total power given
-        P_given = vessel.calculate_total_power_required(v=v, h_0=h_0)
+        vessel.calculate_resistance_for_waterway(v=float(v), h_0=float(h_raw), width=waterway_width, channel_area=channel_area,)
+
+        vessel.calculate_total_power_required(v=float(v), h_0=vessel.h_resistance)
+
         if isinstance(vessel.P_tot, complex):
-            raise ValueError(f"P tot is complex: {vessel.P_tot}")
+            raise ValueError(f"P_tot is complex: {vessel.P_tot}")
+        diff = float(vessel.P_tot_given) - float(vessel.P_tot)   
 
-        # compute difference between power setting by captain (incl hotel) and power needed for velocity (incl hotel)
-        diff = vessel.P_tot_given - P_given # vessel.P_tot
-        logger.debug(f"optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}")
-
+        logger.debug("optimizing for v=%s, P_tot_given=%s, P_tot=%s, P_given=%s",v, vessel.P_tot_given, vessel.P_tot, getattr(vessel, "P_given", np.nan),)
         return diff**2
-
-    # fill in some of the parameters that we already know
-    fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
-    # lookup a minimum
-    fit = scipy.optimize.minimize_scalar(fun, bounds=(0, upperbound), method="bounded", options=dict(xatol=0.0000001))
-
-    # check if we found a minimum
+ 
+    fit = scipy.optimize.minimize_scalar(seek_v_given_power, bounds=(1e-6, float(upperbound)), method="bounded", options=dict(xatol=1e-7),)
+ 
     if not fit.success:
         raise ValueError(fit)
-    logger.debug(f"fit: {fit}")
+ 
+    logger.debug("fit: %s", fit)
+    return float(fit.x)
 
-    return fit.x
+    # fill in some of the parameters that we already know
+    #fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
+    # lookup a minimum
+    #fit = scipy.optimize.minimize_scalar(fun, bounds=(0, upperbound), method="bounded", options=dict(xatol=0.0000001))
+
 
 
 class ConsumesEnergy:
@@ -117,7 +461,25 @@ class ConsumesEnergy:
     - C_B: block coefficient ('fullness') [-] (default to 0.85)
     - one_k2: appendage resistance factor (1+k2) [-]
     - C_year: construction year of the engine [y]
+    - wake_fraction: optional fixed wake fraction w [-]; None uses the Segers (2021) relation
+    - thrust_deduction: optional fixed thrust deduction t [-]; None uses the relation with w
+    - confinement_mode: "none" (default) keeps the original resistance, R_tot = R_base.
+      "drawdown" adds the drawdown term, "full" also the return-flow friction. Both need the
+      waterway width (edge GeneralWidth) and use GeneralCrossSectionArea when present; both
+      evaluate the chain at the raw depth, with Barrass squat as a navigation diagnostic.
+    - confinement_hull: "barge", "motor", "barge_spitzer", or None for the set of vessel_type
+    - confinement_speed_cap: "critical" (default) or "economic"; confinement_ukc_min: clearance [m]
+    - squat_in_resistance: True gives the squat depth to the chain (double count), default False
+    - confinement_c_f, confinement_c_z, confinement_delta_cf: coefficient overrides for sensitivity
     """
+
+    # Resistance model name for event tables (the event table also records confinement_mode).
+    resistance_model = "holtrop_zeng_karpov"
+
+    @property
+    def requires_waterway_width(self):
+        """True when the resistance needs the real waterway width (confinement_mode "drawdown" or "full")."""
+        return getattr(self, "confinement_mode", "none") != "none"
 
     def __init__(
         self,
@@ -125,6 +487,7 @@ class ConsumesEnergy:
         L_w,
         C_year,
         current_year=None,  # current_year
+        engine_age_seed=None,  # PATCH P8: seed for the Weibull engine-age draw
         bulbous_bow=False,
         P_hotel_perc=0.05,
         P_hotel=None,
@@ -142,13 +505,25 @@ class ConsumesEnergy:
         C_BB=0.2,
         C_B=0.85,
         one_k2=2.5, # following Segers (2021) we assume (1 + k2) to be 2.5 (see below Eq 3.27)
+        karpov_correction=True,
+        wake_fraction=None,
+        thrust_deduction=None,
+        confinement_mode="none",
+        confinement_hull=None,
+        confinement_speed_cap="critical",
+        confinement_ukc_min=0.01,
+        squat_in_resistance=False,
+        confinement_c_f=None,
+        confinement_c_z=None,
+        confinement_delta_cf=None,
         *args,
         **kwargs,
+        
     ):
+        
         super().__init__(*args, **kwargs)
 
-        """Initialization
-        """
+        """Initialization"""
 
         self.P_installed = P_installed
         self.bulbous_bow = bulbous_bow
@@ -156,7 +531,7 @@ class ConsumesEnergy:
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
         self.P_hotel_perc = P_hotel_perc
 
-        if P_hotel:  # if P_hotel is specified use the given value
+        if P_hotel is not None:  # if P_hotel is specified use the given value
             self.P_hotel = P_hotel
         else:  # if P_hotel is None calculate it from P_hotel_percentage and P_installed
             self.P_hotel = self.P_hotel_perc * self.P_installed
@@ -164,6 +539,7 @@ class ConsumesEnergy:
         self.P_tot_given = P_tot_given
         self.L_w = L_w
         self.year = current_year
+        self.engine_age_seed = engine_age_seed
         self.nu = nu
         self.rho = rho
         self.g = g
@@ -176,9 +552,27 @@ class ConsumesEnergy:
         self.c_stern = c_stern
         self.C_BB = C_BB
         self.C_B = C_B
-
+        self.karpov_correction = karpov_correction 
         self.one_k2 = one_k2
 
+        # Optional fixed propulsion factors; None uses the Segers (2021) relations.
+        self.wake_fraction = None if wake_fraction is None else float(wake_fraction)
+        self.thrust_deduction = None if thrust_deduction is None else float(thrust_deduction)
+        
+        # Restricted water (channel width); "none" prevents
+        if confinement_mode not in CONFINEMENT_MODES:
+            raise ValueError(f"confinement_mode must be one of {CONFINEMENT_MODES}; received {confinement_mode!r}.")
+        if confinement_speed_cap not in ("critical", "economic"):
+            raise ValueError(f"confinement_speed_cap must be 'critical' or 'economic'; received {confinement_speed_cap!r}.")
+        self.confinement_mode = confinement_mode
+        self.confinement_hull = confinement_hull          # None: the set of vessel_type
+        self.confinement_speed_cap = confinement_speed_cap
+        self.confinement_ukc_min = float(confinement_ukc_min)
+        self.squat_in_resistance = bool(squat_in_resistance)
+        self.confinement_c_f = confinement_c_f            # None: the value of the coefficient set
+        self.confinement_c_z = confinement_c_z
+        self.confinement_delta_cf = confinement_delta_cf
+        
         # plugin function that computes velocity based on power
         self.power2v = power2v
 
@@ -202,7 +596,7 @@ class ConsumesEnergy:
         assert self.L_w in [1, 2, 3], "Invalid value L_w, should be 1,2 or 3"
         if self.L_w == 1:  # Weight class L1
             self.k = 1.3
-            self.lmb = 20.5
+            self.lmb = 20.4
         elif self.L_w == 2:  # Weight class L2
             self.k = 1.12
             self.lmb = 18.5
@@ -210,9 +604,21 @@ class ConsumesEnergy:
             self.k = 1.26
             self.lmb = 18.6
 
-        # The age of the engine
-        # TODO: I would not expect a random distribution if the function is cal
-        self.age = int(np.random.weibull(self.k) * self.lmb)
+        # The age of the engine (PATCH P8: deterministic when seeded; prefer
+        # supplying C_year directly from the fleet table)
+        if self.year is None:
+            raise ValueError(
+                "current_year must be set to derive an engine construction year; "
+                "prefer supplying C_year directly from the fleet table."
+            )
+        if self.engine_age_seed is None:
+            warnings.warn(
+                "Engine age drawn without a seed: diesel emission results will not "
+                "be reproducible across runs. Supply C_year or engine_age_seed.",
+                UserWarning,
+            )
+        rng = np.random.default_rng(self.engine_age_seed)
+        self.age = int(rng.weibull(self.k) * self.lmb)
 
         # Construction year of the engine
         self.C_year = self.year - self.age
@@ -240,7 +646,7 @@ class ConsumesEnergy:
         self.lcb = -13.5 + 19.4 * self.C_P  # longitudinal center of buoyancy
         # Van Koningsveld et al (2023) - Part IV Eq 5.13
         self.L_R = self.L * (
-            1 - self.C_P + ((0.06 * self.C_P * self.lcb) / (4 * self.C_P - 1)) * (19.4 * self.C_P - 13.5)
+            1 - self.C_P + (0.06 * self.C_P * self.lcb) / (4 * self.C_P - 1)
         )  # length parameter reflecting the length of the run
 
         # Van Koningsveld et al (2023) - below Eq 5.16
@@ -279,11 +685,16 @@ class ConsumesEnergy:
         - 1st resistance component defined by Holtrop and Mennen (1982)
         - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects
         """
-
+        Th = getattr(self, "T_hydro", None) or self.T
         self.R_e = v * self.L / self.nu  # Reynolds number
 
-        self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
-        assert self.D > 0, f"D should be > 0: {self.D}. h_0: {h_0}, T: {self.T}"
+        self.D = h_0 - Th  # distance from bottom ship to the bottom of the fairway
+        if not self.D > 0:
+            raise ValueError(
+                f"Under-keel clearance must be > 0 for vessel "
+                f"{getattr(self, 'name', getattr(self, 'id', '?'))}: "
+                f"D={self.D:.3f} m (h_0={h_0:.3f} m, T={Th:.3f} m)"
+            )
 
         # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
         # Van Koningsveld et al (2023) - Eq 5.3
@@ -309,8 +720,8 @@ class ConsumesEnergy:
 
         # The average velocity underneath the ship, taking into account the shallow water effect
         # This calculation is to get V_B, which will be used in the following Cf for shallow water equation:
-        if h_0 / self.T <= 4:
-            self.V_B = 0.4277 * v * np.exp((h_0 / self.T) ** (-0.07625))
+        if h_0 / Th <= 4:
+            self.V_B = 0.4277 * v * np.exp((h_0 / Th ) ** (-0.07625))
         else:
             self.V_B = v
 
@@ -318,7 +729,7 @@ class ConsumesEnergy:
         # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is
         # defined according to Zeng et al. (2018)
 
-        if (h_0 - self.T) / self.L > 1:
+        if (h_0 - Th) / self.L > 1:
             # calculate Friction coefficient C_f for deep water:
             # Zeng et al. (2018)
             self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
@@ -379,150 +790,103 @@ class ConsumesEnergy:
 
         # The different alpha** curves are determined with a sixth power polynomial approximation in Excel
         # A distinction is made between different ranges of Froude numbers, because this resulted in a better approximation of the curve
+        Th = getattr(self, "T_hydro", None) or self.T
         assert self.g >= 0, f"g should be positive: {self.g}"
         assert h_0 >= 0, f"h_0 should be positive: {h_0}"
         self.F_rh = v / np.sqrt(self.g * h_0)
 
+        alpha_xx = 1.0
+ 
         if self.F_rh <= 0.4:
-            if 0 <= h_0 / self.T < 1.75:
-                self.alpha_xx = (-4 * 10 ** (-12)) * self.F_rh**3 - 0.2143 * self.F_rh**2 - 0.0643 * self.F_rh + 0.9997
-            if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = -0.8333 * self.F_rh**3 + 0.25 * self.F_rh**2 - 0.0167 * self.F_rh + 1
-            if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = -1.25 * self.F_rh**4 + 0.5833 * self.F_rh**3 - 0.0375 * self.F_rh**2 - 0.0108 * self.F_rh + 1
-            if h_0 / self.T >= 2.75:
-                self.alpha_xx = 1
-
+            if 0 <= h_0 /Th < 1.75:
+                alpha_xx = (-4 * 10 ** (-12)) * self.F_rh**3 - 0.2143 * self.F_rh**2 - 0.0643 * self.F_rh + 0.9997
+            if 1.75 <=  h_0 / Th< 2.25:
+                alpha_xx = -0.8333 * self.F_rh**3 + 0.25 * self.F_rh**2 - 0.0167 * self.F_rh + 1
+            if 2.25 <= h_0 / Th < 2.75:
+                alpha_xx = -1.25 * self.F_rh**4 + 0.5833 * self.F_rh**3 - 0.0375 * self.F_rh**2 - 0.0108 * self.F_rh + 1
+            if h_0 / Th >= 2.75:
+                alpha_xx = 1
+    
         if self.F_rh > 0.4:
-            if 0 <= h_0 / self.T < 1.75:
-                self.alpha_xx = (
-                    -0.9274 * self.F_rh**6
-                    + 9.5953 * self.F_rh**5
-                    - 37.197 * self.F_rh**4
-                    + 69.666 * self.F_rh**3
-                    - 65.391 * self.F_rh**2
-                    + 28.025 * self.F_rh
-                    - 3.4143
+            if 0 <= h_0 / Th < 1.75:
+                alpha_xx = (
+                    -0.9274 * self.F_rh**6 + 9.5953 * self.F_rh**5 - 37.197 * self.F_rh**4
+                    + 69.666 * self.F_rh**3 - 65.391 * self.F_rh**2 + 28.025 * self.F_rh - 3.4143
                 )
-            if 1.75 <= h_0 / self.T < 2.25:
-                self.alpha_xx = (
-                    2.2152 * self.F_rh**6
-                    - 11.852 * self.F_rh**5
-                    + 21.499 * self.F_rh**4
-                    - 12.174 * self.F_rh**3
-                    - 4.7873 * self.F_rh**2
-                    + 5.8662 * self.F_rh
-                    - 0.2652
+            if 1.75 <= h_0 / Th < 2.25:
+                alpha_xx = (
+                    2.2152 * self.F_rh**6 - 11.852 * self.F_rh**5 + 21.499 * self.F_rh**4
+                    - 12.174 * self.F_rh**3 - 4.7873 * self.F_rh**2 + 5.8662 * self.F_rh - 0.2652
                 )
-            if 2.25 <= h_0 / self.T < 2.75:
-                self.alpha_xx = (
-                    1.2205 * self.F_rh**6
-                    - 5.4999 * self.F_rh**5
-                    + 5.7966 * self.F_rh**4
-                    + 6.6491 * self.F_rh**3
-                    - 16.123 * self.F_rh**2
-                    + 9.2016 * self.F_rh
-                    - 0.6342
+            if 2.25 <= h_0 / Th < 2.75:
+                alpha_xx = (
+                    1.2205 * self.F_rh**6 - 5.4999 * self.F_rh**5 + 5.7966 * self.F_rh**4
+                    + 6.6491 * self.F_rh**3 - 16.123 * self.F_rh**2 + 9.2016 * self.F_rh - 0.6342
                 )
-            if 2.75 <= h_0 / self.T < 3.25:
-                self.alpha_xx = (
-                    -0.4085 * self.F_rh**6
-                    + 4.534 * self.F_rh**5
-                    - 18.443 * self.F_rh**4
-                    + 35.744 * self.F_rh**3
-                    - 34.381 * self.F_rh**2
-                    + 15.042 * self.F_rh
-                    - 1.3807
+            if 2.75 <= h_0 / Th < 3.25:
+                alpha_xx = (
+                    -0.4085 * self.F_rh**6 + 4.534 * self.F_rh**5 - 18.443 * self.F_rh**4
+                    + 35.744 * self.F_rh**3 - 34.381 * self.F_rh**2 + 15.042 * self.F_rh - 1.3807
                 )
-            if 3.25 <= h_0 / self.T < 3.75:
-                self.alpha_xx = (
-                    0.4078 * self.F_rh**6
-                    - 0.919 * self.F_rh**5
-                    - 3.8292 * self.F_rh**4
-                    + 15.738 * self.F_rh**3
-                    - 19.766 * self.F_rh**2
-                    + 9.7466 * self.F_rh
-                    - 0.6409
+            if 3.25 <= h_0 / Th < 3.75:
+                alpha_xx = (
+                    0.4078 * self.F_rh**6 - 0.919 * self.F_rh**5 - 3.8292 * self.F_rh**4
+                    + 15.738 * self.F_rh**3 - 19.766 * self.F_rh**2 + 9.7466 * self.F_rh - 0.6409
                 )
-            if 3.75 <= h_0 / self.T < 4.5:
-                self.alpha_xx = (
-                    0.3067 * self.F_rh**6
-                    - 0.3404 * self.F_rh**5
-                    - 5.0511 * self.F_rh**4
-                    + 16.892 * self.F_rh**3
-                    - 20.265 * self.F_rh**2
-                    + 9.9002 * self.F_rh
-                    - 0.6712
+            if 3.75 <= h_0 / Th < 4.5:
+                alpha_xx = (
+                    0.3067 * self.F_rh**6 - 0.3404 * self.F_rh**5 - 5.0511 * self.F_rh**4
+                    + 16.892 * self.F_rh**3 - 20.265 * self.F_rh**2 + 9.9002 * self.F_rh - 0.6712
                 )
-            if 4.5 <= h_0 / self.T < 5.5:
-                self.alpha_xx = (
-                    0.3212 * self.F_rh**6
-                    - 0.3559 * self.F_rh**5
-                    - 5.1056 * self.F_rh**4
-                    + 16.926 * self.F_rh**3
-                    - 20.253 * self.F_rh**2
-                    + 10.013 * self.F_rh
-                    - 0.7196
+            if 4.5 <= h_0 / Th < 5.5:
+                alpha_xx = (
+                    0.3212 * self.F_rh**6 - 0.3559 * self.F_rh**5 - 5.1056 * self.F_rh**4
+                    + 16.926 * self.F_rh**3 - 20.253 * self.F_rh**2 + 10.013 * self.F_rh - 0.7196
                 )
-            if 5.5 <= h_0 / self.T < 6.5:
-                self.alpha_xx = (
-                    0.9252 * self.F_rh**6
-                    - 4.2574 * self.F_rh**5
-                    + 5.0363 * self.F_rh**4
-                    + 3.3282 * self.F_rh**3
-                    - 10.367 * self.F_rh**2
-                    + 6.3993 * self.F_rh
-                    - 0.2074
+            if 5.5 <= h_0 / Th < 6.5:
+                alpha_xx = (
+                    0.9252 * self.F_rh**6 - 4.2574 * self.F_rh**5 + 5.0363 * self.F_rh**4
+                    + 3.3282 * self.F_rh**3 - 10.367 * self.F_rh**2 + 6.3993 * self.F_rh - 0.2074
                 )
-            if 6.5 <= h_0 / self.T < 7.5:
-                self.alpha_xx = (
-                    0.8442 * self.F_rh**6
-                    - 4.0261 * self.F_rh**5
-                    + 5.313 * self.F_rh**4
-                    + 1.6442 * self.F_rh**3
-                    - 8.1848 * self.F_rh**2
-                    + 5.3209 * self.F_rh
-                    - 0.0267
+            if 6.5 <= h_0 / Th < 7.5:
+                alpha_xx = (
+                    0.8442 * self.F_rh**6 - 4.0261 * self.F_rh**5 + 5.313 * self.F_rh**4
+                    + 1.6442 * self.F_rh**3 - 8.1848 * self.F_rh**2 + 5.3209 * self.F_rh - 0.0267
                 )
-            if 7.5 <= h_0 / self.T < 8.5:
-                self.alpha_xx = (
-                    0.1211 * self.F_rh**6
-                    + 0.628 * self.F_rh**5
-                    - 6.5106 * self.F_rh**4
-                    + 16.7 * self.F_rh**3
-                    - 18.267 * self.F_rh**2
-                    + 8.7077 * self.F_rh
-                    - 0.4745
+            if 7.5 <= h_0 / Th < 8.5:
+                alpha_xx = (
+                    0.1211 * self.F_rh**6 + 0.628 * self.F_rh**5 - 6.5106 * self.F_rh**4
+                    + 16.7 * self.F_rh**3 - 18.267 * self.F_rh**2 + 8.7077 * self.F_rh - 0.4745
                 )
+            if 8.5 <= h_0 / Th < 9.5:
+                if self.F_rh < 0.6:
+                    alpha_xx = 1
+                if self.F_rh >= 0.6:
+                    alpha_xx = (
+                        -6.4069 * self.F_rh**6 + 47.308 * self.F_rh**5 - 141.93 * self.F_rh**4
+                        + 220.23 * self.F_rh**3 - 185.05 * self.F_rh**2 + 79.25 * self.F_rh - 12.484
+                    )
+            if h_0 / Th >= 9.5:
+                if self.F_rh < 0.6:
+                    alpha_xx = 1
+                if self.F_rh >= 0.6:
+                    alpha_xx = (
+                        -6.0737 * self.F_rh**6 + 44.97 * self.F_rh**5 - 135.21 * self.F_rh**4
+                        + 210.13 * self.F_rh**3 - 176.72 * self.F_rh**2 + 75.728 * self.F_rh - 11.893
+                    )
+    
+       
+        self.karpov_alpha_raw = float(alpha_xx)
+        alpha_clamped = min(KARPOV_ALPHA_MAX, max(float(alpha_xx), KARPOV_ALPHA_MIN))
+        self.karpov_clamped = bool(alpha_clamped != self.karpov_alpha_raw)
+        self.alpha_xx = alpha_clamped
+    
+        if not self.karpov_correction:     
+            self.alpha_xx = 1.0           
 
-            if 8.5 <= h_0 / self.T < 9.5:
-                if self.F_rh < 0.6:
-                    self.alpha_xx = 1
-                if self.F_rh >= 0.6:
-                    self.alpha_xx = (
-                        -6.4069 * self.F_rh**6
-                        + 47.308 * self.F_rh**5
-                        - 141.93 * self.F_rh**4
-                        + 220.23 * self.F_rh**3
-                        - 185.05 * self.F_rh**2
-                        + 79.25 * self.F_rh
-                        - 12.484
-                    )
-            if h_0 / self.T >= 9.5:
-                if self.F_rh < 0.6:
-                    self.alpha_xx = 1
-                if self.F_rh >= 0.6:
-                    self.alpha_xx = (
-                        -6.0727 * self.F_rh**6
-                        + 44.97 * self.F_rh**5
-                        - 135.21 * self.F_rh**4
-                        + 210.13 * self.F_rh**3
-                        - 176.72 * self.F_rh**2
-                        + 75.728 * self.F_rh
-                        - 11.893
-                    )
 
         self.V_2 = v / self.alpha_xx
+
 
 
     def calculate_wave_resistance(self, v, h_0):
@@ -546,11 +910,17 @@ class ConsumesEnergy:
         # Van Koningsveld et al (2023) - Part IV Table 5.1
         if self.B / self.L < 0.11:
             self.c_7 = 0.229577 * (self.B / self.L) ** 0.33333
-        if self.B / self.L > 0.25:
+        elif self.B / self.L > 0.25:
             self.c_7 = 0.5 - 0.0625 * (self.L / self.B)
         else:
             self.c_7 = self.B / self.L
 
+        # 1 - C_P - 0.0225 lcb must stay positive; it reaches zero near C_B = 0.906.
+        entrance_base = 1 - self.C_P - 0.0225 * self.lcb
+        if not entrance_base > 0:
+            raise ValueError(f"Holtrop-Mennen wave resistance is not defined for C_B={self.C_B:.4f}; "
+                             f"1 - C_P - 0.0225 lcb = {entrance_base:.4f}. Use a lower C_B, for example 0.88.")
+        
         # half angle of entrance in degrees
         # Van Koningsveld et al (2023) - Part IV Table 5.1
         self.i_E = 1 + 89 * np.exp(
@@ -570,7 +940,7 @@ class ConsumesEnergy:
         # Van Koningsveld et al (2023) - Part IV Table 5.1
         if (self.L**3) / self.delta < 512:
             self.c_15 = -1.69385
-        if (self.L**3) / self.delta > 1727:
+        elif (self.L**3) / self.delta > 1727:
             self.c_15 = 0
         else:
             self.c_15 = -1.69385 + (self.L / (self.delta ** (1 / 3)) - 8) / 2.36
@@ -663,7 +1033,7 @@ class ConsumesEnergy:
         self.R_res = self.R_TR + self.R_A + self.R_B
 
 
-    def calculate_total_resistance(self, v, h_0):
+    def calculate_total_resistance(self, v, h_0, width=None, channel_area=None, h_channel=None):
         """Total resistance:
 
         The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982)
@@ -677,9 +1047,63 @@ class ConsumesEnergy:
         self.calculate_residual_resistance(v, h_0)
 
         # The total resistance R_tot [kN] = R_f * (1+k1) + R_APP + R_W + R_TR + R_A
-        self.R_tot = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A + self.R_B
+        self.R_base = self.R_f * self.one_k1 + self.R_APP + self.R_W + self.R_TR + self.R_A + self.R_B
+        
+        # Restricted-water (channel-width) increment [kN]; 0.0 with confinement_mode "none".
+        self.R_confinement = self.calculate_confinement_resistance(
+            v=v, h_0=h_0 if h_channel is None else h_channel, width=width, channel_area=channel_area,
+        )
+        self.R_tot = self.R_base + self.R_confinement
+        return self.R_tot
 
+    def calculate_confinement_resistance(self, v, h_0, width=None, channel_area=None):
+        """Channel-width resistance increment R_confinement in kN
+    
+        With "none" the increment is zero. With "drawdown" or "full" it comes from
+        confinement_resistance_increment, with the wetted surface S of the chain and the real draught.
+        The hydraulics (Z, V_R, V_cr, clearance) stay on the vessel for the event table.
+        """
+        if getattr(self, "confinement_mode", "none") == "none":
+            return 0.0
+    
+        W = self._required_width(width)
+        result = confinement_resistance_increment(
+            V=float(v),
+            h=float(h_0),
+            L=self.L,
+            B=self.B,
+            T=self._hydraulic_draught(),
+            W=W,
+            S=self.S,                     
+            hull=self.confinement_hull_used(),
+            mode=self.confinement_mode,
+            channel_area_m2=None if channel_area is None else float(channel_area),
+            rho=self.rho,
+            g=self.g,
+            nu=self.nu,
+            delta_cf=self.confinement_delta_cf,
+            c_f=self.confinement_c_f,
+            c_z=self.confinement_c_z,
+            )
+        self.confinement_result = result
+    
+        self.R_confinement_friction = result["dR_friction_N"] / 1000.0
+        self.R_confinement_drawdown = result["dR_drawdown_N"] / 1000.0
+        self.C_Shallow = result["C_Shallow"]
+        self.Z = result["Z_m"]
+        self.V_R = result["V_R_ms"]
+        self.blockage_ratio = result["blockage_ratio"]
+        self.dynamic_ukc = result["dynamic_ukc_m"]
+        self.mean_depth = result["mean_depth_m"]
+        self.V_cr = result["V_cr_ms"]
+        self.V_ec = result["V_ec_ms"]
+        self.V_over_V_cr = result["V_over_V_cr"]
+        self.V_over_V_ec = result["V_over_V_ec"]
+        self.econ_speed_exceeded = result["econ_speed_exceeded"]
+    
+        return result["dR_kN"]
 
+    
     def calculate_total_power_required(self, v, h_0):
         """Total required power:
 
@@ -694,8 +1118,11 @@ class ConsumesEnergy:
           the ship uses
 
         Note:
-        In this version, we define the propulsion power as P_d (Delivered Horse Power) rather than P_b (Brake Horse
-        Power). The reason we choose P_d as propulsion power is to prevent double use of the same power efficiencies.
+        PATCH P4: In this version P_propulsion, P_tot and P_given are BRAKE power,
+        because P_installed is a brake rating. P_d (Delivered Horse Power) is kept
+        as an attribute: the event-table pipeline multiplies conversion-efficiency
+        (Marin) SFCs by shaft energy (P_d + P_hotel), which prevents double use of
+        the same power efficiencies.
         The details are
         1) The P_b calculation involves gearing efficiency and transmission efficiency already while P_d not.
         2) P_d is the power delivered to propellers.
@@ -732,6 +1159,9 @@ class ConsumesEnergy:
 
         assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
 
+        if self.wake_fraction is not None:      # van de Kaa (1978) w = 0.30 for push tows
+            self.w = self.wake_fraction
+
         if self.x == 1:
             # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
             self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
@@ -739,6 +1169,8 @@ class ConsumesEnergy:
             # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
+        if self.thrust_deduction is not None:   # t = 0.20 with van de Kaa (1978), a = 0.25
+            self.t = self.thrust_deduction
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
         # TODO: check below suggestions. They were made to allow for better translation to alternative energy sources. But the changes induced unexpected behaviour.
@@ -815,7 +1247,9 @@ class ConsumesEnergy:
         self.P_b = self.P_d / (self.eta_t * self.eta_g)
 
         # self.P_propulsion = self.P_d  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
-        self.P_propulsion = self.P_b  # propulsion power is defined here as Delivered horse power, the power delivered to propellers
+        # PATCH P4: capping runs on the brake side (P_installed is a brake rating);
+        # P_d stays available for the shaft-basis fuel accounting in the event table
+        self.P_propulsion = self.P_b
 
         # TODO: consider to facilitate that all engine power can go into propulsion (Auxiliary generator for hotel)
         self.P_tot = self.P_hotel + self.P_propulsion
@@ -1017,7 +1451,7 @@ class ConsumesEnergy:
 
         logger.debug(f"The general fuel consumption factor for diesel is {self.SFC_diesel_C_year} g/kWh")
 
-    def correction_factors(self, v, h_0):
+    def correction_factors(self, v, h_0, P_partial=None):
         """Partial engine load correction factors (C_partial_load):
 
         - The correction factors have to be multiplied by the general emission factors (or general SFC), to get the total emission factors (or final SFC)
@@ -1028,7 +1462,12 @@ class ConsumesEnergy:
         - the correction factors for renewable fuels used in fuel cell engine are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
         # TODO: create correction factors for renewable powered ship, the factor may be 100%
-        self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
+        if P_partial is None:
+            self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
+        else:
+            # PATCH P3: evaluate factors at a prescribed operating point (e.g. the
+            # hotel load of a stationary event) without recomputing resistance
+            self.P_partial = P_partial
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
@@ -1142,14 +1581,14 @@ class ConsumesEnergy:
         logger.debug(f"Partial engine load correction factor of fuel consumption in SOFC is {self.C_partial_load_SOFC}")
         logger.debug(f"Partial engine load correction factor of energy consumption in battery is {self.C_partial_load_battery}")
 
-    def calculate_emission_factors_total(self, v, h_0):
+    def calculate_emission_factors_total(self, v, h_0, P_partial=None):
         """Total emission factors:
 
         - The total emission factors can be computed by multiplying the general emission factor by the correction factor
         """
 
         self.emission_factors_general()  # You need the values of the general emission factors of CO2, PM10, NOX
-        self.correction_factors(v=v, h_0=h_0)  # You need the correction factors of CO2, PM10, NOX
+        self.correction_factors(v=v, h_0=h_0, P_partial=P_partial)  # You need the correction factors of CO2, PM10, NOX
 
         # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
         # By the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
@@ -1162,7 +1601,7 @@ class ConsumesEnergy:
         logger.debug(f"The total emission factor of PM10 is {self.total_factor_PM10} g/kWh")
         logger.debug(f"The total emission factor CO2 is {self.total_factor_NOX} g/kWh")
 
-    def calculate_SFC_final(self, v, h_0):
+    def calculate_SFC_final(self, v, h_0, P_partial=None):
         """The final SFC is computed by multiplying the general SFC by the partial engine load correction factor.
 
         The calculation of final SFC below includes
@@ -1173,7 +1612,7 @@ class ConsumesEnergy:
         """
 
         self.SFC_general()  # You need the values of the general SFC
-        self.correction_factors(v=v, h_0=h_0)  # You need the correction factors of SFC
+        self.correction_factors(v=v, h_0=h_0, P_partial=P_partial)  # You need the correction factors of SFC
 
         # final SFC of fuel cell in mass   [g/kWh]
         self.final_SFC_LH2_mass_PEMFC = self.SFC_LH2_FuelCell_mass * self.C_partial_load_PEMFC
@@ -1249,7 +1688,7 @@ class ConsumesEnergy:
         self.emission_g_s_CO2 = self.P_given * self.total_factor_CO2 / 3600
         self.emission_g_s_PM10 = self.P_given * self.total_factor_PM10 / 3600
         self.emission_g_s_NOX = self.P_given * self.total_factor_NOX / 3600
-###################################################################################
+
 
     def calculate_max_sinkage(self, v, h_0, width=150):
         """Calculate the maximum sinkage of a moving ship
@@ -1265,7 +1704,7 @@ class ConsumesEnergy:
 
         max_sinkage = 0
         if self.h_squat:
-            max_sinkage = (self.C_B * ((self.B * self._T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+            max_sinkage = (self.C_B * ((self.B * self.T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
 
         return max_sinkage
 
@@ -1280,6 +1719,86 @@ class ConsumesEnergy:
         h_squat = h_0 - self.calculate_max_sinkage(v, h_0, width=width)
 
         return h_squat
+
+    def confinement_hull_used(self):
+        """Coefficient set of the increment. None: the set of the vessel type ("Barge" -> "barge", else "motor").
+        """
+
+        if self.confinement_hull is not None:
+            return self.confinement_hull
+        return default_hull(getattr(self, "vessel_type", None))
+
+    def _hydraulic_draught(self):
+        """Real draught for the channel hydraulics (T_hydro when set, else T)."""
+        return getattr(self, "T_hydro", None) or self.T
+
+    def _required_width(self, width):
+        if width is None or not np.isfinite(width) or width <= 0:
+            raise ValueError(
+                f"A positive waterway width (GeneralWidth) is required for confinement_mode "
+                f"{getattr(self, 'confinement_mode', None)!r}; received {width!r}. There is no default width in this mode."
+            )
+        return float(width)
+
+
+    def limit_power2v_upperbound(self, upperbound, h_0, width=None, channel_area=None):
+        """Upper bound of the power2v speed search
+
+        With "none" the input comes back unchanged. With "drawdown" or "full" the bound also stays below
+        0.999 V_cr, below the speed of the minimum dynamic clearance and, with speed cap "economic",
+        below 0.999 V_ec.
+        """
+        if getattr(self, "confinement_mode", "none") == "none":
+            return float(upperbound)
+
+        W = self._required_width(width)
+        T = self._hydraulic_draught()
+        limits = hydraulic_speed_limits(float(h_0), self.B, T, W, channel_area_m2=channel_area, g=self.g)
+        self.V_cr = limits["V_cr_ms"]
+        self.V_ec = limits["V_ec_ms"]
+
+        caps = [float(upperbound), 0.999 * self.V_cr]
+        if self.confinement_speed_cap == "economic":
+            caps.append(0.999 * self.V_ec)
+        self.V_ukc_limit = max_speed_for_ukc(
+            float(h_0), self.B, T, W, ukc_min=self.confinement_ukc_min, channel_area_m2=channel_area, g=self.g,
+        )
+        caps.append(self.V_ukc_limit)
+        return float(min(caps))
+
+
+    def calculate_resistance_for_waterway(self, v, h_0, width=None, channel_area=None):
+        """Resistance of one waterway edge in kN, with the depth of the mode
+
+        Callers do not apply squat themselves. With "none" the chain runs at the squat depth.
+        With "drawdown" or "full" the chain and the hydraulics run at the raw depth and the width is
+        required; Barrass squat stays as the navigation depth h_navigation, because the drawdown term
+        already models the sinkage.
+        """
+        if getattr(self, "confinement_mode", "none") == "none":
+            width_for_squat = 150.0 if width is None else float(width)
+
+            self.h_raw = float(h_0)
+            self.squat_m = self.calculate_max_sinkage(v=float(v), h_0=self.h_raw, width=width_for_squat,)
+            self.h_resistance = self.h_raw - self.squat_m
+            self.h_navigation = self.h_resistance
+
+            self.calculate_total_resistance(v=float(v), h_0=self.h_resistance, width=width, channel_area=channel_area, h_channel=self.h_raw,)
+            return self.R_tot
+
+        W = self._required_width(width)
+        self.h_raw = float(h_0)
+
+        # Barrass squat: navigation diagnostic only (the drawdown term models the sinkage effect).
+        self.squat_m = self.calculate_max_sinkage(v=float(v), h_0=self.h_raw, width=W)
+        self.h_navigation = self.h_raw - self.squat_m
+        self.h_resistance = self.h_navigation if self.squat_in_resistance else self.h_raw
+
+        return self.calculate_total_resistance(
+            v=float(v), h_0=self.h_resistance, width=W, channel_area=channel_area, h_channel=self.h_raw,
+        )
+
+    
 
 class EnergyCalculation:
     """Add information on energy use and effects on energy use."""
@@ -1303,6 +1822,7 @@ class EnergyCalculation:
             "P_given": [],
             "P_installed": [],
             "total_energy": [],
+            "energy_shaft": [],
             "total_diesel_consumption_C_year_ICE_mass": [],
             "total_diesel_consumption_ICE_mass": [],
             "total_diesel_consumption_ICE_vol": [],
@@ -1335,6 +1855,7 @@ class EnergyCalculation:
             "total_emission_PM10": [],
             "total_emission_NOX": [],
             "stationary": [],
+            "power_capped": [],
             "water depth": [],
             "distance": [],
             "delta_t": [],
@@ -1348,6 +1869,12 @@ class EnergyCalculation:
 
     def calculate_energy_consumption(self):
         """Calculation of energy consumption based on total time in system and properties"""
+        warnings.warn(
+            "EnergyCalculation is retained for comparison only; the event-table "
+            "pipeline (logutils.logbook2eventtable + energy_logutils) is the "
+            "canonical accounting path.",
+            DeprecationWarning,
+        )
 
         def calculate_distance(geom_start, geom_stop):
             """method to calculate the distance in meters between two geometries"""
@@ -1424,16 +1951,22 @@ class EnergyCalculation:
                     # discharge (if stored on edge)
                     Q = e_data.get("discharge", None)
 
-                    #info = e_data.get("Info", {})
-                    #v_c = e_data.get("current_ms", info.get("Current", 0.0))
-                    now_s = pd.Timestamp(times[i]).timestamp()  # seconds since unix epoch
-                    v_c = float(self.vessel.env.get_current(node_start, node_stop, now_s))
+                    info = e_data.get("Info", {})
+                    waterway_width = e_data.get("GeneralWidth", info.get("GeneralWidth"))
+                    channel_area = e_data.get("GeneralCrossSectionArea",info.get("GeneralCrossSectionArea"))
+                    h_edge = e_data.get("GeneralDepth", info.get("GeneralDepth", np.nan))
+                  
+                    now_s = pd.Timestamp(times[i]).timestamp()   
+                    v_c = float(self.vessel.env.get_current(node_start, node_stop, now_s)) 
 
+                    
                 else:
                     distance = calculate_distance(geometries[i], geometries[i + 1])
                     v_c = 0.0
                     e_data = {}
-
+                    waterway_width = None
+                    channel_area = None
+                    h_edge = np.nan
 
                 v_g = distance / delta_t
                 v_w = v_g - v_c
@@ -1457,7 +1990,10 @@ class EnergyCalculation:
                 logger.debug("geometries[i]: {0}, geometries[i + 1] {1}".format(geometries[i], geometries[i + 1]))
 
                 # calculate the water depth
-                h_0 = calculate_depth(geometries[i], geometries[i + 1])
+                if h_edge is not None and np.isfinite(h_edge):
+                    h_0 = float(h_edge)
+                else:
+                    h_0 = calculate_depth(geometries[i], geometries[i + 1])
 
 
                 # printstatements to check the output (can be removed later)
@@ -1469,113 +2005,135 @@ class EnergyCalculation:
 
 
                 # we use the calculated velocity to determine the resistance and power required
-                # we can switch between the 'original water depth' and 'water depth considering ship squatting' for energy calculation, by using the function "calculate_h_squat (h_squat is set as Yes/No)" in the core.py
-                h_0 = self.vessel.calculate_h_squat(v, h_0)
-                self.vessel.calculate_total_resistance(v, h_0)
-                self.vessel.calculate_total_power_required(v, h_0=h_0)
+                # we can switch between the original water depth and the squat-corrected water
+                # depth via calculate_h_squat (h_squat set as True/False on the vessel)
+                # PATCH P2/P3: stationary events are stored at hotel power; every event
+                # appends the full key set so all lists stay equally long.
+                stationary = messages[i + 1] in stationary_phase_indicator
 
-                self.vessel.calculate_emission_factors_total(v, h_0=h_0)
-                self.vessel.calculate_SFC_final(v, h_0=h_0)
-
-                if messages[i + 1] in stationary_phase_indicator:  # if we are in a stationary stage only log P_hotel
-                    # Energy consumed per time step delta_t in the stationary stage
+                if stationary:
+                    # stationary stage: hotel power only; emission and fuel factors
+                    # are evaluated at the hotel operating point
                     energy_delta = self.vessel.P_hotel * delta_t / 3600  # kJ/3600 = kWh
+                    P_tot_delta = self.vessel.P_hotel
+                    P_given_delta = self.vessel.P_hotel
+                    P_installed_delta = self.vessel.P_installed
+                    power_capped = False
+                    energy_shaft = self.vessel.P_hotel * delta_t / 3600
+                    P_partial_hotel = self.vessel.P_hotel / self.vessel.P_installed
+                    self.vessel.calculate_emission_factors_total(v=0.0, h_0=h_0, P_partial=P_partial_hotel)
+                    self.vessel.calculate_SFC_final(v=0.0, h_0=h_0, P_partial=P_partial_hotel)
+                else:
+                    # propulsion stage: evaluate resistance and power at the event
+                    # water speed (v = v_w, derived above from v_g and v_c)
+                    if v <= 0:
+                        raise ValueError(
+                            "Non-positive water speed on a sailing event: "
+                            f"v_w={v:.3f} m/s (v_g={v_g:.3f}, v_c={v_c:.3f})."
+                        )
+                    self.vessel.calculate_resistance_for_waterway(v=v, h_0=h_0, width=waterway_width, channel_area=channel_area)
+                    h_for_model = self.vessel.h_resistance
+                    self.vessel.calculate_total_power_required(v=v, h_0=h_for_model)
+                    self.vessel.calculate_emission_factors_total(v=v, h_0=h_for_model, P_partial=self.vessel.P_partial)
+                    self.vessel.calculate_SFC_final(v=v, h_0=h_for_model, P_partial=self.vessel.P_partial)
 
-                    # Emissions CO2, PM10 and NOX, in gram - emitted in the stationary stage per time step delta_t,
-                    # consuming 'energy_delta' kWh
-                    # TODO: check, as it seems that stationary energy use is now not stored.
-                    P_hotel_delta = self.vessel.P_hotel  # in kW
-                    P_installed_delta = self.vessel.P_installed  # in kW
-
-                else:  # otherwise log P_tot
-                    # Energy consumed per time step delta_t in the propulsion stage
-                    # TODO: energy_delta should be P_tot times delta_t (was P_given, but then when the vessel is driven with v a strange cutoff occurs, when it is driven by P_tot_given it should be limited by the available power ... that now works)
-                    energy_delta = (
-                        self.vessel.P_tot * delta_t / 3600
-                    )  # kJ/3600 = kWh, when P_tot >= P_installed, P_given = P_installed; when P_tot < P_installed, P_given = P_tot
-
-                    # Emissions CO2, PM10 and NOX, in gram - emitted in the propulsion stage per time step delta_t,
-                    # consuming 'energy_delta' kWh
+                    # PATCH P2: energy actually drawn from the engine (brake power,
+                    # capped at installed power); the uncapped requirement remains
+                    # visible as P_tot and the capped share as power_capped
+                    energy_delta = self.vessel.P_given * delta_t / 3600  # kJ/3600 = kWh
                     P_tot_delta = self.vessel.P_tot  # in kW, required power, may exceed installed engine power
                     P_given_delta = self.vessel.P_given  # in kW, actual given power
                     P_installed_delta = self.vessel.P_installed  # in kW
-                    emission_delta_CO2 = (
-                        self.vessel.total_factor_CO2 * energy_delta
-                    )  # Energy consumed per time step delta_t in the                                                                                              #stationary phase # in g
-                    emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
-                    emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
-                    # Todo: we need to rename the factor name for fuels, not starting with "emission" , consider seperating it from emission factors
-                    delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
-                    delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
-                    delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
+                    power_capped = bool(self.vessel.P_tot > self.vessel.P_installed)
+                    if power_capped:
+                        eta_tg = self.vessel.eta_t * self.vessel.eta_g
+                        P_shaft = (max(self.vessel.P_installed - self.vessel.P_hotel, 0.0)* eta_tg + self.vessel.P_hotel)
+                    else:
+                        P_shaft = self.vessel.P_d + self.vessel.P_hotel
+                    energy_shaft = P_shaft * delta_t / 3600
 
-                    delta_LH2_PEMFC_mass = self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta  # in g
-                    delta_LH2_SOFC_mass = self.vessel.final_SFC_LH2_mass_SOFC * energy_delta  # in g
-                    delta_LH2_PEMFC_vol = self.vessel.final_SFC_LH2_vol_PEMFC * energy_delta  # in m3
-                    delta_LH2_SOFC_vol = self.vessel.final_SFC_LH2_vol_SOFC * energy_delta  # in m3
 
-                    delta_eLNG_PEMFC_mass = self.vessel.final_SFC_eLNG_mass_PEMFC * energy_delta  # in g
-                    delta_eLNG_SOFC_mass = self.vessel.final_SFC_eLNG_mass_SOFC * energy_delta  # in g
-                    delta_eLNG_PEMFC_vol = self.vessel.final_SFC_eLNG_vol_PEMFC * energy_delta  # in m3
-                    delta_eLNG_SOFC_vol = self.vessel.final_SFC_eLNG_vol_SOFC * energy_delta  # in m3
-                    delta_eLNG_ICE_mass = self.vessel.final_SFC_eLNG_ICE_mass * energy_delta  # in g
-                    delta_eLNG_ICE_vol = self.vessel.final_SFC_eLNG_ICE_vol * energy_delta  # in m3
 
-                    delta_eMethanol_PEMFC_mass = self.vessel.final_SFC_eMethanol_mass_PEMFC * energy_delta  # in g
-                    delta_eMethanol_SOFC_mass = self.vessel.final_SFC_eMethanol_mass_SOFC * energy_delta  # in g
-                    delta_eMethanol_PEMFC_vol = self.vessel.final_SFC_eMethanol_vol_PEMFC * energy_delta  # in m3
-                    delta_eMethanol_SOFC_vol = self.vessel.final_SFC_eMethanol_vol_SOFC * energy_delta  # in m3
-                    delta_eMethanol_ICE_mass = self.vessel.final_SFC_eMethanol_ICE_mass * energy_delta  # in g
-                    delta_eMethanol_ICE_vol = self.vessel.final_SFC_eMethanol_ICE_vol * energy_delta  # in m3
+                # emissions and fuel per event; the factors were evaluated at the
+                # operating point selected above. NOTE: in this legacy class the
+                # alternative-carrier quantities stay on the brake-energy basis;
+                # the event-table pipeline separates brake and shaft bases.
+                emission_delta_CO2 = self.vessel.total_factor_CO2 * energy_delta  # in g
+                emission_delta_PM10 = self.vessel.total_factor_PM10 * energy_delta  # in g
+                emission_delta_NOX = self.vessel.total_factor_NOX * energy_delta  # in g
+                delta_diesel_C_year = self.vessel.final_SFC_diesel_C_year_ICE_mass * energy_delta  # in g
+                delta_diesel_ICE_mass = self.vessel.final_SFC_diesel_ICE_mass * energy_delta  # in g
+                delta_diesel_ICE_vol = self.vessel.final_SFC_diesel_ICE_vol * energy_delta  # in m3
 
-                    delta_eNH3_PEMFC_mass = self.vessel.final_SFC_eNH3_mass_PEMFC * energy_delta  # in g
-                    delta_eNH3_SOFC_mass = self.vessel.final_SFC_eNH3_mass_SOFC * energy_delta  # in g
-                    delta_eNH3_PEMFC_vol = self.vessel.final_SFC_eNH3_vol_PEMFC * energy_delta  # in m3
-                    delta_eNH3_SOFC_vol = self.vessel.final_SFC_eNH3_vol_SOFC * energy_delta  # in m3
-                    delta_eNH3_ICE_mass = self.vessel.final_SFC_eNH3_ICE_mass * energy_delta  # in g
-                    delta_eNH3_ICE_vol = self.vessel.final_SFC_eNH3_ICE_vol * energy_delta  # in m3
+                delta_LH2_PEMFC_mass = self.vessel.final_SFC_LH2_mass_PEMFC * energy_delta  # in g
+                delta_LH2_SOFC_mass = self.vessel.final_SFC_LH2_mass_SOFC * energy_delta  # in g
+                delta_LH2_PEMFC_vol = self.vessel.final_SFC_LH2_vol_PEMFC * energy_delta  # in m3
+                delta_LH2_SOFC_vol = self.vessel.final_SFC_LH2_vol_SOFC * energy_delta  # in m3
 
-                    delta_Li_NMC_Battery_mass = self.vessel.final_SFC_Li_NMC_Battery_mass * energy_delta  # in g
-                    delta_Li_NMC_Battery_vol = self.vessel.final_SFC_Li_NMC_Battery_vol * energy_delta  # in m3
-                    delta_Battery2000kWh = self.vessel.final_SFC_Battery2000kWh * energy_delta  # in ZESpack number
+                delta_eLNG_PEMFC_mass = self.vessel.final_SFC_eLNG_mass_PEMFC * energy_delta  # in g
+                delta_eLNG_SOFC_mass = self.vessel.final_SFC_eLNG_mass_SOFC * energy_delta  # in g
+                delta_eLNG_PEMFC_vol = self.vessel.final_SFC_eLNG_vol_PEMFC * energy_delta  # in m3
+                delta_eLNG_SOFC_vol = self.vessel.final_SFC_eLNG_vol_SOFC * energy_delta  # in m3
+                delta_eLNG_ICE_mass = self.vessel.final_SFC_eLNG_ICE_mass * energy_delta  # in g
+                delta_eLNG_ICE_vol = self.vessel.final_SFC_eLNG_ICE_vol * energy_delta  # in m3
 
-                    self.energy_use["P_tot"].append(P_tot_delta)
-                    self.energy_use["P_given"].append(P_given_delta)
-                    self.energy_use["P_installed"].append(P_installed_delta)
-                    self.energy_use["total_energy"].append(energy_delta)
-                    self.energy_use["stationary"].append(energy_delta)
-                    self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
-                    self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
-                    self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
-                    self.energy_use["total_diesel_consumption_C_year_ICE_mass"].append(delta_diesel_C_year)
-                    self.energy_use["total_diesel_consumption_ICE_mass"].append(delta_diesel_ICE_mass)
-                    self.energy_use["total_diesel_consumption_ICE_vol"].append(delta_diesel_ICE_vol)
-                    self.energy_use["total_LH2_consumption_PEMFC_mass"].append(delta_LH2_PEMFC_mass)
-                    self.energy_use["total_LH2_consumption_SOFC_mass"].append(delta_LH2_SOFC_mass)
-                    self.energy_use["total_LH2_consumption_PEMFC_vol"].append(delta_LH2_PEMFC_vol)
-                    self.energy_use["total_LH2_consumption_SOFC_vol"].append(delta_LH2_SOFC_vol)
-                    self.energy_use["total_eLNG_consumption_PEMFC_mass"].append(delta_eLNG_PEMFC_mass)
-                    self.energy_use["total_eLNG_consumption_SOFC_mass"].append(delta_eLNG_SOFC_mass)
-                    self.energy_use["total_eLNG_consumption_PEMFC_vol"].append(delta_eLNG_PEMFC_vol)
-                    self.energy_use["total_eLNG_consumption_SOFC_vol"].append(delta_eLNG_SOFC_vol)
-                    self.energy_use["total_eLNG_consumption_ICE_mass"].append(delta_eLNG_ICE_mass)
-                    self.energy_use["total_eLNG_consumption_ICE_vol"].append(delta_eLNG_ICE_vol)
-                    self.energy_use["total_eMethanol_consumption_PEMFC_mass"].append(delta_eMethanol_PEMFC_mass)
-                    self.energy_use["total_eMethanol_consumption_SOFC_mass"].append(delta_eMethanol_SOFC_mass)
-                    self.energy_use["total_eMethanol_consumption_PEMFC_vol"].append(delta_eMethanol_PEMFC_vol)
-                    self.energy_use["total_eMethanol_consumption_SOFC_vol"].append(delta_eMethanol_SOFC_vol)
-                    self.energy_use["total_eMethanol_consumption_ICE_mass"].append(delta_eMethanol_ICE_mass)
-                    self.energy_use["total_eMethanol_consumption_ICE_vol"].append(delta_eMethanol_ICE_vol)
-                    self.energy_use["total_eNH3_consumption_PEMFC_mass"].append(delta_eNH3_PEMFC_mass)
-                    self.energy_use["total_eNH3_consumption_SOFC_mass"].append(delta_eNH3_SOFC_mass)
-                    self.energy_use["total_eNH3_consumption_PEMFC_vol"].append(delta_eNH3_PEMFC_vol)
-                    self.energy_use["total_eNH3_consumption_SOFC_vol"].append(delta_eNH3_SOFC_vol)
-                    self.energy_use["total_eNH3_consumption_ICE_mass"].append(delta_eNH3_ICE_mass)
-                    self.energy_use["total_eNH3_consumption_ICE_vol"].append(delta_eNH3_ICE_vol)
-                    self.energy_use["total_Li_NMC_Battery_mass"].append(delta_Li_NMC_Battery_mass)
-                    self.energy_use["total_Li_NMC_Battery_vol"].append(delta_Li_NMC_Battery_vol)
-                    self.energy_use["total_Battery2000kWh_consumption_num"].append(delta_Battery2000kWh)
-                    self.energy_use["water depth"].append(h_0)
+                delta_eMethanol_PEMFC_mass = self.vessel.final_SFC_eMethanol_mass_PEMFC * energy_delta  # in g
+                delta_eMethanol_SOFC_mass = self.vessel.final_SFC_eMethanol_mass_SOFC * energy_delta  # in g
+                delta_eMethanol_PEMFC_vol = self.vessel.final_SFC_eMethanol_vol_PEMFC * energy_delta  # in m3
+                delta_eMethanol_SOFC_vol = self.vessel.final_SFC_eMethanol_vol_SOFC * energy_delta  # in m3
+                delta_eMethanol_ICE_mass = self.vessel.final_SFC_eMethanol_ICE_mass * energy_delta  # in g
+                delta_eMethanol_ICE_vol = self.vessel.final_SFC_eMethanol_ICE_vol * energy_delta  # in m3
+
+                delta_eNH3_PEMFC_mass = self.vessel.final_SFC_eNH3_mass_PEMFC * energy_delta  # in g
+                delta_eNH3_SOFC_mass = self.vessel.final_SFC_eNH3_mass_SOFC * energy_delta  # in g
+                delta_eNH3_PEMFC_vol = self.vessel.final_SFC_eNH3_vol_PEMFC * energy_delta  # in m3
+                delta_eNH3_SOFC_vol = self.vessel.final_SFC_eNH3_vol_SOFC * energy_delta  # in m3
+                delta_eNH3_ICE_mass = self.vessel.final_SFC_eNH3_ICE_mass * energy_delta  # in g
+                delta_eNH3_ICE_vol = self.vessel.final_SFC_eNH3_ICE_vol * energy_delta  # in m3
+
+                delta_Li_NMC_Battery_mass = self.vessel.final_SFC_Li_NMC_Battery_mass * energy_delta  # in g
+                delta_Li_NMC_Battery_vol = self.vessel.final_SFC_Li_NMC_Battery_vol * energy_delta  # in m3
+                delta_Battery2000kWh = self.vessel.final_SFC_Battery2000kWh * energy_delta  # in ZESpack number
+
+                self.energy_use["P_tot"].append(P_tot_delta)
+                self.energy_use["P_given"].append(P_given_delta)
+                self.energy_use["P_installed"].append(P_installed_delta)
+                self.energy_use["total_energy"].append(energy_delta)
+                self.energy_use["energy_shaft"].append(energy_shaft)
+                self.energy_use["stationary"].append(energy_delta if stationary else 0.0)
+                self.energy_use["power_capped"].append(power_capped)
+                self.energy_use["total_emission_CO2"].append(emission_delta_CO2)
+                self.energy_use["total_emission_PM10"].append(emission_delta_PM10)
+                self.energy_use["total_emission_NOX"].append(emission_delta_NOX)
+                self.energy_use["total_diesel_consumption_C_year_ICE_mass"].append(delta_diesel_C_year)
+                self.energy_use["total_diesel_consumption_ICE_mass"].append(delta_diesel_ICE_mass)
+                self.energy_use["total_diesel_consumption_ICE_vol"].append(delta_diesel_ICE_vol)
+                self.energy_use["total_LH2_consumption_PEMFC_mass"].append(delta_LH2_PEMFC_mass)
+                self.energy_use["total_LH2_consumption_SOFC_mass"].append(delta_LH2_SOFC_mass)
+                self.energy_use["total_LH2_consumption_PEMFC_vol"].append(delta_LH2_PEMFC_vol)
+                self.energy_use["total_LH2_consumption_SOFC_vol"].append(delta_LH2_SOFC_vol)
+                self.energy_use["total_eLNG_consumption_PEMFC_mass"].append(delta_eLNG_PEMFC_mass)
+                self.energy_use["total_eLNG_consumption_SOFC_mass"].append(delta_eLNG_SOFC_mass)
+                self.energy_use["total_eLNG_consumption_PEMFC_vol"].append(delta_eLNG_PEMFC_vol)
+                self.energy_use["total_eLNG_consumption_SOFC_vol"].append(delta_eLNG_SOFC_vol)
+                self.energy_use["total_eLNG_consumption_ICE_mass"].append(delta_eLNG_ICE_mass)
+                self.energy_use["total_eLNG_consumption_ICE_vol"].append(delta_eLNG_ICE_vol)
+                self.energy_use["total_eMethanol_consumption_PEMFC_mass"].append(delta_eMethanol_PEMFC_mass)
+                self.energy_use["total_eMethanol_consumption_SOFC_mass"].append(delta_eMethanol_SOFC_mass)
+                self.energy_use["total_eMethanol_consumption_PEMFC_vol"].append(delta_eMethanol_PEMFC_vol)
+                self.energy_use["total_eMethanol_consumption_SOFC_vol"].append(delta_eMethanol_SOFC_vol)
+                self.energy_use["total_eMethanol_consumption_ICE_mass"].append(delta_eMethanol_ICE_mass)
+                self.energy_use["total_eMethanol_consumption_ICE_vol"].append(delta_eMethanol_ICE_vol)
+                self.energy_use["total_eNH3_consumption_PEMFC_mass"].append(delta_eNH3_PEMFC_mass)
+                self.energy_use["total_eNH3_consumption_SOFC_mass"].append(delta_eNH3_SOFC_mass)
+                self.energy_use["total_eNH3_consumption_PEMFC_vol"].append(delta_eNH3_PEMFC_vol)
+                self.energy_use["total_eNH3_consumption_SOFC_vol"].append(delta_eNH3_SOFC_vol)
+                self.energy_use["total_eNH3_consumption_ICE_mass"].append(delta_eNH3_ICE_mass)
+                self.energy_use["total_eNH3_consumption_ICE_vol"].append(delta_eNH3_ICE_vol)
+                self.energy_use["total_Li_NMC_Battery_mass"].append(delta_Li_NMC_Battery_mass)
+                self.energy_use["total_Li_NMC_Battery_vol"].append(delta_Li_NMC_Battery_vol)
+                self.energy_use["total_Battery2000kWh_consumption_num"].append(delta_Battery2000kWh)
+                self.energy_use["water depth"].append(h_0)
 
 
         # TODO: er moet hier een heel aantal dingen beter worden ingevuld
