@@ -80,6 +80,8 @@ def _edge_hydraulic_value(edge, key):
 # The first term is the return-flow friction ("full" only), the second the drawdown term.
 # Hydraulics: 1D continuity and Bernoulli (Schijf 1949; van de Kaa 1978, Eqs. 1-3; Spitzer 2021,
 # Eqs. 8-13). Valid below the critical speed V_cr and with a positive clearance h - T - Z.
+# van de Kaa 1978: 
+# Spitzer 2021: https://ascelibrary.org/doi/10.1061/%28ASCE%29WW.1943-5460.0000672
 
 
 RHO_FRESH_WATER = 1000.0      # water density [kg/m3]
@@ -93,7 +95,11 @@ C_P0_MOTOR = 0.075
 DELTA_CF_SPITZER = 0.0004     # roughness allowance, Spitzer (2021)
 DELTA_CF_VAN_DE_KAA = 2.5e-4  # roughness allowance, van de Kaa (1978)
 FROUDE_EC_M0 = 0.684          # Spitzer Eq. 19
+C_P1_BARGE = 0.007           # Spitzer (2021), Eq. 14 barge set
+C_P1_MOTOR = 0.04            # Spitzer (2021), Eq. 14 motor set
 
+BASE_RESISTANCE_MODELS = ("auto", "holtrop", "spitzer")
+W_BARGE, T_BARGE = 0.30, 0.20  # van de Kaa (1978) Sec. 4.2 and Eq. 24, loaded push tows (Luthra 1974)
 CONFINEMENT_HULLS = ("barge", "barge_spitzer", "motor")
 CONFINEMENT_MODES = ("none", "drawdown", "full")
 
@@ -364,6 +370,31 @@ def confinement_resistance_increment(V, h, L, B, T, W, S, hull="motor", mode="fu
             "econ_speed_exceeded": bool(V > V_ec)}
 
 
+def spitzer_resistance(V, h, L, B, T, hull="barge", W=None, channel_area_m2=None,
+                       rho=RHO_FRESH_WATER, g=G, nu=NU_WATER_15C):
+    """Spitzer (2021) Eq. 14 in N, alpha = 1, box wetted surface S = LB + 2T(L + B).
+
+    R = C_Global C_Shallow [C_F(V + V_R) rho/2 (V + V_R)^2 S + C_P0 rho g B T Z + C_P1 rho/2 V^2 B T]
+    W None gives open water (Z = V_R = 0). R_open is the same equation with Z = V_R = 0.
+    """
+    if h <= T:
+        raise ValueError(f"Insufficient depth: h={h:.3f} m must exceed T={T:.3f} m.")
+    if hull == "barge":
+        C_G, C_P0, C_P1, C_sh = C_GLOBAL_BARGE, C_P0_BARGE, C_P1_BARGE, c_shallow_barge(h, T)
+    else:
+        C_G, C_P0, C_P1, C_sh = C_GLOBAL_MOTOR, C_P0_MOTOR, C_P1_MOTOR, c_shallow_motor(h, T)
+    S = L * B + 2.0 * T * (L + B)
+    hyd = None if W is None else drawdown_return_flow(V, h, B, T, W, channel_area_m2=channel_area_m2, g=g)
+    Z, V_R = (0.0, 0.0) if hyd is None else (hyd["Z_m"], hyd["V_R_ms"])
+
+    k = C_G * C_sh
+    R_pressure = k * C_P1 * 0.5 * rho * V ** 2 * B * T
+    R_friction = k * c_friction_ittc(V + V_R, L, nu=nu) * 0.5 * rho * (V + V_R) ** 2 * S
+    R_open = k * c_friction_ittc(V, L, nu=nu) * 0.5 * rho * V ** 2 * S + R_pressure
+    R = R_friction + k * C_P0 * rho * g * B * T * Z + R_pressure
+    return {"R_N": R, "R_open_N": R_open, "R_friction_N": R_friction, "R_pressure_N": R_pressure,
+            "C_Shallow": C_sh, "Z_m": Z, "V_R_ms": V_R, "hydraulics": hyd}
+
 
 def power2v(vessel, edge, upperbound):
     """Compute vessel speed for a prescribed total engine-power setting.
@@ -431,11 +462,6 @@ def power2v(vessel, edge, upperbound):
     logger.debug("fit: %s", fit)
     return float(fit.x)
 
-    # fill in some of the parameters that we already know
-    #fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
-    # lookup a minimum
-    #fit = scipy.optimize.minimize_scalar(fun, bounds=(0, upperbound), method="bounded", options=dict(xatol=0.0000001))
-
 
 
 class ConsumesEnergy:
@@ -461,8 +487,9 @@ class ConsumesEnergy:
     - C_B: block coefficient ('fullness') [-] (default to 0.85)
     - one_k2: appendage resistance factor (1+k2) [-]
     - C_year: construction year of the engine [y]
-    - wake_fraction: optional fixed wake fraction w [-]; None uses the Segers (2021) relation
-    - thrust_deduction: optional fixed thrust deduction t [-]; None uses the relation with w
+    - D_s: propeller diameter [m]; None gives 0.7 T, the rule of Segers (2021) Appendix C
+    - wake_fraction, thrust_deduction: fixed w and t [-]. None gives 0.30 and 0.20 for vessel_type
+      "Barge" (van de Kaa 1978) and Segers (2021) Eq. C.1 for motor vessels
     - confinement_mode: "none" (default) keeps the original resistance, R_tot = R_base.
       "drawdown" adds the drawdown term, "full" also the return-flow friction. Both need the
       waterway width (edge GeneralWidth) and use GeneralCrossSectionArea when present; both
@@ -496,7 +523,7 @@ class ConsumesEnergy:
         rho=1000,
         g=9.81,
         x=2,
-        D_s=1.4,
+        D_s=None,
         eta_o=0.4,
         eta_r=1.00,
         eta_t=0.98,
@@ -516,6 +543,7 @@ class ConsumesEnergy:
         confinement_c_f=None,
         confinement_c_z=None,
         confinement_delta_cf=None,
+        base_resistance="auto",
         *args,
         **kwargs,
         
@@ -572,6 +600,9 @@ class ConsumesEnergy:
         self.confinement_c_f = confinement_c_f            # None: the value of the coefficient set
         self.confinement_c_z = confinement_c_z
         self.confinement_delta_cf = confinement_delta_cf
+        if base_resistance not in BASE_RESISTANCE_MODELS:
+            raise ValueError(f"base_resistance must be one of {BASE_RESISTANCE_MODELS}; received {base_resistance!r}.")
+        self.base_resistance = base_resistance
         
         # plugin function that computes velocity based on power
         self.power2v = power2v
@@ -669,10 +700,6 @@ class ConsumesEnergy:
         self.S_APP = 0.05 * self.S  # Wet area of appendages
         # Segers (2021) Eq 3.20
         self.S_B = self.L * self.B  # Area of flat bottom
-
-        # TODO: we D_s is a property that should be given, not calculated
-        # if self.D_s is None:
-        #     self.D_s = 0.7 * self.T  # Diameter of the screw
 
         # TODO: check references for these equations
         self.T_F = self.T  # Forward draught of the vessel [m]
@@ -1038,6 +1065,11 @@ class ConsumesEnergy:
 
         The total resistance is the sum of all resistance components (Holtrop and Mennen, 1982)
         """
+        if self.base_resistance_used() == "spitzer":
+            return self._spitzer_total_resistance(v, h_0 if h_channel is None else h_channel,
+                                                  width=width, channel_area=channel_area)
+
+        self.resistance_model = "holtrop_zeng_karpov"
 
         self.calculate_properties()
         self.calculate_frictional_resistance(v, h_0)
@@ -1054,6 +1086,43 @@ class ConsumesEnergy:
             v=v, h_0=h_0 if h_channel is None else h_channel, width=width, channel_area=channel_area,
         )
         self.R_tot = self.R_base + self.R_confinement
+        return self.R_tot
+
+
+    def base_resistance_used(self):
+        """"spitzer" or "holtrop". With "auto", vessel_type "Barge" gives "spitzer", every other type "holtrop"."""
+
+        choice = getattr(self, "base_resistance", "auto")
+        if choice == "auto":
+            return "spitzer" if default_hull(getattr(self, "vessel_type", None)) == "barge" else "holtrop"
+        return choice
+
+
+    def _spitzer_total_resistance(self, v, h, width=None, channel_area=None):
+        """Spitzer Eq. 14 at the raw depth h. R_base: open water; R_confinement: the channel part."""
+        self.calculate_properties()          # displacement for the propulsion step
+        T = self._hydraulic_draught()
+        mode = getattr(self, "confinement_mode", "none")
+        W = self._required_width(width) if mode != "none" else None
+        hull = default_hull(getattr(self, "vessel_type", None))
+        res = spitzer_resistance(float(v), float(h), self.L, self.B, T, hull=hull, W=W,
+                                 channel_area_m2=channel_area, rho=self.rho, g=self.g, nu=self.nu)
+        self.resistance_model = f"spitzer_eq14_{hull}"
+        self.F_rL = v / np.sqrt(self.g * self.L)
+        self.C_Shallow = res["C_Shallow"]
+        self.R_f = res["R_friction_N"] / 1000.0
+        self.R_base = res["R_open_N"] / 1000.0
+        self.R_tot = res["R_N"] / 1000.0
+        self.R_confinement = self.R_tot - self.R_base
+
+        hyd = res["hydraulics"]
+        self.confinement_result = None
+        if hyd is not None:
+            lim = hydraulic_speed_limits(h, self.B, T, W, channel_area_m2=channel_area, g=self.g)
+            self.Z, self.V_R, self.V_cr, self.V_ec = res["Z_m"], res["V_R_ms"], lim["V_cr_ms"], lim["V_ec_ms"]
+            self.confinement_result = {
+                **hyd, "V_relative_ms": v + self.V_R, "V_cr_ms": self.V_cr, "V_ec_ms": self.V_ec,
+                "V_over_V_cr": v / self.V_cr, "V_over_V_ec": v / self.V_ec, "econ_speed_exceeded": v > self.V_ec}
         return self.R_tot
 
     def calculate_confinement_resistance(self, v, h_0, width=None, channel_area=None):
@@ -1147,20 +1216,17 @@ class ConsumesEnergy:
         else:
             self.dw = 0.1  # otherwise the velocity correction coefficient is 0.1
 
-        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        # Appendix C - Eq C.1
-        self.w = (
-            0.11
-            * (0.16 / self.x)
-            * self.C_B
-            * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
-            - self.dw
-        )  # wake fraction 'w'
+        # Segers (2021) Appendix C: D_s = 0.7 T, then Eq. C.1 for w
+        self.D_s_used = self.D_s if self.D_s is not None else 0.7 * self.T
+        self.w = 0.11 * (0.16 / self.x) * self.C_B * np.sqrt(self.delta ** (1 / 3) / self.D_s_used) - self.dw
 
-        assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
-
-        if self.wake_fraction is not None:      # van de Kaa (1978) w = 0.30 for push tows
-            self.w = self.wake_fraction
+        # Barges: measured pair of van de Kaa (1978), since Eq. C.1 gives w near 0.02 for full hulls
+        barge = default_hull(getattr(self, "vessel_type", None)) == "barge"
+        w_fixed = self.wake_fraction if self.wake_fraction is not None else (W_BARGE if barge else None)
+        t_fixed = self.thrust_deduction if self.thrust_deduction is not None else (
+            T_BARGE if barge and self.wake_fraction is None else None)
+        if w_fixed is not None:
+            self.w = w_fixed
 
         if self.x == 1:
             # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
@@ -1169,8 +1235,8 @@ class ConsumesEnergy:
             # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
             self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
-        if self.thrust_deduction is not None:   # t = 0.20 with van de Kaa (1978), a = 0.25
-            self.t = self.thrust_deduction
+        if t_fixed is not None:
+            self.t = t_fixed
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
         # TODO: check below suggestions. They were made to allow for better translation to alternative energy sources. But the changes induced unexpected behaviour.
@@ -1461,6 +1527,7 @@ class ConsumesEnergy:
         - For fuel cell enegines(PEMFC & SOFC), the correction factors are lower when the partial engine load is low (fuel cell enegine is more efficient at lower enegine load)
         - the correction factors for renewable fuels used in fuel cell engine are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
+
         # TODO: create correction factors for renewable powered ship, the factor may be 100%
         if P_partial is None:
             self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
