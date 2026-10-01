@@ -16,12 +16,9 @@ ENV PROJ_DATA=/opt/conda/share/proj
 
 COPY . /OpenTNSim
 
-# ALWAYS bind pip to the active python
-RUN python -m pip install --upgrade pip setuptools wheel
+RUN python -m pip install --upgrade pip "setuptools<81" wheel
 
-# install coverage tooling
 RUN python -m pip install coverage coverage-badge
 
-# install package (IMPORTANT FIX)
 RUN python -m pip install -e .
 RUN python -m pip install -e ".[testing,zsf]"
