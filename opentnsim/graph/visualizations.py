@@ -207,8 +207,7 @@ def plot_graph_folium(graph, longitude, latitude, zoom_start=5,
                      berths=None, turning_basins=None, anchorage_areas=None):
 
     m = folium.Map(location=[latitude, longitude],
-                   zoom_start=zoom_start,
-                   tiles="cartodbpositron")
+                   zoom_start=zoom_start)
 
     if isinstance(anchorage_areas, pd.DataFrame):
         plot_anchorage_areas(anchorage_areas, m=m)

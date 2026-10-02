@@ -539,7 +539,7 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
 
 
 def spatially_visualize_lock_complex(lock_complex):
-    m = folium.Map(tiles="cartodbpositron")
+    m = folium.Map()
 
     bounds = []
 
