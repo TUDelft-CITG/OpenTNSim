@@ -48,7 +48,7 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             node_start, 
             node_stop, 
             width = 200., 
-            safety_margin = pd.Timedelta(minutes=15), 
+            safety_margin = pd.Timedelta(minutes=0), 
             priority_rules = None,
             *args, 
             **kwargs

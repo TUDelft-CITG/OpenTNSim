@@ -263,6 +263,20 @@ def determine_vessel_waiting_events(
         how="left",
     )
 
+    # Remove True periods shorter than 1 minute
+    combined = df["Combined"].astype("boolean")
+    groups = combined.ne(combined.shift()).cumsum()
+    run_start = df.index.to_series().groupby(groups).transform("first")
+    next_run_start = run_start.groupby(groups).transform("first").shift(-1)
+    next_run_value = combined.groupby(groups).transform("first").shift(-1)
+    remove = (
+        combined.eq(True)
+        & next_run_value.eq(False)
+        & next_run_start.notna()
+        & (next_run_start - run_start < pd.Timedelta(minutes=1))
+    )
+    df = df.loc[~remove]
+
     # 3. Propagate conflict information through the waiting period
     conflict_cols_in_df = [
         col for col in available_conflict_cols
@@ -488,8 +502,6 @@ def get_accessibility_info(vessel, origin, berth = None, leaving_port = False, d
 
         conflicts_dfs = []
 
-    print(vessel.id)
-    display(port_availability_per_waterway)
     return port_availability_per_waterway, conflicts_dfs
 
 

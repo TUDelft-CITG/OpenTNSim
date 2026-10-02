@@ -66,7 +66,8 @@ class HasPortAccess(Movable, Identifiable):
         if parallel_process is not None and not pd.isna(process_stop_time):
             try:
                 yield from port.communicate_port_accessibility_info(self, origin, berth, leaving_port=leaving_port,
-                                                                    parallel_process=parallel_process, process_stop_time=process_stop_time)
+                                                                    parallel_process=parallel_process, 
+                                                                    process_stop_time=process_stop_time)
             except simpy.exceptions.Interrupt as e:
                 raise e
         else:
@@ -75,6 +76,7 @@ class HasPortAccess(Movable, Identifiable):
                 origin, 
                 berth, 
                 leaving_port=leaving_port,
+                process_stop_time=process_stop_time,
             )
             self.port_accessed = True
         self.routes_sailed.append(self.route)
@@ -147,6 +149,7 @@ class IsPortAuthority:
             leaving_port=False, 
             delay = pd.Timedelta(seconds = 0),
         ):
+
         passing_waterways = find_waterways_to_be_passed(vessel)
         port_availability_df_per_waterway, conflicts_dfs = get_accessibility_info(
             vessel, origin, berth, leaving_port=leaving_port, delay=delay,

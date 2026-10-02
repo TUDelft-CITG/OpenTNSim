@@ -51,7 +51,7 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         yield from self.request_berth_access()
         yield from self.berthing(destination)
         yield from self.loading(destination)
-        yield from self.request_port_exit(destination)
+        yield from self.request_port_exit(destination, process_stop_time = datetime.datetime.fromtimestamp(self.env.now) + pd.Timedelta(seconds=self.deberthing_time*60))
         yield from self.deberthing(destination)
         yield from self.release_berth_access(destination)
         self.env.process(self.move())
@@ -121,6 +121,7 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         if len(self.next_deberthing_times):
             self.deberthing_time = self.next_deberthing_times[0]
             self.next_deberthing_times = self.next_deberthing_times[1:]
+        
 
 
 class HasBerthPlanning:
