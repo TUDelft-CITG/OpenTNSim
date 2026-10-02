@@ -48,16 +48,18 @@ def merge_figures(fig1, fig2):
     return new_fig, new_ax
 
 
-def plot_vessels_over_route(env, node_start, node_stop, vessels, ddistance=1000,
+def plot_vessels_over_route(env, node_start, node_stop, ddistance=1000, vessels = None,
                             xmin=None, xmax = None, ymin = None, ymax = None, zmin=0, zmax = 15, dz = 1, levels = []):
     interpolated_distance, node_times_num, interpolated_depth = calculate_interpolated_depth_values(env, node_start, node_stop, ddistance)
     route = nx.dijkstra_path(env.graph,node_start,node_stop)
     fig, ax = plt.subplots()
     plt.close()
     if vessels is None:
-        vessels = env.vessels.values()
+        vessels = env.vessels
 
-    for idx, vessel in enumerate(vessels):
+    for idx, (vessel) in enumerate(vessels.values()):
+        if pd.DataFrame(vessel.logbook).empty:
+            continue
         fig_vessel = plot_time_distance_diagram_vessel(vessel, route)
         if not idx:
             ymin = fig_vessel.axes[0].get_ylim()[0]
@@ -123,8 +125,9 @@ def plot_vessels_over_route(env, node_start, node_stop, vessels, ddistance=1000,
 def plot_time_distance_diagram_vessel(vessel, route):
     df = create_logbook_with_directed_distances(vessel, route)
     fig, ax  = plt.subplots()
-    ax.plot(df.Value, df.Timestamp, label=vessel.name, linewidth=2, zorder=1)
-    ax.set_ylim(df.Timestamp.min(),df.Timestamp.max()+pd.Timedelta(hours=1))
+    if not df.empty:
+        ax.plot(df.Value, df.Timestamp, label=vessel.name, linewidth=2, zorder=1)
+        ax.set_ylim(df.Timestamp.min(),df.Timestamp.max()+pd.Timedelta(hours=1))
     plt.close()
     return fig
 

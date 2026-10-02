@@ -298,11 +298,11 @@ def determine_vessel_waiting_events(
         df.index = idx
 
     # 5. Determine why the vessel is waiting
-    def get_waiting_time_reason(row):
+    def get_waiting_time_reason(row, cols_to_check):
         reasons = []
 
-        for column in port_availability_df.columns:
-            if column in row.index and row[column] is False:
+        for column in cols_to_check:
+            if column in row.index and row[column] is not True:
                 reasons.append(column)
 
         if not reasons:
@@ -320,7 +320,7 @@ def determine_vessel_waiting_events(
     ]
 
     df["Reason"] = df[cols_to_check].apply(
-        get_waiting_time_reason,
+        lambda row: get_waiting_time_reason(row, cols_to_check),
         axis=1,
     )
 
@@ -335,8 +335,9 @@ def determine_vessel_waiting_events(
     downtimes = {}
 
     if port_available_df.empty:
+        # trip not possible
+        waiting_events_dict = {'Not possible': None}
         vessel.port_accessed = port_accessed
-
         return (
             waiting_events_dict,
             conflict_edges_dict,
@@ -408,7 +409,7 @@ def determine_vessel_waiting_events(
 
     # 9. Restore vessel state
     vessel.port_accessed = port_accessed
-    
+
     return (
         waiting_events_dict,
         conflict_edges_dict,
@@ -428,10 +429,10 @@ def determine_vessel_priority(vessel, tide_bound = False, leaving_port = False):
     return priority
 
 
-def get_accessibility_info(vessel, origin, berth = None, leaving_port = False):
-    df_tidal_availability_per_waterway = get_tidal_availability_info(vessel)
-    df_terminal_availability = get_terminal_availability_info(vessel, origin, berth, leaving_port)
-    df_waterway_availability_per_waterway, conflicts_dfs = get_waterway_availability_info(vessel, origin)
+def get_accessibility_info(vessel, origin, berth = None, leaving_port = False, delay = pd.Timedelta(seconds = 0)):
+    df_tidal_availability_per_waterway = get_tidal_availability_info(vessel, delay)
+    df_terminal_availability = get_terminal_availability_info(vessel, origin, berth, leaving_port, delay)
+    df_waterway_availability_per_waterway, conflicts_dfs = get_waterway_availability_info(vessel, origin, delay)
     waterways = find_waterways_to_be_passed(vessel)
 
     #Combine the dataframes
@@ -487,6 +488,8 @@ def get_accessibility_info(vessel, origin, berth = None, leaving_port = False):
 
         conflicts_dfs = []
 
+    print(vessel.id)
+    display(port_availability_per_waterway)
     return port_availability_per_waterway, conflicts_dfs
 
 
@@ -514,7 +517,7 @@ def find_waterways_to_be_passed(vessel):
     return passing_waterways
 
 
-def get_waterway_availability_info(vessel, origin):
+def get_waterway_availability_info(vessel, origin, delay = pd.Timedelta(seconds=0)):
     passing_waterways = find_waterways_to_be_passed(vessel)
     df_waterways_availability = pd.DataFrame()
     availability_dfs = []
@@ -525,14 +528,13 @@ def get_waterway_availability_info(vessel, origin):
         route_to_waterway_start = vessel.route[:index_waterway_route_start]
         edge_route_to_waterway_start = list(zip(route_to_waterway_start[:-1],route_to_waterway_start[1:]))
         sailing_time_to_waterway, _ = get_sailing_time(vessel, edge_route_to_waterway_start)
-        availability_df = waterway.check_waterway_availability_info(vessel, origin, sailing_time_to_waterway)
+        availability_df = waterway.check_waterway_availability_info(vessel, origin, sailing_time_to_waterway + delay.total_seconds())
         availability_df = availability_df.rename(columns={'Traffic': waterway.name})
         conflicts_df = availability_df.copy()
         conflicts_df = conflicts_df.drop(columns = waterway.name)
         availability_df = availability_df[[waterway.name]]
         availability_dfs.append(availability_df)
         conflicts_dfs.append(conflicts_df)
-
 
     if not len(passing_waterways):
         return df_waterways_availability, conflicts_dfs
@@ -546,10 +548,11 @@ def get_waterway_availability_info(vessel, origin):
     return df_waterways_availability, conflicts_dfs
 
 
-def get_terminal_availability_info(vessel, origin, berth = None, leaving_port = False):
+def get_terminal_availability_info(vessel, origin, berth = None, leaving_port = False, delay = pd.Timedelta(seconds=0)):
     df_terminal_availability = pd.DataFrame()
     if not leaving_port and berth is not None:
-        df_terminal_availability = vessel.terminal.provide_terminal_availability_info(vessel, origin, berth)
+        df_terminal_availability = vessel.terminal.provide_terminal_availability_info(vessel, origin, berth, delay)
+
     return df_terminal_availability
 
 
@@ -569,19 +572,19 @@ def check_if_route_contains_restrictions(vessel):
     return contains_restriction
 
 
-def get_tidal_availability_info(vessel):
+def get_tidal_availability_info(vessel, delay = pd.Timedelta(seconds=0)):
     from opentnsim.port.calculations import calculate_tidal_windows
 
     has_tidal_window_policy = check_if_route_contains_restrictions(vessel)
     route = vessel.route
-    time_start = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now)) - np.timedelta64(12,'h')
+    time_start = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) - np.timedelta64(12,'h') + delay)
 
     edge_route = node_path_to_edge_path(vessel.env.graph, route)
     sailing_time, _ = get_sailing_time(vessel, edge_route)
     sailing_time = max(pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=96))
 
     time_end = np.datetime64(
-        datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time
+        datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time + delay
     )
 
     tidal_window_results = pd.DataFrame(columns=["Accessibility"])
@@ -608,7 +611,7 @@ def get_tidal_availability_info(vessel):
         if frames:
             df_tidal_availability_waterways = pd.concat(frames, axis=1)
         else:
-            current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+            current_time = datetime.datetime.fromtimestamp(vessel.env.now) + delay
             df_tidal_availability_waterways = pd.DataFrame(
                 {"Tide": [True]},
                 index=[current_time],

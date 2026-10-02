@@ -1,3 +1,5 @@
+from IPython.display import display
+
 from opentnsim.core import SimpyObject, Identifiable, Movable
 from opentnsim.graph.mixins import OnNode
 from opentnsim.graph.utils import get_sailing_time
@@ -15,6 +17,7 @@ from opentnsim.port.calculations import calculate_total_waiting_time
 import datetime
 import pandas as pd
 import simpy
+import string
 import warnings
 import numpy as np
 pd.options.mode.chained_assignment = None
@@ -59,6 +62,7 @@ class HasPortAccess(Movable, Identifiable):
         berth = None
         if hasattr(self, 'terminal'):
             berth = self.select_berth(origin)
+
         if parallel_process is not None and not pd.isna(process_stop_time):
             try:
                 yield from port.communicate_port_accessibility_info(self, origin, berth, leaving_port=leaving_port,
@@ -141,10 +145,11 @@ class IsPortAuthority:
             origin, 
             berth=None, 
             leaving_port=False, 
+            delay = pd.Timedelta(seconds = 0),
         ):
         passing_waterways = find_waterways_to_be_passed(vessel)
         port_availability_df_per_waterway, conflicts_dfs = get_accessibility_info(
-            vessel, origin, berth, leaving_port=leaving_port,
+            vessel, origin, berth, leaving_port=leaving_port, delay=delay,
         )
 
         waiting_events_per_waterway = {}
@@ -154,7 +159,7 @@ class IsPortAuthority:
         traffic_conflicts_vessels_per_waterway = {}
         traffic_rules_type_per_waterway = {}
         traffic_downtimes_vessels_per_waterway = {}
-        total_foreseen_waiting_time = 0.
+        total_foreseen_waiting_time = delay.total_seconds()
         if len(passing_waterways):
             for index, (waterway_name, waterway) in enumerate(passing_waterways.items()):
                 conflict_df = conflicts_dfs[index]
@@ -181,6 +186,18 @@ class IsPortAuthority:
                 waiting_events, conflict_edges, conflicts_type, vessels_in_conflict, rules, downtimes = determine_vessel_waiting_events(
                     self, vessel, port_availability_df, conflict_df, delay
                 )
+
+                total_waiting_time = 0
+                if None in waiting_events.values():
+                    port_availability_df_per_waterway = port_availability_df
+                    waiting_events_per_waterway = waiting_events
+                    traffic_conflicts_edge_per_waterway = conflict_edges
+                    traffic_conflicts_type_per_waterway = conflicts_type
+                    traffic_conflicts_vessels_per_waterway = vessels_in_conflict
+                    total_waiting_time_per_waterway= total_waiting_time
+                    traffic_rules_type_per_waterway = rules
+                    traffic_downtimes_vessels_per_waterway = downtimes
+                    break
 
                 total_waiting_time = calculate_total_waiting_time(waiting_events)
                 total_foreseen_waiting_time += total_waiting_time
@@ -225,10 +242,11 @@ class IsPortAuthority:
             waiting_events, conflict_edges, conflicts_type, vessels_in_conflict, rules, downtimes = determine_vessel_waiting_events(
                 self, vessel, port_availability_df, conflict_df, delay
             )
-
-            total_waiting_time = calculate_total_waiting_time(waiting_events)
+            total_waiting_time = 0
+            if None not in waiting_events.values():
+                total_waiting_time = calculate_total_waiting_time(waiting_events)
             total_foreseen_waiting_time += total_waiting_time
-            
+                
             # store per waterway results
             port_availability_df_per_waterway = port_availability_df
             waiting_events_per_waterway = waiting_events
@@ -261,6 +279,10 @@ class IsPortAuthority:
         process_stop_time = pd.Timestamp('NaT')
     ):
 
+        delay = pd.Timedelta(seconds=0)
+        if not pd.isna(process_stop_time):
+            delay = process_stop_time - datetime.datetime.fromtimestamp(vessel.env.now)
+
         (df, 
          waiting_events_per_waterway, 
          total_waiting_time_per_waterway,
@@ -270,9 +292,10 @@ class IsPortAuthority:
          traffic_conflicts_rules_per_waterway,
          traffic_conflicts_downtimes_per_waterway,)  = (
             self.plan_vessel_trip(
-                vessel, origin, berth, leaving_port
+                vessel, origin, berth, leaving_port, delay
             )
         )
+        
         if not parallel_process is None:
             try:
                 yield from self.communicate_vessel_to_hold_position(vessel, origin, parallel_process,leaving_port=leaving_port, process_stop_time = process_stop_time)
@@ -280,9 +303,8 @@ class IsPortAuthority:
                 raise e  
 
         # if trip is not possible: stop vessel
-        for _, waiting_events in waiting_events_per_waterway.items():
-            if waiting_events is None:
-                self.communicate_trip_not_possible(vessel, leaving_port)
+        if None in waiting_events_per_waterway.values():
+            self.communicate_trip_not_possible(vessel, leaving_port)
 
         through_waterway = False
         try:
@@ -331,7 +353,6 @@ class IsPortAuthority:
                         )
                     )
         elif total_waiting_time:
-            import string
             waiting_events = waiting_events_per_waterway
             n = len(waiting_events.keys())
             vessel.on_pass_node_functions.append(
@@ -349,6 +370,7 @@ class IsPortAuthority:
                     leaving_port = leaving_port,
                 )
             )
+
         vessel.accessibility_info = df
 
     def communicate_vessel_to_hold_position(self, vessel, origin, parallel_process, leaving_port=False, process_stop_time = pd.Timestamp('NaT')):
@@ -519,7 +541,7 @@ class IsPort(IsPortAuthority, SimpyObject, Identifiable):
         self.env.ports.append(self)
 
     def plot_vessels(self, node_start, node_stop, *args, **kwargs):
-        fig = plot_vessels_over_route(self.env, node_start, node_stop, self.env.vessels.values(), *args, **kwargs)
+        fig = plot_vessels_over_route(self.env, node_start, node_stop, *args, **kwargs)
         return fig
 
 

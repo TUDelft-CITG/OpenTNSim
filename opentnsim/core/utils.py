@@ -76,7 +76,7 @@ def time_to_numpy(t_start):
     return t_start
 
 
-def inspect_object(Class, candidate_kwargs={}, show_parameter_table = False):
+def inspect_object(Class, candidate_kwargs={}, show_parameter_table = True):
 
     def highlight_status(row):
         if row["status"] == "missing":
@@ -186,7 +186,7 @@ def create_vessel(
                    "route": route,
                    "geometry": geometry, }
     candidate_kwargs = {**auto_kwargs, **kwargs}
-    df, missing_parameters = inspect_object(VesselClass, candidate_kwargs)
+    df, missing_parameters = inspect_object(VesselClass, candidate_kwargs, False)
     if show_unused_optional_parameters or missing_parameters:
         display(df)
 

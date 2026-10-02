@@ -177,7 +177,7 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             df.loc[vessel.id] = [
                 vessel.L, vessel.B, vessel.T, registration_time, time_passage_start, time_passage_stop, direction, priority, False]
             df.sort_values(by=['Priority', 'Time_passage_start'], ascending=[False, True],inplace=True)
-        
+
 
     def update_passing_vessels_planning(
             self, 
@@ -305,7 +305,7 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
         exceptions = []
         try:
             restrictions = self.env.graph.edges[edge]["Traffic_encountering_restriction"].evaluate(vessels)
-            rules = [rule for rule, value in restrictions.items() if value == 1]
+            rules = [rule for rule, value in restrictions.items() if value == 0]
             restriction = 1 if rules else 0
 
             reservation_v1 = reservation_v2 = 0
@@ -360,6 +360,7 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             (passing_vessels_per_edge_df.Vessel_id != new_vessel.id)&
             (passing_vessels_per_edge_df.Time_stop >= current_time)
         ]
+
         for edge, group in passing_vessels_per_edge_df.groupby('Edge'):
             if ("Traffic_encountering_restriction" not in self.env.graph.edges[edge].keys() 
                 and "Traffic_overtaking_restriction" not in self.env.graph.edges[edge].keys()):

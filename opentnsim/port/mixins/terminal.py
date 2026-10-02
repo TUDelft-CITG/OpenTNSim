@@ -245,14 +245,15 @@ class IsTerminal(Log, Identifiable, HasBerthPlanning, IsPortComponent):
         return df_berth_availability
 
 
-    def provide_terminal_availability_info(self, vessel, origin, berth = None):
+    def provide_terminal_availability_info(self, vessel, origin, berth = None, delay = pd.Timedelta(seconds=0)):
         df_berth_availability = self.provide_berth_availability_info(vessel)
         df_terminal_availability = pd.DataFrame()
-        sailing_time_to_berth = pd.Timedelta(seconds=0.)
+        sailing_time_to_berth = pd.Timedelta(seconds=0.) + delay
         if berth is None:
             df_terminal_availability['Terminal'] = df_berth_availability.any(axis=1)
         else:
-            sailing_time_to_berth = pd.Timedelta(seconds=self.determine_sailing_time_to_berth(vessel, origin, berth))
+            sailing_time_to_berth = self.determine_sailing_time_to_berth(vessel, origin, berth)
+            sailing_time_to_berth = pd.Timedelta(seconds=sailing_time_to_berth) + delay
             df_terminal_availability['Terminal'] = df_berth_availability[berth.name]
         if not df_terminal_availability.empty:
             df_terminal_availability.index -= sailing_time_to_berth

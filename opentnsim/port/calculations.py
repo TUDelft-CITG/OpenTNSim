@@ -1169,7 +1169,7 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
     berth_occupancy = np.nan
     vessels_at_berth = {}
     for vessel_id in occupied_df.vessel_id:
-        for vessel in berth.env.vessels:
+        for vessel in berth.env.vessels.values():
             if vessel.id == vessel_id:
                 vessels_at_berth[vessel.id] = vessel
 
