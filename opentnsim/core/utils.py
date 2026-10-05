@@ -85,6 +85,10 @@ def inspect_object(Class, candidate_kwargs={}, show_parameter_table = True):
             return ["background-color: #ffe5b4"] * len(row)
         if row["status"] == "optional (used)":
             return ["background-color: #e8f5e9"] * len(row)
+        if row["status"] == "required":
+            return ["background-color: #6fa6cf"] * len(row)
+        if row["status"] == "optional":
+            return ["background-color: #afcee8"] * len(row)
         return ["background-color: #c8e6c9"] * len(row)
 
     rows = []
@@ -129,6 +133,11 @@ def inspect_object(Class, candidate_kwargs={}, show_parameter_table = True):
     ).reset_index(drop=True)
     missing_parameters = not df[df.status == 'missing'].empty
     df = df.drop(["missing", "required", "provided"], axis=1)
+    if show_parameter_table:
+        if candidate_kwargs == {}:
+            df.loc[df.status == 'missing', 'status'] = 'required'
+            df.loc[df.status == 'optional (unused)', 'status'] = 'optional'
+
     df = df.style.apply(highlight_status, axis=1)
     if show_parameter_table:
         display(df)

@@ -15,7 +15,7 @@ from opentnsim.lock.utils import _get_vessels_that_passed_the_lock_chamber
 import folium
 from IPython.display import display, HTML
 
-def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis = 'x', method='Matplotlib'):
+def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis = 'x', method='Matplotlib', add_doors = False):
     lock_df = pd.DataFrame(lock_chamber.logbook)
     gate_A_df = pd.DataFrame(lock_chamber.gate_A.logbook)
     gate_B_df = pd.DataFrame(lock_chamber.gate_B.logbook)
@@ -71,8 +71,8 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis =
         if df.empty:
             continue
         df.loc[-1,:] = ['Start', ylims[0], df.loc[0,'Value'], df.loc[0,'Geometry']]
-        df.loc[len(df),:] = ['Stop', ylims[-1], df.loc[-1,'Value'], df.loc[-1,'Geometry']]
         df.sort_index(inplace=True)
+        df.loc[len(df) - 1,:] = ['Stop', ylims[-1], df.iloc[-1]['Value'], df.loc[-1,'Geometry']]
     gate_A_df.rename(columns={'Value': 'Status Gate A'}, inplace = True)
     gate_B_df.rename(columns={'Value': 'Status Gate B'}, inplace = True)
 
@@ -122,6 +122,8 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis =
 
         gate_A_df.rename(columns={'Status Gate A': 'Value'}, inplace = True)
         gate_B_df.rename(columns={'Status Gate B': 'Value'}, inplace = True)
+        if not add_doors:
+            return
         for index, df in enumerate([gate_A_df, gate_B_df]):  
             if index:
                 index = -1
@@ -459,19 +461,22 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
 
     # plot the lock phases
     ylims = [ylimmin, ylimmax]
+    add_doors = True
     if method == 'Matplotlib':
         if ncols > 1:
             for index, ax in enumerate(axes):
                 extend_x = lock_extend_x
                 if index:
                     extend_x = ax.get_xlim()
-                    add_locking_phases_to_plot(lock_chamber, fig, ax, extend_x, ylims, time_axis='y', method=method)
+                    add_locking_phases_to_plot(lock_chamber, fig, ax, extend_x, ylims, time_axis='y', method=method, add_doors=add_doors)
+                    ax.set_xlim(extend_x)
                 else:
-                    add_locking_phases_to_plot(lock_chamber, fig, ax, lock_extend_x, ylims, time_axis='y', method=method)
+                    add_locking_phases_to_plot(lock_chamber, fig, ax, lock_extend_x, ylims, time_axis='y', method=method, add_doors=add_doors)
+                    add_doors = False
         else:
-            add_locking_phases_to_plot(lock_chamber, fig, axes, lock_extend_x, ylims, time_axis='y', method=method)
+            add_locking_phases_to_plot(lock_chamber, fig, axes, lock_extend_x, ylims, time_axis='y', method=method, add_doors=add_doors)
     elif method == 'Plotly':
-        add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, ylims, time_axis='y', method=method)
+        add_locking_phases_to_plot(lock_chamber, fig, (1,1), lock_extend_x, ylims, time_axis='y', method=method, add_doors=add_doors)
         if lock_chamber.has_water_level:
             add_locking_phases_to_plot(lock_chamber, fig, col_wlev, extend_x_wlev, ylims,time_axis='y', method=method)
         if lock_chamber.has_salinity:
@@ -509,6 +514,7 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
             axes.set_ylim([ylimmin, ylimmax])
         if ncols > 1:
             ax = axes[-1]
+            extend_x = ax.get_xlim()
             ax.set_xlim(extend_x)
             if legend:
                 ax.legend(
