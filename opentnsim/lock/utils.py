@@ -707,6 +707,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
             & mask_status
             & (mask_future_operations | mask_max_waiting_time | mask_empty_available_lock)
         ].copy()
+
         # TODO: include mask_capacity_B for 2D implementation
         # TODO: create a selection method that can pick the lock operation based on minimizing expected delay or freshwater loss/saltwater intrusion
 
@@ -725,7 +726,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
             else:
                 operation_index = 0
                 time_lock_operation_start = sailing_time_to_lock
-                if lock_chamber.gate_open_at_node != lock_edge[0]:
+                if lock_chamber.gate_open_at_node != lock_edge[0] and not lock_chamber.closing_gate_in_between_operations:
                     empty_operation_required = True
                     operation_index += 1
 

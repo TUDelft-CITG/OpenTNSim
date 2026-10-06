@@ -421,6 +421,7 @@ class IsLockChamberOperator:
         if not between_arrivals:
             new_operation = True
 
+        print(operation_index, between_arrivals, new_operation, is_first_vessel)
         gate_is_closed, gate_required_to_be_open, operation_time, levelling_required = determine_if_gate_is_closed(
             self, operation_index, direction, vessel, is_first_vessel, between_arrivals, new_operation = new_operation)
         if not gate_is_closed and not levelling_required:

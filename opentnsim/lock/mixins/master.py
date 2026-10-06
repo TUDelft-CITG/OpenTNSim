@@ -217,6 +217,7 @@ class IsLockMaster:
         vessel_planning_index = self.add_vessel_to_vessel_planning(vessel, direction)
 
         lock_chamber_name, operation_index, new_operation = _find_available_lock_operation(self, vessel, direction)
+        print(vessel.name, operation_index, new_operation)
         lock_chamber = self.lock_complex.lock_chambers[lock_chamber_name]
 
         waiting_area_name = _find_available_waiting_area(vessel, lock_chamber, direction)
@@ -276,6 +277,7 @@ class IsLockMaster:
         _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                         lock_operation_information)
 
+        empty_lock_operation_to_be_requested = False
         if new_operation:
             new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, direction)
             _, empty_lock_operation_to_be_requested, lock_operation_to_be_executed = new_lockage_info
