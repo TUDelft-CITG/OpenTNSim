@@ -193,18 +193,19 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         if self.has_water_level:
             time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))      
             wlev_series = hydromanager._get_interpolated_hydrodynamic_series(np.array(time_series),self.gate_open_at_node, "Water level",)
+            if water_level_init is None:
+                water_level_init = wlev_series[0]
             if self.closing_gate_in_between_operations:
-                if water_level_init is None:
-                    water_level_init = wlev_series[0]
                 wlev_series = water_level_init * np.ones(len(time_series))
             self.time = time_series
             self.water_level = wlev_series
+            self.water_level_init = water_level_init
         if self.has_salinity:
             time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
             sal_series = hydromanager._get_interpolated_hydrodynamic_series(np.array(time_series), self.gate_open_at_node,"Salinity", )
-            if self.closing_gate_in_between_operations and salinity_init is not None:
-                if salinity_init is None:
-                    salinity_init = sal_series[0]
+            if salinity_init is None:
+                salinity_init = sal_series[0]
+            if self.closing_gate_in_between_operations:
                 sal_series = salinity_init * np.ones(len(time_series))
             self.time = time_series
             self.salinity = sal_series
@@ -216,6 +217,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
             if salt_start < salt_end:
                 self.node_sea = self.end_node
                 self.node_lake = self.start_node
+            self.salinity_init = salinity_init
 
         # operational information
         self.minimum_manoeuvrability_speed = minimum_manoeuvrability_speed

@@ -1132,9 +1132,9 @@ def determine_if_gate_is_closed(
     wlev_diff = 0.
     door_open_time = pd.Timedelta(seconds=lock_chamber.gate_opening_time)
     if hasattr(lock_chamber, 'water_level'):
-        time_index = lock_chamber.time.searchsorted(np.datetime64(last_time_gate_closed, "ns"), side="right") - 1
-        wlev_init = lock_chamber.water_level[time_index]
+        node = lock_chamber.end_node if not last_direction else lock_chamber.start_node
         hydromanager = HydrodynamicDataManager()
+        wlev_init = hydromanager._get_hydrodynamic_data_value(last_time_gate_closed, node, 'Water level')
         required_wlev = hydromanager._get_interpolated_hydrodynamic_series(gate_required_to_be_open - door_open_time, req_side, 'Water level')[0]
         wlev_diff = abs(required_wlev - wlev_init)
 
@@ -1156,6 +1156,7 @@ def determine_if_gate_is_closed(
 
     if not levelling_required:
         operation_time = door_open_time
+
     return gate_are_closed, gate_required_to_be_open, operation_time, levelling_required
 
 

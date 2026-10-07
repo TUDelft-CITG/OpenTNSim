@@ -55,50 +55,32 @@ def get_levelling_cycles(lock_chamber):
     # Build cycles chronologically
     cycles = []
 
-    for i, close in gate_closings.iterrows():
+    for i, opening in gate_openings.iterrows():
+        gate_opened = opening["gate_opened"]
 
-        gate_closed = close["gate_closed"]
-        direction = close["Value"]
-
-        # Find the first gate opening after this gate closing.
-        next_closing = (
-            gate_closings.loc[i + 1, "gate_closed"]
-            if i + 1 < len(gate_closings)
-            else pd.Timestamp.max
-        )
-
-        possible_openings = gate_openings[
-            (gate_openings["gate_opened"] >= gate_closed)
-            & (gate_openings["gate_opened"] < next_closing)
+        # Find the last gate closing before this gate opening.
+        possible_closings = gate_closings[
+            gate_closings["gate_closed"] <= gate_opened
         ]
 
-        if possible_openings.empty:
-            gate_opened = pd.NaT
+        if possible_closings.empty:
+            gate_closed = lock_chamber.env.simulation_start
+            direction = opening["Value"]
         else:
-            gate_opened = possible_openings.iloc[0]["gate_opened"]
+            closing = possible_closings.iloc[-1]
+            gate_closed = closing["gate_closed"]
+            direction = closing["Value"]
 
         # Find a REAL levelling start/stop inside this cycle
-        if pd.notna(gate_opened):
+        possible_starts = leveling_starts[
+            (leveling_starts["leveling_start"] >= gate_closed)
+            & (leveling_starts["leveling_start"] < gate_opened)
+        ]
 
-            possible_starts = leveling_starts[
-                (leveling_starts["leveling_start"] >= gate_closed)
-                & (leveling_starts["leveling_start"] < gate_opened)
-            ]
-
-            possible_stops = leveling_stops[
-                (leveling_stops["leveling_stop"] >= gate_closed)
-                & (leveling_stops["leveling_stop"] <= gate_opened)
-            ]
-
-        else:
-
-            possible_starts = leveling_starts[
-                leveling_starts["leveling_start"] >= gate_closed
-            ]
-
-            possible_stops = leveling_stops[
-                leveling_stops["leveling_stop"] >= gate_closed
-            ]
+        possible_stops = leveling_stops[
+            (leveling_stops["leveling_stop"] >= gate_closed)
+            & (leveling_stops["leveling_stop"] <= gate_opened)
+        ]
 
         # REAL levelling exists
         if not possible_starts.empty:
@@ -117,18 +99,10 @@ def get_levelling_cycles(lock_chamber):
 
         # NO real levelling:
         else:
-
-            if pd.notna(gate_opened):
-
-                artificial_time = max(
-                    gate_closed,
-                    gate_opened - pd.Timedelta(minutes=5)
-                )
-
-            else:
-                # No gate opening yet: use gate closing as the
-                # instantaneous artificial levelling event.
-                artificial_time = gate_closed
+            artificial_time = max(
+                gate_closed,
+                gate_opened - pd.Timedelta(minutes=5)
+            )
 
             leveling_start = artificial_time
             leveling_stop = artificial_time
@@ -142,7 +116,6 @@ def get_levelling_cycles(lock_chamber):
             "gate_opened": gate_opened,
         })
 
-
     # Create dataFrame
     levelling_cycles = pd.DataFrame(cycles)
 
@@ -152,6 +125,9 @@ def get_levelling_cycles(lock_chamber):
         range(len(levelling_cycles))
     )
 
+    if levelling_cycles.empty:
+        return levelling_cycles
+
     levelling_cycles["leveling_duration"] = (
         levelling_cycles["leveling_stop"]
         - levelling_cycles["leveling_start"]
@@ -160,8 +136,8 @@ def get_levelling_cycles(lock_chamber):
     levelling_cycles = levelling_cycles.dropna()
 
     # Add directions
-    directions = lock_df[lock_df["Message"] == "Lock levelling start"]['Value'] == lock_chamber.edge[0]
-    directions = (~directions).astype(int)
+    directions = lock_df[lock_df["Message"] == "Lock gate opening stop"]['Value'] == lock_chamber.gate_A.name
+    directions = (directions).astype(int)
     levelling_cycles['direction'] = directions.values
     return levelling_cycles
 
@@ -721,7 +697,9 @@ def calculate_cycle_information(lock_chamber):
             "Downstream vessel_ids": down_vessels,
             "Intensity (I_s)": I_s
         })
-    return pd.DataFrame(results)
+
+    Tc_df = pd.DataFrame(results)
+    return Tc_df
 
 
 def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, env):
