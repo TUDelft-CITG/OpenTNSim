@@ -104,6 +104,7 @@ def levelling_time_equation(
     lock_start_node,
     lock_end_node,
     wlev_init,
+    time_gate_to_be_open = pd.Timestamp('NaT'),
 ):
     """Calculates the levelling time of a lock operation based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
     This function is called by get_levelling_time()
@@ -116,6 +117,7 @@ def levelling_time_equation(
     z : list of float
         the water level difference series over the time of the levelling process
     """
+    dt = t[1]-t[0]
     t_start = time_to_numpy(t_start)
     A_ch = lock_length * lock_width  # surface area of the lock chamber [m^2] (constant over time)
     m = disch_coeff  # discharge coefficient [-] (constant over time)
@@ -129,6 +131,10 @@ def levelling_time_equation(
     H_B = hydromanager._get_interpolated_hydrodynamic_series(interp_times,lock_end_node,'Water level')
     H_A_init = H_A[0]
     H_B_init = H_B[0]
+    duration_until_gate_has_to_be_open = time_gate_to_be_open - t_start
+    t_index_gate_has_to_be_open = None
+    if not pd.isna(duration_until_gate_has_to_be_open):
+        t_index_gate_has_to_be_open = int(duration_until_gate_has_to_be_open.total_seconds()/dt)
 
     if not direction:
         factor = 1
@@ -157,11 +163,21 @@ def levelling_time_equation(
 
         # calculate the new water level difference at time = i + 1
         z[i + 1] = z[i] + dz + to_wlev_change
-        if np.sign(z[i + 1]) != np.sign(z[i]):  # prevents overshooting of the water level difference
+        
+        # prevents overshooting of the water level difference
+        if np.sign(z[i + 1]) != np.sign(z[i]):  
             z[i + 1] = 0
 
-        if (np.abs(z[i + 1]) <= water_level_difference_limit_to_open_gate):  # breaks the integration if the water level difference is smaller than a default 5 cm (the last 5 cm of water level difference takes long to overcome, so lock master opens gate)
+        # continue levelling if the water level difference is greater than a default 5 cm (the last 5 cm of water level difference takes long to overcome, so lock master opens gate)
+        if np.abs(z[i + 1]) > water_level_difference_limit_to_open_gate:
+            continue
+
+        # breaks levelling if one of the conditions is met
+        if t_index_gate_has_to_be_open is None:
             z[(i + 1) :] = np.nan  # set all next values of the water level series to nan
+            break
+        elif i >= t_index_gate_has_to_be_open:
+            z[(i + 1) :] = np.nan
             break
 
     # determining levelling time based on the first nan of the series TODO: Class-functie maken _get_levelling_time()
@@ -174,7 +190,13 @@ def levelling_time_equation(
     return levelling_time, t, z
 
 
-def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, operation_index=0, prediction=False):
+def calculate_levelling_time(lock_chamber, 
+                             t_start, 
+                             direction, 
+                             wlev_init=None, 
+                             operation_index=0, 
+                             prediction=False,
+                             time_gate_to_be_open = pd.Timestamp('NaT')):
     """
     Calculates the levelling time of a lock operation
 
@@ -256,6 +278,7 @@ def calculate_levelling_time(lock_chamber, t_start, direction, wlev_init=None, o
         lock_start_node=lock_chamber.start_node,
         lock_end_node=lock_chamber.end_node,
         wlev_init=wlev_init,
+        time_gate_to_be_open = time_gate_to_be_open,
     )
 
     # if this function was not ran as a prediction, but rather as the actual levelling event: update the water level time series of the lock chamber

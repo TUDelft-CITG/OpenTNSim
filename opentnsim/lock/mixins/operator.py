@@ -439,7 +439,15 @@ class IsLockChamberOperator:
         if gate_is_closed:
             close_gate = False
         if levelling_required:
-            vessel.env.process(self.convert_chamber(new_level, 1 - direction, close_gate=close_gate, delay=delay))
+            vessel.env.process(
+                self.convert_chamber(
+                    new_level, 
+                    1 - direction, 
+                    close_gate=close_gate, 
+                    delay=delay, 
+                    time_gate_to_be_open = gate_required_to_be_open - pd.Timedelta(seconds=self.gate_opening_time),
+                )
+            )
         else:
             vessel.env.process(self.open_gate(gate, vessel, delay=delay))
 
@@ -581,7 +589,15 @@ class IsLockChamberOperator:
             yield from self.instruct_vessel_to_wait_in_lock_chamber_before_sailing_out(vessel, sailing_out_delay)
 
 
-    def convert_chamber(self, new_level, direction, operation_index=None, vessel=None, delay = 0., close_gate = None):
+    def convert_chamber(self, 
+                        new_level, 
+                        direction, 
+                        operation_index=None, 
+                        vessel=None, 
+                        delay = 0., 
+                        close_gate = None, 
+                        time_gate_to_be_open = pd.Timestamp('NaT'),
+                        ):
         """
         Converts the lock chamber and logs this event
 
@@ -670,7 +686,12 @@ class IsLockChamberOperator:
             self.gate_B.resource.release(hold_gate_B)
 
         # level lock and open the gate afterwards
-        yield from self.level_lock(new_level, direction, operation_index=operation_index)
+        yield from self.level_lock(
+            new_level, 
+            direction, 
+            operation_index=operation_index,
+            time_gate_to_be_open=time_gate_to_be_open
+            )
         gate_to_open = self.gate_A
         if not direction:
             gate_to_open = self.gate_B
@@ -795,7 +816,7 @@ class IsLockChamberOperator:
             vessel.env.process(self.close_gate(gate_to_close, delay=delay_to_close_gate.total_seconds()))
 
 
-    def level_lock(self, new_level, direction, operation_index=None):
+    def level_lock(self, new_level, direction, operation_index=None, time_gate_to_be_open = pd.Timestamp('NaT')):
         """
         Lock operator levels the water level of the lock chamber to the harbour side of the direction of the lock operation
 
@@ -827,7 +848,14 @@ class IsLockChamberOperator:
             current_time = datetime.datetime.fromtimestamp(self.env.now)
             time_index = self.time.searchsorted(current_time, side="right") - 1
             wlev_init = self.water_level[time_index]
-        levelling_time, _, _ = calculate_levelling_time(self, self.env.now, direction, wlev_init = wlev_init, operation_index=operation_index)
+        levelling_time, _, _ = calculate_levelling_time(
+            self, 
+            self.env.now, 
+            direction, 
+            wlev_init = wlev_init, 
+            operation_index=operation_index, 
+            time_gate_to_be_open=time_gate_to_be_open,
+            )
 
         # log the start of the event
         self.log_entry_v0("Lock levelling start", self.env.now, self.gate_open_at_node, self.geometry, )
