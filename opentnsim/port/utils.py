@@ -51,14 +51,6 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
     return corrected_df
 
 
-def update_terminal_planning(vessel, delay=0.):
-    vessel.terminal.replan_vessels_terminal_berths(vessel,delay)
-    for queued_vessel_id, _ in vessel.terminal.queue.iterrows():
-        queued_vessel = get_vessel_from_id(vessel.env, [queued_vessel_id])[0]
-        if hasattr(queued_vessel,'waiting_event') and queued_vessel.waiting_event.is_alive:
-            queued_vessel.waiting_event.interrupt()
-
-
 def check_if_vessel_is_tide_bound(df_tidal_availability):
     tide_bound = False
     if False in df_tidal_availability.values:
@@ -140,11 +132,9 @@ def determine_new_route_for_vessel(vessel):
 
 
 def determine_vessel_waiting_events(
-    port_accessed,
-    vessel,
+    port,
     port_availability_df,
-    conflict_df,
-    delay=0.,
+    delay = 0.,
 ):
     """
     Determine the waiting events for a vessel.
@@ -161,7 +151,7 @@ def determine_vessel_waiting_events(
     vessels_in_conflict_dict
     """
 
-    # 1. Prepare availability dataframe
+    # 1) Prepare availability dataframe
     df = port_availability_df.copy()
 
     # Overall availability
@@ -176,34 +166,7 @@ def determine_vessel_waiting_events(
     with pd.option_context("future.no_silent_downcasting", True):
         df = df.ffill()
 
-    # 2. Add conflict information
-    conflict_cols = [
-        "edges",
-        "conflict_type",
-        "vessels_in_conflict",
-        "rules",
-        "downtime",
-        "_block",
-    ]
-
-    available_conflict_cols = [
-        col for col in conflict_cols
-        if col in conflict_df.columns
-    ]
-
-    conflict_info = conflict_df[available_conflict_cols].copy()
-
-    # Make sure both indexes are datetime
-    conflict_info.index = pd.to_datetime(conflict_info.index)
-    df.index = pd.to_datetime(df.index)
-
-    # Exact join first
-    df = df.join(
-        conflict_info,
-        how="left",
-    )
-
-    # Remove True periods shorter than 1 minute
+    # 2) Remove True periods shorter than 1 minute
     combined = df["Combined"].astype("boolean")
     groups = combined.ne(combined.shift()).cumsum()
     run_start = df.index.to_series().groupby(groups).transform("first")
@@ -217,41 +180,7 @@ def determine_vessel_waiting_events(
     )
     df = df.loc[~remove]
 
-    # 3. Propagate conflict information through the waiting period
-    conflict_cols_in_df = [
-        col for col in available_conflict_cols
-        if col in df.columns
-    ]
-
-    if conflict_cols_in_df:
-        with pd.option_context("future.no_silent_downcasting", True):
-            df[conflict_cols_in_df] = df[conflict_cols_in_df].ffill()
-
-    # 4. Determine current simulation time
-    current_time = (
-        datetime.datetime.fromtimestamp(vessel.env.now)
-        + pd.Timedelta(seconds=delay)
-    )
-
-    previous_events = df[df.index <= current_time]
-    future_events = df[df.index > current_time]
-
-    last_previous_event_index = previous_events.index.max()
-
-    if pd.isna(last_previous_event_index):
-        previous_event = df.iloc[0:0]
-    else:
-        previous_event = df.loc[[last_previous_event_index]]
-
-    df = pd.concat([previous_event, future_events])
-
-    # Replace first timestamp with the actual current simulation time
-    if len(df) > 0:
-        idx = df.index.to_list()
-        idx[0] = current_time
-        df.index = idx
-
-    # 5. Determine why the vessel is waiting
+    # 3) Determine why the vessel is waiting
     def get_waiting_time_reason(row, cols_to_check):
         reasons = []
 
@@ -278,34 +207,24 @@ def determine_vessel_waiting_events(
         axis=1,
     )
 
-    # 6. Find first time at which everything becomes available
+    # 4) Find first time at which everything becomes available
+    current_time = pd.Timestamp(datetime.datetime.fromtimestamp(port.env.now))
+    current_time += pd.Timedelta(seconds = delay)
+    first_pos = df.index.searchsorted(current_time, side="right") - 1
+    df = df.iloc[max(first_pos, 0):]  
+
     port_available_df = df[df["Combined"] == True]
-
     waiting_events_dict = {}
-    conflict_edges_dict = {}
-    conflicts_dict = {}
-    vessels_in_conflict_dict = {}
-    rules = {}
-    downtimes = {}
-
     if port_available_df.empty:
         # trip not possible
-        waiting_events_dict = {'Not possible': None}
-        vessel.port_accessed = port_accessed
-        return (
-            waiting_events_dict,
-            conflict_edges_dict,
-            conflicts_dict,
-            vessels_in_conflict_dict,
-            rules,
-            downtimes,
-        )
+        waiting_events_dict['Not possible'] = None
+        return waiting_events_dict
+    
+    first_entry_time = port_available_df.iloc[0].name
+    waiting_events = df.loc[:first_entry_time]
+    waiting_events.index = [current_time, *waiting_events.index[1:]]
 
-    waiting_time_end = port_available_df.iloc[0].name
-
-    waiting_events = df.loc[:waiting_time_end]
-
-    # 7. Calculate duration of every waiting interval
+    # 5) Calculate duration of every waiting interval
     waiting_times = (
         waiting_events.index.to_series().shift(-1)
         - waiting_events.index
@@ -315,12 +234,10 @@ def determine_vessel_waiting_events(
         else None
     )
 
-    # 8. Build dictionaries
+    # 6) Build dictionaries
     event_number = 0
     for i in range(len(waiting_events) - 1):
-
         row = waiting_events.iloc[i]
-
         waiting_reason = row["Reason"]
 
         # Ignore rows where there is no actual waiting
@@ -328,50 +245,17 @@ def determine_vessel_waiting_events(
             continue
 
         waiting_time = waiting_times.iloc[i]
-
         if waiting_time is None:
             continue
 
         event_number += 1
-
         key = f"{waiting_reason} ({event_number})"
-
-        # Conflict information
-        edge = row.get("edges", None)
-        conflict = row.get("conflict_type", None)
-        vessels = row.get("vessels_in_conflict", None)
-        rule = row.get("rules", None)
-        downtime = row.get("downtime", None)
-
-        # Convert NaN to None
-        if isinstance(edge, float) and pd.isna(edge):
-            edge = None
-
-        if isinstance(conflict, float) and pd.isna(conflict):
-            conflict = None
-
-        if isinstance(vessels, float) and pd.isna(vessels):
-            vessels = None
 
         # Store
         waiting_events_dict[key] = waiting_time
-        conflict_edges_dict[key] = edge
-        conflicts_dict[key] = conflict
-        vessels_in_conflict_dict[key] = vessels
-        rules[key] = rule
-        downtimes[key] = downtime
 
-    # 9. Restore vessel state
-    vessel.port_accessed = port_accessed
+    return waiting_events_dict
 
-    return (
-        waiting_events_dict,
-        conflict_edges_dict,
-        conflicts_dict,
-        vessels_in_conflict_dict,
-        rules,
-        downtimes
-    )
 
 def determine_vessel_priority(vessel, tide_bound = False, leaving_port = False):
     priority = 0
@@ -522,7 +406,7 @@ def get_waterway_availability_info(
         )
 
         if waterway is not None:
-            availability_df = (
+            availability_df, conflict_df = (
                 waterway.check_waterway_availability_info(
                     vessel,
                     origin,
@@ -530,12 +414,6 @@ def get_waterway_availability_info(
                     + delay.total_seconds(),
                 )
             )
-
-            conflicts_df = availability_df.drop(
-                columns=["Traffic"]
-            ).copy()
-
-            availability_df = availability_df[['Traffic']].copy()
             availability_df.columns = pd.MultiIndex.from_tuples(
                 [(waterway_name, "Traffic")],
                 names=["waterway_name", ""],
@@ -548,38 +426,29 @@ def get_waterway_availability_info(
                     [current_time], name="time"
                 ),
             )
-
             availability_df.columns = pd.MultiIndex.from_tuples(
                 availability_df.columns,
                 names=["waterway_name", ""],
             )
 
-            conflicts_df = pd.DataFrame({
-                "edges": [[]],
-                "conflict_type": [[]],
-                "vessels_in_conflict": [[]],
-                "rules": [[]],
-                "Rule_index": [[]],
-                "downtime": [[]],
-                "_block": [None],
-            }, index=pd.DatetimeIndex(
-                [current_time], name="time"
-            ))
+            conflict_df = pd.DataFrame(columns=[
+                "time_start",
+                "time_stop",
+                "edge",
+                "type",
+                "vessel",
+                "rule"
+                ], 
+                index=pd.DatetimeIndex(
+                    [], name="time"
+                )
+            )
 
         availability_dfs.append(availability_df)
-        conflicts_dfs.append(conflicts_df)
+        conflicts_dfs.append(conflict_df)
 
-    df_waterways_availability = pd.concat(
-        availability_dfs, axis=1
-    )
-
-    df_waterways_availability = (
-        df_waterways_availability
-        .sort_index()
-        .ffill()
-        .bfill()
-    )
-
+    df_waterways_availability = pd.concat(availability_dfs, axis=1)
+    df_waterways_availability = (df_waterways_availability.sort_index().ffill().bfill())
     return df_waterways_availability, conflicts_dfs
 
 
@@ -587,7 +456,6 @@ def get_terminal_availability_info(vessel, origin, berth = None, leaving_port = 
     df_terminal_availability = pd.DataFrame()
     if not leaving_port and berth is not None:
         df_terminal_availability = vessel.terminal.provide_terminal_availability_info(vessel, origin, berth, delay)
-
     return df_terminal_availability
 
 
@@ -1311,3 +1179,11 @@ def sort_port_trips(port, terminals):
 
     return sorted_trips.reset_index(drop=True), changed_trips
 
+
+def select_berth_based_on_name(terminal, berth_name):
+    selected_berth = None
+    for berth in terminal.berths.items:
+        if berth.name == berth_name:
+            selected_berth = berth
+            break
+    return selected_berth

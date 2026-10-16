@@ -463,6 +463,7 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             origin, 
             delay = 0.
             ):
+        
         sailing_time_over_waterway_df, time_passage_start = self.get_waterway_passage_information_for_vessel(
             vessel, 
             origin)
@@ -485,10 +486,9 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             total_sailing_time_to_waterway -= sailing_time_on_current_edge
 
         current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-        time_passage_start = current_time + total_sailing_time_to_waterway
+        time_passage_start = current_time + total_sailing_time_to_waterway + pd.Timedelta(seconds=delay)
         event_map = (sailing_time_over_waterway_df.set_index("edge")[["time_start", "time_stop"]])
         event_map.index = pd.MultiIndex.from_tuples(event_map.index)
-        eps = pd.Timedelta(milliseconds=1)
 
         index = 0
         for conflict_index, conflicts in enumerate([encountering_conflicts, overtaking_conflicts]):
@@ -500,6 +500,8 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
                     conflict_index += 1
 
             for index, (edge, time_start0, time_stop0, vessel1, vessel2, rules) in enumerate(conflicts):
+                if vessel1.id == vessel2.id:
+                    continue
                 index += conflict_index
                 event = event_map.loc[edge]
 
@@ -521,155 +523,64 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
                 if time_stop_not_available < time_start_not_available:
                     time_start_not_available, time_stop_not_available = time_stop_not_available, time_start_not_available
 
-                record = [
-                    {   "index": index,
-                        "time": time_start_not_available - eps,
-                        "edge": edge,
-                        "conflict_type": conflict_type,
-                        "vessels": (vessel1, vessel2),
-                        "rule": rules,
-                        "value": True,
-                    },
-                    {
-                        "index": index,
-                        "time": time_start_not_available,
-                        "edge": edge,
-                        "conflict_type": conflict_type,
-                        "vessels": (vessel1, vessel2),
-                        "rule": rules,
-                        "value": False,
-                    },
-                    {
-                        "index": index,
-                        "time": time_stop_not_available,
-                        "edge": edge,
-                        "conflict_type": conflict_type,
-                        "vessels": (vessel1, vessel2),
-                        "rule": rules,
-                        "value": False,
-                    },
-                    {
-                        "index": index,
-                        "time": time_stop_not_available + eps,
-                        "edge": edge,
-                        "conflict_type": conflict_type,
-                        "vessels": (vessel1, vessel2),
-                        "rule": rules,
-                        "value": True,
-                    },
-                ]
-                records.extend(record)
+                other_vessel = vessel1
+                if other_vessel.id == vessel.id:
+                    other_vessel = vessel2
 
-        if len(encountering_conflicts) or len(overtaking_conflicts):
-            df = pd.DataFrame(records)
-            df = df.sort_values("time").reset_index(drop=True)
+                for rule in rules:
+                    record = [
+                        {
+                            "time_start": time_start_not_available,
+                            "time_stop": time_stop_not_available,
+                            "edge": edge,
+                            "type": conflict_type,
+                            "vessel": other_vessel,
+                            "rule": rule,
+                        },
+                    ]
+                    records.extend(record)
 
-            edge_dfs = {}
-            for edge, group in df.groupby("edge"):
-                edge_dfs[edge] = (
-                    group.pivot(
-                        index="time",
-                        columns="index",
-                        values="value"
-                    )
-                    .ffill()
-                    .bfill()
-                )
-
-                # Keep only the actual rule columns
-                rule_cols = edge_dfs[edge].columns.tolist()
-
-                # Which rules are False?
-                edge_dfs[edge]["rule_index"] = edge_dfs[edge][rule_cols].apply(
-                    lambda row: [col for col in rule_cols if not row[col]],
-                    axis=1
-                )
-
-                # Available if ALL rules are True
-                edge_dfs[edge]["availability"] = edge_dfs[edge][rule_cols].all(axis=1)
-
-
-            combined_availability_df = pd.concat(
-                {
-                    edge: edge_df[["rule_index", "availability"]]
-                    for edge, edge_df in edge_dfs.items()
-                },
-                axis=1
-            ).ffill().bfill()
-
-            # Select only the availability columns
-            rule_index_cols = combined_availability_df.iloc[:, 0::2]
-            availability_cols = combined_availability_df.iloc[:, 1::2]
-
-            # Route availability: ALL edges must be available
-            combined_availability_df["availability"] = availability_cols.all(axis=1)
-
-            # Route rule_index: combine all lists
-            combined_availability_df["rule_index"] = rule_index_cols.apply(
-                lambda row: [
-                    rule
-                    for rules in row
-                    for rule in rules
-                ],
-                axis=1
+        # aggregate results
+        conflict_df = pd.DataFrame(records)
+        time_start = sailing_time_over_waterway_df.time_start.min()
+        time_stop = sailing_time_over_waterway_df.time_stop.min()
+        waterway_availability_df = pd.DataFrame(index=pd.DatetimeIndex([], name="time"))
+        if conflict_df.empty:
+            times = pd.DatetimeIndex(
+                [pd.Timestamp(time_start), pd.Timestamp(time_stop)],
+                name="time",
             )
-
-            new_waterway_availability_df = combined_availability_df[['availability']].copy().rename(columns = {'availability':'Traffic'})
-            new_conflict_df = combined_availability_df[['rule_index']].copy()
-
-            lookup = (
-                df
-                .drop_duplicates("index")
-                .set_index("index")[["edge", "conflict_type", "vessels", "rule"]]
-            )
-
-            def get_conflicts(indexes):
-                if not indexes:
-                    return {
-                        "edges": [],
-                        "conflict_type": [],
-                        "vessels_in_conflict": [],
-                        "rules": []
-                    }
-
-                rows = lookup.loc[indexes]
-
-                return {
-                    "edges": rows["edge"].tolist(),
-                    "conflict_type": rows["conflict_type"].tolist(),
-                    "vessels_in_conflict": rows["vessels"].tolist(),
-                    "rules": rows["rule"].tolist()
-                }
-
-            conflicts = new_conflict_df["rule_index"].apply(get_conflicts)
-
-            # Expand the dictionaries into columns
-            result = conflicts.apply(pd.Series)
-            result.index.name = "time"
-            result['Traffic'] = new_waterway_availability_df['Traffic']
-            result['Rule_index'] =  new_conflict_df["rule_index"]
-            waterway_availability_df = result.copy()
-        else:
-            time_start = sailing_time_over_waterway_df.time_start.min()
-            time_stop = sailing_time_over_waterway_df.time_stop.min()
 
             waterway_availability_df = pd.DataFrame(
-                columns=[
-                    "edges",
-                    "conflict_type",
-                    "vessels_in_conflict",
-                    "rules",
-                    "Traffic",
-                    "Rule_index"
-                ]
+                {"Traffic": [True, True]},
+                index=times,
             )
+            return waterway_availability_df, conflict_df
+        
+        conflict_df = conflict_df.sort_values("time_start").reset_index(drop=True)
 
-            waterway_availability_df.index.name = "time"
+        times = sorted(
+            set(conflict_df["time_start"]) | set(conflict_df["time_stop"])
+        )
 
-            waterway_availability_df.loc[time_start] = [[], [], [], [], True, []]
-            waterway_availability_df.loc[time_stop] = [[], [], [], [], True, []]
+        times = (
+            [times[0] - pd.Timedelta(microseconds=1)]
+            + times
+            + [times[-1] + pd.Timedelta(microseconds=1)]
+        )
 
-        return waterway_availability_df
+        waterway_availability_df = pd.DataFrame(
+            index=pd.DatetimeIndex(times, name="time")
+        )
+
+        waterway_availability_df["Traffic"] = [
+            not (
+                (conflict_df["time_start"] <= time)
+                & (conflict_df["time_stop"] >= time)
+            ).any()
+            for time in times
+        ]
+        return waterway_availability_df, conflict_df
     
 
     def check_waterway_availability_info(self, vessel, origin, delay=0.):
@@ -677,7 +588,7 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             self.check_conflicts_for_new_vessel(vessel)
         )
 
-        waterway_availability_df = (
+        waterway_availability_df, conflict_df = (
             self.get_waterway_availability_for_vessel(
                 encountering_conflicts,
                 overtaking_conflicts,
@@ -687,125 +598,5 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
             )
         )
 
-        df = waterway_availability_df.copy()
-        df["downtime"] = None
-
-        active_rules = {}
-        rule_downtime = {}
-
-        previous_rules = set()
-
-        for timestamp, row in df.iterrows():
-
-            current_rules = set(row["Rule_index"])
-
-            # New rules
-            for r in current_rules - previous_rules:
-                active_rules[r] = timestamp
-
-            # Rules that disappear
-            for r in previous_rules - current_rules:
-                rule_downtime[r] = timestamp - active_rules.pop(r)
-
-            previous_rules = current_rules
-
-        # Close any remaining rules
-        last_time = df.index[-1]
-
-        for r, start in active_rules.items():
-            rule_downtime[r] = last_time - start
-
-        df["_block"] = (
-            df["Traffic"]
-            .ne(df["Traffic"].shift())
-            .cumsum()
-        )
-
-        output = []
-
-        groups = list(df.groupby("_block", sort=False))
-
-        first_block = groups[0][0]
-        last_block = groups[-1][0]
-
-        for block_number, group in groups:
-
-            traffic = group["Traffic"].iloc[0]
-
-            if traffic:
-
-                is_first_block = block_number == first_block
-                is_last_block = block_number == last_block
-                has_two_or_more_rows = len(group) >= 2
-
-                if (
-                    is_first_block
-                    or is_last_block
-                    or has_two_or_more_rows
-                ):
-                    output.append(group.copy())
-
-                continue
-
-            conflicts = {}
-
-            for timestamp, row in group.iterrows():
-
-                for edge, conflict_type, vessels, rule, rule_idx in zip(
-                    row["edges"],
-                    row["conflict_type"],
-                    row["vessels_in_conflict"],
-                    row["rules"],
-                    row["Rule_index"],
-                ):
-
-                    vessel_ids = tuple(sorted(v.id for v in vessels))
-
-                    rule_key = tuple(rule) if isinstance(rule, list) else rule
-
-                    key = (
-                        edge,
-                        rule_key,
-                        vessel_ids,
-                    )
-
-                    if key not in conflicts:
-
-                        conflicts[key] = {
-                            "edge": edge,
-                            "conflict_type": conflict_type,
-                            "vessels": vessels,
-                            "rule": rule,
-                            "rule_idx": rule_idx,
-                            "downtime": rule_downtime[rule_idx],
-                        }
-
-            conflict_list = list(conflicts.values())
-
-            start = group.iloc[[0]].copy()
-            stop = group.iloc[[-1]].copy()
-
-            edges = [c["edge"] for c in conflict_list]
-            conflict_types = [c["conflict_type"] for c in conflict_list]
-            vessels = [c["vessels"] for c in conflict_list]
-            rules = [c["rule"] for c in conflict_list]
-            downtimes = [c["downtime"] for c in conflict_list]
-
-            for row in (start, stop):
-
-                idx = row.index[0]
-
-                row.at[idx, "edges"] = edges
-                row.at[idx, "conflict_type"] = conflict_types
-                row.at[idx, "vessels_in_conflict"] = vessels
-                row.at[idx, "rules"] = rules
-                row.at[idx, "downtime"] = downtimes
-
-            output.append(start)
-            output.append(stop)
-
-        result = pd.concat(output).sort_index()
-
-        self.waterway_conflict_information = result.copy()
-        return self.waterway_conflict_information
+        return waterway_availability_df, conflict_df
 

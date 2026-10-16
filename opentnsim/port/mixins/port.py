@@ -5,7 +5,6 @@ from opentnsim.graph.mixins import OnNode
 from opentnsim.graph.utils import get_sailing_time, node_path_to_edge_path
 from opentnsim.port.utils import (
     get_accessibility_info, 
-    update_terminal_planning, 
     determine_vessel_waiting_events,
     determine_if_vessel_needs_to_sail_to_the_anchorage_area, 
     find_waterways_to_be_passed,
@@ -13,6 +12,7 @@ from opentnsim.port.utils import (
     check_vessel_is_tide_bound,
     check_berth_can_host_vessel,
     sort_port_trips,
+    select_berth_based_on_name,
 )
 
 from opentnsim.port.visualizations import plot_vessels_over_route, plot_time_distance_diagram
@@ -21,7 +21,6 @@ from opentnsim.port.calculations import calculate_total_waiting_time_of_events
 import datetime
 import pandas as pd
 import simpy
-import string
 import warnings
 import numpy as np
 import networkx as nx
@@ -262,7 +261,7 @@ class IsPortAuthority:
         available_berths = terminal.determine_berth_availability(vessel, origin)
         possible_trips = pd.DataFrame(columns = ['berth', 'trip_possible', 'is_tide_bound', 'pilots_required', 'tugs_required', 'waiting_time', 'tidal_window_results', 'operation_waiting_for'])
         for berth_name, berth_info in available_berths.iterrows():
-            berth = terminal.select_berth_based_on_name(berth_name)
+            berth = select_berth_based_on_name(terminal, berth_name)
             destination = berth.node
             route = nx.dijkstra_path(self.env.graph, origin, destination)
             start_time = time_start + berth_info.waiting_time
@@ -326,11 +325,6 @@ class IsPortAuthority:
 
         waiting_events_per_waterway = {}
         total_waiting_time_per_waterway = {}
-        traffic_conflicts_edge_per_waterway = {}
-        traffic_conflicts_type_per_waterway = {}
-        traffic_conflicts_vessels_per_waterway = {}
-        traffic_rules_type_per_waterway = {}
-        traffic_downtimes_vessels_per_waterway = {}
         total_foreseen_waiting_time = delay.total_seconds()
         for index, waterway_info in waterways_to_be_passed.iterrows():
             conflict_df = conflicts_dfs[index]
@@ -342,20 +336,14 @@ class IsPortAuthority:
             sailing_time_to_waterway = waterway_info.sailing_time_to_waterway
             delay = sailing_time_to_waterway.total_seconds() + total_foreseen_waiting_time
             port_availability_df = port_availability_df_per_waterway[waterway_name]
-            waiting_events, conflict_edges, conflicts_type, vessels_in_conflict, rules, downtimes = determine_vessel_waiting_events(
-                self, vessel, port_availability_df, conflict_df, delay
-            )
+            waiting_events = determine_vessel_waiting_events(self, port_availability_df, delay)
 
             total_waiting_time = 0
             if None in waiting_events.values():
-                port_availability_df_per_waterway = port_availability_df
-                waiting_events_per_waterway = waiting_events
-                traffic_conflicts_edge_per_waterway = conflict_edges
-                traffic_conflicts_type_per_waterway = conflicts_type
-                traffic_conflicts_vessels_per_waterway = vessels_in_conflict
-                total_waiting_time_per_waterway= total_waiting_time
-                traffic_rules_type_per_waterway = rules
-                traffic_downtimes_vessels_per_waterway = downtimes
+                port_availability_df_per_waterway = {}
+                port_availability_df_per_waterway[waterway_name]  = port_availability_df
+                waiting_events_per_waterway = {}
+                waiting_events_per_waterway[waterway_name] = waiting_events
                 break
 
             total_waiting_time = calculate_total_waiting_time_of_events(waiting_events)
@@ -367,24 +355,13 @@ class IsPortAuthority:
             # store per waterway results
             port_availability_df_per_waterway[waterway_name] = port_availability_df
             waiting_events_per_waterway[waterway_name] = waiting_events
-            traffic_conflicts_edge_per_waterway[waterway_name] = conflict_edges
-            traffic_conflicts_type_per_waterway[waterway_name] = conflicts_type
-            traffic_conflicts_vessels_per_waterway[waterway_name] = vessels_in_conflict
             total_waiting_time_per_waterway[waterway_name] = total_waiting_time
-            traffic_rules_type_per_waterway[waterway_name] = rules
-            traffic_downtimes_vessels_per_waterway[waterway_name] = downtimes
-
+      
         trip_info = (
             port_availability_df_per_waterway,
             waiting_events_per_waterway,
             total_waiting_time_per_waterway,
-            traffic_conflicts_edge_per_waterway,
-            traffic_conflicts_type_per_waterway,
-            traffic_conflicts_vessels_per_waterway,
-            traffic_rules_type_per_waterway,
-            traffic_downtimes_vessels_per_waterway
         )
-
         return trip_info
 
 
@@ -403,12 +380,7 @@ class IsPortAuthority:
             delay = process_stop_time - datetime.datetime.fromtimestamp(vessel.env.now)
 
         # optimize: reshuffle planning
-        # print(vessel.name, datetime.datetime.fromtimestamp(self.env.now))
-        # display(self.vessel_trips)
-        # display(vessel.terminal.berth_planning)
         self.vessel_trips, changed_vessel_trips_df = sort_port_trips(self, self.terminals)
-        # display(self.vessel_trips)
-        # display(changed_vessel_trips_df)
         for _, vessel_trip_info in changed_vessel_trips_df.iterrows():
             vessel_to_plan = self.env.vessels[vessel_trip_info.vessel_id]
             if vessel_to_plan.id != vessel.id:
@@ -421,80 +393,52 @@ class IsPortAuthority:
         df = trip_info[0]
         waiting_events_per_waterway = trip_info[1]
         total_waiting_time_per_waterway = trip_info[2]
-        traffic_conflicts_edge_per_waterway = trip_info[3]
-        traffic_conflicts_type_per_waterway = trip_info[4]
-        traffic_conflicts_vessels_per_waterway = trip_info[5]
-        traffic_conflicts_rules_per_waterway = trip_info[6]
-        traffic_conflicts_downtimes_per_waterway = trip_info[7]
         
         vessel.accessibility_info = df
         if not parallel_process is None:
-            try:
-                yield from self.communicate_vessel_to_hold_position(vessel, origin, parallel_process,leaving_port=leaving_port, process_stop_time = process_stop_time)
-            except simpy.exceptions.Interrupt as e:
-                raise e  
+            yield parallel_process
 
         # if trip is not possible: stop vessel
-        if None in waiting_events_per_waterway.values():
-            self.communicate_trip_not_possible(vessel, leaving_port)
+        for waterway_name in waiting_events_per_waterway.keys():
+            if None in waiting_events_per_waterway[waterway_name].values():
+                self.communicate_trip_not_possible(vessel, leaving_port)
+                break
 
         total_waiting_time = sum(total_waiting_time_per_waterway.values())
         for waterway_name in waiting_events_per_waterway.keys():
             total_waiting_time = total_waiting_time_per_waterway[waterway_name]
             waiting_events = waiting_events_per_waterway[waterway_name]
-            traffic_conflicts_edge = traffic_conflicts_edge_per_waterway[waterway_name]
-            traffic_conflicts_type = traffic_conflicts_type_per_waterway[waterway_name]
-            traffic_conflicts_vessels = traffic_conflicts_vessels_per_waterway[waterway_name]
-            traffic_conflicts_rules = traffic_conflicts_rules_per_waterway[waterway_name]
-            traffic_conflicts_downtimes = traffic_conflicts_downtimes_per_waterway[waterway_name]
             if waterway_name in self.waterways:
                 waterway = self.waterways[waterway_name]
                 waterway_route = get_oriented_waterway_route(waterway, vessel)
             else:
                 waterway_route = vessel.route
             if total_waiting_time:
-                vessel.on_pass_node_functions.append(
-                    self.communicate_vessel_to_wait(
-                        vessel = vessel,
-                        waiting_node = waterway_route[0], # to anchorage?
-                        waiting_events = waiting_events,
-                        conflict_edges = traffic_conflicts_edge,
-                        conflict_types = traffic_conflicts_type,
-                        vessels_in_conflict = traffic_conflicts_vessels,
-                        conflict_rules = traffic_conflicts_rules,
-                        conflict_downtimes = traffic_conflicts_downtimes,
-                        total_waiting_time = total_waiting_time,
-                        berth = berth,
-                        leaving_port = leaving_port,
+                if parallel_process is None:
+                    vessel.on_pass_node_functions.append(
+                        self.communicate_vessel_to_wait(
+                            vessel = vessel,
+                            waiting_node = waterway_route[0],
+                            waiting_events = waiting_events,
+                            total_waiting_time = total_waiting_time,
+                            berth = berth,
+                            leaving_port = leaving_port,
+                        )
                     )
-                )
-                return
+                    return
+                else:
+                    yield from self.communicate_vessel_to_wait(
+                        vessel,
+                        vessel.current_node,
+                        waiting_events,
+                        total_waiting_time=total_waiting_time,
+                        berth=berth,
+                        leaving_port=leaving_port,
+                    )(vessel.current_node)
 
         self.update_vessel_trip_status(vessel, new_status = 'accepted')
         vessel.terminal.update_vessel_berth_planning_status(vessel, new_status = 'accepted')
-
-
-    def communicate_vessel_to_hold_position(self, vessel, origin, parallel_process, leaving_port=False, process_stop_time = pd.Timestamp('NaT')):
-        waterways = find_waterways_to_be_passed(vessel)
-        while not parallel_process.processed:
-            port_availability_df, _ = get_accessibility_info(vessel, origin, waterways, leaving_port=leaving_port)
-            port_availability_df['Combined'] = port_availability_df.all(axis=1)
-            if pd.isna(process_stop_time):
-                process_stop_time = datetime.datetime.fromtimestamp(vessel.env.now)
-            current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-            future_events = port_availability_df[
-                (port_availability_df.index >= process_stop_time)&(port_availability_df.Combined)
-                ]
-            waiting_time = pd.Timedelta(seconds=3600.)
-            if not future_events.empty:
-                future_event = future_events.iloc[0]
-                waiting_time = future_event.name - current_time
-                if len(future_events) > 1:
-                    update_terminal_planning(vessel, delay = waiting_time.total_seconds())
-            try:
-                yield vessel.env.timeout(waiting_time.total_seconds())
-            except simpy.exceptions.Interrupt as e:
-                raise e
+        vessel.port_accessed = self
 
 
     def communicate_trip_not_possible(self, vessel, leaving_port):
@@ -516,11 +460,6 @@ class IsPortAuthority:
         vessel,
         waiting_node,
         waiting_events,
-        conflict_edges,
-        conflict_types,
-        conflict_rules,
-        conflict_downtimes,
-        vessels_in_conflict,
         total_waiting_time=0.,
         berth=None,
         leaving_port=False
@@ -551,30 +490,12 @@ class IsPortAuthority:
 
             # Keep the original input arguments unchanged
             current_waiting_events = waiting_events
-            current_conflict_edges = conflict_edges
-            current_conflict_types = conflict_types
-            current_vessels_in_conflict = vessels_in_conflict
-            current_conflict_rules = conflict_rules
-            current_conflict_downtimes = conflict_downtimes
 
             while True:
                 vessel.waiting = True
                 interrupted = False
 
-                for ((reason, wait_time),
-                    conflict_edge,
-                    conflict_type,
-                    conflict_vessels,
-                    conflict_rule,
-                    conflict_downtime
-                ) in zip(
-                    current_waiting_events.items(),
-                    current_conflict_edges.values(),
-                    current_conflict_types.values(),
-                    current_vessels_in_conflict.values(),
-                    current_conflict_rules.values(),
-                    current_conflict_downtimes.values()
-                ):
+                for reason, wait_time in current_waiting_events.items():
                     clean_reason = reason.split(" (")[0]
                     time_start = vessel.env.now
 
@@ -586,27 +507,8 @@ class IsPortAuthority:
                     )
 
                     waiting_index = len(vessel.waiting_df)
-                    vessel.waiting_df.loc[
-                        waiting_index, 'time_start'
-                    ] = datetime.datetime.fromtimestamp(time_start)
-                    vessel.waiting_df.loc[
-                        waiting_index, 'reason'
-                    ] = clean_reason
-                    vessel.waiting_df.loc[
-                        waiting_index, 'conflict_edge'
-                    ] = conflict_edge
-                    vessel.waiting_df.loc[
-                        waiting_index, 'conflict_type'
-                    ] = conflict_type
-                    vessel.waiting_df.loc[
-                        waiting_index, 'conflict_vessels'
-                    ] = conflict_vessels
-                    vessel.waiting_df.loc[
-                        waiting_index, 'conflict_rule'
-                    ] = conflict_rule
-                    vessel.waiting_df.loc[
-                        waiting_index, 'conflict_downtime'
-                    ] = conflict_downtime
+                    vessel.waiting_df.loc[waiting_index, 'time_start'] = datetime.datetime.fromtimestamp(time_start)
+                    vessel.waiting_df.loc[waiting_index, 'reason'] = clean_reason
 
                     try:
                         yield vessel.env.timeout(
@@ -649,19 +551,12 @@ class IsPortAuthority:
                 # Recalculate the waiting conditions after an interruption
                 trip_info = self.plan_vessel_trip(vessel, origin, berth, leaving_port)
                 waiting_events_per_waterway = trip_info[1]
-                traffic_conflicts_edge_per_waterway = trip_info[3]
-                traffic_conflicts_type_per_waterway = trip_info[4]
-                traffic_conflicts_vessels_per_waterway = trip_info[5]
-                traffic_conflicts_rules_per_waterway = trip_info[6]
-                traffic_conflicts_downtimes_per_waterway = trip_info[7]
 
                 first_waterway_name = list(waiting_events_per_waterway.keys())[0]
                 current_waiting_events = waiting_events_per_waterway[first_waterway_name]
-                current_conflict_edges =  traffic_conflicts_edge_per_waterway[first_waterway_name]
-                current_conflict_types = traffic_conflicts_type_per_waterway[first_waterway_name]
-                current_vessels_in_conflict = traffic_conflicts_vessels_per_waterway[first_waterway_name]
-                current_conflict_rules = traffic_conflicts_rules_per_waterway[first_waterway_name]
-                current_conflict_downtimes = traffic_conflicts_downtimes_per_waterway[first_waterway_name]
+                if None in current_waiting_events.values():
+                    self.communicate_trip_not_possible(vessel, leaving_port)
+                    break
 
             if not leaving_port and hasattr(vessel, "terminal"):
                 vessel.terminal.remove_vessel_from_queue(vessel)
@@ -675,6 +570,7 @@ class IsPortAuthority:
 
             self.update_vessel_trip_status(vessel, new_status='accepted')
             vessel.terminal.update_vessel_berth_planning_status(vessel, new_status='accepted')
+            vessel.port_accessed = self
 
         return wait
 

@@ -16,9 +16,6 @@ import numpy as np
 
 # spatial libraries
 import pyproj
-import shapely
-import shapely.geometry
-from shapely import Geometry
 import networkx as nx
 import simpy
 
