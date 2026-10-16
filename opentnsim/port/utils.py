@@ -9,6 +9,8 @@ import textwrap
 import inspect
 import re
 import ast
+import heapq
+from collections import defaultdict
 from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to_edge_path
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
@@ -50,7 +52,6 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
 
 
 def update_terminal_planning(vessel, delay=0.):
-    #TODO: this probably does not work any longer
     vessel.terminal.replan_vessels_terminal_berths(vessel,delay)
     for queued_vessel_id, _ in vessel.terminal.queue.iterrows():
         queued_vessel = get_vessel_from_id(vessel.env, [queued_vessel_id])[0]
@@ -138,73 +139,12 @@ def determine_new_route_for_vessel(vessel):
     return new_route
 
 
-# def determine_vessel_waiting_events(port_accessed, vessel, port_availability_df, conflict_df, delay = 0.):
-#     df = port_availability_df.copy()
-#     df['Combined'] = df.all(axis=1)
-
-#     with pd.option_context("future.no_silent_downcasting", True):
-#         df = df.ffill().bfill()
-#     df = df[df != df.shift()].dropna(how='all')
-#     with pd.option_context("future.no_silent_downcasting", True):
-#         df = df.ffill()
-    
-#     df = df.join(conflict_df[['edges', 'conflict_type', 'vessels_in_conflict']],how='left')
-
-#     def get_waiting_time_reason(lst):
-#         if not lst:
-#             return ""
-#         elif len(lst) == 1:
-#             return lst[0]
-#         else:
-#             return ", ".join(lst[:-1]) + " and " + lst[-1]
-
-#     current_time = datetime.datetime.fromtimestamp(vessel.env.now) + pd.Timedelta(seconds = delay)
-#     previous_events = df[df.index <= current_time]
-#     future_events = df[df.index > current_time]
-#     last_previous_event_index = previous_events.index.max()
-#     if pd.isna(last_previous_event_index):
-#         previous_event = df.iloc[0:0]
-#     else:
-#         previous_event = df.loc[[last_previous_event_index]]
-#     df = pd.concat([previous_event, future_events])
-#     idx = df.index.to_list()
-#     idx[0] = current_time
-#     df.index = idx
-
-#     cols_to_check = df.columns.drop('Combined')
-#     df['Reason'] = df[cols_to_check].apply(
-#         lambda row: get_waiting_time_reason(list(row[row.eq(False)].index)),
-#         axis=1)
-
-#     port_available_df = df[df['Combined'] == True]
-#     waiting_events_dict = {}
-#     conflict_edges_dict = {}
-#     conflicts_dict = {}
-#     vessels_in_conflict_dict = {}
-#     if port_available_df.empty:
-#         return waiting_events_dict, conflict_edges_dict, conflicts_dict, vessels_in_conflict_dict
-#     waiting_time_end = port_available_df.iloc[0].name
-#     waiting_events = df.loc[:waiting_time_end]
-#     waiting_reasons = waiting_events['Reason'][:-1]
-#     conflict_edges = waiting_events['edges'][:-1]
-#     conflicts = waiting_events['conflict_type'][:-1]
-#     vessels_in_conflict = waiting_events['vessels_in_conflict'][:-1]
-#     waiting_times = (waiting_events.index.to_series().shift(-1) - waiting_events.index).apply(lambda x: x.total_seconds())
-#     for index, (waiting_reason, waiting_time, edge, conflict, vessels) in enumerate(zip(waiting_reasons, waiting_times, conflict_edges, conflicts, vessels_in_conflict)):
-#         index += 1
-#         waiting_events_dict[waiting_reason + f' ({index})'] = waiting_time
-#         conflict_edges_dict[waiting_reason + f' ({index})'] = edge
-#         conflicts_dict[waiting_reason + f' ({index})'] = conflict
-#         vessels_in_conflict_dict[waiting_reason + f' ({index})'] = vessels
-#     vessel.port_accessed = port_accessed
-#     return waiting_events_dict, conflict_edges_dict, conflicts_dict, vessels_in_conflict_dict
-
 def determine_vessel_waiting_events(
     port_accessed,
     vessel,
     port_availability_df,
     conflict_df,
-    delay=0.0,
+    delay=0.,
 ):
     """
     Determine the waiting events for a vessel.
@@ -443,47 +383,18 @@ def determine_vessel_priority(vessel, tide_bound = False, leaving_port = False):
     return priority
 
 
-def get_accessibility_info(vessel, origin, berth = None, leaving_port = False, delay = pd.Timedelta(seconds = 0)):
+def get_accessibility_info(vessel, origin, waterways, berth = None, leaving_port = False, delay = pd.Timedelta(seconds = 0)):   
     df_tidal_availability_per_waterway = get_tidal_availability_info(vessel, delay)
     df_terminal_availability = get_terminal_availability_info(vessel, origin, berth, leaving_port, delay)
-    df_waterway_availability_per_waterway, conflicts_dfs = get_waterway_availability_info(vessel, origin, delay)
-    waterways = find_waterways_to_be_passed(vessel)
-
+    df_waterway_availability_per_waterway, conflicts_dfs = get_waterway_availability_info(vessel, origin, waterways, delay)
+    
     #Combine the dataframes
     current_time = datetime.datetime.fromtimestamp(vessel.env.now) - pd.Timedelta(hours=24)
     dfs = []
-    if len(waterways):
-        for waterway_name in waterways.keys():
-            df_tidal_availability = df_tidal_availability_per_waterway[waterway_name]
-            df_waterway_availability = df_waterway_availability_per_waterway[waterway_name]
-            df_waterway_availability = df_waterway_availability.rename('Traffic')
-            port_availability_df = pd.concat(
-                [
-                    df_tidal_availability,
-                    df_terminal_availability,
-                    df_waterway_availability,
-                ]
-            )
-
-            port_availability_df = (
-                port_availability_df[port_availability_df.index >= current_time]
-                .sort_index()
-                .ffill()
-                .bfill()
-            )
-
-            port_availability_df.columns = pd.MultiIndex.from_product(
-                [[waterway_name], port_availability_df.columns]
-            )
-
-            dfs.append(port_availability_df)
-
-        port_availability_per_waterway = pd.concat(dfs, axis=1)
-    else:
-        df_tidal_availability = df_tidal_availability_per_waterway
-        df_waterway_availability = df_waterway_availability_per_waterway
-        if not df_waterway_availability.empty:
-            df_waterway_availability = df_waterway_availability.rename('Traffic')
+    for _, waterway_info in waterways.iterrows():
+        waterway_name = waterway_info.waterway_name
+        df_tidal_availability = df_tidal_availability_per_waterway[waterway_name]
+        df_waterway_availability = df_waterway_availability_per_waterway[waterway_name]
 
         port_availability_df = pd.concat(
             [
@@ -492,71 +403,183 @@ def get_accessibility_info(vessel, origin, berth = None, leaving_port = False, d
                 df_waterway_availability,
             ]
         )
-
-        port_availability_per_waterway = (
+        port_availability_df = (
             port_availability_df[port_availability_df.index >= current_time]
             .sort_index()
             .ffill()
             .bfill()
         )
 
-        conflicts_dfs = []
+        port_availability_df.columns = pd.MultiIndex.from_product(
+            [[waterway_name], port_availability_df.columns]
+        )
 
+        dfs.append(port_availability_df)
+
+    port_availability_per_waterway = pd.concat(dfs, axis=1)
     return port_availability_per_waterway, conflicts_dfs
 
 
 def find_waterways_to_be_passed(vessel):
-    passing_waterways = {}
+    passing_waterways = pd.DataFrame(
+        columns = ['waterway_name', 'waterway', 'start_node', 'stop_node','time_sailing_start', 'time_sailing_stop'],
+        )
 
-    for node in vessel.route:
-        waterway = None
-        if "Waterway" in vessel.env.graph.nodes[node]:
-            waterway = vessel.env.graph.nodes[node]["Waterway"]
-        else:
-            continue
-
-        if vessel.position_on_route:
-            previous_index = vessel.position_on_route - 1
+    current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+    time_sailing_start = current_time
+    route_start_index = vessel.position_on_route
+    for index, node in enumerate(vessel.route):
+        next_node = node
+        previous_node = node
+        if index:
+            previous_index = index - 1
             previous_node = vessel.route[previous_index]
-            if "Waterway" in vessel.env.graph.nodes[previous_node]:
-                previous_waterway = vessel.env.graph.nodes[previous_node]["Waterway"]
-                if previous_waterway.name == waterway.name:
-                    continue
 
-        if waterway.name not in passing_waterways.keys():
-            passing_waterways[waterway.name] = waterway
+        previous_waterways = []
+        if "Waterway" in vessel.env.graph.nodes[previous_node]:
+            previous_waterways = vessel.env.graph.nodes[previous_node]["Waterway"]
 
+        next_waterways = []
+        if "Waterway" in vessel.env.graph.nodes[next_node]:
+            next_waterways = vessel.env.graph.nodes[next_node]["Waterway"]
+
+        common_waterways = list(set(previous_waterways) & set(next_waterways))
+        for waterway in common_waterways:
+            if waterway.name in passing_waterways.waterway_name.values:
+                continue
+            waterway_route = get_oriented_waterway_route(waterway, vessel)
+            waterway_start_node, waterway_stop_node = waterway_route[0], waterway_route[-1]
+            waterway_route_start_index = vessel.route.index(waterway_start_node)
+            route_to_waterway = vessel.route[route_start_index:(waterway_route_start_index+1)]
+            edge_route = list(zip(route_to_waterway[:-1],route_to_waterway[1:]))
+            sailing_time_to_waterway, _ = get_sailing_time(vessel, edge_route)
+            last_message = pd.DataFrame(vessel.logbook).iloc[-1] if len(vessel.logbook) > 0 else None
+            if last_message is not None and 'Sailing' in last_message.Message:
+                start_time_sailing_on_current_node = last_message.Timestamp
+                sailing_time_on_current_edge = current_time - start_time_sailing_on_current_node
+                sailing_time_to_waterway -= sailing_time_on_current_edge.total_seconds()
+
+            if passing_waterways.empty and waterway_start_node != vessel.route[0]:
+                index = 0
+                start_node = vessel.route[0]
+                stop_node = waterway_start_node
+                time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_to_waterway)
+                passing_waterways.loc[index, :] = [
+                    'trip_start', None, start_node, stop_node, time_sailing_start, time_sailing_stop]
+            
+            index = len(passing_waterways)
+            time_sailing_start += pd.Timedelta(seconds = sailing_time_to_waterway)
+            edge_route_waterway = list(zip(waterway_route[:-1],waterway_route[1:]))
+            sailing_time_on_waterway, _ = get_sailing_time(vessel, edge_route_waterway)
+            time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_on_waterway)
+            passing_waterways.loc[index, :] = [
+                waterway.name, waterway, waterway_start_node, waterway_stop_node, time_sailing_start, time_sailing_stop]
+            route_start_index = vessel.route.index(waterway_stop_node)
+            time_sailing_start = time_sailing_stop
+
+    if passing_waterways.empty:
+        index = 0
+        start_node, stop_node = vessel.route[0], vessel.route[-1]
+        time_sailing_start = current_time
+        sailing_time_on_waterway, _ = get_sailing_time(vessel, vessel.edge_route)
+        time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_on_waterway)
+        passing_waterways.loc[index, :] = [
+            'trip_start', None, start_node, stop_node, time_sailing_start, time_sailing_stop]
+    elif waterway_stop_node != vessel.route[-1]:
+        index = len(passing_waterways)
+        start_node, stop_node = waterway_stop_node, vessel.route[-1]
+        route_over_waterway = vessel.route[route_start_index:]
+        edge_route_over_waterway = list(zip(route_over_waterway[:-1],route_over_waterway[1:]))
+        sailing_time_on_waterway, _ = get_sailing_time(vessel, edge_route_over_waterway)
+        time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_on_waterway)
+        passing_waterways.loc[index, :] = [
+            'trip_end', None, start_node, stop_node, time_sailing_start, time_sailing_stop]
+
+    passing_waterways['time_sailing_start'] = pd.to_datetime(passing_waterways['time_sailing_start'])
+    passing_waterways['time_sailing_stop'] = pd.to_datetime(passing_waterways['time_sailing_stop'])
+    passing_waterways['sailing_time_to_waterway'] = passing_waterways['time_sailing_start'] - passing_waterways.loc[0, 'time_sailing_start']
     return passing_waterways
 
 
-def get_waterway_availability_info(vessel, origin, delay = pd.Timedelta(seconds=0)):
-    passing_waterways = find_waterways_to_be_passed(vessel)
-    df_waterways_availability = pd.DataFrame()
+def get_waterway_availability_info(
+    vessel,
+    origin,
+    waterways,
+    delay=pd.Timedelta(seconds=0),
+):
     availability_dfs = []
     conflicts_dfs = []
-    for waterway in passing_waterways.values():
-        waterway_route = get_oriented_waterway_route(waterway, vessel)
-        index_waterway_route_start = vessel.route.index(waterway_route[0])+1
-        route_to_waterway_start = vessel.route[:index_waterway_route_start]
-        edge_route_to_waterway_start = list(zip(route_to_waterway_start[:-1],route_to_waterway_start[1:]))
-        sailing_time_to_waterway, _ = get_sailing_time(vessel, edge_route_to_waterway_start)
-        availability_df = waterway.check_waterway_availability_info(vessel, origin, sailing_time_to_waterway + delay.total_seconds())
-        availability_df = availability_df.rename(columns={'Traffic': waterway.name})
-        conflicts_df = availability_df.copy()
-        conflicts_df = conflicts_df.drop(columns = waterway.name)
-        availability_df = availability_df[[waterway.name]]
+
+    for _, waterway_info in waterways.iterrows():
+        waterway = waterway_info.waterway
+        waterway_name = waterway_info.waterway_name
+        sailing_time_to_waterway = (
+            waterway_info.sailing_time_to_waterway
+        )
+
+        current_time = datetime.datetime.fromtimestamp(
+            vessel.env.now
+        )
+
+        if waterway is not None:
+            availability_df = (
+                waterway.check_waterway_availability_info(
+                    vessel,
+                    origin,
+                    sailing_time_to_waterway.total_seconds()
+                    + delay.total_seconds(),
+                )
+            )
+
+            conflicts_df = availability_df.drop(
+                columns=["Traffic"]
+            ).copy()
+
+            availability_df = availability_df[['Traffic']].copy()
+            availability_df.columns = pd.MultiIndex.from_tuples(
+                [(waterway_name, "Traffic")],
+                names=["waterway_name", ""],
+            )
+
+        else:
+            availability_df = pd.DataFrame(
+                { (waterway_name, "Traffic"): [True] },
+                index=pd.DatetimeIndex(
+                    [current_time], name="time"
+                ),
+            )
+
+            availability_df.columns = pd.MultiIndex.from_tuples(
+                availability_df.columns,
+                names=["waterway_name", ""],
+            )
+
+            conflicts_df = pd.DataFrame({
+                "edges": [[]],
+                "conflict_type": [[]],
+                "vessels_in_conflict": [[]],
+                "rules": [[]],
+                "Rule_index": [[]],
+                "downtime": [[]],
+                "_block": [None],
+            }, index=pd.DatetimeIndex(
+                [current_time], name="time"
+            ))
+
         availability_dfs.append(availability_df)
         conflicts_dfs.append(conflicts_df)
 
-    if not len(passing_waterways):
-        return df_waterways_availability, conflicts_dfs
-    df_waterways_availability = pd.concat(availability_dfs)
-    df_waterways_availability = df_waterways_availability.sort_index()
-    df_waterways_availability = df_waterways_availability.ffill().bfill()
-    if df_waterways_availability.empty:
-        current_time = datetime.datetime.fromtimestamp(vessel.env.now)
-        df_waterways_availability.loc[current_time,'Traffic'] = True
-    
+    df_waterways_availability = pd.concat(
+        availability_dfs, axis=1
+    )
+
+    df_waterways_availability = (
+        df_waterways_availability
+        .sort_index()
+        .ffill()
+        .bfill()
+    )
+
     return df_waterways_availability, conflicts_dfs
 
 
@@ -585,26 +608,8 @@ def check_if_route_contains_restrictions(vessel):
 
 
 def get_tidal_availability_info(vessel, delay = pd.Timedelta(seconds=0)):
-    from opentnsim.port.calculations import calculate_tidal_windows
-
-    has_tidal_window_policy = check_if_route_contains_restrictions(vessel)
-    route = vessel.route
-    time_start = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) - np.timedelta64(12,'h') + delay)
-
-    edge_route = node_path_to_edge_path(vessel.env.graph, route)
-    sailing_time, _ = get_sailing_time(vessel, edge_route)
-    sailing_time = max(pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=96))
-
-    time_end = np.datetime64(
-        datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time + delay
-    )
-
-    tidal_window_results = pd.DataFrame(columns=["Accessibility"])
-    if has_tidal_window_policy:
-        tidal_window_results = calculate_tidal_windows(vessel, route, time_start, time_end)
-        vessel.tidal_window_calculations[vessel.trip_index] = tidal_window_results
-
-    if not isinstance(tidal_window_results, dict):
+    tidal_window_results = vessel.tidal_window_calculations[vessel.trip_id]
+    if not tidal_window_results.empty:
         frames = []
         for waterway_name, sub_trip in tidal_window_results.iterrows():
             df_tidal_availability = (
@@ -912,6 +917,7 @@ def extract_return_expr(fn):
         f"AST root types: {[type(n) for n in tree.body]}"
     )
 
+
 def get_vessel_direction_with_waterway(routeA, routeB):
     shared = set(routeA) & set(routeB)
 
@@ -921,9 +927,387 @@ def get_vessel_direction_with_waterway(routeA, routeB):
     direction = 0 if A_shared == B_shared else 1
     return direction
 
+
 def get_oriented_waterway_route(waterway, vessel):
     waterway_route = waterway.route
     direction = get_vessel_direction_with_waterway(waterway_route, vessel.route)
     if direction:
         waterway_route = waterway.route_reversed
     return waterway_route
+
+
+def get_waterway(vessel, edge = None):
+    waterway = None
+    if edge:
+        node_A = edge[0]
+        node_info_A = vessel.env.graph.nodes[node_A]
+        waterways_A = []
+        if 'Waterway' not in node_info_A:
+            waterways_A = node_info_A['Waterway']
+
+        node_B = edge[1]
+        node_info_B = vessel.env.graph.nodes[node_B]
+        waterways_B = []
+        if 'Waterway' not in node_info_B:
+            waterways_B = node_info_B['Waterway']
+
+        common_waterways = list(set(waterways_A) & set(waterways_B))
+        if len(common_waterways):
+            waterway = common_waterways[0]
+    return waterway
+
+
+def classify_tidal_access(tidal_windows):
+    """Classify tidal accessibility based on the total number of windows.
+
+    Rules:
+        0 windows: Unable to enter the port.
+        1–2 windows: Not tide-bound.
+        More than 2 windows: Tide-bound.
+
+    Args:
+        tidal_windows: An iterable of lists of tidal windows,
+            potentially from multiple rows for the same waterway.
+
+    Returns:
+        The tidal accessibility classification.
+    """
+    n_windows = sum(len(windows) for windows in tidal_windows)
+
+    if n_windows == 0:
+        return "unable_to_enter"
+    if n_windows <= 2:
+        return "not_tide_bound"
+    return "tide_bound"
+
+
+def check_berth_can_host_vessel(berth, vessel):
+    #TODO: we should build in a better check
+    berth_can_host_vessel = True
+    if berth is not None:
+        berth_can_host_vessel = berth.berth_length >= vessel.L
+    return berth_can_host_vessel
+
+
+def check_vessel_is_tide_bound(vessel, route = None, start_time = pd.Timestamp('NaT')):
+    from opentnsim.port.calculations import calculate_minimum_waiting_time_for_tidal_window,  calculate_tidal_windows
+    if route is None:
+        route = vessel.route
+    if pd.isna(start_time):
+        start_time = datetime.datetime.fromtimestamp(vessel.env.now)
+    time_start = np.datetime64(start_time - np.timedelta64(12,'h'))
+    edge_route = node_path_to_edge_path(vessel.env.graph, route)
+    sailing_time, _ = get_sailing_time(vessel, edge_route)
+    sailing_time = max(pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=96))
+    time_end = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time)
+    has_tidal_window_policy = check_if_route_contains_restrictions(vessel)
+    tidal_window_results = pd.DataFrame(columns=["Accessibility"])
+    vessel_can_reach_berth = True
+    is_tide_bound = False
+    tidal_waiting_time = pd.Timedelta(seconds = 0.)
+    if not has_tidal_window_policy:
+        return vessel_can_reach_berth, is_tide_bound, tidal_waiting_time, tidal_window_results
+    
+    tidal_window_results = calculate_tidal_windows(vessel, route, time_start, time_end)
+    tidal_windows = (
+        tidal_window_results
+        .groupby("waterway")["tidal_windows"]
+        .apply(classify_tidal_access)
+    )
+
+    vessel_can_reach_berth = ~tidal_windows.eq("unable_to_enter").any()
+    is_tide_bound = tidal_windows.eq("tide_bound").any()
+    tidal_waiting_time = pd.Timedelta(seconds = 0)
+    if is_tide_bound:
+        tidal_waiting_time = (
+            tidal_window_results.groupby("waterway")["tidal_windows"]
+            .apply(lambda s: calculate_minimum_waiting_time_for_tidal_window(
+                vessel, sum(s, []), time_start=start_time
+            ))
+            .max()
+        )
+
+    return vessel_can_reach_berth, is_tide_bound, tidal_waiting_time, tidal_window_results
+
+
+def sort_port_trips(port, terminals):
+    """
+    Sort port.vessel_trips using:
+    1. Accepted rows first, preserving their original relative order.
+    2. Planned rows sorted by terminal dependencies.
+    3. Earliest port arrival time among eligible planned operations.
+
+    Dependencies take precedence over arrival time for planned rows.
+    Cycles are broken deterministically.
+
+    Returns
+    -------
+    sorted_trips : pd.DataFrame
+        The complete sorted trip planning.
+
+    changed_trips : pd.DataFrame
+        Planned rows from the first position where the overall row
+        order differs from the original order, excluding accepted rows.
+        Empty if unchanged.
+    """
+
+    arrival_col = "time_arrival_at_port"
+    vessel_col = "vessel_id"
+    operation_col = "operation_id"
+    dependency_col = "operation_waiting_for"
+    status_col = "status"
+    original_col = "_original_position"
+    normalized_status_col = "_normalized_status"
+
+    trips = port.vessel_trips.copy()
+
+    if trips.empty:
+        return trips.copy(), trips.copy()
+
+    # Track original row positions independently of index labels.
+    trips[original_col] = range(len(trips))
+
+    trips[arrival_col] = pd.to_datetime(
+        trips[arrival_col], errors="coerce"
+    )
+
+    # Normalize status values.
+    trips[normalized_status_col] = (
+        trips[status_col]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+
+    # Separate accepted, planned, and other rows.
+    # Accepted rows retain their original relative order.
+    accepted_trips = trips[
+        trips[normalized_status_col] == "accepted"
+    ].copy()
+
+    planned_trips = trips[
+        trips[normalized_status_col] == "planned"
+    ].copy()
+
+    other_trips = trips[
+        ~trips[normalized_status_col].isin(
+            ["accepted", "planned"]
+        )
+    ].copy()
+
+    # Earliest arrival time for each vessel.
+    arrival = trips.groupby(vessel_col)[arrival_col].min()
+
+    # Collect berth planning from all terminals.
+    planning_frames = []
+    planned_vessels = set(
+        planned_trips[vessel_col].dropna()
+    )
+
+    for _, terminal in terminals.items():
+        berth_planning = terminal.berth_planning
+
+        if berth_planning is not None and not berth_planning.empty:
+            required_cols = [
+                operation_col,
+                vessel_col,
+                dependency_col,
+            ]
+
+            if all(
+                col in berth_planning.columns
+                for col in required_cols
+            ):
+                planning = berth_planning.loc[
+                    berth_planning[vessel_col].isin(
+                        planned_vessels
+                    ),
+                    required_cols,
+                ].copy()
+
+                if not planning.empty:
+                    planning_frames.append(planning)
+
+    # Sort planned rows by arrival if no terminal planning exists.
+    if not planning_frames:
+        sorted_planned = planned_trips.sort_values(
+            [arrival_col, original_col],
+            kind="stable",
+            na_position="last",
+        ).copy()
+
+    else:
+        operations = pd.concat(
+            planning_frames,
+            ignore_index=True,
+        ).drop_duplicates(
+            subset=operation_col,
+            keep="first",
+        )
+
+        ops = operations.set_index(
+            operation_col
+        ).to_dict("index")
+
+        operation_ids = set(ops)
+
+        predecessors = defaultdict(set)
+        successors = defaultdict(set)
+
+        # Build the dependency graph for planned operations.
+        for operation_id, operation in ops.items():
+            dependency = operation.get(dependency_col)
+
+            if (
+                pd.notna(dependency)
+                and dependency in operation_ids
+                and dependency != operation_id
+            ):
+                predecessors[operation_id].add(dependency)
+                successors[dependency].add(operation_id)
+
+        def priority(operation_id):
+            vessel_id = ops[operation_id][vessel_col]
+            time = arrival.get(vessel_id, pd.NaT)
+
+            if pd.isna(time):
+                time = pd.Timestamp.max
+
+            return (
+                time,
+                str(operation_id),
+                type(operation_id).__name__,
+                repr(operation_id),
+            )
+
+        remaining = set(operation_ids)
+        ready = []
+        ordered_operations = []
+
+        # Start with operations that have no unresolved dependencies.
+        for operation_id in operation_ids:
+            if not predecessors[operation_id]:
+                heapq.heappush(
+                    ready,
+                    (priority(operation_id), operation_id),
+                )
+
+        while remaining:
+            while ready and ready[0][1] not in remaining:
+                heapq.heappop(ready)
+
+            if ready:
+                _, operation_id = heapq.heappop(ready)
+            else:
+                # Cycle: choose a deterministic fallback.
+                operation_id = min(
+                    remaining,
+                    key=priority,
+                )
+
+            remaining.remove(operation_id)
+            ordered_operations.append(operation_id)
+
+            for next_operation in successors[operation_id]:
+                predecessors[next_operation].discard(
+                    operation_id
+                )
+
+                if (
+                    next_operation in remaining
+                    and not predecessors[next_operation]
+                ):
+                    heapq.heappush(
+                        ready,
+                        (
+                            priority(next_operation),
+                            next_operation,
+                        ),
+                    )
+
+        # Convert operation order into vessel order.
+        vessel_order = list(dict.fromkeys(
+            ops[operation_id][vessel_col]
+            for operation_id in ordered_operations
+        ))
+
+        rank = {
+            vessel_id: index
+            for index, vessel_id in enumerate(vessel_order)
+        }
+
+        planned_trips["_rank"] = (
+            planned_trips[vessel_col]
+            .map(rank)
+            .fillna(len(rank))
+        )
+
+        sorted_planned = (
+            planned_trips.sort_values(
+                ["_rank", arrival_col, original_col],
+                kind="stable",
+                na_position="last",
+            )
+            .drop(columns=["_rank"])
+        )
+
+    # Accepted rows first, then other statuses, then planned rows.
+    sorted_trips = pd.concat(
+        [
+            accepted_trips,
+            other_trips,
+            sorted_planned,
+        ],
+        ignore_index=True,
+    )
+
+    # Find the first position where the overall row order differs.
+    original_positions = sorted_trips[
+        original_col
+    ].to_numpy()
+
+    changed_indices = [
+        i
+        for i, (actual, expected) in enumerate(
+            zip(
+                original_positions,
+                range(len(sorted_trips)),
+            )
+        )
+        if actual != expected
+    ]
+
+    if changed_indices:
+        first_changed = changed_indices[0]
+
+        # Keep only planned rows from the first changed position onward.
+        changed_trips = sorted_trips.iloc[
+            first_changed:
+        ].copy()
+
+        changed_trips = changed_trips[
+            changed_trips[normalized_status_col] == "planned"
+        ].copy()
+
+    else:
+        changed_trips = sorted_trips.iloc[0:0].copy()
+
+    # Remove temporary columns from both outputs.
+    temporary_cols = [
+        original_col,
+        normalized_status_col,
+    ]
+
+    sorted_trips = sorted_trips.drop(
+        columns=temporary_cols
+    )
+
+    changed_trips = (
+        changed_trips
+        .drop(columns=temporary_cols)
+        .reset_index(drop=True)
+    )
+
+    return sorted_trips.reset_index(drop=True), changed_trips
+

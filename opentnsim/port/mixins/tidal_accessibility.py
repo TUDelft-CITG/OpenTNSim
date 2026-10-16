@@ -30,18 +30,18 @@ class HasDraughtRestrictions(VesselProperties):
         super().__init__(*args, **kwargs)
         self.tidal_window_calculations = {}
 
-    def create_plot_vertical_tidal_window(self, canal = None, trip_index = 0, plot = False):
-        fig, legend_handles, legend_labels = create_plot_vertical_tidal_window(self, canal, trip_index, plot)
+    def create_plot_vertical_tidal_window(self, name_waterway_of_interest = None, trip_index = 0, plot = False):
+        fig, legend_handles, legend_labels = create_plot_vertical_tidal_window(self, name_waterway_of_interest, trip_index, plot)
         if fig is None:
             return None
         return fig, legend_handles, legend_labels
 
 
-    def create_plot_horizontal_tidal_window(self, canal = None, trip_index = 0, plot = False):
-        fig, legend_handles, legend_labels = create_plot_horizontal_tidal_window(self, canal, trip_index, plot)
+    def create_plot_horizontal_tidal_window(self, name_waterway_of_interest = None, trip_index = 0, plot = False):
+        fig, legend_handles, legend_labels = create_plot_horizontal_tidal_window(self, name_waterway_of_interest, trip_index, plot)
         return fig, legend_handles, legend_labels
 
 
-    def plot_tidal_windows(self, canal = None, trip_index = 0, plot_all = False):
-        fig_final = plot_tidal_windows(self, canal, trip_index, plot_all)
+    def plot_tidal_windows(self, name_waterway_of_interest = None, trip_index = 0, plot_all = False):
+        fig_final = plot_tidal_windows(self, name_waterway_of_interest, trip_index, plot_all)
         return fig_final

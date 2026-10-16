@@ -1312,3 +1312,26 @@ def get_largest_route_between_edges(graph, edge1, edge2):
         raise nx.NetworkXNoPath
 
     return paths[best_target]
+
+
+def get_previous_and_next_edge_of_vessel(vessel, route = None, node = None):
+    if node is None:
+        node = vessel.current_node
+
+    if route is None:
+        route = vessel.route
+    
+    route_index = vessel.route.index(node)
+    previous_edge = None
+    if route_index:
+        previous_route_index = route_index - 1
+        previous_node = route[previous_route_index]
+        previous_edge = [previous_node, node]  
+
+    next_edge = None
+    if route_index != len(vessel.route) - 1:
+        next_route_index = route_index + 1
+        next_node = route[next_route_index]
+        next_edge = [node, next_node]
+
+    return previous_edge, next_edge

@@ -1,6 +1,6 @@
 from opentnsim.core import  HasResource, Identifiable, Log, HasLength
 from opentnsim.graph.mixins import OnNode
-from opentnsim.port.visualizations import plot_berth_planning
+from opentnsim.port.visualizations import plot_berth_occupation
 from opentnsim.port.calculations import calculate_berth_performance
 
 import numpy as np
@@ -33,12 +33,12 @@ class IsBerth(OnNode, Identifiable, Log):
         self.berth_length = berth_length
         super().__init__(*args, **kwargs)
         add_berth_to_graph(self)
-        self.historic_berth_planning = pd.DataFrame(data={0: [None, None], berth_length: [None, None]},
+        self.berth_availability = pd.DataFrame(data={0: [None, None], berth_length: [None, None]},
                                                     index=[self.env.simulation_start, self.env.simulation_stop])
         self.occupying_vessels = pd.DataFrame(columns=["Vessel_L", "Vessel_B", "Vessel_T", "Time_at_berth_start", "Time_at_berth_stop"])
         self.queue = pd.DataFrame(columns=["Vessel_L", "Vessel_B", "Vessel_T", "Waiting_start_time", "Waiting_stop_time","Arrival_time_at_berth"])
 
-    def add_berth_position_to_historic_planning(self, vessel, quay_position=0, delay=0, leaving=False):
+    def add_vessel_to_berth_planning(self, vessel, quay_position=0, delay=0, leaving=False):
         current_time = datetime.datetime.fromtimestamp(self.env.now) + pd.Timedelta(seconds=delay)
         if isinstance(self,IsQuay):
             quay_position = self.availability_quay_positions.loc[quay_position]
@@ -50,29 +50,29 @@ class IsBerth(OnNode, Identifiable, Log):
             position_stop = self.berth_length - gap
 
         if not leaving:
-            if position_start not in self.historic_berth_planning.columns:
-                self.historic_berth_planning.loc[:, position_start] = None
-            if position_stop not in self.historic_berth_planning.columns:
-                self.historic_berth_planning.loc[:, position_stop] = None
+            if position_start not in self.berth_availability.columns:
+                self.berth_availability.loc[:, position_start] = None
+            if position_stop not in self.berth_availability.columns:
+                self.berth_availability.loc[:, position_stop] = None
 
-        self.historic_berth_planning.loc[current_time, position_start] = vessel.id
-        self.historic_berth_planning.loc[current_time, position_stop] = vessel.id
+        self.berth_availability.loc[current_time, position_start] = vessel.id
+        self.berth_availability.loc[current_time, position_stop] = vessel.id
 
         if leaving:
             for position_columm in [position_start, position_stop]:
-                notna = self.historic_berth_planning[position_columm].notna()
+                notna = self.berth_availability[position_columm].notna()
                 if not notna.any():
                     continue
                 first_idx = notna.idxmax()
                 last_idx = notna[::-1].idxmax()
-                mask = (self.historic_berth_planning.index >= first_idx) & (self.historic_berth_planning.index <= last_idx)
-                self.historic_berth_planning.loc[mask, position_columm] = self.historic_berth_planning.loc[mask, position_columm].bfill()
-            self.historic_berth_planning = self.historic_berth_planning.apply(horizontal_fill_between_equals, axis=1)
+                mask = (self.berth_availability.index >= first_idx) & (self.berth_availability.index <= last_idx)
+                self.berth_availability.loc[mask, position_columm] = self.berth_availability.loc[mask, position_columm].bfill()
+            self.berth_availability = self.berth_availability.apply(horizontal_fill_between_equals, axis=1)
 
-        self.historic_berth_planning = self.historic_berth_planning.sort_index()
-        self.historic_berth_planning = self.historic_berth_planning.reindex(sorted(self.historic_berth_planning.columns), axis=1)
-        self.historic_berth_planning[self.historic_berth_planning.isna()] = None
-        self.historic_berth_planning = self.historic_berth_planning.sort_index()
+        self.berth_availability = self.berth_availability.sort_index()
+        self.berth_availability = self.berth_availability.reindex(sorted(self.berth_availability.columns), axis=1)
+        self.berth_availability[self.berth_availability.isna()] = None
+        self.berth_availability = self.berth_availability.sort_index()
 
     def add_vessel_to_occupants_df(self, vessel, time_at_berth_start, time_at_berth_stop):
         self.occupying_vessels.loc[vessel.id, :] = [vessel.L, vessel.B, vessel.T, time_at_berth_start, time_at_berth_stop]
@@ -97,8 +97,8 @@ class IsBerth(OnNode, Identifiable, Log):
         self.add_vessel_to_queue(vessel, time_waiting_start, time_waiting_stop, arrival_time_at_berth)
         self.queue = self.queue.sort_values('Waiting_start_time')
 
-    def plot_berth_planning(self):
-        fig = plot_berth_planning(self)
+    def plot_berth_occupation(self):
+        fig = plot_berth_occupation(self)
         return fig
 
     def get_berth_performance(self, time_start = None, time_stop = None):
@@ -113,18 +113,13 @@ class IsJetty(IsBerth, HasResource):
 
 
     def request_access(self, vessel):
-        vessel.request_berth = self.resource.request()
-        yield vessel.request_berth
-        self.add_berth_position_to_historic_planning(vessel, delay = vessel.berthing_time)
-
+        vessel.berth_request = self.resource.request()
+        yield vessel.berth_request
+        self.add_vessel_to_berth_planning(vessel, delay = vessel.berthing_time)
 
     def release_access(self, vessel):
-        self.add_berth_position_to_historic_planning(vessel, leaving = True)
-        yield self.resource.release(vessel.request_berth)
-
-
-    def update_planning(self, vessel, new_release_time):
-        pass
+        self.add_vessel_to_berth_planning(vessel, leaving = True)
+        yield self.resource.release(vessel.berth_request)
 
 
 class IsQuay(IsBerth, HasLength):
@@ -143,12 +138,12 @@ class IsQuay(IsBerth, HasLength):
                                                         vessel.loading_time*3600 +
                                                         vessel.deberthing_time*60)
         yield from self.adjust_availability_quay_positions(vessel, quay_position, time_start, time_stop)
-        self.add_berth_position_to_historic_planning(vessel, quay_position, delay = vessel.berthing_time)
+        self.add_vessel_to_berth_planning(vessel, quay_position, delay = vessel.berthing_time)
 
 
     def release_access(self, vessel):
         quay_position = self.find_quay_position(vessel)
-        self.add_berth_position_to_historic_planning(vessel, quay_position, leaving=True)
+        self.add_vessel_to_berth_planning(vessel, quay_position, leaving=True)
         yield from self.readjust_availability_quay_positions(quay_position)
 
 
@@ -180,11 +175,11 @@ class IsQuay(IsBerth, HasLength):
 
     def update_planning(self, vessel, new_release_time):
         new_release_time += pd.Timedelta(seconds=vessel.deberthing_time*60)
-        vessel.terminal.berth_planning.loc[new_release_time, self.name] = np.nan
+        vessel.terminal.berth_availability.loc[new_release_time, self.name] = np.nan
         with pd.option_context("future.no_silent_downcasting", True):
-            vessel.terminal.berth_planning = vessel.terminal.berth_planning.ffill().infer_objects(copy=False)
+            vessel.terminal.berth_availability = vessel.terminal.berth_availability.ffill().infer_objects(copy=False)
 
-        vessel.terminal.berth_planning =  vessel.terminal.berth_planning.sort_index()
+        vessel.terminal.berth_availability =  vessel.terminal.berth_availability.sort_index()
         quay_position = self.find_quay_position(vessel)
 
         old_release_time = self.availability_quay_positions.loc[quay_position, 'Time_stop']
@@ -197,15 +192,15 @@ class IsQuay(IsBerth, HasLength):
         time_start_min = availability_quay_positions_copy[mask]['Time_start'].min()
         times = np.sort(np.unique(availability_quay_positions_copy[mask]['Time_stop'].values.flatten()))
 
-        mask = vessel.terminal.berth_planning.index >= time_start_min
-        vessel.terminal.berth_planning.loc[vessel.terminal.berth_planning[mask].index, self.name] = current_level
+        mask = vessel.terminal.berth_availability.index >= time_start_min
+        vessel.terminal.berth_availability.loc[vessel.terminal.berth_availability[mask].index, self.name] = current_level
         for time in times:
             vessels_leaving = availability_quay_positions_copy[availability_quay_positions_copy.Time_stop == time]
             for quay_position,vessel_leaving in vessels_leaving.iterrows():
                 self.remove_vessel_from_planning(quay_position)
             new_level = self.calculate_quay_length_level()
-            mask = vessel.terminal.berth_planning.index >= time
-            vessel.terminal.berth_planning.loc[vessel.terminal.berth_planning[mask].index, self.name] = new_level
+            mask = vessel.terminal.berth_availability.index >= time
+            vessel.terminal.berth_availability.loc[vessel.terminal.berth_availability[mask].index, self.name] = new_level
         self.availability_quay_positions = availability_quay_positions_copy
         self.update_occupants_df(vessel, time_at_berth_stop = new_release_time)
 

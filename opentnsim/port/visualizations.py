@@ -231,14 +231,11 @@ def plot_turning_basins(turning_basins, m = None, longitude = 0, latitude = 0, z
     
 
 def plot_vertical_tidal_window( 
-        vessel,
         vertical_tidal_windows, 
         net_ukcs,
         route, 
         time_start, 
         time_end, 
-        draught, 
-        bound,
         plot = True):
     
     hydromanager = HydrodynamicDataManager()
@@ -312,11 +309,6 @@ def plot_vertical_tidal_window(
 
     if plot:
         ax.legend(legend_handles, legend_labels, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
-        # ax.set_title(
-        #     f"Vertical tidal windows of {vessel.type}-class vessel '{vessel.name}' with "
-        #     f"a draught of {np.round(draught, 2)}m and\na length of {np.round(vessel.L)}m sailing {bound} from"
-        #     f" node '{route[0]}' to node '{route[-1]}'."
-        # )
         fig.tight_layout()
         plt.show()
         plt.close(fig)
@@ -325,74 +317,59 @@ def plot_vertical_tidal_window(
     return fig, legend_handles, legend_labels
     
     
-def create_plot_vertical_tidal_window(vessel, canal = None, trip_index = 0, plot = False):
-    try:
-        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
-    except:
+def create_plot_vertical_tidal_window(vessel, name_waterway_of_interest = None, trip_index = 0, plot = False):
+    trip_id = vessel.trips.loc[trip_index,'trip_id']
+    if trip_id not in vessel.tidal_window_calculations:
         return None, None, None
-
-    if canal is not None:
-        for waterway, results in tidal_window_calculation_results.iterrows():
-            time_start_index = results['time_start_index']
-            time_end_index = results['time_end_index']
-            route = results['route']
-            bound = results['bound']
-            draught = results['draught']
-            vertical_tidal_windows = results['vertical_tidal_windows']
-            net_ukcs = results['net_ukcs']
-            fig, legend_handles, legend_labels = plot_vertical_tidal_window(
-                vessel,
-                vertical_tidal_windows,
-                net_ukcs, 
-                route, 
-                int(time_start_index), 
-                int(time_end_index), 
-                draught, 
-                bound,
-                plot)
-    else:
-        results = tidal_window_calculation_results
+    
+    tidal_window_calculation_results = vessel.tidal_window_calculations[trip_id]
+    for waterway_name, results in tidal_window_calculation_results.iterrows():
+        if name_waterway_of_interest is not None and waterway_name != name_waterway_of_interest:
+            continue
         time_start_index = results['time_start_index']
         time_end_index = results['time_end_index']
         route = results['route']
-        bound = results['bound']
-        draught = results['draught']
         vertical_tidal_windows = results['vertical_tidal_windows']
         net_ukcs = results['net_ukcs']
         fig, legend_handles, legend_labels = plot_vertical_tidal_window(
-            vessel,
             vertical_tidal_windows,
             net_ukcs, 
             route, 
             int(time_start_index), 
             int(time_end_index), 
-            draught, 
-            bound,
             plot)
+
     return fig, legend_handles, legend_labels
 
 
-def create_plot_horizontal_tidal_window(vessel, canal, trip_index = 0, delay = 0.,plot = False):
-    tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
-    time_start_index = tidal_window_calculation_results['time_start_index']
-    time_end_index = tidal_window_calculation_results['time_end_index']
-    route = tidal_window_calculation_results['route']
-    bound = tidal_window_calculation_results['bound']
-    draught = tidal_window_calculation_results['draught']
-    horizontal_tidal_windows = tidal_window_calculation_results['horizontal_tidal_windows']
-    horizontal_tidal_restriction_nodes = tidal_window_calculation_results['horizontal_tidal_restriction_nodes']
-    horizontal_tidal_restriction_stations = tidal_window_calculation_results['horizontal_tidal_restriction_stations']
-    hydromanager = HydrodynamicDataManager()
-    hydrodynamic_information = hydromanager.hydrodynamic_data
+def create_plot_horizontal_tidal_window(vessel, name_waterway_of_interest = None, trip_index = 0, plot = False):
+    trip_id = vessel.trips.loc[trip_index,'trip_id']
+    if trip_id not in vessel.tidal_window_calculations:
+        return None, None, None
 
     # Create figure
     fig, ax = plt.subplots(figsize=[16 * 2 / 3, 6])
     ax.set_facecolor('none')
 
-    # Plot vertical tidal windows
-    horizontal_tidal_window = None
-    for window in horizontal_tidal_windows:
-        try:
+    hydromanager = HydrodynamicDataManager()
+    hydrodynamic_information = hydromanager.hydrodynamic_data
+    tidal_window_calculation_results = vessel.tidal_window_calculations[trip_id]
+    for waterway_name, results in tidal_window_calculation_results.iterrows():
+        if name_waterway_of_interest is not None and waterway_name != name_waterway_of_interest:
+            continue
+
+        time_start_index = results['time_start_index']
+        time_end_index = results['time_end_index']
+        route = results['route']
+        bound = results['bound']
+        draught = results['draught']
+        horizontal_tidal_windows = results['horizontal_tidal_windows']
+        horizontal_tidal_restriction_nodes = results['horizontal_tidal_restriction_nodes']
+        horizontal_tidal_restriction_stations = results['horizontal_tidal_restriction_stations']
+        
+        # Plot vertical tidal windows
+        horizontal_tidal_window = None
+        for window in horizontal_tidal_windows:
             (horizontal_tidal_window,) = ax.fill(
                 [window[0], window[0], window[1], window[1]],
                 [-1.5, 1.5, 1.5, -1.5],
@@ -400,13 +377,10 @@ def create_plot_horizontal_tidal_window(vessel, canal, trip_index = 0, delay = 0
                 alpha=0.25,
                 edgecolor="none",
             )
-        except:
-            pass
 
-    # Plot governing current velocity
-    current_velocity = None
-    for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
-        try:
+        # Plot governing current velocity
+        current_velocity = None
+        for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
             governing_current_velocity, _ = get_governing_current_velocity(vessel,station,time_start_index,time_end_index)
             sailing_time, _ = get_sailing_time(vessel, route[: (route.index(node) + 1)]) + delay
             horizontal_tidal_accessibility_time_correction = np.timedelta64(int(sailing_time), "s")
@@ -414,27 +388,21 @@ def create_plot_horizontal_tidal_window(vessel, canal, trip_index = 0, delay = 0
             horizontal_tidal_accessibility_time -= horizontal_tidal_accessibility_time_correction
             (current_velocity,) = ax.plot(horizontal_tidal_accessibility_time, governing_current_velocity,
                                         color="firebrick", linewidth=3,)
-        except:
-            pass
-    ax.axhline(0, color="k", linewidth=.5)
+            #ax.axhline(0, color="indianred", linestyle="--", linewidth=2)
 
-    # Calculate vertical and horizontal tidal windows
-    horizontal_tidal_window_polygons = []
-    for window in horizontal_tidal_windows:
-        try:
+        # Calculate vertical and horizontal tidal windows
+        horizontal_tidal_window_polygons = []
+        for window in horizontal_tidal_windows:
             horizontal_tidal_window_polygon = Polygon(
                 [Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]),
-                Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-                Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
-                Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
+                 Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+                 Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[1]),
+                 Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax.get_ylim()[0]), ]
             )
             horizontal_tidal_window_polygons.append(horizontal_tidal_window_polygon)
-        except:
-            pass
 
-    # Plot horizontal tidal windows
-    for polygon in horizontal_tidal_window_polygons:
-        try:
+        # Plot horizontal tidal windows
+        for polygon in horizontal_tidal_window_polygons:
             polygon_x = []
             for timestamp in polygon.exterior.xy[0]:
                 polygon_x.append(pd.Timestamp(datetime.datetime.fromtimestamp(timestamp, tz=pytz.utc)))
@@ -443,25 +411,20 @@ def create_plot_horizontal_tidal_window(vessel, canal, trip_index = 0, delay = 0
             (horizontal_tidal_window,) = ax.fill(polygon_x, polygon_y,
                                                 facecolor=color, edgecolor="none",
                                                 zorder=-1)
-        except:
-            pass
 
     # Figure bounds
-    try:
-        ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
-                    hydrodynamic_information.TIME.values[time_end_index - 36])
-        ax.set_ylim(-1.5, 1.5)
+    ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
+                hydrodynamic_information.TIME.values[time_end_index - 36])
+    ax.set_ylim(-1.5, 1.5)
 
-        # Figure ticks
-        ax.set_xticks(ax.get_xticks())
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
+    # Figure ticks
+    ax.set_xticks(ax.get_xticks())
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
 
-        # Figure axes
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Current velocity [m/s]")
-    except:
-        pass
+    # Figure axes
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Current velocity [m/s]")
 
     # Legend
     handles = [current_velocity, horizontal_tidal_window]
@@ -474,37 +437,26 @@ def create_plot_horizontal_tidal_window(vessel, canal, trip_index = 0, delay = 0
             legend_labels.append(label)
             
     # Figure bounds
-    try:
-        ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
-                    hydrodynamic_information.TIME.values[time_end_index - 36], )
-    except:
-        pass
+    ax.set_xlim(hydrodynamic_information.TIME.values[time_start_index],
+                hydrodynamic_information.TIME.values[time_end_index - 36],)
 
     if plot:
         ax.legend(legend_handles, legend_labels, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
-        ax.set_title(
-            f"Horizontal tidal windows of {vessel.type}-class vessel '{vessel.name}' with "
-            f"a draught of {np.round(draught, 2)}m and\na length of {np.round(vessel.L)}m sailing {bound} from"
-            f" node '{route[0]}' to node '{route[-1]}'."
-        )
         fig.tight_layout()
         plt.show()
         plt.close(fig)
     else:
         plt.close(fig)
-    
+
     return fig, legend_handles, legend_labels
 
 
-def plot_tidal_windows(vessel, canal = None, trip_index = 0, plot_all = False):
-    if canal is not None:
-        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index].loc[canal]
+def plot_tidal_windows(vessel, name_waterway_of_interest = None, trip_index = 0, plot_all = False):
+    trip_id = vessel.trips.loc[trip_index,'trip_id']
+    if name_waterway_of_interest is None:
+        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_id]
     else:
-        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_index]
-    route = tidal_window_calculation_results['route']
-    bound = tidal_window_calculation_results['bound']
-    draught = tidal_window_calculation_results['draught']
-    tidal_windows = tidal_window_calculation_results['tidal_windows']
+        tidal_window_calculation_results = vessel.tidal_window_calculations[trip_id].loc[[name_waterway_of_interest]]
 
     # Create figure
     fig_final, ax_left = plt.subplots(figsize=[16 * 2 / 3, 6])
@@ -514,8 +466,8 @@ def plot_tidal_windows(vessel, canal = None, trip_index = 0, plot_all = False):
     ax_left.set_facecolor('none')
 
     # Plot governing current velocity
-    fig_left, ax_left_handles, ax_left_labels = vessel.create_plot_vertical_tidal_window(canal, trip_index, plot_all)
-    fig_right, ax_right_handles, ax_right_labels = vessel.create_plot_horizontal_tidal_window(canal, trip_index, plot_all)
+    fig_left, ax_left_handles, ax_left_labels = vessel.create_plot_vertical_tidal_window(name_waterway_of_interest, trip_index, plot_all)
+    fig_right, ax_right_handles, ax_right_labels = vessel.create_plot_horizontal_tidal_window(name_waterway_of_interest, trip_index, plot_all)
 
     for fig_target, ax_target in zip([fig_left, fig_right], [ax_left, ax_right]):
         for ax_old in fig_target.get_axes():
@@ -570,33 +522,33 @@ def plot_tidal_windows(vessel, canal = None, trip_index = 0, plot_all = False):
     ax_right.yaxis.set_label_position("right")
 
     # Calculate tidal windows
-    tidal_window_polygons = []
-    for window in tidal_windows:
-        tidal_window_polygon = Polygon(
-                [Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
-                 Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                 Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
-                 Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),]
-            )
-        tidal_window_polygons.append(tidal_window_polygon)
+    for _, tidal_window_calculation_result in tidal_window_calculation_results.iterrows():
+        tidal_window_polygons = []
+        route = tidal_window_calculation_result['route']
+        bound = tidal_window_calculation_result['bound']
+        draught = tidal_window_calculation_result['draught']
+        tidal_windows = tidal_window_calculation_result['tidal_windows']
+        for window in tidal_windows:
+            tidal_window_polygon = Polygon(
+                    [Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),
+                    Point((window[0] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                    Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[1]),
+                    Point((window[1] - pd.Timestamp("1970-01-01")) / np.timedelta64(1, "s"), ax_left.get_ylim()[0]),]
+                )
+            tidal_window_polygons.append(tidal_window_polygon)
 
-    # Plot tidal windows
-    tidal_window = None
-    window_y = [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]]
-    color = lighten_color("limegreen", alpha=0.4)
-    for window in tidal_windows:
-        window_x = [window[0], window[0], window[1], window[1]]
-        (tidal_window,) = ax_left.fill(window_x, window_y,
-                                       facecolor=color, edgecolor="none", zorder=-5,)
+        # Plot tidal windows
+        tidal_window = None
+        window_y = [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]]
+        color = lighten_color("limegreen", alpha=0.4)
+        for window in tidal_windows:
+            window_x = [window[0], window[0], window[1], window[1]]
+            (tidal_window,) = ax_left.fill(window_x, window_y, facecolor=color, edgecolor="none", zorder=-5,)
 
     # Figure axes
     no_window_x = [0, 0, 0, 0]
     no_window_y = [ax_left.get_ylim()[0], ax_left.get_ylim()[1], ax_left.get_ylim()[1], ax_left.get_ylim()[0]]
-    (no_tidal_window,) = ax_left.fill(no_window_x, no_window_y,
-                                      facecolor='white', edgecolor="none", zorder=-1,)
-
-
-
+    (no_tidal_window,) = ax_left.fill(no_window_x, no_window_y, facecolor='white', edgecolor="none", zorder=-1,)
 
     handles = np.append(ax_left_handles, ax_right_handles)
     labels = np.append(ax_left_labels, ax_right_labels)
@@ -619,35 +571,30 @@ def plot_tidal_windows(vessel, canal = None, trip_index = 0, plot_all = False):
     legend_labels = np.append(legend_labels, labels)
 
     ax_left.legend(legend_handles, legend_labels, frameon=False, loc="upper left", bbox_to_anchor=(1.05, 1.0),)
-    ax_left.set_title(
-        f"Accessibility of {vessel.type}-class vessel '{vessel.name}' with "
-        f"a draught of {np.round(draught, 2)}m and\na length of {np.round(vessel.L)}m sailing {bound} from"
-        f" node '{route[0]}' to node '{route[-1]}'."
-    )
     return fig_final
 
 
-def plot_berth_planning(berth):
+def plot_berth_occupation(berth):
     from opentnsim.port.mixins.berth import IsQuay, IsJetty
 
     fig, ax = plt.subplots()
-    historic_quay_planning_plot = berth.historic_berth_planning.stack().reset_index()
-    historic_quay_planning_plot.columns = ['timestamp', 'column', 'id']
-    historic_quay_planning_plot = historic_quay_planning_plot[historic_quay_planning_plot['id'].notna()]
-    historic_quay_planning_plot_id_mapping = {id_: list(zip(sub_df['timestamp'], sub_df['column'])) for id_, sub_df
-                                              in historic_quay_planning_plot.groupby('id', sort=False)}
-    for vessel_id in historic_quay_planning_plot_id_mapping.keys():
-        vessel_occupancy = historic_quay_planning_plot_id_mapping[vessel_id]
-        timestamps, quay_position = zip(*vessel_occupancy)
-        quay_position = list(quay_position)
-        quay_position = np.array(quay_position, dtype=float)
+    berth_availability_plot = berth.berth_availability.stack().reset_index()
+    berth_availability_plot.columns = ['timestamp', 'column', 'id']
+    berth_availability_plot = berth_availability_plot[berth_availability_plot['id'].notna()]
+    berth_availability_plot_id_mapping = {id_: list(zip(sub_df['timestamp'], sub_df['column'])) for id_, sub_df
+                                              in berth_availability_plot.groupby('id', sort=False)}
+    for vessel_id in berth_availability_plot_id_mapping.keys():
+        vessel_occupancy = berth_availability_plot_id_mapping[vessel_id]
+        timestamps, berth_position = zip(*vessel_occupancy)
+        berth_position = list(berth_position)
+        berth_position = np.array(berth_position, dtype=float)
         timestamps = list(timestamps)
         timestamps = mdates.date2num(timestamps)
-        quay_position_over_time = np.column_stack((quay_position, timestamps))
+        berth_position_over_time = np.column_stack((berth_position, timestamps))
         try:
-            quay_position_over_time_polygons = ConvexHull(quay_position_over_time)
-            ax.fill(quay_position_over_time[quay_position_over_time_polygons.vertices, 0],
-                    quay_position_over_time[quay_position_over_time_polygons.vertices, 1], )
+            berth_position_over_time_polygons = ConvexHull(berth_position_over_time)
+            ax.fill(berth_position_over_time[berth_position_over_time_polygons.vertices, 0],
+                    berth_position_over_time[berth_position_over_time_polygons.vertices, 1], )
         except:
             continue
 
@@ -657,7 +604,7 @@ def plot_berth_planning(berth):
     if isinstance(berth, IsQuay):
         plt.xlabel("Quay length [m]")
     elif isinstance(berth, IsJetty):
-        plt.xlabel("Berth length [m]")
+        plt.xlabel("Jetty length [m]")
     plt.close()
     return fig
 
