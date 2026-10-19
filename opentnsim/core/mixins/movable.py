@@ -397,7 +397,7 @@ class Movable(Locatable, Routable, Log):
 
 
     def pass_node(self, node):
-        """pass a node and call all on_pass_node_functions
+        """Pass a node and call all on_pass_node_functions
 
         Parameters
         ----------

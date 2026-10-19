@@ -257,19 +257,9 @@ def determine_vessel_waiting_events(
     return waiting_events_dict
 
 
-def determine_vessel_priority(vessel, tide_bound = False, leaving_port = False):
-    priority = 0
-    if tide_bound:
-        priority += 1
-    if leaving_port:
-        priority += 1
-    vessel.priority = priority
-    return priority
-
-
-def get_accessibility_info(vessel, origin, waterways, berth = None, leaving_port = False, delay = pd.Timedelta(seconds = 0)):   
+def get_accessibility_info(vessel, origin, waterways, terminal, berth, delay = pd.Timedelta(seconds = 0)):
     df_tidal_availability_per_waterway = get_tidal_availability_info(vessel, delay)
-    df_terminal_availability = get_terminal_availability_info(vessel, origin, berth, leaving_port, delay)
+    df_terminal_availability = get_terminal_availability_info(vessel, origin, terminal, berth, delay)
     df_waterway_availability_per_waterway, conflicts_dfs = get_waterway_availability_info(vessel, origin, waterways, delay)
     
     #Combine the dataframes
@@ -450,13 +440,6 @@ def get_waterway_availability_info(
     df_waterways_availability = pd.concat(availability_dfs, axis=1)
     df_waterways_availability = (df_waterways_availability.sort_index().ffill().bfill())
     return df_waterways_availability, conflicts_dfs
-
-
-def get_terminal_availability_info(vessel, origin, berth = None, leaving_port = False, delay = pd.Timedelta(seconds=0)):
-    df_terminal_availability = pd.DataFrame()
-    if not leaving_port and berth is not None:
-        df_terminal_availability = vessel.terminal.provide_terminal_availability_info(vessel, origin, berth, delay)
-    return df_terminal_availability
 
 
 def check_if_route_contains_restrictions(vessel):
@@ -1180,10 +1163,80 @@ def sort_port_trips(port, terminals):
     return sorted_trips.reset_index(drop=True), changed_trips
 
 
-def select_berth_based_on_name(terminal, berth_name):
+def find_berth_based_on_name(terminal, berth_name):
     selected_berth = None
     for berth in terminal.berths.items:
         if berth.name == berth_name:
             selected_berth = berth
             break
     return selected_berth
+
+
+def get_berth_availability_without_vessel(vessel, berth, berth_availability = None):
+    from opentnsim.port.mixins.berth import IsQuay, IsJetty
+
+    terminal = berth.terminal
+    if berth_availability is None:
+        terminal_berth_availability = berth.terminal.berth_availability.copy()
+        berth_availability = terminal_berth_availability[berth.name]
+    
+    # corrct the berth availability for the vessel (if vessel was already assigned, then remove this vessel from the availability)
+    if vessel.berth_operation_id in terminal.berth_planning.operation_id.values and vessel.berth == berth:
+        index = terminal.berth_planning[terminal.berth_planning.operation_id == vessel.berth_operation_id].iloc[-1].name
+        eta_berth = (terminal.berth_planning.loc[index, 'ETA_berth']).round('s')
+        etd_berth = (terminal.berth_planning.loc[index, 'ETD_berth']).round('s')
+        mask = (berth_availability.index >= eta_berth)&(berth_availability.index < etd_berth)
+        if isinstance(berth, IsQuay):
+            berth_availability.loc[mask] += vessel.L
+        elif isinstance(berth, IsJetty):
+            berth_availability.loc[mask] += 1
+
+    return berth_availability
+
+
+def get_berth_availability_info(vessel, origin, berth, delay = pd.Timedelta(seconds = 0), bool = True):
+    from opentnsim.port.calculations import calculate_sailing_time_to_berth
+    from opentnsim.port.mixins.berth import IsQuay
+
+    # get availability
+    berth_availability = berth.terminal.berth_availability[berth.name]
+
+    # correct the berth availability for the vessel (if vessel was already assigned, then remove this vessel from the availability)
+    berth_availability = get_berth_availability_without_vessel(vessel, berth, berth_availability)
+
+    # calculate sailing time to berth
+    sailing_time_to_berth = pd.Timedelta(seconds = 0)
+    if origin != berth.node:
+        sailing_time_to_berth = calculate_sailing_time_to_berth(vessel, origin, berth)
+    berth_availability.index -= sailing_time_to_berth + delay
+
+    # get future availability of fit berths
+    if bool:
+        if isinstance(berth, IsQuay):
+            berth_availability = (berth_availability >= vessel.L)
+        else:
+            berth_availability = (berth_availability > 0)
+    return berth_availability
+
+
+def get_terminal_berths_availability(vessel, origin, terminal, delay = pd.Timedelta(seconds = 0), bool = True):
+    berths = terminal.berths.items
+    
+    terminal_berth_availability = pd.DataFrame()
+    for berth in berths:
+        berth_availability = get_berth_availability_info(vessel, origin, berth, delay, bool)
+        terminal_berth_availability[berth.name] = berth_availability
+    
+    terminal_berth_availability = (terminal_berth_availability
+        .sort_index()
+        .ffill()
+        .bfill()
+    )
+    return terminal_berth_availability
+
+
+def get_terminal_availability_info(vessel, origin, terminal, berth = None, delay = pd.Timedelta(seconds = 0)):
+    terminal_availability = pd.DataFrame()
+    if berth is not None:
+        terminal_availability = terminal.provide_terminal_availability_info(vessel, origin, berth, delay)
+    return terminal_availability

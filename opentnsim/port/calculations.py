@@ -4,7 +4,6 @@ import matplotlib.dates as mdates
 import networkx as nx
 import numpy as np
 import pandas as pd
-import pyproj
 import datetime
 from dataclasses import dataclass, field
 from scipy.interpolate import interp1d, CubicSpline
@@ -1274,3 +1273,24 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
                          'Waiting time rate':total_waiting_time_at_berth/total_occupied_duration,
                          'Causes waiting time': waiting_cause_reasons})
     return results
+
+
+def calculate_estimated_arrival_and_departure_times_at_port_and_berth(vessel, origin, berth, delay = pd.Timedelta(seconds = 0)):
+    sailing_time_to_port = berth.terminal.port.determine_sailing_time_to_port(vessel, origin, berth)
+    current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+    eta_port = current_time + sailing_time_to_port
+    sailing_time_to_berth = calculate_sailing_time_to_berth(vessel, origin, berth)
+    eta_berth = current_time + sailing_time_to_berth + delay
+    time_at_berth = vessel.berthing_time*60 + vessel.loading_time*3600 + vessel.deberthing_time*60
+    etd_berth = eta_berth + pd.Timedelta(seconds=time_at_berth)
+    eta_port, eta_berth, etd_berth = eta_port.round('s'), eta_berth.round('s'), etd_berth.round('s')
+    return eta_port, eta_berth, etd_berth
+
+
+def calculate_sailing_time_to_berth(vessel, origin, berth):
+    destination = berth.node
+    route = nx.dijkstra_path(vessel.env.graph,origin,destination)
+    edge_route = node_path_to_edge_path(vessel.env.graph, route)
+    sailing_time, _ = get_sailing_time(vessel, edge_route)
+    sailing_time = pd.Timedelta(seconds=sailing_time)
+    return sailing_time
