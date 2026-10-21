@@ -8,15 +8,18 @@ import matplotlib.patches as mpatches
 import networkx as nx
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
 import pytz
 import folium
 from shapely.geometry import Point, Polygon
-from scipy.spatial import ConvexHull
+from matplotlib.ticker import NullLocator
 
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.environment.utils import get_governing_current_velocity, get_nearest_time_index
 from opentnsim.graph.utils import get_sailing_time
 from opentnsim.port.calculations import calculate_interpolated_depth_values
+from opentnsim.port.logutils import isolate_events
 from opentnsim.port.utils import create_logbook_with_directed_distances
 
 
@@ -574,38 +577,195 @@ def plot_tidal_windows(vessel, name_waterway_of_interest = None, trip_index = 0,
     return fig_final
 
 
-def plot_berth_occupation(berth):
+def plot_berth_occupation(berth, time_start = None, time_stop = None, style = 'matplotlib'):
     from opentnsim.port.mixins.berth import IsQuay, IsJetty
+    if time_start is None:
+        time_start = berth.env.simulation_start
+    if time_stop is None:
+        time_stop = berth.env.simulation_stop
 
-    fig, ax = plt.subplots()
-    berth_availability_plot = berth.berth_availability.stack().reset_index()
-    berth_availability_plot.columns = ['timestamp', 'column', 'id']
-    berth_availability_plot = berth_availability_plot[berth_availability_plot['id'].notna()]
-    berth_availability_plot_id_mapping = {id_: list(zip(sub_df['timestamp'], sub_df['column'])) for id_, sub_df
-                                              in berth_availability_plot.groupby('id', sort=False)}
-    for vessel_id in berth_availability_plot_id_mapping.keys():
-        vessel_occupancy = berth_availability_plot_id_mapping[vessel_id]
-        timestamps, berth_position = zip(*vessel_occupancy)
-        berth_position = list(berth_position)
-        berth_position = np.array(berth_position, dtype=float)
-        timestamps = list(timestamps)
-        timestamps = mdates.date2num(timestamps)
-        berth_position_over_time = np.column_stack((berth_position, timestamps))
-        try:
-            berth_position_over_time_polygons = ConvexHull(berth_position_over_time)
-            ax.fill(berth_position_over_time[berth_position_over_time_polygons.vertices, 0],
-                    berth_position_over_time[berth_position_over_time_polygons.vertices, 1], )
-        except:
-            continue
+    if time_start == time_stop:
+        return None
 
-    plt.gca().yaxis_date()
-    plt.xlim(0,berth.berth_length)
-    plt.ylabel("Time")
-    if isinstance(berth, IsQuay):
-        plt.xlabel("Quay length [m]")
-    elif isinstance(berth, IsJetty):
-        plt.xlabel("Jetty length [m]")
-    plt.close()
+    df = berth.berth_occupation
+    if style == 'matplotlib':
+        fig,ax = plt.subplots()
+        plt.ylim(time_start, time_stop)
+        for _, berth_position_info in df.iterrows():
+            position_start = berth_position_info.position_start
+            position_stop = berth_position_info.position_stop
+            berth_time_start = berth_position_info.time_start
+            berth_time_stop = berth_position_info.time_stop
+            ax.fill(
+                [position_start,position_start,position_stop,position_stop],
+                [berth_time_start, berth_time_stop, berth_time_stop, berth_time_start],
+            )
+
+        # Major ticks: start of each day
+        ax.yaxis.set_major_locator(mdates.DayLocator())
+        ax.yaxis.set_major_formatter(mdates.DateFormatter("%d %b %Y"))
+
+        # Minor ticks: every hour, formatted as HH:MM
+        y_min, y_max = ax.get_ylim()
+        days = abs(y_max - y_min)       
+
+        # Major ticks: always daily
+        ax.yaxis.set_major_locator(mdates.DayLocator())
+        ax.yaxis.set_major_formatter(mdates.DateFormatter("%d %b %Y"))
+
+        # Minor ticks: adaptive interval
+        if days > 7:
+            ax.yaxis.set_minor_locator(NullLocator())
+        else:
+            intervals = [2, 3, 4, 6, 8, 12]  # hours
+
+            # Interpolate from 2 h at 1 day to 12 h at 7 days
+            target_interval = 2 + (days - 1) * (12 - 2) / (7 - 1)
+            interval = min(intervals, key=lambda h: abs(h - target_interval))
+
+            ax.yaxis.set_minor_locator(mdates.HourLocator(interval=interval))
+            ax.yaxis.set_minor_formatter(mdates.DateFormatter("%H:%M"))
+
+        ax.tick_params(axis="y", which="major", pad=8)
+        ax.tick_params(axis="y", which="minor", labelsize=8)
+
+        ax.grid(axis="y", which="major", linestyle="-", alpha=0.5)
+        ax.grid(axis="y", which="minor", linestyle=":", alpha=0.3)
+
+        fig.tight_layout()
+        plt.gca().yaxis_date()
+        plt.xlim(0,berth.berth_length)
+        if isinstance(berth, IsQuay):
+            plt.xlabel("Quay length [m]")
+        elif isinstance(berth, IsJetty):
+            plt.xlabel("Jetty length [m]")
+        plt.ylim(time_start, time_stop)
+        plt.ylabel("Time")
+        plt.close()
+
+    elif style == "plotly":
+        fig = go.Figure()
+
+        # Use Plotly's default qualitative color palette
+        colors = px.colors.qualitative.Plotly
+        vessel_colors = {}
+
+        for _, berth_position_info in df.iterrows():
+            position_start = berth_position_info.position_start
+            position_stop = berth_position_info.position_stop
+            berth_time_start = pd.Timestamp(berth_position_info.time_start)
+            berth_time_stop = pd.Timestamp(berth_position_info.time_stop)
+
+            vessel_id = berth_position_info.vessel_id
+            vessel = berth.env.vessels[vessel_id]
+            operation_id = berth_position_info.operation_id
+
+            # Assign a consistent color to each vessel
+            if vessel_id not in vessel_colors:
+                vessel_colors[vessel_id] = colors[
+                    len(vessel_colors) % len(colors)
+                ]
+
+            vessel_color = vessel_colors[vessel_id]
+
+            # Shared tooltip data
+            customdata_row = [
+                str(vessel.name),
+                vessel.L,
+                vessel.B,
+                vessel.T,
+                str(operation_id),
+                position_start,
+                position_stop,
+                berth_time_start,
+                berth_time_stop,
+            ]
+
+            # 1. Draw the berth occupancy rectangle
+            fig.add_trace(
+                go.Scatter(
+                    x=[
+                        position_start,
+                        position_start,
+                        position_stop,
+                        position_stop,
+                        position_start,
+                    ],
+                    y=[
+                        berth_time_start,
+                        berth_time_stop,
+                        berth_time_stop,
+                        berth_time_start,
+                        berth_time_start,
+                    ],
+                    fill="toself",
+                    mode="lines",
+                    name=str(vessel.name),
+                    legendgroup=str(vessel_id),
+                    showlegend=True,
+                    fillcolor=vessel_color,
+                    line=dict(color=vessel_color, width=1),
+                    hoverinfo="skip",
+                )
+            )
+
+            # 2. Add invisible hover markers throughout the rectangle
+            width = abs(position_stop - position_start)
+            n_x = max(2, min(100, int(width / 10) + 1))
+            hover_x = np.linspace(position_start, position_stop, n_x)
+
+            n_y = 20
+            hover_y = pd.date_range(
+                start=berth_time_start,
+                end=berth_time_stop,
+                periods=n_y,
+            )
+
+            xx, yy = np.meshgrid(hover_x, hover_y)
+            customdata = np.tile(customdata_row, (xx.size, 1))
+
+            fig.add_trace(
+                go.Scatter(
+                    x=xx.ravel(),
+                    y=yy.ravel(),
+                    mode="markers",
+                    marker=dict(
+                        size=12,
+                        opacity=0,
+                        color=vessel_color,
+                    ),
+                    customdata=customdata,
+                    legendgroup=str(vessel_id),
+                    showlegend=False,
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "Length (L): %{customdata[1]} m<br>"
+                        "Beam (B): %{customdata[2]} m<br>"
+                        "Draft (T): %{customdata[3]} m<br>"
+                        "Operation ID: %{customdata[4]}<br>"
+                        "Position: %{customdata[5]}–%{customdata[6]} m<br>"
+                        "Start: %{customdata[7]|%d %b %Y %H:%M}<br>"
+                        "End: %{customdata[8]|%d %b %Y %H:%M}<br>"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+        x_label = (
+            "Quay length [m]"
+            if isinstance(berth, IsQuay)
+            else "Jetty length [m]"
+        )
+
+        fig.update_layout(
+            width=700,
+            height=700,
+            xaxis_title=x_label,
+            yaxis_title="Time",
+            xaxis=dict(range=[0, berth.berth_length]),
+            yaxis=dict(range=[time_start, time_stop]),
+        )
+
     return fig
 
 
@@ -1735,4 +1895,115 @@ def plot_time_distance_diagram_multi_plotly(
         }
     )
     
+    return fig
+
+
+def plot_vessel_arrival_timeline(berth):
+
+    # Get berth operations
+    berth_operations = berth.berth_occupation
+
+    all_events = []
+
+    # Extract events for each vessel
+    for _, operation in berth_operations.iterrows():
+
+        vessel_id = operation["vessel_id"]
+
+        # Retrieve vessel from the simulation environment
+        vessel = berth.env.vessels[vessel_id]
+
+        # Convert vessel logbook to DataFrame
+        vessel_logbook = pd.DataFrame(vessel.logbook)
+
+        if vessel_logbook.empty:
+            print(f"No logbook entries for vessel {vessel_id}")
+            continue
+
+        # Isolate and aggregate events
+        events = isolate_events(vessel_logbook)
+
+        if events.empty:
+            print(f"No events found for vessel {vessel_id}")
+            continue
+
+        events = events.copy()
+
+        # Ensure timestamps are datetime objects
+        events["Start"] = pd.to_datetime(events["Start"])
+        events["Stop"] = pd.to_datetime(events["Stop"])
+
+        # Use vessel name if available, otherwise vessel ID
+        vessel_name = getattr(vessel, "name", str(vessel_id))
+        events["Vessel"] = str(vessel_name)
+
+        # Convert duration to numeric hours to avoid Plotly
+        # JSON serialization errors with timedelta objects
+        events["Duration (hours)"] = (
+            events["Stop"] - events["Start"]
+        ).dt.total_seconds() / 3600
+
+        all_events.append(events)
+
+    # Combine all vessel events
+    plot_df = pd.concat(all_events, ignore_index=True)
+
+    # Remove invalid intervals
+    plot_df = plot_df.dropna(subset=["Start", "Stop", "Event"])
+    plot_df = plot_df[plot_df["Stop"] > plot_df["Start"]]
+
+    # Ensure hover data contains JSON-compatible values
+    plot_df["Duration (hours)"] = plot_df["Duration (hours)"].astype(float)
+
+    event_colors = {
+        "Sailing":              "#B7D2DE", 
+        "Waiting at anchorage": "#80A6B7",  
+        "Waiting at berth":     "#DF9763",  
+        "Berthing":             "#DF6D63",  
+        "Loading":              "#C64E43",  
+        "Deberthing":           "#AD3A30",  
+    }
+
+    event_order = list(event_colors.keys())
+
+    # Create interactive Gantt chart
+    fig = px.timeline(
+        plot_df,
+        x_start="Start",
+        x_end="Stop",
+        y="Vessel",
+        color="Event",
+        color_discrete_map=event_colors,
+        category_orders={"Event": event_order},
+        hover_data={
+            "Start": "|%Y-%m-%d %H:%M:%S",
+            "Stop": "|%Y-%m-%d %H:%M:%S",
+            "Duration (hours)": ":.2f",
+        },
+        labels={
+            "Vessel": "Vessel",
+            "Event": "Activity",
+            "Duration (hours)": "Duration (hours)",
+        },
+    )
+
+    # Format chart
+    fig.update_yaxes(
+        autorange="reversed",
+        title="Vessel",
+    )
+
+    fig.update_xaxes(
+        title="Time",
+        tickformat="%d %b\n%H:%M",
+        rangeslider_visible=False,
+    )
+
+    fig.update_layout(
+        height=max(350, 60 * plot_df["Vessel"].nunique()),
+        legend_title="Activity",
+        hovermode="closest",
+        bargap=0.25,
+    )
+
     return fig

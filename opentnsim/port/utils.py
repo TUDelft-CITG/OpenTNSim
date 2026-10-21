@@ -1240,3 +1240,23 @@ def get_terminal_availability_info(vessel, origin, terminal, berth = None, delay
     if berth is not None:
         terminal_availability = terminal.provide_terminal_availability_info(vessel, origin, berth, delay)
     return terminal_availability
+
+
+def add_berth_to_graph(berth):
+    node_info = berth.env.graph.nodes[berth.node]
+    if 'Berth' not in node_info.keys():
+        node_info['Berth'] = []
+    node_info['Berth'].append(berth)
+
+
+def horizontal_fill_between_equals(row):
+    row_values = row.values
+    for i in range(len(row_values)):
+        if pd.notna(row_values[i]):
+            j = i + 1
+            while j < len(row_values) and pd.isna(row_values[j]):
+                if j + 1 < len(row_values) and pd.notna(row_values[j + 1]) and row_values[j + 1] == row_values[i]:
+                    row_values[i + 1:j + 1] = row_values[i]
+                    break
+                j += 1
+    return pd.Series(row_values, index=row.index)

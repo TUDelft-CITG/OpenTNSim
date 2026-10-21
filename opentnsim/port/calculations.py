@@ -1092,72 +1092,30 @@ def calculate_accessibility(vessel, trip_index=0, duration=pd.Timedelta(days=5))
 
     return results
 
-
-def calculate_berth_availability_information(berth, time_start = None, time_stop = None):
-    berth_availability_df = berth.berth_availability.copy()
-    if time_start is None:
-        time_start = berth_availability_df.index[0]
-    if time_stop is None:
-        time_stop = berth_availability_df.index[-1]
-    berth_availability_df = berth_availability_df[(berth_availability_df.index >= time_start) &
-                                          (berth_availability_df.index <= time_stop)]
-    df = berth_availability_df.copy()
-
-    results = []
-    for timestamp in df.index:
-        row = df.loc[timestamp].dropna()
-        row = row.sort_index()
-
-        vessel_segments = []
-        current_vessel = None
-        start_segment = None
-        prev_segment = None
-        for segment, vessel in row.items():
-            if vessel != current_vessel:
-                if current_vessel is not None:
-                    vessel_segments.append((current_vessel, start_segment, prev_segment))
-                current_vessel = vessel
-                start_segment = segment
-            prev_segment = segment
-
-        if current_vessel is not None:
-            vessel_segments.append((current_vessel, start_segment, prev_segment))
-
-        # save results with timestamp
-        for vessel, start_seg, end_seg in vessel_segments:
-            results.append((vessel, timestamp, start_seg, end_seg))
-
-    occupied_df = pd.DataFrame(results, columns=['vessel_id', 'timestamp', 'start_berth', 'end_berth'])
-    occupied_df.sort_values(['vessel_id', 'timestamp'], inplace=True)
-    occupied_df.reset_index(drop=True, inplace=True)
-    occupied_summary = occupied_df.groupby(['vessel_id', 'start_berth', 'end_berth']).agg(
-        start_time=('timestamp', 'min'),
-        end_time=('timestamp', 'max')
-    ).reset_index()
-    occupied_summary['duration'] = occupied_summary['end_time'] - occupied_summary['start_time']
-    return occupied_summary
-
-
 def calculate_berth_performance(berth, time_start = None, time_stop = None):
-    from opentnsim.port.mixins.berth import IsQuay, IsJetty
-    berth_availability_df = berth.berth_availability.copy()
+    from opentnsim.port.mixins.berth import IsQuay, IsJetty  
     if time_start is None:
-        time_start = berth_availability_df.index[0]
+        time_start = berth.env.simulation_start
     if time_stop is None:
-        time_stop = berth_availability_df.index[-1]
-    berth_availability_df = berth_availability_df[(berth_availability_df.index >= time_start) &
-                                                  (berth_availability_df.index <= time_stop)]
-    duration = berth_availability_df.index[-1] - berth_availability_df.index[0]
-    occupied_df = calculate_berth_availability_information(berth, time_start, time_stop)
-    occupied_df = occupied_df.sort_values('start_time')
+        time_stop = berth.env.simulation_stop
+    simulation_duration = time_stop - time_start
 
+    occupied_df = berth.berth_occupation
+    occupied_df = occupied_df.sort_values('time_start')
+    occupied_df = occupied_df[
+        (occupied_df.time_start >= time_start) &
+        (occupied_df.time_stop <= time_stop)
+    ]
+
+    occupied_df['duration'] = occupied_df['time_stop'] - occupied_df['time_start']
+    occupied_df['duration_s'] = occupied_df['duration'].apply(lambda x: x.total_seconds())
     total_vessels_handled = len(occupied_df)
-    shortest_occupation = occupied_df.duration.min()
-    shortest_occupation_id = occupied_df.duration.idxmin()
-    mean_occupation = occupied_df.duration.mean()
-    longest_occupation = occupied_df.duration.max()
-    longest_occupation_id = occupied_df.duration.idxmax()
-    total_occupied_duration = occupied_df.duration.sum()
+    shortest_occupation = pd.Timedelta(seconds = occupied_df.duration_s.min())
+    shortest_occupation_id = occupied_df.duration_s.idxmin()
+    mean_occupation = pd.Timedelta(seconds = occupied_df.duration_s.mean())
+    longest_occupation = pd.Timedelta(seconds = occupied_df.duration_s.max())
+    longest_occupation_id = occupied_df.duration_s.idxmax()
+    total_occupied_duration = pd.Timedelta(seconds = occupied_df.duration_s.sum())
     berth_occupancy = np.nan
     vessels_at_berth = {}
     for vessel_id in occupied_df.vessel_id:
@@ -1172,7 +1130,7 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
     berth_waiting_time_causes = {}
     total_waiting_time_at_berth = pd.Timedelta(seconds=0)
     for _,vessel_berth_info in occupied_df.iterrows():
-        berthing_start_time = vessel_berth_info.start_time
+        berthing_start_time = vessel_berth_info.time_start
         vessel = vessels_at_berth[vessel_berth_info.vessel_id]
         vessel_df = pd.DataFrame(vessel.logbook)
         vessel_df = vessel_df[vessel_df.Timestamp <= berthing_start_time]
@@ -1249,15 +1207,14 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
     average_waiting_time = total_waiting_time_at_berth/len(vessels_at_berth)
     waiting_cause_reasons = {waiting_cause: np.round((waiting_time / total_waiting_time_at_berth)*100,1)
                              for waiting_cause, waiting_time in berth_waiting_time_causes.items()}
-    waiting_time_rate = total_waiting_time_at_berth
 
     if not len(vessels_at_berth):
         berth_occupancy = 0.
     elif isinstance(berth, IsQuay):
         number_of_berths = berth.berth_length/(average_vessel_length)
-        berth_occupancy = total_occupied_duration/(number_of_berths*duration)*100
+        berth_occupancy = total_occupied_duration/(number_of_berths*simulation_duration)*100
     elif isinstance(berth, IsJetty):
-        berth_occupancy = total_occupied_duration/duration*100
+        berth_occupancy = total_occupied_duration/simulation_duration*100
 
     results = pd.Series({'Total vessels handled':total_vessels_handled,
                          'Average vessel length': average_vessel_length,
@@ -1294,3 +1251,141 @@ def calculate_sailing_time_to_berth(vessel, origin, berth):
     sailing_time, _ = get_sailing_time(vessel, edge_route)
     sailing_time = pd.Timedelta(seconds=sailing_time)
     return sailing_time
+
+
+def calculate_availability_quay_positions(quay, time_start = None):
+    if time_start is None:
+        time_start = pd.Timestamp(datetime.datetime.fromtimestamp(quay.env.now))
+
+    df = quay.berth_occupation.copy()
+
+    df["time_start"] = pd.to_datetime(df["time_start"])
+    df["time_stop"] = pd.to_datetime(df["time_stop"])
+
+    time_start = pd.Timestamp(time_start)
+    simulation_stop = pd.Timestamp(quay.env.simulation_stop)
+    quay_length = 500.
+
+    # Keep operations overlapping the requested time window
+    df = df[
+        (df["time_start"] < simulation_stop)
+        & (df["time_stop"] > time_start)
+    ].copy()
+
+    df["time_start"] = df["time_start"].clip(lower=time_start)
+    df["time_stop"] = df["time_stop"].clip(upper=simulation_stop)
+
+    times = sorted(
+        {time_start, simulation_stop}
+        | set(df["time_start"])
+        | set(df["time_stop"])
+    )
+
+    # Fixed spatial segments
+    positions = sorted(
+        {0., quay_length}
+        | set(df["position_start"])
+        | set(df["position_stop"])
+    )
+    positions = [p for p in positions if 0 <= p <= quay_length]
+    segments = list(zip(positions[:-1], positions[1:]))
+
+    rows = []
+
+    for start, stop in zip(times[:-1], times[1:]):
+        active = df[
+            (df["time_start"] < stop)
+            & (df["time_stop"] > start)
+        ]
+
+        occupied = sorted(
+            (
+                max(0, min(r.position_start, r.position_stop)),
+                min(quay_length, max(r.position_start, r.position_stop)),
+            )
+            for r in active.itertuples()
+        )
+
+        # Merge overlapping occupied sections
+        merged = []
+        for left, right in occupied:
+            if left >= right:
+                continue
+            if merged and left <= merged[-1][1]:
+                merged[-1] = (
+                    merged[-1][0],
+                    max(merged[-1][1], right),
+                )
+            else:
+                merged.append((left, right))
+
+        # Calculate available quay sections
+        cursor = 0
+        free = []
+
+        for left, right in merged:
+            if cursor < left:
+                free.append((cursor, left))
+            cursor = max(cursor, right)
+
+        if cursor < quay_length:
+            free.append((cursor, quay_length))
+
+        for pos_start, pos_stop in free:
+            rows.append({
+                "time_start": start,
+                "time_stop": stop,
+                "position_start": pos_start,
+                "position_stop": pos_stop,
+            })
+
+    availability = pd.DataFrame(rows)
+
+    columns = [
+        "position_start", "position_stop",
+        "time_start", "time_stop",
+    ]
+
+    if availability.empty:
+        return pd.DataFrame(columns=columns)
+
+    # Merge continuous availability for each fixed position segment
+    result = []
+
+    for pos_start, pos_stop in segments:
+        available = availability[
+            (availability["position_start"] <= pos_start)
+            & (availability["position_stop"] >= pos_stop)
+        ].sort_values("time_start")
+
+        current_start = None
+        current_stop = None
+
+        for row in available.itertuples():
+            start, stop = row.time_start, row.time_stop
+
+            if current_start is None:
+                current_start, current_stop = start, stop
+            elif start <= current_stop:
+                current_stop = max(current_stop, stop)
+            else:
+                result.append({
+                    "position_start": pos_start,
+                    "position_stop": pos_stop,
+                    "time_start": current_start,
+                    "time_stop": current_stop,
+                })
+                current_start, current_stop = start, stop
+
+        if current_start is not None:
+            result.append({
+                "position_start": pos_start,
+                "position_stop": pos_stop,
+                "time_start": current_start,
+                "time_stop": current_stop,
+            })
+
+    quay_length_availability = pd.DataFrame(result, columns=columns).sort_values(["position_start", "time_start"]).reset_index(drop=True)
+    quay_length_availability['length_available'] = quay_length_availability['position_stop'] - quay_length_availability['position_start']
+    quay_length_availability = quay_length_availability[(quay_length_availability.time_start == time_start)].copy()
+    return quay_length_availability

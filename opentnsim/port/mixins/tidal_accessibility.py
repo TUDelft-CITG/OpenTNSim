@@ -3,30 +3,28 @@ from opentnsim.port.visualizations import (create_plot_vertical_tidal_window,
                                            plot_tidal_windows)
 from opentnsim.core import VesselProperties
 
-def find_route_with_restrictions(self):
-    routes_with_restrictions = []
-    route_with_restriction = []
-    for node_start, node_stop in zip(self.route[:-1], self.route[1:]):
-        edge = (node_start, node_stop)
-        if 'Depth_restriction' in self.env.graph.nodes[node_start].keys():
-            route_with_restriction.append(node_start)
-        elif 'Depth_restriction' in self.env.graph.edges[edge].keys():
-            route_with_restriction.append(node_start)
-
-        if 'Current_restriction' not in self.env.graph.nodes[node_stop].keys():  # create new route
-            routes_with_restrictions.append(route_with_restriction)
-            route_with_restriction = []
-        elif 'Current_restriction' not in self.env.graph.edges[edge].keys():  # create new route
-            routes_with_restrictions.append(route_with_restriction)
-            route_with_restriction = []
-        if node_stop == self.route[-1]:  # if last node
-            route_with_restriction.append(node_stop)
-            routes_with_restrictions.append(route_with_restriction)
-    return routes_with_restrictions
-
 
 class HasDraughtRestrictions(VesselProperties):
+    """Mixin class: Something has draught restrictions
+        
+    Used for object that has tidal windows in a port
+
+    Attributes
+    ----------
+    tidal_window_calculations: dict [str, pandas.DataFrame]
+        dictionary that stores all the calculated tidal windows per trip_id
+
+    Methods
+    -------
+    create_plot_vertical_tidal_window:
+        creating a time-series plot of the resulting vertical (water level) tidal windows around the time of sailing
+    create_plot_horizontal_tidal_window: 
+        creating a time-series plot of the resulting horizontal (current velocity) tidal windows around the time of sailing
+    plot_tidal_windows: 
+        creating a time-series plot of the resulting tidal windows around the time of sailing
+    """
     def __init__(self, *args, **kwargs):
+        """Initialization"""
         super().__init__(*args, **kwargs)
         self.tidal_window_calculations = {}
 
@@ -36,12 +34,11 @@ class HasDraughtRestrictions(VesselProperties):
             return None
         return fig, legend_handles, legend_labels
 
-
     def create_plot_horizontal_tidal_window(self, name_waterway_of_interest = None, trip_index = 0, plot = False):
         fig, legend_handles, legend_labels = create_plot_horizontal_tidal_window(self, name_waterway_of_interest, trip_index, plot)
         return fig, legend_handles, legend_labels
 
-
     def plot_tidal_windows(self, name_waterway_of_interest = None, trip_index = 0, plot_all = False):
         fig_final = plot_tidal_windows(self, name_waterway_of_interest, trip_index, plot_all)
         return fig_final
+    
