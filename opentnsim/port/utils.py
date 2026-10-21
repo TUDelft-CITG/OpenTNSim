@@ -787,24 +787,27 @@ def get_oriented_waterway_route(waterway, vessel):
     return waterway_route
 
 
-def get_waterway(vessel, edge = None):
+def get_waterway(vessel, edge):
     waterway = None
-    if edge:
-        node_A = edge[0]
-        node_info_A = vessel.env.graph.nodes[node_A]
-        waterways_A = []
-        if 'Waterway' not in node_info_A:
-            waterways_A = node_info_A['Waterway']
+    node_A, node_B = edge[:2]
+    node_info_A = vessel.env.graph.nodes[node_A]
+    waterways_A = []
+    if 'Waterway' in node_info_A:
+        waterways_A = node_info_A['Waterway']
 
-        node_B = edge[1]
-        node_info_B = vessel.env.graph.nodes[node_B]
-        waterways_B = []
-        if 'Waterway' not in node_info_B:
-            waterways_B = node_info_B['Waterway']
+    node_info_B = vessel.env.graph.nodes[node_B]
+    waterways_B = []
+    if 'Waterway' in node_info_B:
+        waterways_B = node_info_B['Waterway']
 
-        common_waterways = list(set(waterways_A) & set(waterways_B))
-        if len(common_waterways):
-            waterway = common_waterways[0]
+    waterways = list(set(waterways_A) & set(waterways_B))
+    if not len(waterways):
+        return None
+    if len(waterways) > 1:
+        raise ValueError(
+            f"There are overlapping waterways on edge ({edge}), which is not supported."
+        )
+    waterway = waterways[0]
     return waterway
 
 
@@ -1240,23 +1243,3 @@ def get_terminal_availability_info(vessel, origin, terminal, berth = None, delay
     if berth is not None:
         terminal_availability = terminal.provide_terminal_availability_info(vessel, origin, berth, delay)
     return terminal_availability
-
-
-def add_berth_to_graph(berth):
-    node_info = berth.env.graph.nodes[berth.node]
-    if 'Berth' not in node_info.keys():
-        node_info['Berth'] = []
-    node_info['Berth'].append(berth)
-
-
-def horizontal_fill_between_equals(row):
-    row_values = row.values
-    for i in range(len(row_values)):
-        if pd.notna(row_values[i]):
-            j = i + 1
-            while j < len(row_values) and pd.isna(row_values[j]):
-                if j + 1 < len(row_values) and pd.notna(row_values[j + 1]) and row_values[j + 1] == row_values[i]:
-                    row_values[i + 1:j + 1] = row_values[i]
-                    break
-                j += 1
-    return pd.Series(row_values, index=row.index)

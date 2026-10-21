@@ -180,6 +180,7 @@ class Movable(Locatable, Routable, Log):
         self.on_pass_edge_functions = []
         self.on_complete_pass_edge_functions = []
         self.on_look_ahead_to_node_functions = []
+        self.on_look_ahead_to_edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
         self._check_attributes()
@@ -345,13 +346,16 @@ class Movable(Locatable, Routable, Log):
                 break
 
             try:
-                yield from self.complete_pass_edge(self.next_node)
+                yield from self.complete_pass_edge(edge)
             except simpy.exceptions.Interrupt as e:
                 break
 
-            # we arrived at destination
-            # update to new position
+            # we arrived at destination -> update to new position
             self.update_position(index + 1)
+
+            # break if arrived at destination
+            if self.current_edge is None:
+                break
 
             # look ahead to next node
             try:
@@ -359,6 +363,11 @@ class Movable(Locatable, Routable, Log):
             except simpy.exceptions.Interrupt as e:
                 break
 
+            try:
+                yield from self.look_ahead_to_edge(self.current_edge)
+            except simpy.exceptions.Interrupt as e:
+                break
+            
 
         # arrived at end of route. release resource if needed
         if self.req is not None:
@@ -580,17 +589,18 @@ class Movable(Locatable, Routable, Log):
             else:
                 pass
 
-
-    def complete_pass_edge(self, destination):
+    def complete_pass_edge(self, edge):
         for gen in self.on_complete_pass_edge_functions:
-            yield from gen(destination)
+            yield from gen(edge)
 
-
-    def look_ahead_to_node(self, destination):
+    def look_ahead_to_node(self, node):
         for gen in self.on_look_ahead_to_node_functions:
-            yield from gen(destination)
+            yield from gen(node)
 
-
+    def look_ahead_to_edge(self, edge):
+            for gen in self.on_look_ahead_to_edge_functions:
+                yield from gen(edge)
+    
     def _get_current(self, edge):
         """Get the current on the edge
 

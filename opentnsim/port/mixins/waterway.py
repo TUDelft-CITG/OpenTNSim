@@ -4,107 +4,220 @@ import numpy as np
 import datetime
 import math
 
-from opentnsim.core import SimpyObject, Identifiable, Movable, VesselProperties
-
-#Imports from the port-module
+from opentnsim.core import Identifiable, Movable, HasResource, VesselProperties
 from opentnsim.graph.utils import get_sailing_distance, get_sailing_time, node_path_to_edge_path, get_previous_and_next_edge_of_vessel
-from opentnsim.port.utils import get_vessel_direction_with_waterway, get_waterway
+from opentnsim.port.utils import get_vessel_direction_with_waterway, get_waterway, get_oriented_waterway_route
 from opentnsim.port.mixins.port import IsPortComponent
 
 
 class WaterwayTraversable(Movable, Identifiable, VesselProperties):
+    """Mixin class: Something can traverse an IsWaterway object
+        
+    Required for object that needs to pass a waterway (IsWaterway object)
+
+    Methods
+    -------
+    request_waterway_access:
+        requesting access to a waterway
+    release_waterway_access: 
+        releasing access to a waterway
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_pass_edge_functions.append(self.access_waterway)
-        self.on_complete_pass_edge_functions.append(self.leave_waterway)
+        self.on_pass_edge_functions.append(self.request_waterway_access)
+        self.on_complete_pass_edge_functions.append(self.release_waterway_access)
 
-
-    def access_waterway(self, edge):
+    def request_waterway_access(self, edge):
+        """Request waterway access
+        
+        Parameters
+        ----------
+        edge: tuple of str
+            resembling an edge in self.env.graph.edges
+        """
+        # set origin and destination
         origin, destination = edge
+
+        # if no waterway in either origin or destination -> do nothing (return)
         if 'Waterway' not in self.env.graph.nodes[origin] or 'Waterway' not in self.env.graph.nodes[destination]:
             return
 
-        waterways_origin = self.env.graph.nodes[origin]['Waterway']
-        waterways_destination = self.env.graph.nodes[destination]['Waterway']
-        waterways = list(set(waterways_origin) & set(waterways_destination))
-        if not len(waterways):
-            return
-        
-        waterway = waterways[0]
-        waterway_route = waterway.route
-        if origin in waterway_route and self.trip_id in waterway.passage_planning.index:
-            waterway.passage_planning.at[self.trip_id, 'is_passing'] = True
-        yield from []
+        # get waterway to pass
+        waterway = get_waterway(self, edge)
 
-
-    def leave_waterway(self, destination):
-        if 'Waterway' not in self.env.graph.nodes[destination]:
-            return
-        waterways_to_leave = self.env.graph.nodes[destination]['Waterway']
-
-        route_index = self.route.index(destination)
-        is_first_node_of_route = route_index == 0
-        if is_first_node_of_route:
-            return
-        
-        previous_node = self.route[route_index - 1]
-        waterways_to_have_entered = self.env.graph.nodes[previous_node]['Waterway']
-        waterways_entered = list(set(waterways_to_leave) & set(waterways_to_have_entered))
-        if not len(waterways_entered):
+        # if no waterway found -> do nothing (return)
+        if waterway is None:
             return
 
-        waterways_to_leave = waterways_entered
-
-        is_last_node_of_route = route_index == len(self.route) - 1
-        if not is_last_node_of_route:
-            next_node = self.route[route_index + 1]
-            waterways_to_enter = []
-            if 'Waterway' not in self.env.graph.nodes[next_node]:
-                waterways_to_enter = self.env.graph.nodes[next_node]['Waterway']
+        # if vessel has made a request but not for the found waterway -> error (should not happen)
+        if hasattr(self, 'waterway_request') and self.waterway_request.waterway == waterway:
+            raise ValueError(
+                f"Vessel ({self.id}) did not request access to the correct waterway while accessing waterway ({waterway.name})."
+            )
+        # if vessel has already made a request for a waterway
+        if hasattr(self, 'waterway_request'):
+            # if this is the waterway in question -> do nothing (return)
+            if self.waterway_request.waterway == waterway:
+                return
+            # else it is another waterway -> error (should not happen)
             else:
-                return
+                raise ValueError(
+                    f"Vessel ({self.id}) did not request access for waterway ({waterway.name}) but another waterway."
+                )
 
-        if is_last_node_of_route:
-            waterway = waterways_to_leave[0]
-        elif not is_last_node_of_route:
-            waterways_entered = list(set(waterways_to_leave) & set(waterways_to_enter))
-            if not len(waterways_entered):
-                return
-            waterway = waterways_entered[0]
+        # create waterway request
+        self.waterway_request = waterway.resource.request()
+        self.waterway_request.trip_id = self.trip_id
+        self.waterway_request.waterway = waterway
 
-        passage_info = waterway.passage_planning.loc[self.trip_id, :]
-        passage_info = passage_info.drop("is_passing")
-        passage_info['vessel_id'] = self.id
-        yield from []
+        # yield waterway request (formality -> instant: the waterway capacity is unlimited in ports)
+        yield self.waterway_request
+
+        # adapt status of passage_planning
+        if self.trip_id in waterway.passage_planning.index:
+            waterway.passage_planning.at[self.trip_id, 'is_passing'] = True
+
+    def release_waterway_access(self, edge):
+        """Releases waterway access
+
+        Parameters
+        ----------
+        edge: tuple of str
+            resembling an edge in self.env.graph.edges
+        """
+        # set origin and destination
+        origin, destination = edge
+
+        # if no waterway has been requested -> do nothing (return)
+        if not hasattr(self, 'waterway_request'):
+            return
+
+        # if no waterway in either origin or destination -> do nothing (return)
+        if 'Waterway' not in self.env.graph.nodes[origin] or 'Waterway' not in self.env.graph.nodes[destination]:
+            return
+
+        # get waterway to pass
+        waterway = get_waterway(self, edge)
+        waterway_route = get_oriented_waterway_route(waterway, self)
+
+        # if no waterway found -> do nothing (return)
+        if waterway is None:
+            return
+
+        # check if vessel leaves the waterway
+        leaving_waterway = False
+        if destination == waterway_route[-1]:
+            leaving_waterway = True
+        elif destination == self.route[-1]:
+            leaving_waterway = True
+
+        # if vessel does not leave the waterway -> do nothing (return)
+        if not leaving_waterway:
+            return
+
+        # vessel request not in users -> error (should not be possible)
+        if self.waterway_request not in waterway.resource.users:
+            raise ValueError(
+                f"Vessel ({self.id}) did not request access to waterway ({waterway.name}) while leaving it."
+            )
 
 
-class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
+        yield waterway.resource.release(self.waterway_request)
+
+        # adapt status of passage_planning
+        if self.trip_id in waterway.passage_planning.index:
+            waterway.passage_planning.at[self.trip_id, 'is_passing'] = False
+
+        # delete vessel's waterway_request-attribute -> opens possibility to request next waterway
+        delattr(self, 'waterway_request')
+
+class IsWaterway(Identifiable, HasResource, IsPortComponent):
+    """Mixin class: An IsWaterway object
+        
+    Used to manage traffic on a route
+
+    Parameters
+    ----------
+    node_start:
+
+    node_stop:
+
+    width:
+
+    safety_margin:
+
+    priority_rules:
+
+
+    Attributes
+    ----------
+    node_start:
+
+    node_stop:
+
+    passage_planning:
+
+    passing_vessels_per_edge:
+
+    queue:
+
+    safety_margin:
+
+    priority_rules:
+
+
+    Methods
+    -------
+    request_waterway_access:
+        requesting access to a waterway
+    release_waterway_access: 
+        releasing access to a waterway
+    """
     def __init__(
             self, 
             node_start, 
             node_stop, 
-            width = 200., 
             safety_margin = pd.Timedelta(minutes=0), 
             priority_rules = None,
             *args, 
             **kwargs
-            ):
+        ):
+        """Initialization"""
         self.node_start = node_start
         self.node_stop = node_stop
-        self.width = width
         self.passage_planning = pd.DataFrame(
             columns=[
-                'vessel_id', 'vessel_name', 'vessel_L','vessel_B','vessel_T','origin','destination','time_of_registration','time_passage_start','time_passage_stop','direction','priority', 'is_passing'
-            ]
+                'vessel_id', 
+                'vessel_name', 
+                'vessel_L',
+                'vessel_B',
+                'vessel_T',
+                'origin',
+                'destination',
+                'time_of_registration',
+                'time_passage_start',
+                'time_passage_stop',
+                'direction',
+                'priority',
+                'is_passing',
+            ],
         )
-        self.passing_vessels_per_edge = pd.DataFrame(columns=['vessel_id','edge','time_start','time_stop','direction'])
+        self.passing_vessels_per_edge = pd.DataFrame(
+            columns=[
+                'vessel_id',
+                'edge',
+                'time_start',
+                'time_stop',
+                'direction',
+                ],
+            )
         self.queue = self.passage_planning.copy()
         self.safety_margin = safety_margin
         self.priority_rules = priority_rules
-        super().__init__(*args, **kwargs)
+        super().__init__(nr_resources = math.inf, *args, **kwargs)
+
         self.port.waterways[self.name] = self
         self.graph = self.env.graph
-        self.variables = {"waterway_width": self.width}
 
         # Compute route (shortest path by default)
         self.route = nx.dijkstra_path(self.graph, self.node_start, self.node_stop)
@@ -148,7 +261,6 @@ class IsWaterway(SimpyObject, Identifiable, IsPortComponent):
         self.node_distances = node_distance_df
         self.node_distance = node_distance_df.set_index("node")["distance"]
         self.edge_distances = edge_distance_df
-        super().__init__(*args, **kwargs)
 
 
     def add_vessel_to_passage_planning(self, vessel, origin, destination, delay = 0.):

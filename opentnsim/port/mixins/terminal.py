@@ -103,14 +103,17 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         super().__init__(*args, **kwargs)
         self.on_complete_pass_edge_functions.append(self.pass_terminal)
 
-    def pass_terminal(self, destination):
+    def pass_terminal(self, edge):
         """Stepwise execution of operations to pass a terminal
                                         
         Input
         -----
-        destination: str
-            node in the environment.graph
+        edge: tuple of two strings
+            edge in the environment.graph.edges
         """
+        # get destination
+        destination = edge[1]
+
         # if vessel not at a berth -> do nothing (return)
         if 'Berth' not in self.env.graph.nodes[destination].keys():
             return
