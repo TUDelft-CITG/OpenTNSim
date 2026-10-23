@@ -143,31 +143,45 @@ class IsWaterway(Identifiable, HasResource, IsPortComponent):
 
     Parameters
     ----------
-    node_start:
-
-    node_stop:
-
-    width:
-
-    safety_margin:
-
-    priority_rules:
-
+    node_start: str
+        the node name at which the waterway starts as in env.graph.nodes
+    node_stop: str
+        the node name at which the waterway stops as in env.graph.nodes
+    passage_planning: pandas.DataFrame
+        stores passage information of vessels passing the waterway
+    passing_vessels_per_edge: pandas.DataFrame
+        stores sailing information of each vessel for each waterway edge specifically
+    safety_margin: pandas.Timedelta, optional
+        safety margin between two vessels in the same direction that cannot overtake each other
+    priority_rules: callable(vessel) -> int, optional
+        a function that imports a vessel and determines a priority to pass the waterway (higher integer is higher priority)
 
     Attributes
     ----------
-    node_start:
-
-    node_stop:
-
-    passage_planning:
-
-    passing_vessels_per_edge:
-
-    safety_margin:
-
-    priority_rules:
-
+    node_start: str
+        the node name at which the waterway starts as in env.graph.nodes
+    node_stop: str
+        the node name at which the waterway stops as in env.graph.nodes
+    passage_planning: pandas.DataFrame
+        stores passage information of vessels passing the waterway
+    passing_vessels_per_edge: pandas.DataFrame
+        stores sailing information of each vessel for each waterway edge specifically
+    safety_margin: pandas.Timedelta, optional
+        safety margin between two vessels in the same direction that cannot overtake each other
+    priority_rules: callable(vessel) -> int, optional
+        a function that imports a vessel and determines a priority to pass the waterway (higher integer is higher priority)
+    route: list of str
+        the series of node names comprising the waterway in direction from start to stop node (direction = 0)
+    route_reversed: list of str
+        the series of node names comprising the waterway in opposite direction (direction = 1)
+    edge_route: list of tuple of str
+        the series of edge names comprising the waterway in direction from start to stop node (direction = 0)
+    route: list of str
+        the series of edge names comprising the waterway in opposite direction (direction = 1)
+    edge_distances: pandas.DataFrame
+        stored information of all the distances of the edge's nodes with respect to the start node
+    node_distances: pandas.DataFrame
+        stored information of all the distances of the nodes with respect to the start node
 
     Methods
     -------
@@ -180,7 +194,7 @@ class IsWaterway(Identifiable, HasResource, IsPortComponent):
             self, 
             node_start, 
             node_stop, 
-            safety_margin = pd.Timedelta(minutes=0), 
+            safety_margin = pd.Timedelta(minutes=10), 
             priority_rules = None,
             *args, 
             **kwargs

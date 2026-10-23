@@ -7,26 +7,47 @@ import simpy
 import networkx as nx
 
 class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
+    """Mixin class: Object that can wait at an IsAnchorage object
+        
+    Required for an object to wait at an anchorage area of a port
 
+    Attributes
+    ----------
+    anchorage_areas: list of IsAnchorageArea objects
+        stores the anchorage areas the vessel has visited
+
+    Methods
+    -------
+    sail_to_anchorage:
+        requesting access to a waterway
+    pass_anchorage: 
+        releasing access to a waterway
+    """
     def __init__(self,*args,**kwargs):
+        """Initialization"""
         self.anchorage_areas = []
         super().__init__(*args, **kwargs)
 
+    def sail_to_anchorage(self, origin):
+        """Vessel is able to find the nearest anchorage area and sail to it
 
-    def sail_to_anchorage(self, node):
-        """ Function: moves a vessel to the anchorage area instead of continuing its route to the terminal if a vessel is required to wait in the anchorage area
-
-            Input:
-                - vessel: an identity which is Identifiable, Movable, and Routable, and has VesselProperties
-                - node: a string that contains the node of the route that the vessel is currently on
+        Parameters:
+        ----------
+        origin: str
+            the name of a node in env.graph.nodes the vessel is currently at
 
         """
+        # find nearest available anchorage area
+        anchorage_area = determine_nearest_anchorage_area(self, origin, route = self.route_ahead)
 
-        # Set some default parameters:
-        anchorage_area = determine_nearest_anchorage_area(self, node, route = self.route_ahead)
-        yield from anchorage_area.request_anchorage_area_access(vessel=self)
-        self.route_to_anchorage_area = nx.dijkstra_path(self.env.graph, node, anchorage_area.node)
+        # request access to this anchorage area
+        yield from self.request_anchorage_area_access(anchorage_area)
+
+        # determine routes to and from anchorage areas
+        self.route_to_anchorage_area = nx.dijkstra_path(self.env.graph, origin, anchorage_area.node)
         self.route_after_anchorage_area = nx.dijkstra_path(self.env.graph, anchorage_area.node, self.route[-1])
+
+        # if the vessel is not yet at the anchorage area -> move to the anchorage area
         if len(self.route_to_anchorage_area) > 1:
             self.routes_sailed.append(self.route_to_anchorage_area)
             self.route = self.route_to_anchorage_area
@@ -34,43 +55,114 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
                 yield self.env.process(self.move())
             except simpy.exceptions.Interrupt as e:
                 raise e
+
+        # add process that allows vessel to continue trip after waiting at anchorage area TODO: check and aggregate with port.py -> create wait process here???
         self.on_pass_node_functions.append(self.pass_anchorage)
 
-
     def pass_anchorage(self, origin):
+        """Vessel is able to continue its trip to its berth of destination (after waiting)
+        
+        Parameters:
+        ----------
+        origin: str
+            the name of a node in env.graph.nodes the vessel is currently at
+        """
+        # if no anchorage on origin -> do nothing (return)
         if 'Anchorage' not in self.env.graph.nodes[origin].keys():
             return
 
-        if 'route_to_anchorage_area' not in dir(self):
+        # get anchorage areas at origin node
+        anchorage_areas = self.env.graph.nodes[origin]['Anchorage']
+
+        # if vessel passes an anchorage but was not destined to an anchorage area
+        if not hasattr(self, 'anchorage_area_request'):
             return
 
-        yield from []
+        # determine if one of anchorages at node is the anchorage the vessel is destined to
+        anchorage_at_origin = False
+        for anchorage_area in anchorage_areas:
+            if anchorage_area == self.anchorage_area_request.anchorage_area:
+                anchorage_at_origin = True
+                break
 
+        # if destined anchorage not at origin -> do nothing (return)
+        if not anchorage_at_origin:
+            return
+
+        # create a generator so that the function can run as a simpy process
+        yield from self.release_anchorage_area_access(anchorage_area)
+
+        # set route to terminal from anchorage as new route of vessel
         self.route = self.route_after_anchorage_area
+
+        # create new move process for vessel to sail to the terminal
+        self.env.process(self.move())
+        raise simpy.exceptions.Interrupt('Route of vessel has changed.')
+
+    def request_anchorage_area_access(self, anchorage_area):
+        """Requests access to an anchorage area
+        
+        Parameters
+        ----------
+        anchorage_area: obj
+            the IsAnchorage object the vessel wants to access
+        """
+        # create request to access anchorage area
+        self.anchorage_area_request = anchorage_area.resource.request()
+        self.anchorage_area_request.anchorage_area = anchorage_area
+
+        # yield request
+        yield self.anchorage_area_request
+
+    def release_anchorage_area_access(self, anchorage_area):
+        """Releases request to access the anchorage area
+        
+        Parameters
+        ----------
+        anchorage_area: obj
+            the IsAnchorage object the vessel wants to leave from
+        """
+        # yield release of request to access the anchorage area
+        yield anchorage_area.resource.release(self.anchorage_area_request)
+
+        # delete attributes to make future anchorage area interactions possible
+        delattr(self,'anchorage_area_request')
         delattr(self,'route_to_anchorage_area')
         delattr(self,'route_after_anchorage_area')
-        self.env.process(self.move())
-        #raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
 
 class IsAnchorage(IsPortComponent, OnNode, HasResource, Log, Identifiable, Locatable):
-    """Mixin class: Something has waiting area object properties as part of the lock complex [in SI-units]:
-            creates a waiting area with a waiting_area resource which is requested when a vessels wants to enter the area with limited capacity"""
+    """Mixin class: An IsAnchorage object
+            
+    Used to create an anchorage area at a node of the env.graph
 
+    Parameters
+    ----------
+    depth: float
+        the depth in meters of the anchorage area
+    capacity: int
+        the capacity in number of vessels that the anchorage can handle at the same time
+
+    Attributes
+    ----------
+    depth: float
+        the depth in meters of the anchorage area
+    """
     def __init__(self, depth, capacity, *args,**kwargs):
+        """Initialization"""
         self.depth = depth
         super().__init__(nr_resources=capacity, *args, **kwargs)
-
-        self.env.graph.nodes[self.node]['Waiting Area'] = self
+        
+        # adds the anchorage area to the collection of anchorage areas of the port
         self.port.anchorage_areas[self.name] = self
+        
+        # adds the anchorage area as waiting area to the infrastructure at the node
+        if 'Waiting Area' not in self.env.graph.nodes[self.node].keys():
+            self.env.graph.nodes[self.node]['Waiting Area'] = []
+        self.env.graph.nodes[self.node]['Waiting Area'].append(self)
+
+        # adds the anchorage area as anchorage area to the infrastructure at the node
         if 'Anchorage' not in self.env.graph.nodes[self.node].keys():
             self.env.graph.nodes[self.node]['Anchorage'] = []
         self.env.graph.nodes[self.node]['Anchorage'].append(self)
-
-    def request_anchorage_area_access(self, vessel):
-        vessel.anchorage_area_request = self.resource.request()
-        yield vessel.anchorage_area_request
-
-    def release_anchorage_area_access(self, vessel):
-        yield self.resource.release(vessel.anchorage_area_request)
         
