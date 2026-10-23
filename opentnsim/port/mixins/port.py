@@ -10,7 +10,7 @@ from opentnsim.port.utils import (
     determine_vessel_waiting_events,
     determine_if_vessel_needs_to_sail_to_the_anchorage_area, 
     find_waterways_to_be_passed,
-    get_oriented_waterway_route,
+    get_waterway_orientation,
     check_vessel_is_tide_bound,
     check_berth_can_host_vessel,
     sort_port_trips,
@@ -36,9 +36,8 @@ class IsPortComponent:
 
 
 class HasPortAccess(Movable, Identifiable):
-    def __init__(self, bound, priority = 0, *args, **kwargs):
+    def __init__(self, bound, *args, **kwargs):
         self.bound = bound
-        self.priority = priority
         self.routes_sailed = []
         self.trip_index = 0
         self.trip_id = str(uuid.uuid4())
@@ -366,9 +365,12 @@ class IsPortAuthority:
 
             total_waiting_time = calculate_total_waiting_time_of_events(waiting_events)
             total_foreseen_waiting_time += total_waiting_time
-            destination = vessel.route[-1]
             if waterway is not None:
-                waterway.add_vessel_to_passage_planning(vessel, origin, destination, delay=total_foreseen_waiting_time)
+                waterway.add_vessel_to_passage_planning(
+                    vessel, 
+                    origin, 
+                    delay=pd.Timedelta(seconds=total_foreseen_waiting_time),
+                )
             
             # store per waterway results
             port_availability_df_per_waterway[waterway_name] = port_availability_df
@@ -428,7 +430,7 @@ class IsPortAuthority:
             waiting_events = waiting_events_per_waterway[waterway_name]
             if waterway_name in self.waterways:
                 waterway = self.waterways[waterway_name]
-                waterway_route = get_oriented_waterway_route(waterway, vessel)
+                _, waterway_route, _ = get_waterway_orientation(waterway, vessel)
             else:
                 waterway_route = vessel.route
             if total_waiting_time:

@@ -16,7 +16,7 @@ from opentnsim.graph.utils import (
     get_longest_common_subroute, 
     node_path_to_edge_path,
 )
-from opentnsim.port.utils import find_waterways_to_be_passed, get_oriented_waterway_route
+from opentnsim.port.utils import find_waterways_to_be_passed, get_waterway_orientation
 from opentnsim.graph.calculations import transform_geometry, transform_route_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity, find_station
@@ -900,7 +900,7 @@ def calculate_tidal_windows(vessel, route, time_start, time_end, delay=0):
         waterway_name = waterway_info.waterway_name
         sailing_time_to_waterway = waterway_info.sailing_time_to_waterway.total_seconds()
         if waterway is not None:
-            route_over_waterway = get_oriented_waterway_route(waterway, vessel)
+            _, route_over_waterway, _ = get_waterway_orientation(waterway, vessel)
         else:
             route_start_index = route.index(waterway_info.start_node)
             route_stop_index = route.index(waterway_info.stop_node) + 1

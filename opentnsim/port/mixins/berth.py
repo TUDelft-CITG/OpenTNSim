@@ -35,7 +35,6 @@ class IsBerth(OnNode, Identifiable, Log):
     get_performance:
         provides a table with KPIs of the performance of the berth
     """
-
     def __init__(self, berth_length, depth, *args, **kwargs):
         """Initialization"""
         self.depth = depth
@@ -82,7 +81,7 @@ class IsBerth(OnNode, Identifiable, Log):
         if vessel.berth_operation_id in self.berth_occupation.operation_id.values:
             index = self.berth_occupation[self.berth_occupation.operation_id == vessel.berth_operation_id].iloc[-1].name
 
-        # if vessel is not leaving and position start and/or position stop not in df -> add these columns 
+        # if vessel is not leaving -> add vessel to berth_occupation->dataframe
         if not leaving:
             # get the vessl start and stop position at the berth
             if isinstance(self,IsQuay):
@@ -93,8 +92,11 @@ class IsBerth(OnNode, Identifiable, Log):
                 position_start = gap
                 position_stop = self.berth_length - gap
 
+            # calculate estimated time at berth
             time_at_berth = pd.Timedelta(seconds = vessel.berthing_time*60 + vessel.loading_time*3600 + vessel.deberthing_time*60)
             etd = current_time + time_at_berth
+
+            # add info to berth occupation dataframe
             self.berth_occupation.loc[index, :] = [
                 vessel.id, 
                 vessel.berth_operation_id, 
@@ -103,6 +105,7 @@ class IsBerth(OnNode, Identifiable, Log):
                 position_start, 
                 position_stop,
             ]
+        # if vessel is leaving -> update time_stop in berth_occupation-dataframe
         else:
             self.berth_occupation.loc[index, 'time_stop'] = current_time
 
@@ -174,7 +177,6 @@ class IsJetty(IsBerth, HasResource):
     release_vessel_access:
         releasing the vessel from the berth
     """
-
     def __init__(self, length, capacity=1, *args, **kwargs):
         """Initialization"""
         self.capacity = capacity
@@ -223,7 +225,9 @@ class IsQuay(IsBerth, HasLength):
     release_vessel_access:
         releasing the vessel from the berth
     provide_quay_location_for_vessel:
-        
+        provides a quay location for the vessel in question
+    return_quay_location_of_vessel:
+        returns the quay location for the vessel in question
     """
     def __init__(self, length, capacity = np.inf, *args, **kwargs):
         """Initialization"""

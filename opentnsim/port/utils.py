@@ -321,7 +321,7 @@ def find_waterways_to_be_passed(vessel):
         for waterway in common_waterways:
             if waterway.name in passing_waterways.waterway_name.values:
                 continue
-            waterway_route = get_oriented_waterway_route(waterway, vessel)
+            _, waterway_route, _ = get_waterway_orientation(waterway, vessel)
             waterway_start_node, waterway_stop_node = waterway_route[0], waterway_route[-1]
             waterway_route_start_index = vessel.route.index(waterway_start_node)
             route_to_waterway = vessel.route[route_start_index:(waterway_route_start_index+1)]
@@ -387,9 +387,6 @@ def get_waterway_availability_info(
     for _, waterway_info in waterways.iterrows():
         waterway = waterway_info.waterway
         waterway_name = waterway_info.waterway_name
-        sailing_time_to_waterway = (
-            waterway_info.sailing_time_to_waterway
-        )
 
         current_time = datetime.datetime.fromtimestamp(
             vessel.env.now
@@ -400,8 +397,7 @@ def get_waterway_availability_info(
                 waterway.check_waterway_availability_info(
                     vessel,
                     origin,
-                    sailing_time_to_waterway.total_seconds()
-                    + delay.total_seconds(),
+                    delay,
                 )
             )
             availability_df.columns = pd.MultiIndex.from_tuples(
@@ -779,12 +775,14 @@ def get_vessel_direction_with_waterway(routeA, routeB):
     return direction
 
 
-def get_oriented_waterway_route(waterway, vessel):
+def get_waterway_orientation(waterway, vessel):
     waterway_route = waterway.route
+    waterway_edge_route = waterway.edge_route
     direction = get_vessel_direction_with_waterway(waterway_route, vessel.route)
     if direction:
         waterway_route = waterway.route_reversed
-    return waterway_route
+        waterway_edge_route = waterway.edge_route_reversed
+    return direction, waterway_route, waterway_edge_route
 
 
 def get_waterway(vessel, edge):
@@ -1243,3 +1241,204 @@ def get_terminal_availability_info(vessel, origin, terminal, berth = None, delay
     if berth is not None:
         terminal_availability = terminal.provide_terminal_availability_info(vessel, origin, berth, delay)
     return terminal_availability
+
+
+def check_for_conflicts(waterway, edge, vessels, conflict_type = 'encountering'):
+    """Checks if two encountering vessels are in conflict at an edge
+
+    Parameters
+    ----------
+    edge: tuple of str
+        the edge name of the vessel in env.graph.edges
+    vessels: list of Vessel object
+        the vessels for which it has to be checked if they are in conflict at the edge
+
+    Returns
+    -------
+    conflict: int
+        1 if there is a conflict else 0
+    rules: list of Rule objects
+        rule(s) that cause the conflict
+    exceptions: list of Rule objects
+        exception(s) that prevent a conflict
+    conflict_type: str, optional
+        'encountering' or 'overtaking'
+    """
+    conflict = False
+    rules = []
+    exceptions = []
+
+    # check if one of the vessels reserved the channel
+    channel_reserved = False
+    if "Traffic_reservation" in waterway.env.graph.edges[edge].keys():
+        for vessel in vessels:
+            channel_reserved = next(iter(waterway.env.graph.edges[edge]["Traffic_reservation"].evaluate(vessel).values()))
+            rules.extend(['reservation'])
+            if channel_reserved:
+                break
+
+    if channel_reserved:
+        conflict = True
+        return conflict, rules, exceptions
+
+    # determine if there is a restriction (based on rules)
+    if f"Traffic_{conflict_type}_restriction" in waterway.env.graph.edges[edge].keys():
+        restrictions = waterway.env.graph.edges[edge][f"Traffic_{conflict_type}_restriction"].evaluate(vessels)
+        rules = [rule for rule, value in restrictions.items() if value == 0]
+        conflict = True if rules else False
+
+    # determine if there is an exception on the rule (based on exceptions)
+    if conflict and f"Traffic_{conflict_type}_exception" in waterway.env.graph.edges[edge].keys():
+        exceptions = waterway.env.graph.edges[edge][f"Traffic_{conflict_type}_exception"].evaluate(vessels)
+        exceptions = [rule for rule, value in exceptions.items() if value == 0]
+        if exceptions:
+            rules = []
+
+    # return conflict as int, together with list of rules and exceptions that are in action
+    conflict = 1 if conflict else 0
+    return conflict, rules
+
+
+def get_waterway_passage_information_for_vessel(waterway, vessel, origin, delay = pd.Timedelta(seconds=0.)):
+    """Gets the waterway passage information for a vessel
+
+    Parameters
+    ----------
+    waterway: IsWaterway object
+        the waterway the vessel is passing
+    vessel: obj
+        the vessel object that is WaterwayTranversable
+    origin: str
+        the node name of the origin of the vessel in env.graph.nodes
+    delay: pandas.Timedelta
+        the delay of the vessel
+
+    Returns
+    -------
+    sailing_time_over_waterway_df: pandas.DataFrame
+        sailing information per edge of the waterway, including: node_start, node_stop, edge, time_start, time_stop, distance, and duration
+    direction: int
+        the direction the vessel is passing the waterway: 0 or 1
+    """
+    # set the current time of the vessel
+    current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+
+    # determine node and edge route to waterway and over waterway
+    direction, route_over_waterway, edge_route_over_waterway = get_waterway_orientation(waterway, vessel)
+    waterway_start_node = route_over_waterway[0]
+    route_to_waterway = nx.dijkstra_path(waterway.env.graph, origin, waterway_start_node)
+    edge_route_to_waterway = node_path_to_edge_path(vessel.env.graph, route_to_waterway)
+
+    # determine the sailing time towards the waterway
+    sailing_time_to_waterway, _ = get_sailing_time(vessel, edge_route_to_waterway, currently_sailing = True)
+    sailing_time_to_waterway = pd.Timedelta(seconds=sailing_time_to_waterway)
+
+    # determine time of passage start and stop
+    time_passage_start = current_time + sailing_time_to_waterway + delay
+
+    # get the sailing information over the waterway
+    _, sailing_time_over_waterway_df = get_sailing_time(vessel, edge_route_over_waterway, currently_sailing= True)
+
+    # add time_start and stop information to the sailing-time-over-waterway-dataframe
+    sailing_time_over_waterway_df['time_start'] = (
+        sailing_time_over_waterway_df['time']
+        .shift(1)
+        .fillna(0)
+        .cumsum()
+        .astype('timedelta64[s]'))
+    sailing_time_over_waterway_df['time_stop'] = (
+        sailing_time_over_waterway_df['time'].
+        cumsum().
+        astype('timedelta64[s]'))
+    sailing_time_over_waterway_df['time_start'] += time_passage_start
+    sailing_time_over_waterway_df['time_stop'] += time_passage_start
+
+    # add edge information to datafarme
+    edges = list(zip(sailing_time_over_waterway_df["node_start"], sailing_time_over_waterway_df["node_stop"]))
+    if direction:
+        edges = list(zip(sailing_time_over_waterway_df["node_stop"], sailing_time_over_waterway_df["node_start"]))
+    sailing_time_over_waterway_df['edge'] = edges
+
+    return sailing_time_over_waterway_df, direction
+
+
+def check_conflicts_for_vessel(waterway, vessel):
+    """Check if vessel has conflict
+    
+    Parameters
+    ----------
+    vessel: obj
+        the vessel object that should be WaterwayTransversable
+    
+    Returns
+    -------
+    overtaking_conflicts: list of tuples with overtaking conflicts
+        conflicts of vessel with another vessel in overtaking situation per edge, including: edge, time_start, time_stop, conflicting_vessel, vessel, rules, exceptions
+    encountering_conflicts: list of tuples with encountering conflicts
+        conflicts of vessel with another vessel in encountering situation per edge, including: edge, time_start, time_stop, conflicting_vessel, vessel, rules, exceptions
+    """
+    # set default output
+    overtaking_conflicts = []
+    encountering_conflicts = []
+
+    # set current time
+    current_time = datetime.datetime.fromtimestamp(vessel.env.now)
+
+    # determine direction and priority
+    vessel_direction = get_vessel_direction_with_waterway(waterway.route,vessel.route)
+    vessel_priority = waterway.priority_rules(vessel) if waterway.priority_rules else 0
+
+    # determine other prior planned vessels in vessel passages per edge dataframe
+    passing_vessels_per_edge_df = waterway.vessel_edge_passages.copy()
+    passing_vessels_per_edge_df = passing_vessels_per_edge_df[
+        (passing_vessels_per_edge_df.vessel_id != vessel.id)&
+        (passing_vessels_per_edge_df.time_stop >= current_time)
+    ]
+
+    # determine conflicts per edge pased on the other prior planned vessels passges per edge by looping over each edge
+    for edge, group in passing_vessels_per_edge_df.groupby('edge'):
+        # if no restrictions on edge -> continue (no conflicts on this edge)
+        if ("Traffic_encountering_restriction" not in waterway.env.graph.edges[edge].keys() 
+            and "Traffic_overtaking_restriction" not in waterway.env.graph.edges[edge].keys()):
+            continue
+
+        # loop over prior planned vessels per edge
+        for _, vessel_event in group.iterrows():
+            # determine prior planned vessel and its direction, priority, and status
+            prior_planned_vessel = waterway.env.vessels[vessel_event['vessel_id']]
+            prior_planned_vessel_direction = vessel_event['direction']
+            prior_planned_vessel_priority = waterway.vessel_passages.at[prior_planned_vessel.trip_id, 'priority']
+            prior_planned_vessel_is_passing = waterway.vessel_passages.at[prior_planned_vessel.trip_id, 'is_passing']
+
+            # if prior planned vessel has less priority than vessel and is not yet passing the waterway -> continue (no conflicts with this vessel)
+            if vessel_priority > prior_planned_vessel_priority and not prior_planned_vessel_is_passing:
+                continue
+
+            # create list of the two vessels
+            vessels = [prior_planned_vessel, vessel]
+
+            # determine overtaking and encountering conflicts
+            conflict_type = 'encountering'
+            if prior_planned_vessel_direction == vessel_direction:
+                conflict_type = 'overtaking'
+                
+            # determine restrictions and exceptions
+            restriction, rules = check_for_conflicts(waterway, edge, vessels, conflict_type)
+
+            # if no restriction applies -> continue (no conflicts between these vessels)
+            if not restriction:
+                continue
+
+            # add to encountering conflict list,
+            if conflict_type == 'encountering':    
+                t_start = vessel_event['time_start']
+                t_stop = vessel_event['time_stop']
+                encountering_conflicts.append((edge, t_start, t_stop, vessels[0], vessels[1], rules))
+
+            # add to overtaking conflict list
+            elif conflict_type == 'overtaking':  
+                t_start = vessel_event['time_start'] - waterway.safety_margin
+                t_stop = vessel_event['time_start'] + waterway.safety_margin
+                overtaking_conflicts.append((edge, t_start, t_stop, vessels[0], vessels[1], rules))
+                
+    return encountering_conflicts, overtaking_conflicts

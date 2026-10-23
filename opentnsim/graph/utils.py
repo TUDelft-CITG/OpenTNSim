@@ -12,6 +12,7 @@ import math
 import networkx as nx
 import shapely
 import pyproj
+import datetime
 from shapely.geometry import LineString, Point, MultiLineString
 from shapely.ops import split, snap
 from shapely.strtree import STRtree
@@ -1018,7 +1019,7 @@ def get_sailing_speed(vessel, graph, edge_route):
     return average_sailing_speed, vessel_sailing_speed_df
 
 
-def get_sailing_time(vessel, edge_route):
+def get_sailing_time(vessel, edge_route, currently_sailing = False):
     """
     Calculates sailing time of vessel
 
@@ -1071,6 +1072,17 @@ def get_sailing_time(vessel, edge_route):
         "speed": speeds,
         "time": times,
     })
+
+    if currently_sailing and node_start == vessel.current_node:
+        last_message = pd.DataFrame(vessel.logbook).iloc[-1] if len(vessel.logbook) > 0 else None
+        if last_message is not None and 'Sailing' in last_message.Message:
+            current_time = pd.Timestamp(datetime.datetime.fromtimestamp(vessel.env.now))
+            start_time_sailing_on_current_node = last_message.timestamp
+            time_sailed_on_edge = current_time - start_time_sailing_on_current_node
+            sailing_time_on_first_edge = sailing_distance_df.loc[0,'time']
+            ratio_sailed_on_edge = 1 - time_sailed_on_edge/sailing_time_on_first_edge
+            sailing_distance_df.loc[0,'distance'] = sailing_distance_df.loc[0,'distance']*ratio_sailed_on_edge
+            sailing_distance_df.loc[0,'time'] -= time_sailed_on_edge
 
     return total_time, sailing_distance_df
 
