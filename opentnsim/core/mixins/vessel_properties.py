@@ -15,11 +15,8 @@ import random
 # spatial libraries
 import networkx as nx
 
-# package(s) related to the simulation
-import simpy
-
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
-from openclsim.core import SimpyObject
+from opentnsim.graph.utils import get_shortest_route
 import opentnsim.graph.mixins
 
 # get logger
@@ -245,11 +242,11 @@ class VesselProperties:
                 subGraph.add_edge(edge[0], edge[1], attr_dict=edge[2])
 
             try:
-                return nx.dijkstra_path(subGraph, origin, destination)
+                return get_shortest_route(subGraph, origin, destination, self)
                 # return nx.bidirectional_dijkstra(subGraph, origin, destination)
             except nx.NetworkXNoPath:
                 raise ValueError("No path was found with the given boundary conditions.")
 
         # If not, return shortest path
         else:
-            return nx.dijkstra_path(graph, origin, destination)
+            return get_shortest_route(graph, origin, destination, self)

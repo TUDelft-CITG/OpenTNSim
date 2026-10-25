@@ -51,14 +51,18 @@ def merge_figures(fig1, fig2):
     return new_fig, new_ax
 
 
-def plot_vessels_over_route(env, node_start, node_stop, ddistance=1000, vessels = None,
+def plot_vessels_over_route(env, node_start, node_stop, ddistance=1000, vessels = {},
                             xmin=None, xmax = None, ymin = None, ymax = None, zmin=0, zmax = 15, dz = 1, levels = []):
+    if not vessels:
+        vessels = env.vessels
+
+    if not len(vessels):
+        raise ValueError("No vessels to plot")
+
     interpolated_distance, node_times_num, interpolated_depth = calculate_interpolated_depth_values(env, node_start, node_stop, ddistance)
-    route = nx.dijkstra_path(env.graph,node_start,node_stop)
+    route = nx.dijkstra_path(env.graph, node_start, node_stop)
     fig, ax = plt.subplots()
     plt.close()
-    if vessels is None:
-        vessels = env.vessels
 
     for idx, (vessel) in enumerate(vessels.values()):
         if pd.DataFrame(vessel.logbook).empty:

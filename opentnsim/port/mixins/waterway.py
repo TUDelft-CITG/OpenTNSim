@@ -1,8 +1,7 @@
 import pandas as pd
-import networkx as nx
-import numpy as np
 import datetime
 import math
+import networkx as nx
 
 from opentnsim.core import Identifiable, Movable, HasResource, VesselProperties
 from opentnsim.graph.utils import get_sailing_distance, node_path_to_edge_path
@@ -239,7 +238,7 @@ class IsWaterway(Identifiable, HasResource, IsPortComponent):
         self.port.waterways[self.name] = self
 
         # compute and add node and edge routes in both directions
-        self.route = nx.shortest_path(self.env.graph, self.node_start, self.node_stop)
+        self.route = nx.dijkstra_path(self.env.graph, self.node_start, self.node_stop, weight='length_m')
         self.route_reversed = list(reversed(self.route))
         self.edge_route = node_path_to_edge_path(self.env.graph, self.route)
         self.edge_route_reversed = node_path_to_edge_path(self.env.graph, self.route_reversed)

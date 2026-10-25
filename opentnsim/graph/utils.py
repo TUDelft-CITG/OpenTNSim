@@ -758,10 +758,10 @@ def gdf_to_nx(gdf):
     return graph
 
 
-def get_trajectory(graph, node_1, node_2):
+def get_trajectory(graph, node_1, node_2, vessel = None):
     from opentnsim.graph.calculations import reverse_geometry
     geometry = None
-    route = nx.dijkstra_path(graph, node_1, node_2)
+    route = get_shortest_route(graph, node_1, node_2, vessel)
     is_multidigraph = check_graph_is_multidigraph_type(graph)
     edge_length_m = 0
     for edge in zip(route[:-1], route[1:]):
@@ -821,8 +821,8 @@ def check_if_geometry_is_aligned_with_edge(graph, edge):
     return aligned
 
 
-def get_edge_at_distance_from_node(graph, node_1, node_2, distance):
-    route = nx.dijkstra_path(graph, node_1, node_2)
+def get_edge_at_distance_from_node(graph, node_1, node_2, distance, vessel = None):
+    route = get_shortest_route(graph, node_1, node_2, vessel)
     total_length = 0
     edge = None
     is_multidigraph = check_graph_is_multidigraph_type(graph)
@@ -1246,7 +1246,7 @@ def remove_node_from_network(graph, node):
     return graph
 
 
-def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge):
+def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge, vessel = None):
     if edge == target_edge or edge == (target_edge[1], target_edge[0]):
         warnings.warn(f"Edges are the same, start_node of target_edge is returned.")
         return target_edge[0]
@@ -1254,9 +1254,10 @@ def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge):
     routes = {}
     for target_node in target_edge:
         for node in edge:
-            length_route = len(nx.dijkstra_path(graph, node, target_node))
+            route = get_shortest_route(graph, node, target_node, vessel)
+            length_route = len(route)
             if node not in routes.keys() or length_route < routes[node]:
-                routes[node] = len(nx.dijkstra_path(graph, node, target_node))
+                routes[node] = route
     closest_node_to_lock = min(routes, key=routes.get)
     return closest_node_to_lock
 
@@ -1347,3 +1348,36 @@ def get_previous_and_next_edge_of_vessel(vessel, route = None, node = None):
         next_edge = [node, next_node]
 
     return previous_edge, next_edge
+
+def get_shortest_route(graph, origin, destination, vessel = None):
+
+    def weight_by_restrictions(u, v, edge_data):
+        # Default restrictions
+        min_draught = edge_data.get("min_draught", 0)
+        min_width = edge_data.get("min_width", 0)
+        min_length = edge_data.get("min_length", 0)
+
+        max_draught = edge_data.get("max_draught", float("inf"))
+        max_width = edge_data.get("max_width", float("inf"))
+        max_length = edge_data.get("max_length", float("inf"))
+
+        # Check vessel dimensions against restrictions
+        if vessel is not None:
+            if not (min_draught <= vessel.T <= max_draught):
+                return None
+
+            if not (min_width <= vessel.B <= max_width):
+                return None
+
+            if not (min_length <= vessel.L <= max_length):
+                return None
+
+        # Edge is navigable: use its length as the cost
+        return edge_data["length_m"]
+
+    return nx.dijkstra_path(
+        graph,
+        source=origin,
+        target=destination,
+        weight=weight_by_restrictions
+    )

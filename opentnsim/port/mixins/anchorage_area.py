@@ -1,10 +1,9 @@
 from opentnsim.core import Movable, Identifiable, VesselProperties, HasResource, Log, Locatable
-from opentnsim.port.mixins.port import IsPortComponent
-from opentnsim.port.utils import determine_nearest_anchorage_area
 from opentnsim.graph.mixins import OnNode
+from opentnsim.graph.utils import get_shortest_route
+from opentnsim.port.mixins.port import IsPortComponent
 
 import simpy
-import networkx as nx
 
 class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
     """Mixin class: Object that can wait at an IsAnchorage object
@@ -28,8 +27,8 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
         self.anchorage_areas = []
         super().__init__(*args, **kwargs)
 
-    def sail_to_anchorage(self, origin):
-        """Vessel is able to find the nearest anchorage area and sail to it
+    def sail_to_anchorage(self, origin, anchorage_area):
+        """Vessel is able to sail to the anchorage_area
 
         Parameters:
         ----------
@@ -37,27 +36,21 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
             the name of a node in env.graph.nodes the vessel is currently at
 
         """
-        # find nearest available anchorage area
-        anchorage_area = determine_nearest_anchorage_area(self, origin, route = self.route_ahead)
-
         # request access to this anchorage area
         yield from self.request_anchorage_area_access(anchorage_area)
 
         # determine routes to and from anchorage areas
-        self.route_to_anchorage_area = nx.dijkstra_path(self.env.graph, origin, anchorage_area.node)
-        self.route_after_anchorage_area = nx.dijkstra_path(self.env.graph, anchorage_area.node, self.route[-1])
+        self.route_to_anchorage_area = get_shortest_route(self.env.graph, origin, anchorage_area.node, self)
+        self.route_after_anchorage_area = get_shortest_route(self.env.graph, anchorage_area.node, self.route[-1], self)
 
         # if the vessel is not yet at the anchorage area -> move to the anchorage area
         if len(self.route_to_anchorage_area) > 1:
             self.routes_sailed.append(self.route_to_anchorage_area)
             self.route = self.route_to_anchorage_area
-            try:
-                yield self.env.process(self.move())
-            except simpy.exceptions.Interrupt as e:
-                raise e
+            yield self.env.process(self.move())
 
-        # add process that allows vessel to continue trip after waiting at anchorage area TODO: check and aggregate with port.py -> create wait process here???
-        self.on_pass_node_functions.append(self.pass_anchorage)
+            # route has changed
+            raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
     def pass_anchorage(self, origin):
         """Vessel is able to continue its trip to its berth of destination (after waiting)
@@ -95,6 +88,11 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
         # set route to terminal from anchorage as new route of vessel
         self.route = self.route_after_anchorage_area
 
+        # delete attributes to make future anchorage area interactions possible
+        delattr(self,'anchorage_area_request')
+        delattr(self,'route_to_anchorage_area')
+        delattr(self,'route_after_anchorage_area')
+
         # create new move process for vessel to sail to the terminal
         self.env.process(self.move())
         raise simpy.exceptions.Interrupt('Route of vessel has changed.')
@@ -124,11 +122,6 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
         """
         # yield release of request to access the anchorage area
         yield anchorage_area.resource.release(self.anchorage_area_request)
-
-        # delete attributes to make future anchorage area interactions possible
-        delattr(self,'anchorage_area_request')
-        delattr(self,'route_to_anchorage_area')
-        delattr(self,'route_after_anchorage_area')
 
 
 class IsAnchorage(IsPortComponent, OnNode, HasResource, Log, Identifiable, Locatable):

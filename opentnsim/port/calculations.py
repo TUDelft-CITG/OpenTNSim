@@ -5,21 +5,24 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from scipy.interpolate import interp1d, CubicSpline
 from scipy.signal import find_peaks
 import xarray as xr
 
+from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
+from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity, find_station
+from opentnsim.graph.calculations import transform_geometry, transform_route_geometry
 from opentnsim.graph.utils import (
     get_sailing_time, 
     get_sailing_information_on_edge_to_distance_on_another_edge, 
     get_longest_common_subroute, 
     node_path_to_edge_path,
+    get_shortest_route,
 )
 from opentnsim.port.utils import find_waterways_to_be_passed, get_waterway_orientation
-from opentnsim.graph.calculations import transform_geometry, transform_route_geometry
-from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.environment.utils import get_water_depth, get_governing_current_velocity, find_station
+
+
 
 
 def calculate_total_waiting_time_of_events(waiting_events):
@@ -94,7 +97,7 @@ def calculate_depth_values_over_route(env, node_start, node_stop, offset = 500):
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_data = hydromanager.hydrodynamic_data
     water_depth = hydrodynamic_data['Water level'] - hydrodynamic_data['Nautical depth']
-    route = nx.dijkstra_path(env.graph, node_start, node_stop)
+    route = get_shortest_route(env, node_start, node_stop)
     transformed_geometry = transform_route_geometry(env, node_start, node_stop)
     node_distances = {}
     node_water_depths = {}
@@ -757,6 +760,8 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
 
         edge_route_to_node = edge_route[:edge_route_index]
         _, _, _, required_water_depth, _, distance_to_restriction = calculate_ukc_clearance(vessel, edge, delay)
+        if distance_to_restriction is None:
+            continue
         sailing_time_to_next_node_df = get_sailing_information_on_edge_to_distance_on_another_edge(
             vessel, edge_route_to_node, distance_to_be_sailed_on_last_edge = distance_to_restriction)
         sailing_time_to_next_node = sailing_time_to_next_node_df['time'].sum()
@@ -1125,7 +1130,9 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
 
     routes_to_terminal = []
     for port_entry_node in berth.terminal.port.port_entry_nodes:
-        routes_to_terminal.append(nx.dijkstra_path(berth.env.graph,port_entry_node,berth.node))
+        sub_routes_to_terminal = nx.all_simple_paths(berth.env.graph,port_entry_node,berth.node)
+        for sub_route in sub_routes_to_terminal:
+            routes_to_terminal.append(sub_route)
 
     berth_waiting_time_causes = {}
     total_waiting_time_at_berth = pd.Timedelta(seconds=0)
@@ -1246,7 +1253,7 @@ def calculate_estimated_arrival_and_departure_times_at_port_and_berth(vessel, or
 
 def calculate_sailing_time_to_berth(vessel, origin, berth):
     destination = berth.node
-    route = nx.dijkstra_path(vessel.env.graph,origin,destination)
+    route = get_shortest_route(vessel.env.graph, origin, destination, vessel)
     edge_route = node_path_to_edge_path(vessel.env.graph, route)
     sailing_time, _ = get_sailing_time(vessel, edge_route)
     sailing_time = pd.Timedelta(seconds=sailing_time)

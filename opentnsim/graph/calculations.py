@@ -8,10 +8,21 @@ import shapely
 from shapely import reverse
 from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import transform, linemerge, split, snap
-from opentnsim.graph.utils import (find_edges_based_on_shared_node, compare_two_edge_info, remove_node_from_network,
-                                   create_transformer, get_trajectory, check_if_edge_in_graph, find_closest_edge,
-                                   determine_edge_based_on_two_locations, get_largest_route_between_edges, 
-                                   get_geometry_of_edge, align_network_geometries_with_edge_directions, node_path_to_edge_path)
+from opentnsim.graph.utils import (
+    find_edges_based_on_shared_node, 
+    compare_two_edge_info, 
+    remove_node_from_network,
+    create_transformer, 
+    get_trajectory, 
+    check_if_edge_in_graph, 
+    find_closest_edge,
+    determine_edge_based_on_two_locations,
+    get_largest_route_between_edges, 
+    get_geometry_of_edge, 
+    align_network_geometries_with_edge_directions, 
+    node_path_to_edge_path,
+    get_shortest_route,
+)
 import warnings
 from pyproj import Geod
 wgs84 = Geod(ellps="WGS84")
@@ -370,9 +381,9 @@ def calculate_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EP
     return length_m
 
 
-def calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_node, edge_route = None):
+def calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_node, edge_route = None, vessel = None):
     if edge_route is None:
-        route = nx.dijkstra_path(graph,start_node,end_node)
+        route = get_shortest_route(graph,start_node,end_node,vessel)
         edge_route = node_path_to_edge_path(graph, route)
     length = 0
     for edge in edge_route:
