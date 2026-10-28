@@ -1197,6 +1197,18 @@ class EnergyCalculation:
                 v = (
                     distance / delta_t
                 )  # TODO: this is probably wrong. You don't want the speed over ground here, but the speed to water
+
+                # Validate speed (m/s)
+                if (
+                    not isinstance(v, (int, float))
+                    or isinstance(v, bool)
+                    or not math.isfinite(v)
+                    or v <= 0
+                ):
+                    raise ValueError(
+                        "v must be a finite, positive speed in m/s."
+                    )
+
                 self.energy_use["distance"].append(distance)
 
                 # calculate the delta t

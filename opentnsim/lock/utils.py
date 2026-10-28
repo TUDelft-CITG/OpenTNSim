@@ -721,7 +721,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
             else:
                 operation_index = 0
                 time_lock_operation_start = sailing_time_to_lock
-                if lock_chamber.gate_open_at_node != lock_edge[0] and not lock_chamber.closing_gate_in_between_operations:
+                if lock_chamber.gate_open_at_node != lock_edge[0]:
                     empty_operation_required = True
                     operation_index += 1
 

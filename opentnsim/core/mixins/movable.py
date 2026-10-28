@@ -213,8 +213,7 @@ class Movable(Locatable, Routable, Log):
         """Initialization"""
         super().__init__(geometry = geometry, *args, **kwargs)
 
-        # Validate speed (m/s)
-        if (
+        if ConsumesEnergy not in type(self).__mro__ and (
             not isinstance(v, (int, float))
             or isinstance(v, bool)
             or not math.isfinite(v)

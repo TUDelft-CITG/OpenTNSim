@@ -96,11 +96,16 @@ def logbook2eventtable(objs):
 
             edge = ()
             if "Sailing" in activity:
-                edge = tuple(re.findall(r"Sailing from node (\S+) to node (\S+) stop", activity))
+                edge = tuple(re.findall(r"Sailing from node (\S+) to node (\S+)", activity))
 
             duration_seconds = (stop_time - start_time).total_seconds()
-            if edge :
-                distance_meters = graph.edges[edge]['length_m']
+            if edge:
+                edge = edge[0]
+                try:
+                    distance_meters = graph.edges[edge]['length_m']
+                except:
+                    k = 0 #TODO: fix this -> look up of k in Multi(Di)Graph -> or add to node_name in logbook (k)
+                    distance_meters = graph.edges[edge + (k,)]['length_m']
             elif isinstance(start_location, Point):
                 distance_meters = calculate_distance_between_locations_along_edges(graph, start_location, stop_location)
             else:

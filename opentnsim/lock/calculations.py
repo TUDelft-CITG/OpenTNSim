@@ -72,10 +72,17 @@ def calculate_z(
         if not last_operations.empty:
             last_operation = last_operations.iloc[-1]
             last_operation_direction = last_operation.direction
+            last_operation_stop = last_operation.time_lock_operation_stop + pd.Timedelta(seconds = lock_chamber.gate_closing_time)
             if not last_operation_direction:
                 wlev_init = H_B_init
+                if lock_chamber.closing_gate_in_between_operations and last_operation_stop <= t_start:
+                    wlev_init = hydromanager._get_interpolated_hydrodynamic_series(last_operation_stop, end_node, "Water level")[0]
             else:
                 wlev_init = H_A_init
+                if lock_chamber.closing_gate_in_between_operations and last_operation_stop <= t_start:
+                    wlev_init = hydromanager._get_interpolated_hydrodynamic_series(last_operation_stop, start_node, "Water level")[0]
+        elif lock_chamber.closing_gate_in_between_operations:
+            wlev_init = lock_chamber.water_level_init
         elif node_open == start_node:
             wlev_init = H_A_init
         else:
@@ -85,6 +92,7 @@ def calculate_z(
         z[0:] = H_B_init - wlev_init
     else:
         z[0:] = H_A_init - wlev_init
+
     return z, wlev_init
 
 
@@ -239,8 +247,6 @@ def calculate_levelling_time(lock_chamber,
         if direction:
             node_open = lock_chamber.end_node
 
-    import time as timepy
-
     z, wlev_init = calculate_z(
         lock_chamber,
         t=t,
@@ -261,7 +267,6 @@ def calculate_levelling_time(lock_chamber,
 
     # if no function has been included: compute the levelling time based on Eq. 4.64 of Ports and Waterways Open Textbook (https://books.open.tudelft.nl/home/catalog/book/204)
     hydromanager = HydrodynamicDataManager()
-
     levelling_time, t, z = levelling_time_equation(
         t=t,
         z=z,

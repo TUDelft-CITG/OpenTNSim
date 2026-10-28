@@ -71,6 +71,8 @@ class OnEdge(SimpyObject):
 
 class HasCRS(Locatable):
     def __init__(self, *args, epsg=4326, **kwargs):
+        if epsg is None:
+            epsg = 4326
         self.epsg = epsg
         self.crs = pyproj.CRS.from_epsg(epsg) #checks epsg
         super().__init__(*args, **kwargs)
@@ -103,13 +105,13 @@ class Edge(Identifiable, HasCRS):
         node_0: Node,
         node_1: Node,
         geometry=None,
+        epsg = None,
         length_m=None,
         *args,
         **kwargs,
     ):
         kwargs.setdefault("name", (node_0.name, node_1.name))
-        print(kwargs)
-        super().__init__(geometry = geometry, *args, **kwargs)
+        super().__init__(geometry = geometry, epsg = epsg, *args, **kwargs)
 
         self.node_0 = node_0
         self.node_1 = node_1
@@ -202,9 +204,22 @@ class GraphMixin:
                     "must exist in the graph."
                 )
 
+            geometry = None
+            epsg = None
+            length_m = None
+            if 'geometry' in attr:
+                geometry = attr['geometry']
+            if 'epsg' in attr:
+                epsg = attr['epsg']
+            if 'length_m' in attr:
+                length_m = attr['length_m']
+            
             edge = Edge(
                 self.nodes[node_0]["node"],
                 self.nodes[node_1]["node"],
+                geometry,
+                epsg,
+                length_m,
             )
 
         elif not isinstance(edge, Edge):
