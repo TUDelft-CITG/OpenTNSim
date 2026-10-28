@@ -2,7 +2,6 @@ import math
 import numpy as np
 import networkx as nx
 import pyproj
-from scipy.ndimage import rotate
 from scipy.spatial import ConvexHull
 import shapely
 from shapely import reverse
@@ -14,14 +13,13 @@ from opentnsim.graph.utils import (
     remove_node_from_network,
     create_transformer, 
     get_trajectory, 
-    check_if_edge_in_graph, 
+    check_if_geometry_is_aligned_with_edge, 
     find_closest_edge,
     determine_edge_based_on_two_locations,
     get_largest_route_between_edges, 
     get_geometry_of_edge, 
     align_network_geometries_with_edge_directions, 
     node_path_to_edge_path,
-    get_shortest_route,
 )
 import warnings
 from pyproj import Geod
@@ -56,16 +54,11 @@ def calculate_depth(geom_start, geom_stop, graph):
     node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
 
     # Read from the graph data from vaarweginformatie.nl the General depth of each edge
-    try:
-        if "GeneralDepth" in graph.get_edge_data(node_start, node_end).keys():
-            depth = graph.get_edge_data(node_start, node_end)["GeneralDepth"]
-        else:
-            return np.nan  # if no depth data is available, return NaN
-    except:
-        depth = np.nan  # When there is no data of the depth available of this edge, it gives a message
-
-    h_0 = depth
-
+    if "GeneralDepth" in graph.get_edge_data(node_start, node_end).keys():
+        h_0 = graph.get_edge_data(node_start, node_end)["GeneralDepth"]
+    else:
+        return np.nan  # if no depth data is available, return NaN
+    
     # depth of waterway between two points
     return h_0
 
@@ -273,7 +266,7 @@ def calculate_location_over_edges(graph, edge, interpolation_length, crs_m = 'EP
     geometry = graph.edges[edge]["geometry"]
     if geometry is None or geometry.is_empty:
         return None
-    if not graph.is_directed() and not check_if_edge_in_graph(graph, edge):
+    if not graph.is_directed() and not check_if_geometry_is_aligned_with_edge(graph, edge):
          interpolation_length = graph.edges[edge]["length_m"] - interpolation_length
     geometry_m = transform_geometry(geometry, epsg_out = crs_m)
     interpolation_point_m = geometry_m.line_interpolate_point(interpolation_length)
@@ -381,9 +374,10 @@ def calculate_length_of_edge(graph, edge, current_crs="EPSG:4326", crs_meter="EP
     return length_m
 
 
-def calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_node, edge_route = None, vessel = None):
+def calculate_distance_along_geometry_to_nodes_of_edge(graph, start_node, end_node, edge_route = None):
     if edge_route is None:
-        route = get_shortest_route(graph,start_node,end_node,vessel)
+        route = nx.shortest_path(graph,start_node,end_node,weight='length_m')
+
         edge_route = node_path_to_edge_path(graph, route)
     length = 0
     for edge in edge_route:
@@ -615,3 +609,23 @@ def calculate_the_distances_from_doors_to_edge_nodes(graph, lock_edge, lock_edge
         warnings.warn(f"Distance_from_end_node_to_lock_doors_B not found")
     return distance_from_start_node_to_lock_doors_A, distance_from_end_node_to_lock_doors_B
 
+def calculate_length_m(geometry, epsg):
+    crs = pyproj.CRS.from_user_input(epsg)
+
+    if crs.is_geographic:
+        # Geodesic length on the CRS ellipsoid, returned in metres.
+        return crs.get_geod().geometry_length(geometry)
+
+    if crs.is_projected:
+        # Convert the projected CRS's coordinate units to metres.
+        axes = crs.axis_info
+        if not axes or axes[0].unit_conversion_factor is None:
+            raise ValueError(
+                f"Cannot determine coordinate units for CRS {crs}."
+            )
+
+        return geometry.length * axes[0].unit_conversion_factor
+
+    raise ValueError(
+        f"Cannot calculate length in metres for CRS {crs}."
+    )

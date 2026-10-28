@@ -573,19 +573,14 @@ def _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, di
         previous_planned_operation = previous_planned_operations.iloc[-1]
         if previous_planned_operation.direction == direction:
             empty_lock_operation_to_be_requested = True
-            operation_index += 1
             if operations_yet_to_be_processed.empty:
                 lock_operation_to_be_executed = True
     elif lock_chamber.gate_open_at_node != node_of_approach:
         lock_operation_to_be_executed = True
         empty_lock_operation_to_be_requested = True
         operation_index += 1
-        if lock_chamber.closing_gate_in_between_operations:
-            lock_operation_to_be_executed = False
-            empty_lock_operation_to_be_requested = False
-            operation_index -= 1
-
-    return operation_index, empty_lock_operation_to_be_requested, lock_operation_to_be_executed
+        
+    return operation_index, empty_lock_operation_to_be_requested, lock_operation_to_be_executed, previous_planned_operations.empty
 
 def _update_vessel_planning_for_delayed_arrival(lock_complex, vessel, delay):
     vessel_planning = lock_complex.vessel_planning
@@ -657,7 +652,7 @@ def _find_available_lock_operation(lock_complex, vessel, direction):
     most_suitable_lock_chamber = pd.DataFrame(columns=['time_lock_operation_start','operation_index','new_lock_operation','empty_operation_required'])
     for lock_chamber in suitable_lock_chambers:
         lock_edge = lock_chamber.edge
-        if direction:
+        if (direction and lock_chamber.aligned) or (not direction and not lock_chamber.aligned):
             lock_edge = (lock_chamber.edge[1], lock_chamber.edge[0]) + lock_chamber.edge[2:]
         route_to_lock_chamber = nx.shortest_path(graph, vessel.current_node, lock_edge[0])
         edge_route_to_lock_chamber = node_path_to_edge_path(vessel.env.graph, route_to_lock_chamber)
@@ -1417,7 +1412,10 @@ def _get_vessels_that_passed_the_lock_chamber(lock_chamber, t_start=None, t_stop
     vessel_ids = lock_complex.vessel_planning[lock_complex.vessel_planning.lock_chamber == lock_chamber.name].id
     if not len(vessel_ids):
         return []
-    vessels = np.array([itemgetter(*vessel_ids)(lock_complex.env.vessels)]).flatten()
+    all_vessels = {}
+    for _, vessel in lock_chamber.env.vessels.items():
+        all_vessels[vessel.id] = vessel
+    vessels = np.array([itemgetter(*vessel_ids)(all_vessels)]).flatten()
     if t_start is None and t_stop is None:
         return vessels
 

@@ -76,7 +76,6 @@ def calculate_z(
                 wlev_init = H_B_init
             else:
                 wlev_init = H_A_init
-
         elif node_open == start_node:
             wlev_init = H_A_init
         else:
@@ -2285,38 +2284,88 @@ def calculate_cycle_event_durations(Tc_df):
     opening_door_times_up = Tc_df_up['Opening gate time opposing side']
     sailing_out_times_up = Tc_df_up['Sailing-out time opposing side']
     total_cycle_time = Tc_df['Cycle duration'].sum()
+
+    def timedelta_stat(series, stat="mean"):
+        """Return a Timedelta in seconds, or NaT if no valid result exists."""
+        if series.empty:
+            return pd.NaT
+
+        value = getattr(series, stat)()
+
+        if pd.isna(value):
+            return pd.NaT
+
+        return pd.Timedelta(seconds=round(value))
+
+    def safe_fraction(numerator, denominator):
+        """Calculate a percentage, returning NaN if undefined."""
+        if pd.isna(denominator) or denominator == 0 or pd.isna(numerator):
+            return np.nan
+
+        return np.round(numerator / denominator * 100, 2)
+
+    def safe_average(series):
+        """Calculate a mean, returning NaN for empty or all-NaN Series."""
+        value = series.mean()
+        return np.nan if pd.isna(value) else value
+
     results = {
         'Number of cycles': int(np.floor(len(Tc_df_down))),
-        'Number of vessels': int(Tc_df['Number of downstream vessels'].sum()),
-        'Minimum cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].min())),
-        'Average cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].mean())),
-        'Maximum cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].max())),
-        'Total cycle time': pd.Timedelta(seconds=round(Tc_df['Cycle duration'].sum())),
-        'Average duration loop time upstream': pd.Timedelta(seconds=round(loop_times_up.mean())),
-        'Average fraction loop time upstream (%)': np.round(total_loop_times_up/total_cycle_time*100, 2),
-        'Average duration sailing in time upstream': pd.Timedelta(seconds=round(sailing_in_times_up.mean())),
-        'Average fraction sailing in time upstream (%)': np.round(total_sailing_in_times_up/total_cycle_time*100, 2),
-        'Average duration gate closing time upstream': pd.Timedelta(seconds=round(closing_door_times_up.mean())),
-        'Average fraction gate closing time upstream (%)': np.round(total_closing_door_times_up/total_cycle_time*100, 2),
-        'Average duration levelling time to downstream': pd.Timedelta(seconds=round(levelling_times_up.mean())),
-        'Average fraction levelling time to downstream (%)': np.round(total_levelling_times_to_up/total_cycle_time*100, 2),
-        'Average duration gate opening time downstream': pd.Timedelta(seconds=round(opening_door_times_down.mean())),
-        'Average fraction gate opening time downstream (%)': np.round(total_opening_door_times_down/total_cycle_time*100, 2),
-        'Average duration sailing out time downstream': pd.Timedelta(seconds=round(sailing_out_times_down.mean())),
-        'Average fraction sailing out time downstream (%)': np.round(total_sailing_out_times_down/total_cycle_time*100, 2),
-        'Average duration loop time downstream': pd.Timedelta(seconds=round(loop_times_down.mean())),
-        'Average fraction loop time downstream (%)': np.round(total_loop_times_down/total_cycle_time*100, 2),
-        'Average duration sailing in time downstream': pd.Timedelta(seconds=round(sailing_in_times_down.mean())),
-        'Average fraction sailing in time downstream (%)': np.round(total_sailing_in_times_down/total_cycle_time*100, 2),
-        'Average duration gate closing time downstream': pd.Timedelta(seconds=round(closing_door_times_down.mean())),
-        'Average fraction gate closing time downstream (%)': np.round(total_closing_door_times_down/total_cycle_time*100, 2),
-        'Average duration levelling time downstream': pd.Timedelta(seconds=round(levelling_times_down.mean())),
-        'Average fraction levelling time to upstream (%)': np.round(total_levelling_times_to_down/total_cycle_time*100, 2),
-        'Average duration gate opening time upstream': pd.Timedelta(seconds=round(opening_door_times_up.mean())),
-        'Average fraction gate opening time upstream (%)': np.round(total_opening_door_times_up/total_cycle_time*100, 2),
-        'Average duration sailing out time upstream': pd.Timedelta(seconds=round(sailing_out_times_up.mean())),
-        'Average fraction sailing out time upstream (%)': np.round(total_sailing_out_times_up/total_cycle_time*100, 2),
-        'Cycle-averaged traffic intensity (I_s_avg)': np.round(Tc_df['Intensity (I_s)'].sum()/len(Tc_df),2)
+        'Number of vessels': timedelta_stat(Tc_df['Number of downstream vessels'], 'sum'),
+        'Minimum cycle time': timedelta_stat(Tc_df['Cycle duration'], 'min'),
+        'Average cycle time': timedelta_stat(Tc_df['Cycle duration'], 'mean'),
+        'Maximum cycle time': timedelta_stat(Tc_df['Cycle duration'], 'max'),
+        'Total cycle time': timedelta_stat(Tc_df['Cycle duration'], 'sum'),
+        'Average duration loop time upstream':
+            pd.to_timedelta(safe_average(loop_times_up), unit='s'),
+        'Average fraction loop time upstream (%)':
+            safe_fraction(total_loop_times_up, total_cycle_time),
+        'Average duration sailing in time upstream':
+            pd.to_timedelta(safe_average(sailing_in_times_up), unit='s'),
+        'Average fraction sailing in time upstream (%)':
+            safe_fraction(total_sailing_in_times_up, total_cycle_time),
+        'Average duration gate closing time upstream':
+            pd.to_timedelta(safe_average(closing_door_times_up), unit='s'),
+        'Average fraction gate closing time upstream (%)':
+            safe_fraction(total_closing_door_times_up, total_cycle_time),
+        'Average duration levelling time to downstream':
+            pd.to_timedelta(safe_average(levelling_times_up), unit='s'),
+        'Average fraction levelling time to downstream (%)':
+            safe_fraction(total_levelling_times_to_up, total_cycle_time),
+        'Average duration gate opening time downstream':
+            pd.to_timedelta(safe_average(opening_door_times_down), unit='s'),
+        'Average fraction gate opening time downstream (%)':
+            safe_fraction(total_opening_door_times_down, total_cycle_time),
+        'Average duration sailing out time downstream':
+            pd.to_timedelta(safe_average(sailing_out_times_down), unit='s'),
+        'Average fraction sailing out time downstream (%)':
+            safe_fraction(total_sailing_out_times_down, total_cycle_time),
+        'Average duration loop time downstream':
+            pd.to_timedelta(safe_average(loop_times_down), unit='s'),
+        'Average fraction loop time downstream (%)':
+            safe_fraction(total_loop_times_down, total_cycle_time),
+        'Average duration sailing in time downstream':
+            pd.to_timedelta(safe_average(sailing_in_times_down), unit='s'),
+        'Average fraction sailing in time downstream (%)':
+            safe_fraction(total_sailing_in_times_down, total_cycle_time),
+        'Average duration gate closing time downstream':
+            pd.to_timedelta(safe_average(closing_door_times_down), unit='s'),
+        'Average fraction gate closing time downstream (%)':
+            safe_fraction(total_closing_door_times_down, total_cycle_time),
+        'Average duration levelling time downstream':
+            pd.to_timedelta(safe_average(levelling_times_down), unit='s'),
+        'Average fraction levelling time to upstream (%)':
+            safe_fraction(total_levelling_times_to_down, total_cycle_time),
+        'Average duration gate opening time upstream':
+            pd.to_timedelta(safe_average(opening_door_times_up), unit='s'),
+        'Average fraction gate opening time upstream (%)':
+            safe_fraction(total_opening_door_times_up, total_cycle_time),
+        'Average duration sailing out time upstream':
+            pd.to_timedelta(safe_average(sailing_out_times_up), unit='s'),
+        'Average fraction sailing out time upstream (%)':
+            safe_fraction(total_sailing_out_times_up, total_cycle_time),
+        'Cycle-averaged traffic intensity (I_s_avg)':
+            safe_average(Tc_df['Intensity (I_s)']),
     }
 
     sailing_in = (results['Average fraction sailing in time downstream (%)'] +

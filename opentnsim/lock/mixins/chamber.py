@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pandas as pd
 import networkx as nx
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 
 from opentnsim.constants import knots
 from opentnsim.core import HasResource, Identifiable, Log, HasLength, ExtraMetadata, Locatable
@@ -128,7 +128,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         if m is not None:
             (distance_from_start_node_to_lock_gate_A,
              distance_from_end_node_to_lock_gate_B) = calculate_lock_distances_to_nodes_of_edge_from_geometry(self, m=m)
-        
+         
         edge_length = self.env.graph.edges[self.edge]['length_m']
         calculated_edge_length = distance_from_start_node_to_lock_gate_A + self.lock_length + distance_from_end_node_to_lock_gate_B 
         if not self.geometry and not self.geometry_m and calculated_edge_length != edge_length:
@@ -146,11 +146,22 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         # gate information
         self.distance_from_start_node_to_lock_gate_A = distance_from_start_node_to_lock_gate_A
         self.distance_from_end_node_to_lock_gate_B = distance_from_end_node_to_lock_gate_B
-        geometry_gate_A = calculate_location_over_edges(self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A, crs_m = self.crs_m)
+        distance_from_start_node_to_lock_gate = distance_from_start_node_to_lock_gate_A
+        distance_from_end_node_to_lock_gate = distance_from_start_node_to_lock_gate + self.lock_length
+        if not check_if_geometry_is_aligned_with_edge(self.env.graph, self.edge):
+            distance_from_start_node_to_lock_gate = edge_length - distance_from_start_node_to_lock_gate_A
+            distance_from_end_node_to_lock_gate = distance_from_start_node_to_lock_gate - self.lock_length
+        geometry_gate_A = calculate_location_over_edges(self.env.graph, self.edge, distance_from_start_node_to_lock_gate, crs_m = self.crs_m)
         self.gate_A = IsLockGate(env = self.env, name = self.start_node, geometry = geometry_gate_A)
         self.levelling = HasResource(env = self.env, nr_resources = 1)
-        geometry_gate_B = calculate_location_over_edges(self.env.graph, self.edge, distance_from_start_node_to_lock_gate_A + self.lock_length, crs_m = self.crs_m)
+        geometry_gate_B = calculate_location_over_edges(self.env.graph, self.edge, distance_from_end_node_to_lock_gate, crs_m = self.crs_m)
         self.gate_B = IsLockGate(env = self.env, name = self.end_node, geometry = geometry_gate_B)
+
+        start_node_geometry = self.env.graph.nodes[edge[0]]['geometry']
+        self.aligned = True
+        if geometry_gate_A.distance(start_node_geometry) > geometry_gate_B.distance(start_node_geometry):
+            self.aligned = False
+        
         self.gate_opening_time = gate_opening_time
         self.gate_closing_time = gate_closing_time
         self.gate_A_open = True
@@ -173,7 +184,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.levelling_time = levelling_time
         self.time_step = time_step
         self.valve_opening_time = valve_opening_time
-        time = np.datetime64(datetime.datetime.fromtimestamp(self.env.now))
+        time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
         hydromanager = HydrodynamicDataManager()
         try:
             self.has_water_level = True
@@ -191,7 +202,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
             self.has_salinity = False
 
         if self.has_water_level:
-            time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))      
+            time_series = pd.date_range(
+                time, pd.Timestamp(self.env.simulation_stop), freq=pd.Timedelta(seconds=self.time_step))      
             wlev_series = hydromanager._get_interpolated_hydrodynamic_series(np.array(time_series),self.gate_open_at_node, "Water level",)
             if water_level_init is None:
                 water_level_init = wlev_series[0]
@@ -201,7 +213,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
             self.water_level = wlev_series
             self.water_level_init = water_level_init
         if self.has_salinity:
-            time_series = pd.date_range(time, self.env.simulation_stop, freq=pd.Timedelta(seconds=self.time_step))
+            time_series = pd.date_range(
+                time, pd.Timestamp(self.env.simulation_stop), freq=pd.Timedelta(seconds=self.time_step))
             sal_series = hydromanager._get_interpolated_hydrodynamic_series(np.array(time_series), self.gate_open_at_node,"Salinity", )
             if salinity_init is None:
                 salinity_init = sal_series[0]

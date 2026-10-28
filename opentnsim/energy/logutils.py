@@ -11,7 +11,6 @@ import pandas as pd
 # internal
 from opentnsim.graph.calculations import calculate_current, calculate_depth, calculate_width
 
-
 # %% ADD ENERGY ATTRIBUTES INTO EVENT TABLE
 def add_energy_attributes_to_eventtable(df, objs):
     """
@@ -56,20 +55,15 @@ def add_energy_attributes_to_eventtable(df, objs):
     df: pandas.DataFrame
         DataFrame with energy-related attributes added.
     """
-    from opentnsim.lock.logutils import add_lock_chamber_dimensions_in_energy_eventtable
-    env = objs[0].env
+    
     df = df.copy()
-    add_lock_chamber_dimensions_in_energy_eventtable(df, env)
+    from opentnsim.lock.logutils import add_lock_chamber_dimensions_in_energy_eventtable
+    df = add_lock_chamber_dimensions_in_energy_eventtable(df, objs)
 
     for index, row in df.iterrows():
-        
         # the generator option (next) is used to make sure we get the full copy of
         # the object found in the list
         obj = next((x for x in objs if x.id == row["object id"]), None)
-        if obj is None:
-            continue
-        if hasattr(obj, 'env'):
-            env = obj.env
 
         # get the depth from the edge sailed in the event (and check if squat effects
         # need to be considered
@@ -77,6 +71,9 @@ def add_energy_attributes_to_eventtable(df, objs):
             h_0 = calculate_depth(row["start location"], row["stop location"], obj.env.graph)
         else:
             h_0 = row["waterdepth (m)"]
+
+        if np.isnan(h_0):
+            continue
 
         if "waterway width (m)" not in row or pd.isna(row["waterway width (m)"]):
             w_0 = calculate_width(row["start location"], row["stop location"], obj.env.graph)

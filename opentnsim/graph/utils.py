@@ -758,10 +758,10 @@ def gdf_to_nx(gdf):
     return graph
 
 
-def get_trajectory(graph, node_1, node_2, vessel = None):
+def get_trajectory(graph, node_1, node_2):
     from opentnsim.graph.calculations import reverse_geometry
     geometry = None
-    route = get_shortest_route(graph, node_1, node_2, vessel)
+    route = nx.shortest_path(graph, node_1, node_2)
     is_multidigraph = check_graph_is_multidigraph_type(graph)
     edge_length_m = 0
     for edge in zip(route[:-1], route[1:]):
@@ -821,8 +821,8 @@ def check_if_geometry_is_aligned_with_edge(graph, edge):
     return aligned
 
 
-def get_edge_at_distance_from_node(graph, node_1, node_2, distance, vessel = None):
-    route = get_shortest_route(graph, node_1, node_2, vessel)
+def get_edge_at_distance_from_node(graph, node_1, node_2, distance):
+    route = nx.shortest_path(graph, node_1, node_2, weight='length_m')
     total_length = 0
     edge = None
     is_multidigraph = check_graph_is_multidigraph_type(graph)
@@ -849,6 +849,7 @@ def _get_edges_from_geometry(graph, geometry, crs_m, m=False):
         from opentnsim.graph.calculations import transform_geometry
         geometry = transform_geometry(geometry, epsg_in = crs_m, epsg_out = "EPSG:4326")
     edges = []
+    import matplotlib.pyplot as plt
     for edge in graph.edges:
         if geometry.intersects(graph.edges[edge]["geometry"]):
             edges.append(edge)
@@ -885,7 +886,7 @@ def get_edges_at_a_distance(graph, start_node, end_node, threshold):
         graph_copy.remove_edge(end_node, start_node)
 
     # Compute shortest-path distances from end_node
-    distances = nx.single_source_dijkstra_path_length(graph_copy, source=end_node, weight='length_m')
+    distances = nx.single_source_dijkstra_path_length(graph_copy, source=start_node, weight='length_m')
     crossing_edges = []
     for edge in graph_copy.edges:
         u, v = edge[:2]
@@ -897,7 +898,6 @@ def get_edges_at_a_distance(graph, start_node, end_node, threshold):
         # Check if threshold lies strictly between them
         if (du < threshold and dv > threshold) or (dv < threshold and du > threshold):
             crossing_edges.append(edge)
-
     return crossing_edges
 
 
@@ -1246,18 +1246,17 @@ def remove_node_from_network(graph, node):
     return graph
 
 
-def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge, vessel = None):
+def find_closest_node_of_edge_to_target_edge(graph, edge, target_edge):
     if edge == target_edge or edge == (target_edge[1], target_edge[0]):
         warnings.warn(f"Edges are the same, start_node of target_edge is returned.")
         return target_edge[0]
 
     routes = {}
-    for target_node in target_edge:
-        for node in edge:
-            route = get_shortest_route(graph, node, target_node, vessel)
-            length_route = len(route)
-            if node not in routes.keys() or length_route < routes[node]:
-                routes[node] = route
+    for target_node in target_edge[:2]:
+        for node in edge[:2]:
+            route = nx.shortest_path(graph, node, target_node, weight='length_m')
+            if node not in routes.keys():
+                routes[node] = len(route)
     closest_node_to_lock = min(routes, key=routes.get)
     return closest_node_to_lock
 
@@ -1349,35 +1348,144 @@ def get_previous_and_next_edge_of_vessel(vessel, route = None, node = None):
 
     return previous_edge, next_edge
 
-def get_shortest_route(graph, origin, destination, vessel = None):
+
+def get_edge_restrictions(edge_data):
+    min_draught = edge_data.get("min_draught", 0)
+    min_width = edge_data.get("min_width", 0)
+    min_length = edge_data.get("min_length", 0)
+    max_draught = edge_data.get("max_draught", float("inf"))
+    max_width = edge_data.get("max_width", float("inf"))
+    max_length = edge_data.get("max_length", float("inf"))
+    return {
+        'min_draught': min_draught,
+        'min_width': min_width,
+        'min_length': min_length,
+        'max_draught': max_draught,
+        'max_width': max_width,
+        'max_length': max_length,
+    }
+
+
+def check_if_route_is_suitable(vessel, route):
+    edge_route = node_path_to_edge_path(vessel.env.graph, route)
+    for edge in edge_route:
+        edge_data = vessel.env.graph.edges[edge]
+        edge_restrictions = get_edge_restrictions(edge_data)
+        edge_is_suitable = check_if_edge_is_suitable(vessel, edge_restrictions)
+        if not edge_is_suitable:
+            return False
+    return True
+
+
+def check_if_edge_is_suitable(vessel, edge_restrictions):
+    min_draught = edge_restrictions['min_draught']
+    min_width = edge_restrictions['min_width']
+    min_length = edge_restrictions['min_length']
+    max_draught = edge_restrictions['max_draught']
+    max_width = edge_restrictions['max_width']
+    max_length = edge_restrictions['max_length']
+
+    if vessel is not None:
+        if hasattr(vessel, 'T') and not (min_draught <= vessel.T <= max_draught):
+            return False
+
+        if hasattr(vessel, 'B') and not (min_width <= vessel.B <= max_width):
+            return False
+
+        if hasattr(vessel, 'L') and not (min_length <= vessel.L <= max_length):
+            return False
+        
+    return True
+
+
+def get_shortest_route(graph, origin, destination, vessel=None):
 
     def weight_by_restrictions(u, v, edge_data):
-        # Default restrictions
-        min_draught = edge_data.get("min_draught", 0)
-        min_width = edge_data.get("min_width", 0)
-        min_length = edge_data.get("min_length", 0)
+        if graph.is_multigraph():
+            valid_lengths = []
 
-        max_draught = edge_data.get("max_draught", float("inf"))
-        max_width = edge_data.get("max_width", float("inf"))
-        max_length = edge_data.get("max_length", float("inf"))
+            for key, attributes in edge_data.items():
+                edge_restrictions = get_edge_restrictions(attributes)
+                edge_is_suitable = check_if_edge_is_suitable(
+                    vessel, edge_restrictions
+                )
 
-        # Check vessel dimensions against restrictions
-        if vessel is not None:
-            if not (min_draught <= vessel.T <= max_draught):
-                return None
+                if edge_is_suitable:
+                    valid_lengths.append(attributes["length_m"])
 
-            if not (min_width <= vessel.B <= max_width):
-                return None
+            # None excludes this node-to-node transition
+            return min(valid_lengths) if valid_lengths else None
 
-            if not (min_length <= vessel.L <= max_length):
-                return None
+        # For Graph/DiGraph: edge_data is a single attribute dictionary
+        edge_restrictions = get_edge_restrictions(edge_data)
+        edge_is_suitable = check_if_edge_is_suitable(
+            vessel, edge_restrictions
+        )
 
-        # Edge is navigable: use its length as the cost
+        if not edge_is_suitable:
+            return None
+
         return edge_data["length_m"]
 
-    return nx.dijkstra_path(
+    route = nx.dijkstra_path(
         graph,
         source=origin,
         target=destination,
-        weight=weight_by_restrictions
+        weight=weight_by_restrictions,
     )
+
+    return route
+
+def validate_geometry(geometry, epsg):
+    crs = pyproj.CRS.from_user_input(epsg)
+
+    if geometry is None or geometry.is_empty:
+        raise ValueError("Geometry cannot be None or empty.")
+
+    if not geometry.is_valid:
+        raise ValueError("Geometry is invalid.")
+
+    # Check for NaN or infinite coordinate values
+    for coord in geometry.coords if geometry.geom_type == "Point" else []:
+        if not all(math.isfinite(value) for value in coord):
+            raise ValueError("Geometry contains non-finite coordinates.")
+
+    # For WGS84, explicitly validate longitude and latitude ranges
+    if crs.to_epsg() == 4326:
+        for x, y, *_ in geometry.coords:
+            if not (-180 <= x <= 180 and -90 <= y <= 90):
+                raise ValueError(
+                    f"Coordinates {(x, y)} are outside EPSG:4326 bounds."
+                )
+
+    return True
+
+
+def validate_route(graph, route):
+    if not route:
+        raise ValueError("Route cannot be empty.")
+
+    # Check that all nodes exist
+    for node in route:
+        if node not in graph:
+            raise ValueError(f"Route contains unknown node: {node!r}")
+
+    # Check that every consecutive edge exists
+    for u, v in zip(route[:-1], route[1:]):
+        if not graph.has_edge(u, v):
+            raise ValueError(
+                f"Route contains nonexistent edge: {u!r} -> {v!r}"
+            )
+
+    return True
+
+
+def check_node(node):
+    from opentnsim.core import Identifiable, Locatable
+    from opentnsim.graph.mixins import HasCRS
+    if not isinstance(node, Identifiable):
+        raise TypeError("node must be an instance of Identifiable.")
+    elif not isinstance(node, Locatable):
+        raise TypeError("node must be an instance of Locatable.")
+    elif not isinstance(node, HasCRS):
+        raise TypeError("node must have a coordinate reference system (HasCRS).")

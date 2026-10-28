@@ -78,6 +78,7 @@ class HydrodynamicDataManager:
             return None
 
         # determine the time_index
+        time = np.datetime64(time)
         if isinstance(self.hydrodynamic_data, xr.Dataset):
             time_index = np.absolute(self.hydrodynamic_data["TIME"].values - time).argmin()
         else:

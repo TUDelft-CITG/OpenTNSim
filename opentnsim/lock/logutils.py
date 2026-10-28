@@ -702,14 +702,20 @@ def calculate_cycle_information(lock_chamber):
     return Tc_df
 
 
-def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, env):
-    if env is None:
-        return df_eventtable_energy
-
+def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, objs):
     mask = df_eventtable_energy['subactivity name'].str.contains('lock', case=False, na=False)
     df_with_lock = df_eventtable_energy[mask]
     if df_with_lock.empty:
         return df_eventtable_energy
+
+    env = None
+    for index, row in df_eventtable_energy.iterrows():
+        obj = next((x for x in objs if x.id == row["object id"]), None)
+        if obj is None:
+            continue
+        if hasattr(obj, 'env'):
+            env = obj.env
+            break
 
     graph = env.graph
     edges_with_lock = [(u, v) for u, v, data in graph.edges(data=True) if "Lock chamber" in data]

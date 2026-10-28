@@ -12,7 +12,9 @@ from opentnsim.graph.calculations import calculate_location_over_edges, calculat
 from opentnsim.graph.mixins import OnEdge
 from opentnsim.graph.utils import (
     check_if_geometry_is_aligned_with_edge,
-    get_edges_at_a_distance,)
+    get_edges_at_a_distance,
+    find_closest_node_of_edge_to_target_edge,
+)
 from opentnsim.lock.calculations import calculate_sailing_time_to_waiting_area
 from opentnsim.lock.mixins.master import IsLockMaster
 from opentnsim.lock.utils import (
@@ -68,10 +70,6 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
                 index=pd.MultiIndex.from_arrays([[], [], []], names=("node_start", "node_stop", 'k'))
             )
 
-        # TODO: should not be here but in a "Vessel"-module
-        if not hasattr(self.env,'vessels'):
-            self.env.vessels = {}
-        self.env.vessels[self.id] = self
         self.has_registered = False
 
 
@@ -202,6 +200,8 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
         edge = lock_chamber.edge
         if direction:
             edge = lock_chamber.edge_reversed
+        if not lock_chamber.aligned:
+            edge = (edge[1], edge[0]) + edge[2:]
 
         # log the start of sailing to the position within the lock chamber
         self.log_entry_v0("Sailing to position in lock start", self.env.now, self.distance, lock_gate_position, )
@@ -215,8 +215,8 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
             distance_to_position_in_lock = lock_chamber.distance_from_end_node_to_lock_gate_B + \
                                            self.distance_position_from_first_lock_gate
             
-        self.position_in_lock = calculate_location_over_edges(self.env.graph, edge,
-                                                              distance_to_position_in_lock, crs_m=lock_chamber.crs_m)
+        self.position_in_lock = calculate_location_over_edges(
+            self.env.graph, edge, distance_to_position_in_lock, crs_m=lock_chamber.crs_m)
 
         # let vessel sail to the assigned location in the lock chamber
         vessel_speed = _get_vessel_sailing_speed_in_lock(lock_chamber, self, direction)
@@ -260,6 +260,7 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
 
     def leave_lock_complex(self, lock_chamber, direction):
         # determines the geometry objects of the lock based on the direction of the vessel TODO: function?
+        edge_length = lock_chamber.env.graph.edges[lock_chamber.edge]['length_m']
         if not direction:
             lock_chamber_edge = lock_chamber.edge
             lock_gate_position = lock_chamber.gate_B.geometry
@@ -270,7 +271,10 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
             lock_gate_position = lock_chamber.gate_A.geometry
             distance_to_crossing_point = lock_chamber.sailing_distance_to_crossing_point_A
             distance_on_lock_edge = lock_chamber.distance_from_start_node_to_lock_gate_A
-            
+
+        if not lock_chamber.aligned:
+            lock_chamber_edge = (lock_chamber_edge[1], lock_chamber_edge[0]) + lock_chamber_edge[2:]
+        
         if self.current_edge == lock_chamber_edge:
             start_geom = lock_gate_position
             distance_on_edge = distance_on_lock_edge
@@ -307,11 +311,12 @@ class LockComplexTraversable(Movable, Identifiable, VesselProperties, ExtraMetad
             if hasattr(self, 'leaving_lock_complex'):
                 delattr(self, 'leaving_lock_complex')
                 
-            edge = (self.current_edge[1],self.current_edge[0]) + self.current_edge[2:]
             distance_left_on_edge = distance_on_edge - distance_to_be_sailed
-            stop_geom = calculate_location_over_edges(self.env.graph, edge, distance_left_on_edge, crs_m = lock_chamber.crs_m)
             self.distance_left_on_edge = distance_left_on_edge
-
+            if lock_chamber_edge == lock_chamber.edge:
+                distance_left_on_edge = edge_length - distance_left_on_edge
+            stop_geom = calculate_location_over_edges(self.env.graph, lock_chamber.edge, distance_left_on_edge, crs_m = lock_chamber.crs_m)
+            
         # log that sailing out of the lock complex is starting
         self.log_entry_v0("Sailing to lock complex exit start", self.env.now, self.distance, start_geom)
 
@@ -382,13 +387,18 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
             else:
                 crs_m = 'EPSG:4087'
 
+        if not lock_chamber is None:
+            lock_edge = lock_chamber.edge
+            if not lock_chamber.aligned:
+                lock_edge = lock_chamber.edge[1], lock_chamber.edge[0] 
+
         if distance_from_lock_gate_A is not None:
             distance_from_start_node_to_lock_gate_A = lock_chamber.distance_from_start_node_to_lock_gate_A
             if distance_from_lock_gate_A <= distance_from_start_node_to_lock_gate_A:
                 edge = lock_chamber.edge
             else:
                 remaining_distance = distance_from_lock_gate_A - distance_from_start_node_to_lock_gate_A
-                edges = get_edges_at_a_distance(lock_chamber.env.graph, lock_chamber.edge[1], lock_chamber.edge[0], remaining_distance)
+                edges = get_edges_at_a_distance(lock_chamber.env.graph, lock_edge[0], lock_edge[1], remaining_distance)
                 if len(edges) != 1:
                     raise ValueError("There are multiple edges at the defined distance from the lock gate: set an edge and distance_from_edge_start.")
                 edge = edges[0]
@@ -399,7 +409,7 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
                 edge = lock_chamber.edge
             else:
                 remaining_distance = distance_from_lock_gate_B - distance_from_start_node_to_lock_gate_B
-                edges = get_edges_at_a_distance(lock_chamber.env.graph, lock_chamber.edge[0], lock_chamber.edge[1], remaining_distance)
+                edges = get_edges_at_a_distance(lock_chamber.env.graph, lock_edge[1], lock_edge[0], remaining_distance)
                 if len(edges) != 1:
                     raise ValueError("There are multiple edges at the defined distance from the lock gate: set an edge and distance_from_edge_start.")
                 edge = edges[0]
@@ -407,6 +417,12 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
         super().__init__(edge=edge, geometry=geometry, nr_resources=capacity, *args, **kwargs)
 
         edge_length = self.env.graph.edges[edge]["length_m"]
+        if lock_chamber is not None:
+            lock_edge_aligned = check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, lock_chamber.edge)
+            waiting_area_edge_aligned = check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, self.edge)
+            node_closest_to_lock_edge = find_closest_node_of_edge_to_target_edge(lock_chamber.env.graph, edge, lock_edge)
+            lock_edge_node_closest_to_waiting_area = find_closest_node_of_edge_to_target_edge(lock_chamber.env.graph, lock_edge, edge)               
+
         if distance_from_edge_start is not None:
             self.distance_from_edge_start = distance_from_edge_start
             if orientation is None:
@@ -416,44 +432,53 @@ class IsLockWaitingArea(HasResource, OnEdge, Locatable, Identifiable, Log):
         elif distance_from_lock_gate_A is not None:
             edge_start, edge_stop = edge[:2]
             edge_rev = (edge_stop, edge_start) + edge[2:]
+            self.orientation = 0
             if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
                 distance_from_edge_start = lock_chamber.distance_from_start_node_to_lock_gate_A - distance_from_lock_gate_A
+                if not lock_edge_aligned:
+                    self.edge = edge_rev
             else:
-                length = calculate_distance_along_geometry_to_nodes_of_edge(lock_chamber.env.graph, lock_chamber.edge[0], edge_stop)
-                remaining_length = distance_from_lock_gate_A- length - distance_from_start_node_to_lock_gate_A
+                length = calculate_distance_along_geometry_to_nodes_of_edge(lock_chamber.env.graph, lock_edge_node_closest_to_waiting_area, node_closest_to_lock_edge)
+                remaining_length = distance_from_lock_gate_A - length - distance_from_start_node_to_lock_gate_A
                 distance_from_edge_start = remaining_length
-                if check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, edge):
+                self.distance_from_edge_start = distance_from_edge_start
+                if node_closest_to_lock_edge == edge[0]:
                     distance_from_edge_start = edge_length - remaining_length
+                if not waiting_area_edge_aligned:
+                    self.edge = edge_rev
+                else:
+                    distance_from_edge_start = edge_length - distance_from_edge_start
             self.distance_from_edge_start = distance_from_edge_start
-            self.orientation = 0
+            
         elif distance_from_lock_gate_B is not None:
             edge_start, edge_stop = edge[:2]
             edge_rev = (edge_stop, edge_start) + edge[2:]
+            self.orientation = 1
             if edge == lock_chamber.edge or edge_rev == lock_chamber.edge:
                 distance_from_edge_start = lock_chamber.distance_from_end_node_to_lock_gate_B - distance_from_lock_gate_B
-                if edge == lock_chamber.edge:
-                    distance_from_edge_start = edge_length - distance_from_edge_start
+                if lock_edge_aligned:
+                    self.edge = edge_rev
             else:
-                length = calculate_distance_along_geometry_to_nodes_of_edge(lock_chamber.env.graph, lock_chamber.edge[1], edge_stop)
+                length = calculate_distance_along_geometry_to_nodes_of_edge(lock_chamber.env.graph, lock_edge_node_closest_to_waiting_area, node_closest_to_lock_edge)
                 remaining_length = distance_from_lock_gate_B - length - distance_from_start_node_to_lock_gate_B
                 distance_from_edge_start = remaining_length
-                if check_if_geometry_is_aligned_with_edge(lock_chamber.env.graph, edge):
+                self.distance_from_edge_start = distance_from_edge_start
+                if node_closest_to_lock_edge != edge[0]:
                     distance_from_edge_start = edge_length - remaining_length
-            self.distance_from_edge_start = distance_from_edge_start
-            self.orientation = 1
-        self.distance_waiting_area_to_end_edge = edge_length - distance_from_edge_start
+                if not waiting_area_edge_aligned:
+                    self.edge = edge_rev
+                    distance_from_edge_start = edge_length - distance_from_edge_start
+
+        self.distance_from_edge_start = distance_from_edge_start
+        self.distance_waiting_area_to_end_edge = edge_length - self.distance_from_edge_start
 
         if geometry is None:
-            self.geometry = calculate_location_over_edges(self.env.graph, self.edge, self.distance_from_edge_start, crs_m=crs_m)
+            self.geometry = calculate_location_over_edges(self.env.graph, self.edge, distance_from_edge_start, crs_m=crs_m)
         if 'Waiting area' not in self.env.graph.edges[self.edge].keys():
             self.env.graph.edges[self.edge]['Waiting area'] = [self]
         elif self not in self.env.graph.edges[self.edge]['Waiting area']:
             self.env.graph.edges[self.edge]['Waiting area'].append(self)
-
-
-        if lock_chamber is not None and self.orientation and self.edge == lock_chamber.edge:
-            self.distance_from_edge_start = edge_length - distance_from_edge_start
-            self.distance_waiting_area_to_end_edge = distance_from_edge_start
+            
 
 @inherit_docstring
 class IsLockComplex(SimpyObject, Identifiable, IsLockMaster):

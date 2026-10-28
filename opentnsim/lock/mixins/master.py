@@ -279,10 +279,17 @@ class IsLockMaster:
         empty_lock_operation_to_be_requested = False
         if new_operation:
             new_lockage_info = _check_if_empty_lock_operation_is_required(lock_chamber, operation_index, direction)
-            _, empty_lock_operation_to_be_requested, lock_operation_to_be_executed = new_lockage_info
+            operation_index, empty_lock_operation_to_be_requested, lock_operation_to_be_executed, first_operation = new_lockage_info
             if empty_lock_operation_to_be_requested:
-                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1,
-                                                                                   1 - direction)
+                if first_operation:
+                    operation_mask = self.operation_planning.lock_chamber == lock_chamber.name
+                    operation_mask2 = self.operation_planning.operation_index >= operation_index - 1
+                    self.operation_planning.loc[operation_mask & operation_mask2, 'operation_index'] += 1
+                    self.vessel_planning
+                    vessel_mask = self.vessel_planning.lock_chamber == lock_chamber.name
+                    vessel_mask2 = self.vessel_planning.operation_index >= operation_index - 1
+                    self.vessel_planning.loc[vessel_mask & vessel_mask2, 'operation_index'] += 1
+                _ = calculate_empty_lock_operation_information_and_update_planning(lock_chamber, operation_index - 1, 1 - direction)
                 lock_chamber.lock_complex.operation_planning.sort_values('time_lock_operation_start', inplace=True)
                 if lock_operation_to_be_executed:
                     node_of_approach, _ = _get_lock_operation_to_and_from_node(lock_chamber, direction)

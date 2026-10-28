@@ -13,6 +13,7 @@ from typing import Union
 
 # math packages
 import numpy as np
+import math
 
 # spatial libraries
 import pyproj
@@ -27,71 +28,110 @@ import opentnsim.energy.strategy
 from openclsim.core import SimpyObject, Locatable, Log
 from opentnsim.core import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
-from opentnsim.graph.utils import get_length_of_edge, node_path_to_edge_path
+from opentnsim.graph.utils import (
+    get_length_of_edge, 
+    node_path_to_edge_path, 
+    get_shortest_route,
+    check_if_route_is_suitable,
+    validate_route,
+)
 
 # get logger
 logger = logging.getLogger(__name__)
 
 
 class Routable(SimpyObject):
-    """Mixin class: Something with a route (networkx format)
+    """Mixin for an object travelling between two network nodes."""
+    __parameter_requirements__ = [
+        ("route",),
+        ("origin", "destination"),
+    ]
 
-    Parameters
-    ----------
-    route: list
-        list of node-IDs
-    complete_path: list, optional
-        ???
-    args, kwargs:
-        passed to SimpyObject. Must at least contain parameter env: simpy.Environment.
-
-    Attributes
-    -----------
-    route: list
-        list of node-IDs
-    complete_path: list, optional
-        ???
-    position_on_route: int
-        index of position on the route
-    """
-
-    def __init__(self, route, complete_path=None, *args, **kwargs):
-        """Initialization"""
-        # check env input
-        env = kwargs.get("env")
-        # if env is given and env is not None
-        if env is not None:
-            has_fg = hasattr(env, "FG")
-            has_graph = hasattr(env, "graph")
-            if has_fg and not has_graph:
-                warnings.warn(".FG attribute has been renamed to .graph, please update your code", DeprecationWarning)
-                env.graph = env.FG
-            assert (
-                has_fg or has_graph
-            ), "Routable expects `.graph` (a networkx graph) to be present as an attribute on the environment"
-
-        # initialization
+    def __init__(
+        self,
+        origin = None,
+        destination = None,
+        route = None,
+        routing_strategy = 'shortest_route',
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
+
+        if not hasattr(self.env, 'graph'):
+            raise ValueError(f"Environment has no graph.")
+
+        has_route = route is not None
+        has_endpoints = origin is not None and destination is not None
+
+        if not has_route and not has_endpoints:
+            raise ValueError(
+                "Provide either 'route' or both 'origin' and 'destination'."
+            )
+
+        if has_route and (origin is not None or destination is not None):
+            raise ValueError(
+                "Provide either 'route' or 'origin' and 'destination', not both."
+            )
+
         self.route = route
-        self.edge_route = node_path_to_edge_path(env.graph, route)
 
-        # start at start of route
+        if has_route:
+            self.origin = route[0]
+            self.destination = route[-1]
+        else:
+            self.origin = origin
+            self.destination = destination
+
+        self.routing_strategy = routing_strategy
+        self.edge_route = None
         self.position_on_route = 0
-        self.complete_path = complete_path
 
-        self.check_attributes()
+        if self.origin not in self.env.graph:
+            raise ValueError(f"Origin not in env.graph.")
+        
+        if self.destination not in self.env.graph:
+            raise ValueError(f"Destination not in env.graph.")
 
-    def check_attributes(self):
-        """Check if all required attributes are set."""
-        # check if route is set
-        if self.route is None or not isinstance(self.route, list):
-            raise ValueError("Routable requires a route (list of node IDs) to be set")
-        # check if env is set
-        if not hasattr(self, "env") or not isinstance(self.env, simpy.Environment):
-            raise ValueError("Routable requires an environment (simpy.Environment) to be set")
-        # check if route is on graph
-        if not all(node in self.graph.nodes for node in self.route):
-            raise ValueError("Routable route must be on the graph")
+        # Generate route during initialization
+        if route is None:
+            self.route = self.set_route()
+        else:
+            route_exists = validate_route(self.env.graph, self.route)
+            if not route_exists:
+                raise ValueError(f"Route does not exist.")
+            route_suitable = check_if_route_is_suitable(self, self.route)
+            if not route_suitable:
+                raise ValueError(f"Route impossible for vessel.")
+            
+        self.edge_route = node_path_to_edge_path(self.env.graph, self.route)
+        self.check_attributes(self.env.graph)
+
+    def set_route(self):
+
+        if self.routing_strategy == 'shortest_route':
+            route = get_shortest_route(
+                graph = self.graph,
+                origin = self.origin,
+                destination = self.destination,
+                vessel = self,
+            )
+
+        else:
+            raise ValueError(f"Unknown routing strategy: {self.routing_strategy!r}")
+
+        return route
+
+    def check_attributes(self, graph):
+        if not self.route:
+            raise ValueError("Routable requires a non-empty route.")
+
+        if not all(node in graph.nodes for node in self.route):
+            raise ValueError("Route contains nodes not present in the graph.")
+
+        if self.route[0] != self.origin or self.route[-1] != self.destination:
+            raise ValueError("Route endpoints do not match origin and destination.")
+
 
     @property
     def graph(self):
@@ -129,8 +169,6 @@ class Movable(Locatable, Routable, Log):
     node: str, optional
         passed to Locatable,
     route: list, optional
-        passed to Routable,
-    complete_path: list, optional
         passed to Routable,
 
     Attributes
@@ -171,9 +209,21 @@ class Movable(Locatable, Routable, Log):
 
     """
 
-    def __init__(self, v: float, *args, **kwargs):
+    def __init__(self, v: float, geometry = None, *args, **kwargs):
         """Initialization"""
-        super().__init__(*args, **kwargs)
+        super().__init__(geometry = geometry, *args, **kwargs)
+
+        # Validate speed (m/s)
+        if (
+            not isinstance(v, (int, float))
+            or isinstance(v, bool)
+            or not math.isfinite(v)
+            or v <= 0
+        ):
+            raise ValueError(
+                "v must be a finite, positive speed in m/s."
+            )
+        
         self.v = v
         self.distance = 0
         self.on_pass_node_functions = []
@@ -183,8 +233,6 @@ class Movable(Locatable, Routable, Log):
         self.on_look_ahead_to_edge_functions = []
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
-        self._check_attributes()
-
         # resource memory for passing nodes and edges
         self.req = None
         self.resource = None
@@ -192,17 +240,11 @@ class Movable(Locatable, Routable, Log):
         # keep track of distance travelled on edge
         self.distance_left_on_edge = np.nan
 
+        # Set default geometry if the caller did not provide one
+        if geometry is None:
+            start_node = self.origin
+            self.geometry = self.env.graph.nodes[start_node]["geometry"]
 
-    def _check_attributes(self):
-        """Check if all required attributes are set."""
-        # each node on route should have a geometry
-        geoms = nx.get_node_attributes(self.graph, "geometry")
-        if not all(node in geoms for node in self.route):
-            raise ValueError(
-                "Nodes on route must have a geometry attribute. Missing geometries for nodes: {}".format(
-                    [node for node in self.route if node not in geoms]
-                )
-            )
 
     @property
     def current_node(self) -> Union[str, None]:
@@ -312,7 +354,8 @@ class Movable(Locatable, Routable, Log):
         yield from self._move_to_start()
 
         # Set edge_route based on route
-        self.edge_route = node_path_to_edge_path(self.graph, self.route)  
+        if not hasattr(self, 'edge_route'):
+            self.edge_route = node_path_to_edge_path(self.graph, self.route)  
             
         # look ahead to first node
         self.position_on_route = 0
@@ -717,8 +760,6 @@ class ContainerDependentMovable(Movable, HasContainer):
     node: str, optional
         passed to Movable,
     route: list, optional
-        passed to Movable,
-    complete_path: list, optional
         passed to Movable,
     Capacity: float
         passed to HasContainer, the capacity of the container, which may either be continuous (like water) or discrete (like apples)

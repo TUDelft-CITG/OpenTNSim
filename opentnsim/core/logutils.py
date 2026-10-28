@@ -3,17 +3,16 @@
 Core utiltities related to logging.
 """
 
-# %% IMPORT DEPENDENCIES
 # generic
 import pandas as pd
-from opentnsim.graph.utils import get_trajectory_between_locations, find_closest_node, find_closest_edge
-from shapely.ops import split, linemerge, snap
-from shapely.geometry import MultiPoint, MultiLineString, LineString, Point
+from opentnsim.graph.utils import find_closest_node, find_closest_edge
+from shapely.ops import split, snap
+from shapely.geometry import MultiPoint, LineString, Point
 import geopandas as gpd
 import networkx as nx
+import re
 
 # internal
-import opentnsim.graph.mixins as mixins
 from opentnsim.graph.calculations import calculate_distance_between_locations_along_edges
 
 def logbook2eventtable(objs):
@@ -95,8 +94,14 @@ def logbook2eventtable(objs):
             start_location = start_row["Geometry"]
             stop_location = stop_row["Geometry"]
 
+            edge = ()
+            if "Sailing" in activity:
+                edge = tuple(re.findall(r"Sailing from node (\S+) to node (\S+) stop", activity))
+
             duration_seconds = (stop_time - start_time).total_seconds()
-            if isinstance(start_location, Point):
+            if edge :
+                distance_meters = graph.edges[edge]['length_m']
+            elif isinstance(start_location, Point):
                 distance_meters = calculate_distance_between_locations_along_edges(graph, start_location, stop_location)
             else:
                 distance_meters = None

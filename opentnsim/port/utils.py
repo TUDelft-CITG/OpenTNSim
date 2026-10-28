@@ -534,6 +534,7 @@ def provide_waiting_time_for_inbound_tidal_window(vessel, route, time_start=None
     waiting_time = waiting_time.total_seconds()
     return waiting_time
 
+
 def provide_waiting_time_for_outbound_tidal_window(vessel, route, delay=0):
     vessel.bound = "outbound"
     vessel._T -= vessel.metadata["(un)loading"][0]

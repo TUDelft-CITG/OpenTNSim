@@ -5,21 +5,20 @@
 import logging
 import os
 import pickle
-from itertools import cycle
 
 # package(s) for data handling
 import networkx as nx
 import functools
 import yaml
 import io
+import warnings
+import math
 
 # spatial libraries
 import pyproj
 import requests
 import requests_cache
-import shapely.geometry
-from shapely.geometry import LineString
-from shapely.ops import transform
+from shapely.geometry import Point, LineString, shape
 
 # package(s) related to the simulation
 import simpy
@@ -27,7 +26,8 @@ import simpy
 # OpenTNSim
 import opentnsim
 from opentnsim.core import Identifiable, Locatable, SimpyObject
-from opentnsim.graph import utils
+from opentnsim.graph.utils import validate_geometry, check_node
+from opentnsim.graph.calculations import calculate_length_m, transform_geometry
 from opentnsim.graph.visualizations import plot_graph
 
 logger = logging.getLogger(__name__)
@@ -69,222 +69,333 @@ class OnEdge(SimpyObject):
             raise ValueError(f"Node {edge} does not exist in the graph.")
 
 
-class Node(Identifiable, Locatable):
+class HasCRS(Locatable):
+    def __init__(self, *args, epsg=4326, **kwargs):
+        self.epsg = epsg
+        self.crs = pyproj.CRS.from_epsg(epsg) #checks epsg
+        super().__init__(*args, **kwargs)
+        if not hasattr(self, 'geometry'):
+            raise ValueError(f"Object does not have a geometry, but does have a coordinate reference system (crs).")
+
+        if self.geometry is not None:
+            validate_geometry(self.geometry, self.crs)
+
+
+class Node(Identifiable, HasCRS):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-
-class DiGraph:
-
-    def __init__(self, edges, weights=[1], geometries=[None], edges_info={}, crs="EPSG:4326", bidirectional=True, *args, **kwargs):
-        """edges: a list of tuples of two Node-objects"""
-
-        super().__init__(*args, **kwargs)
-        self.graph = nx.DiGraph()
-        CRS = pyproj.CRS(crs)
-        wgs84 = pyproj.CRS("EPSG:4326")
-        CRS_to_wgs84 = pyproj.Transformer.from_crs(CRS, wgs84, always_xy=True).transform
-        for index, ((node_I, node_II), weight, geometry, edge_info) in enumerate(
-            zip(edges, cycle(weights), cycle(geometries), cycle([edges_info]))
-        ):
-            if node_I.name not in self.graph.nodes:
-                node_I.geometry = transform(CRS_to_wgs84, node_I.geometry)
-                self.graph.add_node(node_I.name, geometry=node_I.geometry)
-            if node_II.name not in self.graph.nodes:
-                node_II.geometry = transform(CRS_to_wgs84, node_II.geometry)
-                self.graph.add_node(node_II.name, geometry=node_II.geometry)
-            if not geometry:
-                geometry = LineString([node_I.geometry, node_II.geometry])
-            geod = pyproj.Geod(ellps="WGS84")
-            length = geod.geometry_length(geometry)
-            Info = {}
-            for key, value in edge_info.items():
-                Info[key] = value[index]
-            self.graph.add_edge(
-                node_I.name,
-                node_II.name,
-                weight=weight,
-                geometry=geometry,
-                length=length,
-                Info=Info,
+        if not isinstance(self.geometry, Point):
+            raise ValueError(
+                "Node geometry should be a shapely.geometry.Point."
             )
-            if bidirectional:
-                self.graph.add_edge(
-                    node_II.name,
-                    node_I.name,
-                    weight=weight,
-                    geometry=geometry.reverse(),
-                    length=length,
-                    Info=Info,
+        if self.geometry.is_empty:
+            raise ValueError(
+                "Node geometry should not be empty."
+            )
+
+
+class Edge(Identifiable, HasCRS):
+
+    def __init__(
+        self,
+        node_0: Node,
+        node_1: Node,
+        geometry=None,
+        length_m=None,
+        *args,
+        **kwargs,
+    ):
+        kwargs.setdefault("name", (node_0.name, node_1.name))
+        print(kwargs)
+        super().__init__(geometry = geometry, *args, **kwargs)
+
+        self.node_0 = node_0
+        self.node_1 = node_1
+
+        node_0_geometry = node_0.geometry
+        node_1_geometry = node_1.geometry
+        if self.geometry is None:
+            if node_0.epsg != self.epsg:
+                node_0_geometry = transform_geometry(node_0_geometry, node_0.epsg, self.epsg)
+            if node_1.epsg != self.epsg:
+                node_1_geometry = transform_geometry(node_1_geometry, node_1.epsg, self.epsg)
+            self.geometry = LineString([
+                node_0_geometry.coords[0],
+                node_1_geometry.coords[0],
+            ])
+
+        if not isinstance(self.geometry, LineString):
+            raise ValueError(
+                "Edge geometry should be a LineString."
+            )
+        if self.geometry.is_empty:
+            raise ValueError(
+                "Edge geometry should not be empty."
+            )
+
+        if length_m is None:
+            length_m = calculate_length_m(self.geometry, self.crs)
+
+        if not math.isfinite(length_m) or length_m < 0:
+            raise ValueError("length_m must be a finite, non-negative value.")
+
+        self.length_m = length_m
+
+class GraphMixin:
+    """Shared functionality for directed and undirected spatial graphs."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+    def add_node(self, node: Node | None = None, **attr) -> None:
+        """Add a Node object or construct one from keyword attributes."""
+
+        if node is not None:
+            check_node(node)
+            attributes = {**vars(node), **attr, "node": node}
+        else:
+            try:
+                node = Node(**attr)
+            except TypeError as exc:
+                raise TypeError(
+                    "When adding a node by attributes, provide the "
+                    "required Node constructor arguments, including name "
+                    "and geometry."
+                ) from exc
+
+            attributes = {**vars(node), "node": node}
+
+        if node.name in self:
+            warnings.warn(
+                f"Node name {node.name!r} already exists. Skipping node.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return
+
+        if node.epsg != 4326:
+            node.geometry = transform_geometry(node.geometry, node.epsg, 4326)
+            node.epsg = 4326
+            node.crs = pyproj.CRS.from_epsg(node.epsg)
+        attributes["geometry"] = node.geometry
+
+        super().add_node(node.name, **attributes)
+
+    def add_edge(self, edge: Edge | tuple[str, str], **attr) -> None:
+        """Add an Edge object or construct one from two node names."""
+
+
+        if isinstance(edge, tuple):
+            if len(edge) != 2:
+                raise ValueError(
+                    "A tuple edge must contain exactly two node names."
                 )
 
+            node_0, node_1 = edge
 
-class Graph:
-    """General networkx object
+            if node_0 not in self or node_1 not in self:
+                raise ValueError(
+                    f"Both nodes {node_0!r} and {node_1!r} "
+                    "must exist in the graph."
+                )
 
-    Initialize a nx.Graph() element
+            edge = Edge(
+                self.nodes[node_0]["node"],
+                self.nodes[node_1]["node"],
+            )
 
-    Attributes
-    ----------
-    graph : networkx.Graph
-        The graph object
-    graph_info : dict
-        The graph information
-    """
+        elif not isinstance(edge, Edge):
+            if not isinstance(edge, Identifiable):
+                raise TypeError("edge must be an instance of Identifiable.")
+            elif not isinstance(edge, HasCRS):
+                raise TypeError("edge must have a coordinate reference system (HasCRS).")
+            elif not hasattr(edge, 'node_0'):
+                raise ValueError("edge must have an attributes 'node_0' of a Node class type.")
+            elif hasattr(edge, 'node_0'):
+                node = edge.node_0
+                try:
+                    check_node(node)
+                except ValueError as e:
+                    raise ValueError(f"'node_0' is not of Node class type: {e}.")
+            elif not hasattr(edge, 'node_1'):
+                raise ValueError("edge must have an attributes 'node_1' of a Node class type.")
+            elif hasattr(edge, 'node_1'):
+                node = edge.node_1
+                try:
+                    check_node(node)
+                except ValueError as e:
+                    raise ValueError(f"'node_1' is not of Node class type: {e}.")
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.graph = nx.Graph()
-        self.graph_info = utils.info(self.graph)
+        u = edge.node_0.name
+        v = edge.node_1.name
+
+        if u not in self or v not in self:
+            raise ValueError(
+                f"Both nodes {u!r} and {v!r} must exist in the graph."
+            )
+
+        if not self.is_multigraph() and self.has_edge(u, v):
+            if self.is_directed():
+                message = (
+                    f"A directed edge from {u!r} to {v!r} already exists. "
+                    "Skipping this edge."
+                )
+            else:
+                message = (
+                    f"An edge between {u!r} and {v!r} already exists. "
+                    "Skipping this edge."
+                )
+
+            warnings.warn(message, UserWarning, stacklevel=2)
+            return
+
+        if edge.epsg != 4326:
+            edge.geometry = transform_geometry(edge.geometry, edge.epsg, 4326)
+        attributes = {
+            **vars(edge),
+            **attr,
+            "geometry": edge.geometry,
+        }
+
+        super().add_edge(u, v, **attributes)
 
 
-    def from_shape(self, file_location, shapefile, simplify=True, strict=True):
-        """Generate nx.Graph() from shapefile
-        Make sure to install the required package gdal.
+    def from_shape(
+        self,
+        file_location,
+        shapefile,
+        simplify=True,
+        strict=True,
+    ):
+        """Load a graph from a shapefile using the legacy GDAL workflow."""
 
-        run pip show gdal to check if gdal is installed.
+        from osgeo import ogr
 
-        Parameters
-        ----------
-        file_location: Path
-            location on server of the shapefile
-        shapefile: str
-            name of the shapefile (including .shp)
-        simplify: bool
-            if True, the graph is simplified
-        strict: bool
-            if True, the graph is strict
-        """
-        from osgeo import ogr, osr
-
-        # Create graph
-        self.graph = opentnsim.core.utils.read_shp(os.path.join(file_location, shapefile), simplify=simplify, strict=strict)
+        self.graph = opentnsim.core.utils.read_shp(
+            os.path.join(file_location, shapefile),
+            simplify=simplify,
+            strict=strict,
+        )
         self.graph_info = opentnsim.core.utils.info(self.graph)
 
-        # Get spatial reference
         driver = ogr.GetDriverByName("ESRI Shapefile")
-        dataset = driver.Open(os.path.join(file_location, shapefile))
+        dataset = driver.Open(
+            os.path.join(file_location, shapefile)
+        )
+
+        if dataset is None:
+            raise ValueError(
+                f"Could not open shapefile {shapefile!r}."
+            )
+
         self.SpatialRef = dataset.GetLayer().GetSpatialRef()
 
-
     def transform_projection(self, to_EPSG):
-        """create a transformation object to transform the graph to a new projection
-        Make sure to install the required package gdal.
+        """Create a legacy GDAL coordinate transformation."""
 
-        run pip show gdal to check if gdal is installed.
-        Parameters
-        ----------
-        to_EPSG: int
-            The EPSG code to transform the graph to
-        """
+        from osgeo import osr
 
-        from osgeo import ogr, osr
+        out_spatial_ref = osr.SpatialReference()
+        out_spatial_ref.ImportFromEPSG(to_EPSG)
 
-        outSpatialRef = osr.SpatialReference()
-        outSpatialRef.ImportFromEPSG(to_EPSG)
-
-        # Transform the coordinates
-        transform = osr.CoordinateTransformation(self.SpatialRef, outSpatialRef)
-
-        return transform
-
+        return osr.CoordinateTransformation(
+            self.SpatialRef,
+            out_spatial_ref,
+        )
 
     def change_projection(self, transform, point):
-        """Transform one point on the graph
+        """Transform a point using a legacy GDAL transformation."""
 
-        Make sure to install the required package gdal (for osgeo).
-        run pip show gdal to check if gdal is installed.
-
-        Parameters
-        ----------
-        transform:
-        """
-        from osgeo import ogr, osr
+        from osgeo import ogr
 
         point = ogr.CreateGeometryFromWkt(str(point))
-
         point.Transform(transform)
-        point.ExportToWkt()
 
         return point.GetX(), point.GetY()
 
-
     def create_graph_new_projection(self, to_EPSG=4326):
-        """redefine self.graph with the new projection
+        """Rebuild the legacy self.graph using a new projection."""
 
-        Make sure to install the required package gdal (for osgeo).
-        run pip show gdal to check if gdal is installed.
-
-        Parameters
-        ----------
-        to_EPSG: int
-            The EPSG code to transform the graph to
-        """
         new_graph = nx.Graph()
         transform = self.transform_projection(to_EPSG)
 
-        # Required to prevent loop-in-loop
         nodes_dict = {}
 
-        # Add original nodes and edges to new graph
-        for i, node in enumerate(self.graph.nodes(data=True)):
-            # TODO: depending on the coordinate transformation x, y might refer to x,y or latitude, longitude.
-            # Shapely assumes always x/lon, y/lat
+        for old_node, data in self.graph.nodes(data=True):
             coordinates = self.change_projection(
                 transform,
-                shapely.geometry.Point(list(self.graph.nodes)[i][0], list(self.graph.nodes)[i][1]),
+                Point(old_node[0], old_node[1]),
             )
-            name = "({:f}, {:f})".format(coordinates[1], coordinates[0])
-            geometry = shapely.geometry.Point(coordinates[1], coordinates[0])
 
-            nodes_dict[list(self.graph.nodes)[i]] = name
-            new_graph.add_node(name, name=name, Position=(coordinates[1], coordinates[0]), geometry=geometry, Old=node[1])
+            # Preserve the existing coordinate ordering and naming behavior.
+            name = "({:f}, {:f})".format(
+                coordinates[1],
+                coordinates[0],
+            )
+            geometry = Point(coordinates[1], coordinates[0])
 
-        for edge in self.graph.edges(data=True):
-            node_1 = nodes_dict[edge[0]]
-            node_2 = nodes_dict[edge[1]]
+            nodes_dict[old_node] = name
 
-            new_graph.add_edge(node_1, node_2, Info=edge[2])
+            new_graph.add_node(
+                name,
+                name=name,
+                Position=(coordinates[1], coordinates[0]),
+                geometry=geometry,
+                Old=data,
+            )
+
+        for u, v, data in self.graph.edges(data=True):
+            new_graph.add_edge(
+                nodes_dict[u],
+                nodes_dict[v],
+                Info=data,
+            )
 
         new_graph = new_graph.to_directed()
-
-        if opentnsim.utils.info(new_graph) != self.graph_info:
-            self.graph = new_graph
-            self.graph_info = opentnsim.utils.info(new_graph)
-        else:
-            print("Conversion did not create an exact similar graph")
-
-            print("")
-            print("Original graph")
-            print(self.graph_info)
-
-            print("")
-            print("New graph")
-            print(opentnsim.utils.info(new_graph))
-
-            self.graph = new_graph
-            self.graph_info = opentnsim.utils.info(new_graph)
-
+        self.graph = new_graph
+        self.graph_info = opentnsim.utils.info(new_graph)
 
     def add_resources(self, edges, resources, environment):
-        """Add resources to the edges of the graph
+        """Attach SimPy resources to edges in the legacy self.graph."""
 
-        Parameters
-        ----------
-        edges: list
-            List of edges to which the resources should be added
-        resources: list
-            List of resources to be added to the edges. Should be same length as edges
-        environment: simpy.Environment
-            The simpy environment to which the resources should be added
-        """
-        for i, edge in enumerate(edges):
-            self.graph.edges[edge]["Resources"] = simpy.Resource(environment, capacity=resources[i])
+        if len(edges) != len(resources):
+            raise ValueError(
+                "edges and resources must have the same length."
+            )
+
+        for edge, capacity in zip(edges, resources):
+            self.graph.edges[edge]["Resources"] = simpy.Resource(
+                environment,
+                capacity=capacity,
+            )
 
     def plot(self):
-        fig = plot_graph(self, static = True)
-        return fig
+        """Plot this graph."""
+
+        return plot_graph(self, static=True)
+
+
+class Graph(GraphMixin, nx.Graph):
+    """Undirected graph with CRS-aware nodes and edges."""
+    pass
+
+
+class DiGraph(GraphMixin, nx.DiGraph):
+    """Directed graph with CRS-aware nodes and edges."""
+    pass
+
+
+class MultiGraph(GraphMixin, nx.MultiGraph):
+    """Undirected graph that supports parallel edges."""
+    pass
+
+
+class MultiDiGraph(GraphMixin, nx.MultiDiGraph):
+    """Directed graph that supports parallel edges."""
+    pass
 
 
 class FIS:
@@ -314,7 +425,7 @@ class FIS:
         # The topological network contains information about the original geometry.
         # Let's convert those into python shapely objects for easier use later
         for n in G.nodes:
-            G.nodes[n]["geometry"] = shapely.geometry.Point(G.nodes[n]["X"], G.nodes[n]["Y"])
+            G.nodes[n]["geometry"] = Point(G.nodes[n]["X"], G.nodes[n]["Y"])
         for e in G.edges:
             edge = G.edges[e]
             edge["geometry"] = shapely.wkt.loads(edge["Wkt"])
@@ -365,9 +476,9 @@ class FIS:
         # convert the edges and nodes geometry to shapely objects
         for e in graph.edges:
             edge = graph.edges[e]
-            edge["geometry"] = shapely.geometry.shape(edge["geometry"])
+            edge["geometry"] = shape(edge["geometry"])
         for n in graph.nodes:
             node = graph.nodes[n]
-            node["geometry"] = shapely.geometry.shape(node["geometry"])
+            node["geometry"] = shape(node["geometry"])
 
         return graph

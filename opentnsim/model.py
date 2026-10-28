@@ -11,22 +11,22 @@ import pandas as pd
 
 # package(s) related to time, space and id
 import time
-import uuid
-import numbers
 import datetime
+import math
 
 # you need these dependencies (you can get these from anaconda)
 # package(s) related to the simulation
 import simpy
 import networkx as nx
 
-
 # import core from self
-from opentnsim.core import Identifiable
+from opentnsim.core import Identifiable, Movable
+from opentnsim.energy.mixins import ConsumesEnergy
+from opentnsim.energy.utils import check_if_route_has_depth
 
 logger = logging.getLogger(__name__)
 
-
+    
 class VesselGenerator:
     """
     A class to generate vessels from a database
@@ -180,100 +180,171 @@ class VesselGenerator:
             vessel.process = process
 
 
-class Simulation:
-    """
-    A class to generate vessels from a database
+class SimulationEnvironment(simpy.Environment):
+    """SimPy environment containing the state of a vessel simulation."""
 
-    Parameters
-    ----------
-    simulation_start: datetime
-        The start time of the simulation.
-    graph: networkx graph
-        The graph that is used for the simulation.
-    scenario:
-        scenario with vessels - should be coupled to the database
-    """
-
-    def __init__(self,
-                 graph,
-                 simulation_start=datetime.datetime.now(),
-                 simulation_duration=None,
-                 simulation_stop=None,
-                 scenario=None):
-        """ 
-        Initialization 
-        
-        scenario: scenario with vessels - should be coupled to the database
-        """
-        self.env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
-        self.env.graph = graph
-        self.env.simulation_start = simulation_start
-        self.env.simulation_stop = simulation_stop
-        self.simulation_duration = simulation_duration
-        if self.env.simulation_stop:
-            self.simulation_duration = self.env.simulation_stop-self.env.simulation_start
-        else:
-            self.env.simulation_stop = self.env.simulation_start+self.simulation_duration
-        self.env.routes = pd.DataFrame.from_dict(
-            {
-                "Origin": [],
-                "Destination": [],
-                "Width": [],
-                "Height": [],
-                "Depth": [],
-                "Route": [],
-            }
+    def __init__(
+        self,
+        graph=None,
+        simulation_start=None,
+        simulation_duration=None,
+        simulation_stop=None,
+    ):
+        simulation_start = (
+            simulation_start or datetime.datetime.now()
         )
-        self.scenario = scenario
 
-        self.env.vessels = []
+        super().__init__(
+            initial_time=time.mktime(
+                simulation_start.timetuple()
+            )
+        )
+
+        self.simulation_start = simulation_start
+        self.simulation_stop = simulation_stop
+        self.simulation_duration = simulation_duration
+
+        if simulation_stop is not None:
+            self.simulation_duration = (
+                simulation_stop - simulation_start
+            )
+        elif simulation_duration is not None:
+            self.simulation_stop = (
+                simulation_start + simulation_duration
+            )
+
+        if (
+            self.simulation_duration is not None
+            and self.simulation_duration.total_seconds() <= 0
+        ):
+            raise ValueError(
+                "Simulation duration must be positive."
+            )
+
+        self.graph = None
+        if graph is not None:
+            self.add_graph(graph)
+
+        self.routes = pd.DataFrame(
+            columns=[
+                "Origin",
+                "Destination",
+                "Width",
+                "Height",
+                "Depth",
+                "Route",
+            ]
+        )
+
+        self.vessels = {}
+
+    def add_graph(self, graph: nx.Graph) -> None:
+        """Validate and attach a graph to the environment."""
+
+        required_edge_info = {"geometry", "length_m"}
+
+        for u, v, data in graph.edges(data=True):
+            missing = required_edge_info - data.keys()
+
+            if missing:
+                raise ValueError(
+                    f"Edge ({u}, {v}) is missing attributes: "
+                    f"{sorted(missing)}"
+                )
+
+            length = data["length_m"]
+            if not isinstance(length, (int, float)) or length < 0:
+                raise ValueError(
+                    f"Edge ({u}, {v}) has an invalid length_m: "
+                    f"{length!r}"
+                )
+
+        self.graph = graph
+
+
+class Simulation:
+    """Coordinate vessel setup and simulation execution."""
+
+    def __init__(
+        self,
+        graph=None,
+        simulation_start=None,
+        simulation_duration=None,
+        simulation_stop=None,
+        scenario=None,
+    ):
+        simulation_start = (
+            simulation_start or datetime.datetime.now()
+        )
+
+        self.env = SimulationEnvironment(
+            simulation_start=simulation_start,
+            simulation_duration=simulation_duration,
+            simulation_stop=simulation_stop,
+        )
+
+        if graph is not None:
+            self.add_graph(graph)
+
+        self.scenario = scenario
         self.output = {}
+
+    def add_graph(self, graph: nx.Graph) -> None:
+        """Validate and attach a graph to the simulation."""
+        self.env.add_graph(graph)
+
+    def add_vessel(self, vessel, mission):
+        """Register a vessel and schedule its mission."""
+        if not isinstance(vessel, Identifiable):
+            raise TypeError("vessel must inherit from Identifiable.")
+
+        if not isinstance(vessel, Movable):
+            raise TypeError("vessel must inherit from Movable.")
+
+        if isinstance(vessel, ConsumesEnergy):
+            try:
+                check_if_route_has_depth(vessel.env.graph, vessel.edge_route)
+            except ValueError as e:
+                raise ValueError(f"Vessel ({vessel.name}) ConsumesEnergy, but route lacks GeneralDepth at following edges: {e}")
+
+        if vessel.name in self.env.vessels:
+            raise ValueError(f"Vessel ({vessel.name!r}) already exists.")
+
+        if vessel.env is not self.env:
+            raise ValueError("Vessel must belong to this simulation's environment.")
+
+        self.env.vessels[vessel.name] = vessel
+        self.env.process(mission(self.env, vessel))
 
     def add_vessels(
         self,
         origin=None,
         destination=None,
         vessel=None,
-        vessel_generator: VesselGenerator = None,
+        vessel_generator=None,
         fleet_distribution=None,
         arrival_distribution=1,
         arrival_process="Markovian",
     ):
-        """
-        Make arrival process in the environment. Add one vessel  on one input vessel, or with the vessel generator
+        """Add an individual vessel or a vessel arrival process."""
 
-        Parameters
-        ----------
-        vessel_generator:      VesselGenerator
-            The vessel generator that is used to generate vessels. Optional. If not specified,
-            the vessel should be specified.
-            If specified, the vessel should be None, but origin, destination, arrival_distribution
-            and arrival_process should be specified.
-        origin: str
-            The origin of the vessel. Must be specified if vessel_generator is specified.
-        destination: str
-            The destination of the vessel. Must be specified if vessel_generator is specified.
-        arrival_distribution: int or list
-            The amount of vessels that enter the simulation per hour. Must be specified if
-            vessel_generator is specified.
-            If int, it is the average number of vessels per hour over the entire day.
-            If list, it is the average number of vessels per hour for each hour of the day.
-            List must have length of 24 (one entry for each hour).
-        arrival_process: str
-            The process of arrivals. Must be specified if vessel_generator is specified.
-            Choose between "Markovian" or "Uniform".
-        vessel: Vessel
-            A vessel object with a route between origin and destination. Optional.
-            If specified, the vessel_generator should be None, and origin, destination,
-            arrival_distribution and arrival_process are ignored.
-        """
+        if vessel_generator is None:
+            if vessel is None:
+                raise ValueError(
+                    "Provide either a vessel or a vessel_generator."
+                )
 
-        if vessel_generator == None:
             self.env.vessels.append(vessel)
             process = self.env.process(vessel.move())
             vessel.process = process
-            if 'metadata' in dir(vessel) and 'arrival_time' not in vessel.metadata.keys():
-                vessel.metadata["arrival_time"] = self.env.simulation_start
+
+            if (
+                hasattr(vessel, "metadata")
+                and "arrival_time" not in vessel.metadata
+            ):
+                vessel.metadata["arrival_time"] = (
+                    self.env.simulation_start
+                )
 
         else:
             self.env.process(
@@ -289,10 +360,17 @@ class Simulation:
             )
 
     def run(self):
-        """
-        Run the simulation
+        """Run the simulation until its stop time or until events are exhausted."""
 
-        duration:   float
-            specify the duration of the simulation in seconds
-        """
-        self.env.run(until=self.env.now + self.simulation_duration.total_seconds())
+        if self.env.simulation_stop is not None:
+            until = self.env.simulation_stop.timestamp()
+        elif self.env.simulation_duration is not None:
+            until = (
+                self.env.now
+                + self.env.simulation_duration.total_seconds()
+            )
+        else:
+            self.env.run()
+            return
+
+        self.env.run(until=until)

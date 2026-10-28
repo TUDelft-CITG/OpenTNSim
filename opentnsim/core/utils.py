@@ -14,15 +14,12 @@ interoperability among Esri and other software products."
 See https://en.wikipedia.org/wiki/Shapefile for additional information.
 """
 
-from typing import Any, Dict, List, Tuple, Type, get_origin, get_args
+from typing import Any, Dict, List, Tuple, Type
 
 # packkage(s) for documentation, debugging, saving and loading
 import pathlib
 import inspect
 from IPython.display import display
-
-# spatial libraries
-import networkx as nx
 
 # time libraries
 import datetime
@@ -31,6 +28,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import itertools
+import math
 
 # OpenTNSim
 import opentnsim
@@ -76,27 +74,41 @@ def time_to_numpy(t_start):
     return t_start
 
 
-def inspect_object(Class, candidate_kwargs={}, show_parameter_table = True):
+def inspect_object(Class, candidate_kwargs=None, show_parameter_table=True):
+
+    documenting = not candidate_kwargs
 
     def highlight_status(row):
-        if row["status"] == "missing":
-            return ["background-color: #ffcccc"] * len(row)
-        if row["status"] == "optional (unused)":
-            return ["background-color: #ffe5b4"] * len(row)
-        if row["status"] == "optional (used)":
-            return ["background-color: #e8f5e9"] * len(row)
-        if row["status"] == "required":
-            return ["background-color: #6fa6cf"] * len(row)
-        if row["status"] == "optional":
-            return ["background-color: #afcee8"] * len(row)
-        return ["background-color: #c8e6c9"] * len(row)
+        colors = {
+            "missing": "#ffcccc",
+            "missing (one alternative)": "#ffcccc",
+            "optional (unused)": "#ffe5b4",
+            "optional (used)": "#e8f5e9",
+            "required": "#6fa6cf",
+            "required (one alternative)": "#6fa6cf",
+            "optional": "#afcee8",
+            "added": "#c8e6c9",
+        }
+        color = colors.get(row["status"], "#ffffff")
+        return [f"background-color: {color}"] * len(row)
 
-    rows = []
+    candidate_kwargs = candidate_kwargs or {}
+
+    # Collect alternative requirement groups from the class hierarchy.
+    # Each tuple is a group of parameters that must all be supplied.
+    # At least one group must be satisfied.
+    alternative_requirements = []
+
     for cls in Class.mro():
-        if cls is object:
-            continue
+        alternative_requirements.extend(
+            cls.__dict__.get("__parameter_requirements__", [])
+        )
 
-        if "__init__" not in cls.__dict__:
+    # Collect constructor parameters.
+    rows = []
+
+    for cls in Class.mro():
+        if cls is object or "__init__" not in cls.__dict__:
             continue
 
         sig = inspect.signature(cls.__init__)
@@ -106,61 +118,167 @@ def inspect_object(Class, candidate_kwargs={}, show_parameter_table = True):
                 continue
 
             if param.kind in (
-                    inspect.Parameter.VAR_POSITIONAL,
-                    inspect.Parameter.VAR_KEYWORD,
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
             ):
                 continue
 
-            rows.append(
-                {
-                    "parameter": name,
-                    "class": cls.__name__,
-                    "required": param.default is inspect.Parameter.empty,
-                    "provided": name in candidate_kwargs,
-                }
-            )
+            rows.append({
+                "parameter": name,
+                "class": cls.__name__,
+                "required": param.default is inspect.Parameter.empty,
+                "provided": name in candidate_kwargs,
+            })
 
     df = pd.DataFrame(rows).drop_duplicates("parameter")
-    df["missing"] = df["required"] & (~df["provided"])
-    df["status"] = " "
-    df.loc[df["missing"], "status"] = "missing"
-    df.loc[(df["required"]) & (df["provided"]), "status"] = "added"
-    df.loc[(~df["required"]) & (df["provided"]), "status"] = "optional (used)"
-    df.loc[(~df["required"]) & (~df["provided"]), "status"] = "optional (unused)"
-    df = df.sort_values(
-        by=["missing", "required", "class", "parameter"],
-        ascending=[False, False, True, True],
-    ).reset_index(drop=True)
-    missing_parameters = not df[df.status == 'missing'].empty
-    df = df.drop(["missing", "required", "provided"], axis=1)
-    if show_parameter_table:
-        if candidate_kwargs == {}:
-            df.loc[df.status == 'missing', 'status'] = 'required'
-            df.loc[df.status == 'optional (unused)', 'status'] = 'optional'
 
-    df = df.style.apply(highlight_status, axis=1)
+    if df.empty:
+        if show_parameter_table:
+            display(df)
+            return
+        return df, False
+
+    # Check alternative requirements.
+    provided = set(candidate_kwargs)
+
+    alternatives_satisfied = (
+        not alternative_requirements
+        or any(
+            all(parameter in provided for parameter in group)
+            for group in alternative_requirements
+        )
+    )
+
+    # Add a row for an unsatisfied alternative requirement.
+    df["status"] = " "
+    if alternative_requirements and not alternatives_satisfied:
+        alternatives_label = " OR ".join(
+            " + ".join(group)
+            for group in alternative_requirements
+        )
+
+        df = pd.concat(
+            [
+                df,
+                pd.DataFrame([{
+                    "parameter": f"{alternatives_label}",
+                    "class": Class.__name__,
+                    "required": True,
+                    "provided": False,
+                    "status": "combination",
+                }]),
+            ],
+            ignore_index=True,
+        )
+
+    # Assign statuses based on the mode.
+    df["missing"] = df["required"] & ~df["provided"]
+    df.loc[
+        df["missing"] & (df["status"] != "combination"), "status"
+    ] = "missing"
+    df.loc[
+        df["required"] & df["provided"], "status"
+    ] = "added"
+    df.loc[
+        ~df["required"] & df["provided"], "status"
+    ] = "optional (used)"
+    df.loc[
+        ~df["required"] & ~df["provided"], "status"
+    ] = "optional (unused)"
+
+    # Apply alternative requirement status.
+    combination_mask = df["status"].str.startswith(
+        "combi"
+    )
+
+    if alternative_requirements:
+        if documenting:
+            df.loc[
+                combination_mask, "status"
+            ] = "required (one alternative)"
+        elif not alternatives_satisfied:
+            df.loc[
+                combination_mask, "status"
+            ] = "missing (one alternative)"
+        else:
+            # The combination requirement is satisfied.
+            df.loc[combination_mask, "status"] = "added"
+
+    # In documentation mode, show required/optional parameters.
+    if documenting:
+        df.loc[df["status"] == "missing", "status"] = "required"
+        df.loc[
+            df["status"] == "optional (unused)", "status"
+        ] = "optional"
+
+    # In validation mode, report missing individual and combination requirements.
+    missing_parameters = (
+        not documenting
+        and (
+            df["status"].isin(
+                ["missing", "requirement missing"]
+            ).any()
+        )
+    )
+
+    df = df.sort_values(
+        by=["class", "parameter"],
+        ascending=[True, True],
+    ).reset_index(drop=True)
+
+    df = df.drop(
+        ["missing", "required", "provided"],
+        axis=1,
+    )
+
+    if documenting:
+        status_order = {
+            "required": 0,
+            "required (one alternative)": 1,
+            "optional": 2,
+        }
+    else:
+        status_order = {
+            "added": 0,
+            "optional (used)": 1,
+            "missing": 2,
+            "requirement missing": 3,
+            "optional (unused)": 4,
+        }
+
+    df["_sort_order"] = df["status"].map(status_order).fillna(99)
+
+    df = (
+        df.sort_values(
+            by=["_sort_order", "class", "parameter"],
+            ascending=[True, True, True],
+        )
+        .drop(columns="_sort_order")
+        .reset_index(drop=True)
+    )
+
     if show_parameter_table:
-        display(df)
+        display(df.style.apply(highlight_status, axis=1))
     else:
         return df, missing_parameters
 
 
-def check_class_is_vesselclass(VesselClass):
+def check_class_is_vesselclass(vessel_class):
     required_mixins = ["Identifiable", "Movable"]
-    present_mixins = [cls.__name__ for cls in VesselClass.mro()]
+    present_mixins = [cls.__name__ for cls in vessel_class.mro()]
     missing_mixins = [m for m in required_mixins if m not in present_mixins]
 
     if missing_mixins:
-        raise TypeError(f"VesselClass must include the following mixins: {missing_mixins}")
+        raise TypeError(f"vessel_class must include the following mixins: {missing_mixins}")
 
 
-def get_all_init_params(VesselClass):
+def get_all_init_params(vessel_class):
     """
     Return a set of all parameters from __init__ in the MRO
     (excluding self, *args, **kwargs)
     """
     allowed = set()
-    for cls in VesselClass.mro():
+    for cls in vessel_class.mro():
         if cls is object:
             continue
         if "__init__" not in cls.__dict__:
@@ -176,50 +294,14 @@ def get_all_init_params(VesselClass):
     return allowed
 
 
-def create_vessel(
-        VesselClass,
-        env,
-        start_node,
-        end_node,
-        show_unused_optional_parameters = False,
-        **kwargs,
-):
-    # check class
-    check_class_is_vesselclass(VesselClass)
-
-    route = nx.dijkstra_path(env.graph, start_node, end_node)
-    geometry = env.graph.nodes[start_node]["geometry"]
-
-    # check input
-    auto_kwargs = {"env": env,
-                   "route": route,
-                   "geometry": geometry, }
-    candidate_kwargs = {**auto_kwargs, **kwargs}
-    df, missing_parameters = inspect_object(VesselClass, candidate_kwargs, False)
-    if show_unused_optional_parameters or missing_parameters:
-        display(df)
-
-    # construct vessel
-    allowed = get_all_init_params(VesselClass)
-    extra_kwargs = {k: v for k, v in candidate_kwargs.items() if k not in allowed}
-    filtered_kwargs = {k: v for k, v in candidate_kwargs.items() if k in allowed}
-    vessel = VesselClass(**filtered_kwargs)
-    if "ExtraMetadata" in [cls.__name__ for cls in type(vessel).mro()]:
-        vessel.metadata.update(extra_kwargs)
-
-    if show_unused_optional_parameters:
-        return vessel, df
-    return vessel
-
-
 def generate_vessels_from_distribution(
     env,
-    VesselClass,
+    vessel_class,
     vessel_parameters,
     mean_arrival_rate,
     number_of_vessels,
-    start_node,
-    end_node,
+    origin,
+    destination,
     seed=None,
     start_time=None,
     use_fleet=False,
@@ -227,7 +309,7 @@ def generate_vessels_from_distribution(
     fleet_data=None
 ):
     if start_time is None:
-        start_time = env.epoch
+        start_time = env.simulation_start
 
     rng = np.random.default_rng(seed)
     arrival_time = start_time
@@ -278,11 +360,12 @@ def generate_vessels_from_distribution(
 
             params.update(resolved_params)
 
+        v = vessel_parameters['v']
         vessel = create_vessel(
-            VesselClass,
             env,
-            start_node=start_node,
-            end_node=end_node,
+            vessel_class,
+            origin,
+            destination,
             **params
         )
 
@@ -417,3 +500,63 @@ def create_object(name, classes):
         except TypeError:
             pass
     raise TypeError("No valid base class order exists")
+
+
+def create_vessel(
+    env,
+    vessel_class,
+    origin = None,
+    destination = None,
+    route = None,
+    show_unused_optional_parameters=False,
+    **kwargs,
+):
+    # Check vessel class
+    check_class_is_vesselclass(vessel_class)
+
+    # Automatically generated constructor arguments take precedence
+    auto_kwargs = {
+        "env": env,
+        "origin": origin,
+        "destination": destination,
+        "route": route,
+    }
+    candidate_kwargs = {**kwargs, **auto_kwargs}
+
+    # Inspect constructor parameters
+    df, missing_parameters = inspect_object(
+        vessel_class,
+        candidate_kwargs,
+        False,
+    )
+
+    if show_unused_optional_parameters or missing_parameters:
+        display(df)
+
+    # Separate constructor arguments from extra metadata
+    allowed = get_all_init_params(vessel_class)
+
+    filtered_kwargs = {
+        key: value
+        for key, value in candidate_kwargs.items()
+        if key in allowed
+    }
+    extra_kwargs = {
+        key: value
+        for key, value in candidate_kwargs.items()
+        if key not in allowed
+    }
+
+    # Construct vessel
+    vessel = vessel_class(**filtered_kwargs)
+
+    # Store unused parameters as metadata when supported
+    if "ExtraMetadata" in {
+        cls.__name__ for cls in type(vessel).mro()
+    }:
+        vessel.metadata.update(extra_kwargs)
+
+    if show_unused_optional_parameters:
+        return vessel, df
+
+    return vessel
