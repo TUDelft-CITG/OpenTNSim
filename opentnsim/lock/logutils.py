@@ -142,30 +142,46 @@ def get_levelling_cycles(lock_chamber):
     return levelling_cycles
 
 
-def get_index_of_logbook_when_vessel_passes_registration_node(lock_complex, vessel, levelling_idx, start = True):
+def get_index_of_logbook_when_vessel_passes_registration_node(
+    lock_complex, vessel, levelling_idx, start=True
+):
     vessel_df = pd.DataFrame(vessel.logbook)
-    pattern = r"^Sailing from node (.+?) to node (.+?) (start|stop)$"
-    msg_type = 'start'
+
+    is_multigraph = lock_complex.env.graph.is_multigraph()
+
+    if is_multigraph:
+        pattern = r"^Sailing from node (.+?) to node (.+?) on edge (.+?) (start|stop)$"
+        event_group = 4
+    else:
+        pattern = r"^Sailing from node (.+?) to node (.+?) (start|stop)$"
+        event_group = 3
+
+    msg_type = "start"
     group_nr_node = 1
     search_range = range(levelling_idx, -1, -1)
+
     if not start:
         group_nr_node = 2
-        msg_type = 'stop'
+        msg_type = "stop"
         search_range = range(levelling_idx, len(vessel_df))
 
     registration_nodes = set(map(str, lock_complex.registration_nodes))
+
     index = None
+    node = None
+
     for i in search_range:
         msg = vessel_df.loc[i, "Message"]
         m = re.search(pattern, msg)
-        if m and m.group(3) == msg_type:
-            node = m.group(group_nr_node)
-            for registration_node in registration_nodes:
-                if node == registration_node:
-                    index = i
-                    break
-            if index is not None:
+
+        if m and m.group(event_group) == msg_type:
+            candidate_node = m.group(group_nr_node)
+
+            if candidate_node in registration_nodes:
+                index = i
+                node = candidate_node
                 break
+
     return index, node
 
 
@@ -250,11 +266,14 @@ def get_vessel_delays(lock_chamber):
     vessels_per_cycle = get_vessels_per_cycle(lock_chamber)
     cycle_nr = 0
     vessels_info_per_cycle = []
+    vessel_by_id = dict(zip(lock_chamber.env.vessels["id"], lock_chamber.env.vessels["obj"]))
     for cycle_nr in levelling_cycles.index:
         level_event = levelling_cycles.loc[cycle_nr]
         vessels_in_cycle = [d["vessel_id"] for d in vessels_per_cycle if d["cycle_nr"] == cycle_nr]
         for vessel_id in vessels_in_cycle:
-            vessel = lock_chamber.env.vessels[vessel_id]
+            vessel = vessel_by_id.get(vessel_id, None)
+            if vessel is None:
+                continue
             vessel_df = pd.DataFrame(vessel.logbook)
             vessel_df["Timestamp"] = pd.to_datetime(vessel_df["Timestamp"])
 

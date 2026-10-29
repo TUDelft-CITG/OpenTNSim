@@ -139,7 +139,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.end_node = self.edge[1]
         self.k = 0
         self.edge_reversed = (self.end_node, self.start_node)
-        if isinstance(self.env.graph, nx.MultiDiGraph):
+        if self.env.graph.is_multigraph():
             self.k = self.edge[2]
             self.edge_reversed = (self.end_node, self.start_node, self.k)
 

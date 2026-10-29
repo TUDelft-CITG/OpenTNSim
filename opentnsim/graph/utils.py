@@ -50,7 +50,7 @@ def expand_path_edges(G, node_path):
     return edge_paths
 
 
-def node_path_to_edge_path(G, node_path, weight="weight"):
+def node_path_to_edge_path(G, node_path, weight="length_m"):
     """
     Convert a node path to an edge path, selecting the lowest weight edge
     for MultiDiGraph. Works for both DiGraph and MultiDiGraph.
@@ -956,8 +956,9 @@ def get_sailing_distance(graph, edge_route):
     sailing_distance = 0
 
     rows = []
-    for u, v in edge_route:
-        d = graph.edges[u, v]['length_m']
+    for edge in edge_route:
+        u, v = edge[:2]
+        d = graph.edges[edge]['length_m']
         sailing_distance += d
         rows.append((u, v, d))
 
@@ -1040,10 +1041,11 @@ def get_sailing_time(vessel, edge_route, currently_sailing = False):
     """
     graph = vessel.env.graph
     n = len(edge_route)
+    if not n:
+        return 0., pd.DataFrame()
 
     # --- Preallocate arrays (faster than list of tuples) ---
-    node_start = [None] * n
-    node_stop = [None] * n
+    edges = [None] * n
     distances = [0.0] * n
     speeds = [0.0] * n
     times = [0.0] * n
@@ -1057,8 +1059,7 @@ def get_sailing_time(vessel, edge_route, currently_sailing = False):
 
         t = dist / speed
 
-        node_start[i] = edge[0]
-        node_stop[i] = edge[1]
+        edges[i] = edge
         distances[i] = dist
         speeds[i] = speed
         times[i] = t
@@ -1066,13 +1067,13 @@ def get_sailing_time(vessel, edge_route, currently_sailing = False):
         total_time += t
     
     sailing_distance_df = pd.DataFrame({
-        "node_start": node_start,
-        "node_stop": node_stop,
+        "edge": edges,
         "distance": distances,
         "speed": speeds,
         "time": times,
     })
 
+    node_start = edges[0][0]
     if currently_sailing and node_start == vessel.current_node:
         last_message = pd.DataFrame(vessel.logbook).iloc[-1] if len(vessel.logbook) > 0 else None
         if last_message is not None and 'Sailing' in last_message.Message:

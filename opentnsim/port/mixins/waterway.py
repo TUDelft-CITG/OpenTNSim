@@ -40,7 +40,7 @@ class WaterwayTraversable(Movable, Identifiable, VesselProperties):
             resembling an edge in self.env.graph.edges
         """
         # set origin and destination
-        origin, destination = edge
+        origin, destination = edge[:2]
 
         # if no waterway in either origin or destination -> do nothing (return)
         if 'Waterway' not in self.env.graph.nodes[origin] or 'Waterway' not in self.env.graph.nodes[destination]:
@@ -90,7 +90,7 @@ class WaterwayTraversable(Movable, Identifiable, VesselProperties):
             resembling an edge in self.env.graph.edges
         """
         # set origin and destination
-        origin, destination = edge
+        origin, destination = edge[:2]
 
         # if no waterway has been requested -> do nothing (return)
         if not hasattr(self, 'waterway_request'):
@@ -315,8 +315,8 @@ class IsWaterway(Identifiable, HasResource, IsPortComponent):
         
         # determine node and edge route to waterway and over waterway
         sailing_time_over_waterway_df, direction = get_waterway_passage_information_for_vessel(self, vessel, origin, delay)
-        waterway_start_node = sailing_time_over_waterway_df['node_start'].iloc[0]
-        waterway_stop_node = sailing_time_over_waterway_df['node_stop'].iloc[-1]
+        waterway_start_node = sailing_time_over_waterway_df['edge'].iloc[0][0]
+        waterway_stop_node = sailing_time_over_waterway_df['edge'].iloc[-1][1]
         time_passage_start = sailing_time_over_waterway_df['time_start'].iloc[0]
         time_passage_stop = sailing_time_over_waterway_df['time_stop'].iloc[-1]
         time_passage_start, time_passage_stop = time_passage_start.round('s'), time_passage_stop.round('s')
@@ -348,9 +348,9 @@ class IsWaterway(Identifiable, HasResource, IsPortComponent):
         time_start = time_passage_start
         for _, sailing_info_edge in sailing_time_over_waterway_df.iterrows():
             # determine the directed edge
-            edge = (sailing_info_edge.node_start, sailing_info_edge.node_stop)
+            edge = sailing_info_edge.edge
             if direction:
-                edge = (sailing_info_edge.node_stop, sailing_info_edge.node_start)
+                edge = (edge[1], edge[0]) + edge[2:]
 
             # determine index
             index = len(self.vessel_edge_passages)
@@ -402,12 +402,13 @@ class IsWaterway(Identifiable, HasResource, IsPortComponent):
             a collection of conflicts with other vessels that the vessel is facing, including information on: time_start, time_stop, edge, type of conflict, vessel in conflict, specific rule that causes the conflict
         """
         # get the sailing information of the vessel over the waterway and get passage start time
-        sailing_time_over_waterway_df, _ = get_waterway_passage_information_for_vessel(self, vessel, origin, delay)
+        sailing_time_over_waterway_df, direction = get_waterway_passage_information_for_vessel(self, vessel, origin, delay)
+
         time_passage_start = sailing_time_over_waterway_df['time_start'].iloc[0]
         time_passage_stop = sailing_time_over_waterway_df['time_stop'].iloc[-1]
 
         # find the ecountering and overtaking conflicts for the vessel given the prior planned vessels
-        encountering_conflicts, overtaking_conflicts = check_conflicts_for_vessel(self, vessel)
+        encountering_conflicts, overtaking_conflicts = check_conflicts_for_vessel(self, vessel, direction)
 
         # set empty list for events that waterway is not available for the vessel in question
         events_waterway_not_available = []

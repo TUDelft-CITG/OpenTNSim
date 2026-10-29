@@ -12,6 +12,7 @@ import deprecated
 from typing import Union
 
 # math packages
+import pandas as pd
 import numpy as np
 import math
 
@@ -106,6 +107,7 @@ class Routable(SimpyObject):
             
         self.edge_route = node_path_to_edge_path(self.env.graph, self.route)
         self.check_attributes(self.env.graph)
+
 
     def set_route(self):
 
@@ -209,7 +211,7 @@ class Movable(Locatable, Routable, Log):
 
     """
 
-    def __init__(self, v: float, geometry = None, *args, **kwargs):
+    def __init__(self, v: float, geometry = None, arrival_time = pd.Timestamp('NaT'), *args, **kwargs):
         """Initialization"""
         super().__init__(geometry = geometry, *args, **kwargs)
 
@@ -224,6 +226,9 @@ class Movable(Locatable, Routable, Log):
             )
         
         self.v = v
+        if pd.isna(arrival_time): 
+            arrival_time = self.env.simulation_start
+        self.arrival_time = arrival_time
         self.distance = 0
         self.on_pass_node_functions = []
         self.on_pass_edge_functions = []
@@ -243,6 +248,14 @@ class Movable(Locatable, Routable, Log):
         if geometry is None:
             start_node = self.origin
             self.geometry = self.env.graph.nodes[start_node]["geometry"]
+
+        # add vessel to vessels
+        if not hasattr(self.env, 'vessels'):
+            self.env.vessels = pd.DataFrame(columns = ['name', 'id', 'time_of_registration', 'obj'])
+        if self.name not in self.env.vessels:
+            index = len(self.env.vessels)
+            time_of_registration = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            self.env.vessels.loc[index, :] = [self.name, self.id, time_of_registration, self]
 
 
     @property
@@ -341,13 +354,10 @@ class Movable(Locatable, Routable, Log):
         """
 
         # Check if vessel has arrival time and let vessel wait to start moving
-        if hasattr(self, "metadata") and "arrival_time" in self.metadata:
-            arrival_time = self.metadata['arrival_time']
-            current_time = datetime.datetime.fromtimestamp(self.env.now)
-            delay = (arrival_time - current_time).total_seconds()
+        current_time = datetime.datetime.fromtimestamp(self.env.now)
+        delay = (self.arrival_time - current_time).total_seconds()
+        if delay > 0:
             yield self.env.timeout(delay)
-            self.arrival_time = arrival_time
-            self.metadata.pop('arrival_time')
 
         # Check if vessel is at correct location - if not, move to location
         yield from self._move_to_start()
@@ -546,6 +556,8 @@ class Movable(Locatable, Routable, Log):
         The time it takes to pass the edge.
         """
         origin, destination = edge[:2]
+        k = f" on edge {edge[2]} " if len(edge) > 2 else " "
+
         edge_info = self.graph.edges[edge]
         orig = nx.get_node_attributes(self.graph, "geometry")[origin]
         dest = nx.get_node_attributes(self.graph, "geometry")[destination]
@@ -566,20 +578,20 @@ class Movable(Locatable, Routable, Log):
             # we had to wait, log it
             if arrival != self.env.now:
                 self.log_entry_v0(
-                    "Waiting to pass edge {} - {} start".format(origin, destination),
+                    "Waiting to pass edge {} - {}{}start".format(origin, destination, k),
                     arrival,
                     self.distance,
                     orig,
                 )
                 self.log_entry_v0(
-                    "Waiting to pass edge {} - {} stop".format(origin, destination),
+                    "Waiting to pass edge {} - {}{}stop".format(origin, destination, k),
                     self.env.now,
                     self.distance,
                     orig,
                 )
 
         self.log_entry_v0(
-            "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+            "Sailing from node {} to node {}{}start".format(self.current_node, self.next_node, k),
             self.env.now,
             self.distance,
             orig,
@@ -601,7 +613,7 @@ class Movable(Locatable, Routable, Log):
             distance_sailed = time_sailed * (self.current_speed + current)
             
             self.log_entry_v0(
-                "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+                "Sailing from node {} to node {}{}stop".format(self.current_node, self.next_node, k),
                 self.env.now,
                 distance_sailed,
                 dest,
@@ -610,7 +622,7 @@ class Movable(Locatable, Routable, Log):
         self.distance += self.distance_left_on_edge
 
         self.log_entry_v0(
-            "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+            "Sailing from node {} to node {}{}stop".format(self.current_node, self.next_node, k),
             self.env.now,
             self.distance,
             dest,

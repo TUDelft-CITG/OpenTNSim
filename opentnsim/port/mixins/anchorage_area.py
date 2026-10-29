@@ -1,6 +1,6 @@
 from opentnsim.core import Movable, Identifiable, VesselProperties, HasResource, Log, Locatable
 from opentnsim.graph.mixins import OnNode
-from opentnsim.graph.utils import get_shortest_route
+from opentnsim.graph.utils import get_shortest_route, node_path_to_edge_path
 from opentnsim.port.mixins.port import IsPortComponent
 
 import simpy
@@ -47,6 +47,7 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
         if len(self.route_to_anchorage_area) > 1:
             self.routes_sailed.append(self.route_to_anchorage_area)
             self.route = self.route_to_anchorage_area
+            self.edge_route = node_path_to_edge_path(self.env.graph, self.route)
             yield self.env.process(self.move())
 
             # route has changed
@@ -87,6 +88,7 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
 
         # set route to terminal from anchorage as new route of vessel
         self.route = self.route_after_anchorage_area
+        self.edge_route = node_path_to_edge_path(self.env.graph, self.route)
 
         # delete attributes to make future anchorage area interactions possible
         delattr(self,'anchorage_area_request')

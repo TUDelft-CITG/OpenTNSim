@@ -370,7 +370,6 @@ def generate_vessels_from_distribution(
         )
 
         vessels.append(vessel)
-        env.vessels[vessel.id] = vessel
 
     return vessels
 

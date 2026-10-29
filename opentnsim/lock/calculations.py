@@ -1671,13 +1671,13 @@ def calculate_ZSF_eventttable(lock_chamber):
     df_operations['volume_of_vessels_in_lock'] = 0.
     vessel_info = get_vessels_per_cycle(lock_chamber)
     df_vessels = pd.DataFrame(vessel_info)
-
+    simulated_vessels = lock_chamber.env.vessels
     if not df_vessels.empty:
         for operation_nr, operation_info in df_operations.iterrows():
             vessel_ids = df_vessels[df_vessels.cycle_nr == operation_nr].vessel_id.to_list()
             volume_of_vessels_in_lock = 0.
             for vessel_id in vessel_ids:
-                vessel = lock_chamber.env.vessels[vessel_id]
+                vessel = simulated_vessels[simulated_vessels.id == vessel_id].iloc[-1].obj
                 volume_of_vessels_in_lock += vessel.L*vessel.B*vessel.T
             df_operations.at[operation_nr, 'volume_of_vessels_in_lock'] = volume_of_vessels_in_lock
     zsf_events_new = pd.DataFrame(
@@ -2406,10 +2406,14 @@ def calculate_lock_occupancy(lock_chamber):
     occupancies = []
     nr_vessels = []
     lock_length_claimed = []
+    vessel_by_id = dict(zip(lock_chamber.env.vessels["id"], lock_chamber.env.vessels["obj"]))
     for cycle_nr, cycle_info in df_levelling.iterrows():
         length_claimed = 0.
         for vessel_id in df_vessels[df_vessels.cycle_nr == cycle_nr]["vessel_id"]:
-            length_claimed += lock_chamber.env.vessels[vessel_id].L
+            vessel = vessel_by_id.get(vessel_id, None)
+            if vessel is None:
+                continue
+            length_claimed += vessel.L
         occupancy = length_claimed/lock_length
         lock_length_claimed.extend([length_claimed])
         occupancies.extend([occupancy])

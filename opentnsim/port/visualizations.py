@@ -54,7 +54,7 @@ def merge_figures(fig1, fig2):
 def plot_vessels_over_route(env, node_start, node_stop, ddistance=1000, vessels = {},
                             xmin=None, xmax = None, ymin = None, ymax = None, zmin=0, zmax = 15, dz = 1, levels = []):
     if not vessels:
-        vessels = env.vessels
+        vessels = env.vessels["obj"].dropna().tolist()
 
     if not len(vessels):
         raise ValueError("No vessels to plot")
@@ -64,7 +64,7 @@ def plot_vessels_over_route(env, node_start, node_stop, ddistance=1000, vessels 
     fig, ax = plt.subplots()
     plt.close()
 
-    for idx, (vessel) in enumerate(vessels.values()):
+    for idx, (vessel) in enumerate(vessels):
         if pd.DataFrame(vessel.logbook).empty:
             continue
         fig_vessel = plot_time_distance_diagram_vessel(vessel, route)
@@ -653,7 +653,7 @@ def plot_berth_occupation(berth, time_start = None, time_stop = None, style = 'm
         # Use Plotly's default qualitative color palette
         colors = px.colors.qualitative.Plotly
         vessel_colors = {}
-
+        vessel_by_id = dict(zip(berth.env.vessels["id"], berth.env.vessels["obj"]))
         for _, berth_position_info in df.iterrows():
             position_start = berth_position_info.position_start
             position_stop = berth_position_info.position_stop
@@ -661,7 +661,9 @@ def plot_berth_occupation(berth, time_start = None, time_stop = None, style = 'm
             berth_time_stop = pd.Timestamp(berth_position_info.time_stop)
 
             vessel_id = berth_position_info.vessel_id
-            vessel = berth.env.vessels[vessel_id]
+            vessel = vessel_by_id.get(vessel_id, None)
+            if vessel is None:
+                continue
             operation_id = berth_position_info.operation_id
 
             # Assign a consistent color to each vessel
@@ -785,7 +787,9 @@ from collections import defaultdict
 from itertools import combinations
 
 def get_vessels_by_name(env, vessel_mmsis):
-    return [env.vessels[name] for name in vessel_mmsis if name in env.vessels]
+    simulated_vessels = env.vessels
+    vessel_selection = simulated_vessels[simulated_vessels.name.isin(vessel_mmsis)].obj.values()
+    return vessel_selection
 
 def add_point_tidal_window_to_plotly(
     fig,
@@ -1211,8 +1215,8 @@ def plot_time_distance_diagram(waterway,  time_start, time_end, draught, hydro_p
         
     fig, ax = plt.subplots(figsize=[16,3])    
     
-
-    for _, vessel in waterway.env.vessels.items():
+    vessel_by_id = dict(zip(waterway.env.vessels["id"], waterway.env.vessels["obj"]))
+    for _, vessel in vessel_by_id.items():
         vessel_df_waterway = get_vessel_logbook_through_waterway(vessel, waterway)
         color = None
         if color_function is not None:
@@ -1295,7 +1299,7 @@ def plot_time_distance_diagram_multi(
         x_shift = offsets[id(waterway)] + start_distance
 
         if vessels is None:
-            vessels = list(waterway.env.vessels.values())
+            vessels = waterway.env.vessels["obj"].dropna().tolist()
 
         for vessel in vessels:
             color = None
@@ -1506,8 +1510,9 @@ def plot_time_distance_diagram_multi_plotly(
             )
 
         current_vessels = (
-            list(waterway.env.vessels.values())
-            if vessels is None else vessels
+            waterway.env.vessels["obj"].tolist()
+            if vessels is None
+            else vessels
         )
 
         for vessel in current_vessels:
@@ -1908,14 +1913,16 @@ def plot_vessel_arrival_timeline(berth):
     berth_operations = berth.berth_occupation
 
     all_events = []
-
+    vessel_by_id = dict(zip(berth.env.vessels["id"], berth.env.vessels["obj"]))
     # Extract events for each vessel
     for _, operation in berth_operations.iterrows():
 
         vessel_id = operation["vessel_id"]
 
         # Retrieve vessel from the simulation environment
-        vessel = berth.env.vessels[vessel_id]
+        vessel = vessel_by_id.get(vessel_id, None)
+        if vessel is None:
+            continue
 
         # Convert vessel logbook to DataFrame
         vessel_logbook = pd.DataFrame(vessel.logbook)

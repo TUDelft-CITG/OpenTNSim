@@ -96,8 +96,13 @@ def calculate_inerpolated_water_levels_over_network(graph, hydrodynamic_data, me
 def calculate_depth_values_over_route(env, node_start, node_stop, offset = 500):
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_data = hydromanager.hydrodynamic_data
-    water_depth = hydrodynamic_data['Water level'] - hydrodynamic_data['Nautical depth']
-    route = get_shortest_route(env, node_start, node_stop)
+    if hydrodynamic_data is None:
+        water_depth_data = None
+        time = np.array([env.simulation_start, env.simulation_stop])
+    else:
+        water_depth_data = hydrodynamic_data['Water level'] - hydrodynamic_data['Nautical depth']
+        time = water_depth_data.TIME.values
+    route = get_shortest_route(env.graph, node_start, node_stop)
     transformed_geometry = transform_route_geometry(env, node_start, node_stop)
     node_distances = {}
     node_water_depths = {}
@@ -110,9 +115,14 @@ def calculate_depth_values_over_route(env, node_start, node_stop, offset = 500):
             offset_applied = - offset
         transformed_node = transform_geometry(env.graph.nodes[node]['geometry'])
         distance_to_node = transformed_geometry.project(transformed_node)
-        node_water_depths[node] = water_depth.sel({'STATION': node}).values
+
+        water_depth_values = np.ones(time.size)*np.nan
+        if water_depth_data is not None and node in water_depth_data.STATION.values:
+            water_depth_values = water_depth_data.sel({'STATION': node}).values
+            
+        node_water_depths[node] = water_depth_values
+        node_times[node] = time
         node_distances[node] = np.ones(len(node_water_depths[node])) * distance_to_node + offset_applied + 0.001
-        node_times[node] = water_depth.TIME.values
 
         infrastructure = None
         if 'Anchorage' in env.graph.nodes[node].keys():
@@ -131,9 +141,14 @@ def calculate_depth_values_over_route(env, node_start, node_stop, offset = 500):
         for boundary,boundary_offset in enumerate(boundary_offsets):
             if isinstance(node, str):
                 boundary = str(boundary)
-            node_water_depths[node + boundary] = hydrodynamic_data['Water level'].sel({'STATION': node}).values + infrastructure.depth
+
+            boundary_water_depths = np.ones(time.size)*np.nan
+            if water_depth_data is not None and node in water_depth_data.STATION.values:
+                boundary_water_depths = hydrodynamic_data['Water level'].sel({'STATION': node}).values + infrastructure.depth
+                
+            node_water_depths[node + boundary] = boundary_water_depths
             node_distances[node + boundary] = np.ones(len(node_water_depths[node + boundary])) * distance_to_node + boundary_offset
-            node_times[node + boundary] = water_depth.TIME.values
+            node_times[node + boundary] = time
 
     return node_distances, node_times, node_water_depths
 
@@ -758,12 +773,13 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         if isinstance(station, tuple) and station != edge and station != edge_rev:
             continue
 
-        edge_route_to_node = edge_route[:edge_route_index]
+        edge_route_to_node = edge_route[:(edge_route_index+1)]
         _, _, _, required_water_depth, _, distance_to_restriction = calculate_ukc_clearance(vessel, edge, delay)
         if distance_to_restriction is None:
             continue
         sailing_time_to_next_node_df = get_sailing_information_on_edge_to_distance_on_another_edge(
             vessel, edge_route_to_node, distance_to_be_sailed_on_last_edge = distance_to_restriction)
+
         sailing_time_to_next_node = sailing_time_to_next_node_df['time'].sum()
 
         wlev_series = hydrodynamic_data["Water level"].sel(STATION=station)
@@ -788,9 +804,6 @@ def calculate_minimum_available_water_depth_along_route(vessel, route, time_star
         if edge_route_index == len(edge_route) - 1:
             station = find_station(node_stop)
             if station is not None and station_past != station:
-                edge_route_to_node = edge_route[:edge_route_index]
-                if len(edge_route) == 1:
-                    edge_route_to_node = edge_route
                 _, _, _, required_water_depth, _, _ = calculate_ukc_clearance(vessel, edge, delay)
                 distance_to_restriction = vessel.env.graph.edges[edge]["length_m"]
                 sailing_time_to_next_node_df = get_sailing_information_on_edge_to_distance_on_another_edge(
@@ -1101,8 +1114,12 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
     from opentnsim.port.mixins.berth import IsQuay, IsJetty  
     if time_start is None:
         time_start = berth.env.simulation_start
+    elif time_start > berth.env.simulation_stop:
+        raise ValueError(f'Invalid time_start: ({time_start}) should be befpre {berth.env.simulation_stop}!')
     if time_stop is None:
         time_stop = berth.env.simulation_stop
+    elif time_stop < berth.env.simulation_start:
+        raise ValueError(f'Invalid time_stop: ({time_stop}) should be after {berth.env.simulation_start}!')
     simulation_duration = time_stop - time_start
 
     occupied_df = berth.berth_occupation
@@ -1123,10 +1140,12 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
     total_occupied_duration = pd.Timedelta(seconds = occupied_df.duration_s.sum())
     berth_occupancy = np.nan
     vessels_at_berth = {}
+    vessel_by_id = dict(zip(berth.env.vessels["id"], berth.env.vessels["obj"]))
     for vessel_id in occupied_df.vessel_id:
-        for vessel in berth.env.vessels.values():
-            if vessel.id == vessel_id:
-                vessels_at_berth[vessel.id] = vessel
+        vessel = vessel_by_id.get(vessel_id, None)
+        if vessel is None:
+            continue
+        vessels_at_berth[vessel.id] = vessel
 
     routes_to_terminal = []
     for port_entry_node in berth.terminal.port.port_entry_nodes:
@@ -1141,10 +1160,25 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
         vessel = vessels_at_berth[vessel_berth_info.vessel_id]
         vessel_df = pd.DataFrame(vessel.logbook)
         vessel_df = vessel_df[vessel_df.Timestamp <= berthing_start_time]
-        df_sailing = vessel_df[vessel_df["Message"].str.contains("Sailing", case=False, na=False)].copy()
-        sailing_message = r"Sailing from node (.*?) to node (.*?) (start|stop)"
-        df_sailing[["node_start", "node_stop", "event"]] = (df_sailing["Message"].str.extract(sailing_message))
-        edges = df_sailing[df_sailing["event"] == "start"][["node_start", "node_stop"]]
+        df_sailing = vessel_df[
+            vessel_df["Message"].str.contains("Sailing", case=False, na=False)
+        ].copy()
+        sailing_message = (
+            r"Sailing from node (.+?) to node (.+?)"
+            r"(?: on edge (\S+))? (start|stop)"
+        )
+        df_sailing[
+            ["node_start", "node_stop", "edge_key", "event"]
+        ] = df_sailing["Message"].str.extract(sailing_message)
+        # Convert edge keys to integers, preserving missing keys as None/NaN
+        df_sailing["edge_key"] = pd.to_numeric(
+            df_sailing["edge_key"], errors="coerce"
+        ).astype("Int64")
+        # Select sailing start events
+        edges = df_sailing.loc[
+            df_sailing["event"] == "start",
+            ["node_start", "node_stop", "edge_key"],
+        ].copy()
         route = [edges.iloc[0]["node_start"]] + edges["node_stop"].tolist()
 
         final_route_to_terminal = []

@@ -1413,8 +1413,13 @@ def _get_vessels_that_passed_the_lock_chamber(lock_chamber, t_start=None, t_stop
     if not len(vessel_ids):
         return []
     all_vessels = {}
-    for _, vessel in lock_chamber.env.vessels.items():
+    vessel_by_id = dict(zip(lock_chamber.env.vessels["id"], lock_chamber.env.vessels["obj"]))
+    for vessel_id in vessel_ids:
+        vessel = vessel_by_id.get(vessel_id, None)
+        if vessel is None:
+            continue
         all_vessels[vessel.id] = vessel
+        
     vessels = np.array([itemgetter(*vessel_ids)(all_vessels)]).flatten()
     if t_start is None and t_stop is None:
         return vessels

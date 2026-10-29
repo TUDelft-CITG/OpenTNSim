@@ -43,7 +43,6 @@ class HasPortAccess(Movable, Identifiable):
         self.trip_id = str(uuid.uuid4())
         super().__init__(*args, **kwargs)
         self.on_pass_node_functions.append(self.request_port_entry)
-        self.env.vessels[self.id] = self
         self.waiting = False
         self.accessibility_info = pd.DataFrame()
         self.trips = pd.DataFrame(
@@ -398,8 +397,11 @@ class IsPortAuthority:
 
         # optimize: reshuffle planning
         self.vessel_trips, changed_vessel_trips_df = sort_port_trips(self, self.terminals)
+        vessel_by_id = dict(zip(self.env.vessels["id"], self.env.vessels["obj"]))
         for _, vessel_trip_info in changed_vessel_trips_df.iterrows():
-            vessel_to_plan = self.env.vessels[vessel_trip_info.vessel_id]
+            vessel_to_plan = vessel_by_id.get(vessel_trip_info.vessel_id, None)
+            if vessel_to_plan is None:
+                continue
             if vessel_to_plan.trip_id != vessel.trip_id:
                vessel_to_plan.mission.interrupt('Changed waiting event')
             else:
@@ -647,7 +649,6 @@ class IsPort(IsPortAuthority, SimpyObject, Identifiable):
         self.anchorage_areas = {}
         self.terminals = {}
         self.waterways = {}
-        self.env.vessels = {}
         if 'ports' not in dir(self.env):
             self.env.ports = []
         self.env.ports.append(self)

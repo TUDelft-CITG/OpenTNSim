@@ -226,14 +226,25 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
     x_correction_outdirection = x_lock_gateB - lock_chamber.lock_length / 2
 
     # determine the accepted messages for plotting
-    accepted_messages = []
+    accepted_messages = set()
+    is_multigraph = lock_chamber.env.graph.is_multigraph()
     for node_start, node_end in zip(route_between_nodes_of_registration[:-1], route_between_nodes_of_registration[1:]):
-        accepted_messages.extend([f"Sailing from node {node_start} to node {node_end} start",
-                                  f"Sailing from node {node_end} to node {node_start} start",
-                                  f"Sailing from node {node_start} to node {node_end} stop",
-                                  f"Sailing from node {node_end} to node {node_start} stop"])
+        if is_multigraph:
+            for u, v in ((node_start, node_end), (node_end, node_start)):
+                edge_data = lock_chamber.env.graph.get_edge_data(u, v)
+                if edge_data is not None:
+                    for k in edge_data:
+                        accepted_messages.update([
+                            f"Sailing from node {u} to node {v} on edge {k} start",
+                            f"Sailing from node {u} to node {v} on edge {k} stop",
+                        ])
+        else:
+            accepted_messages.update([f"Sailing from node {node_start} to node {node_end} start",
+                                    f"Sailing from node {node_end} to node {node_start} start",
+                                    f"Sailing from node {node_start} to node {node_end} stop",
+                                    f"Sailing from node {node_end} to node {node_start} stop"])
 
-    accepted_messages.extend(["Waiting for other vessel in lock operation start",
+    accepted_messages.update(["Waiting for other vessel in lock operation start",
                               "Waiting for other vessel in lock operation stop",
                               "Waiting for lock operation start",
                               "Waiting for lock operation stop",
@@ -261,6 +272,7 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
     all_distances = []
     traces = []
     vessel_names = []
+    u,v,k = lock_chamber.start_node, lock_chamber.end_node, lock_chamber.k
     for vessel in vessels:
         times = []
         distances = []
@@ -275,9 +287,13 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
                 continue
 
             if message_info.Message in accepted_messages:
-                if message_info.Message == f"Sailing from node {lock_chamber.start_node} to node {lock_chamber.end_node} start":
+                if message_info.Message == f"Sailing from node {u} to node {v} start":
                     x_correction = x_correction_indirection
-                elif message_info.Message == f"Sailing from node {lock_chamber.end_node} to node {lock_chamber.start_node} start":
+                elif message_info.Message == f"Sailing from node {u} to node {v} on edge {k} start":
+                    x_correction = x_correction_indirection
+                elif message_info.Message == f"Sailing from node {v} to node {u} start":
+                    x_correction = x_correction_outdirection
+                elif message_info.Message == f"Sailing from node {v} to node {u} on edge {k} start":
                     x_correction = x_correction_outdirection
                 times.append(time)
                 distances.append(distance)

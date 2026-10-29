@@ -236,8 +236,6 @@ class SimulationEnvironment(simpy.Environment):
             ]
         )
 
-        self.vessels = {}
-
     def add_graph(self, graph: nx.Graph) -> None:
         """Validate and attach a graph to the environment."""
 
@@ -307,14 +305,10 @@ class Simulation:
             except ValueError as e:
                 raise ValueError(f"Vessel ({vessel.name}) ConsumesEnergy, but route lacks GeneralDepth at following edges: {e}")
 
-        if vessel.name in self.env.vessels:
-            raise ValueError(f"Vessel ({vessel.name!r}) already exists.")
-
         if vessel.env is not self.env:
             raise ValueError("Vessel must belong to this simulation's environment.")
 
-        self.env.vessels[vessel.name] = vessel
-        self.env.process(mission(self.env, vessel))
+        vessel.mission = self.env.process(mission(self.env, vessel))
 
     def add_vessels(
         self,
@@ -334,7 +328,6 @@ class Simulation:
                     "Provide either a vessel or a vessel_generator."
                 )
 
-            self.env.vessels.append(vessel)
             process = self.env.process(vessel.move())
             vessel.process = process
 
