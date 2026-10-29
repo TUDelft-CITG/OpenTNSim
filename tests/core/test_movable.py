@@ -88,7 +88,7 @@ def test_routable_env_has_no_graph():
     simulation_start = datetime.datetime(2024, 1, 1, 0, 0, 0)
     env = simpy.Environment(initial_time=simulation_start.timestamp())
     with pytest.raises(AssertionError, match="Routable expects `.graph`"):
-        routable = Routable(route=[0, 1], env=env)
+        Routable(route=[0, 1], env=env)
 
 def test_routable_env_with_fg(graph):
     simulation_start = datetime.datetime(2024, 1, 1, 0, 0, 0)

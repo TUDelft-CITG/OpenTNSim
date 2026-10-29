@@ -26,7 +26,7 @@ import datetime
 
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 import opentnsim.energy.strategy
-from openclsim.core import SimpyObject, Locatable, Log
+from openclsim.core import SimpyObject, Locatable, Log, Identifiable
 from opentnsim.core import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
 from opentnsim.graph.utils import (
@@ -157,7 +157,7 @@ class Routeable(Routable):
     """Old name for Mixin class: renamed to Routable."""
 
 
-class Movable(Locatable, Routable, Log):
+class Movable(Identifiable, Locatable, Routable, Log):
     """Mixin class: Something can move.
 
     Used for object that can move with a fixed speed
@@ -252,7 +252,8 @@ class Movable(Locatable, Routable, Log):
         # add vessel to vessels
         if not hasattr(self.env, 'vessels'):
             self.env.vessels = pd.DataFrame(columns = ['name', 'id', 'time_of_registration', 'obj'])
-        if self.name not in self.env.vessels:
+        
+        if self.id not in self.env.vessels['id'].values:
             index = len(self.env.vessels)
             time_of_registration = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
             self.env.vessels.loc[index, :] = [self.name, self.id, time_of_registration, self]
