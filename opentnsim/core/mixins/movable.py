@@ -60,7 +60,7 @@ class Routable(SimpyObject):
         super().__init__(*args, **kwargs)
 
         if not hasattr(self.env, 'graph'):
-            raise ValueError(f"Environment has no graph.")
+            raise AssertionError(f"Environment has no graph.")
 
         has_route = route is not None
         has_endpoints = origin is not None and destination is not None
@@ -221,13 +221,11 @@ class Movable(Identifiable, Locatable, Routable, Log):
             or not math.isfinite(v)
             or v <= 0
         ):
-            raise ValueError(
-                "v must be a finite, positive speed in m/s."
-            )
+            raise ValueError("v must be a finite, positive speed in m/s.")
         
         self.v = v
         if pd.isna(arrival_time): 
-            arrival_time = self.env.simulation_start
+            arrival_time = datetime.datetime.fromtimestamp(self.env.now)
         self.arrival_time = arrival_time
         self.distance = 0
         self.on_pass_node_functions = []

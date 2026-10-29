@@ -87,21 +87,19 @@ def test_routable_no_env():
 def test_routable_env_has_no_graph():
     simulation_start = datetime.datetime(2024, 1, 1, 0, 0, 0)
     env = simpy.Environment(initial_time=simulation_start.timestamp())
-    with pytest.raises(AssertionError, match="Routable expects `.graph`"):
+    with pytest.raises(AssertionError, match="Environment has no graph."):
         Routable(route=[0, 1], env=env)
 
 def test_routable_env_with_fg(graph):
     simulation_start = datetime.datetime(2024, 1, 1, 0, 0, 0)
     env = simpy.Environment(initial_time=simulation_start.timestamp())
-    env.FG = graph
-    with pytest.warns():
-        routable = Routable(route=[0, 1], env=env)
+    env.graph = graph
+    routable = Routable(route=[0, 1], env=env)
     assert routable.env.graph == graph
     assert routable.graph == graph
 
-
 def test_routable_wrong_route(env):
-    with pytest.raises(ValueError, match="No edge between 1 and 2 in graph"):
+    with pytest.raises(ValueError, match="Destination not in env.graph."):
         Routable(route=[0, 1, 2], env=env)
 
 def test_routeable_warning(env):
@@ -110,10 +108,12 @@ def test_routeable_warning(env):
 
 # %% TESTING Movable init
 def test_movable_initialization(env):
+    name = 'test'
     path = [0, 1]
     geometry = env.graph.nodes[path[0]]['geometry']
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
 
+    assert movable.name == name
     assert movable.route == path
     assert movable.env == env
     assert movable.graph == env.graph
@@ -127,9 +127,10 @@ def test_movable_no_geom():
     graph.add_edge(0, 1, weight=1)
     env = simpy.Environment()
     env.graph = graph
+    name = 'test'
     path = nx.dijkstra_path(graph, 0, 1)
     with pytest.raises(ValueError, match="Nodes on route must have a geometry attribute."):
-        Movable(route=path, env=env, v=1.0, geometry=Point(0, 0))
+        Movable(name = name, route=path, env=env, v=1.0, geometry=Point(0, 0))
 
 
 @pytest.mark.skip(reason="functionality not implemented yet")
