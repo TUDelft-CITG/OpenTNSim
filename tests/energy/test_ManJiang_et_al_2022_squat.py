@@ -42,7 +42,6 @@ def test_simulation(expected_df):
     TransportResource = type(
         "Vessel",
         (
-            opentnsim.core.Identifiable,
             opentnsim.core.Movable,
             opentnsim.core.VesselProperties,
             opentnsim.energy.ConsumesEnergy,

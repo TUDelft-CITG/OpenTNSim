@@ -44,8 +44,8 @@ def digraph_movable(digraph):
     env = simpy.Environment(initial_time=simulation_start.timestamp())
     env.epoch = simulation_start
     env.graph = digraph
-
-    movable = Movable(route=[0, 1], env=env, v=1.0, geometry=digraph.nodes[0]["geometry"])
+    name = "test_schip"
+    movable = Movable(name = name, route=[0, 1], env=env, v=1.0, geometry=digraph.nodes[0]["geometry"])
     return movable
 
 
@@ -108,7 +108,7 @@ def test_routeable_warning(env):
 
 # %% TESTING Movable init
 def test_movable_initialization(env):
-    name = 'test'
+    name = 'test_schip'
     path = [0, 1]
     geometry = env.graph.nodes[path[0]]['geometry']
     movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
@@ -127,7 +127,7 @@ def test_movable_no_geom():
     graph.add_edge(0, 1, weight=1)
     env = simpy.Environment()
     env.graph = graph
-    name = 'test'
+    name = 'test_schip'
     path = nx.dijkstra_path(graph, 0, 1)
     with pytest.raises(ValueError, match="Nodes on route must have a geometry attribute."):
         Movable(name = name, route=path, env=env, v=1.0, geometry=Point(0, 0))
@@ -150,8 +150,8 @@ def test_movable_no_generaldepth(env):
 def test_movable_move_simple(env):
     path = nx.dijkstra_path(env.graph, 0,1)
     geometry = env.graph.nodes[0]['geometry']
-
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    name = 'test_schip'
+    movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
 
     assert movable.geometry == geometry
     env.process(mission(env, movable))
@@ -176,7 +176,8 @@ def test_move_to_start(env):
     path = [0, 1]
     # start at the end of the path. From here we will move to start point in straight line
     geometry = env.graph.nodes[1]["geometry"]
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    name = 'test_schip'
+    movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
 
     assert movable.geometry == env.graph.nodes[1]["geometry"], "Movable should start at 1,0"
 
@@ -201,7 +202,8 @@ def test_move_to_start_already_there(env):
     path = [0, 1]
     # start at the end of the path. From here we will move to start point in straight line
     geometry = env.graph.nodes[0]["geometry"]
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    name = 'test_schip'
+    movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
     starttime = env.now
 
     assert movable.geometry == env.graph.nodes[0]["geometry"], "Movable should start at 0,0"
@@ -223,7 +225,8 @@ def test_move_to_start_already_there(env):
 def test_movable_pass_node_easy(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    name = 'test_schip'
+    movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
     starttime = env.now
 
     def mission_pass_node(env, vessel):
@@ -239,7 +242,8 @@ def test_movable_pass_node_easy(env):
 def test_movable_pass_node_with_functions(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    name = 'test_schip'
+    movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
     starttime = env.now
 
     def on_pass_node_wait_1(node):
@@ -266,7 +270,8 @@ def test_movable_pass_node_with_functions(env):
 def test_movable_pass_edge(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
-    movable = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    name = 'test_schip'
+    movable = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
     movable.update_position(0)
 
     starttime = env.now
@@ -294,6 +299,7 @@ def test_movable_pass_edge_with_energy_error(env):
     Vessel = type("vessel", (Movable, ConsumesEnergy, VesselProperties), {})
     data_vessel = {
         "env": env,
+        "name": "test_schip",
         "type": "Va/M9 - Verl. Groot Rijnschip",  # This indicates the vessel class. This info is mainly informative.
         "L": 135,  # m
         "B": 11.45,  # m
@@ -336,6 +342,7 @@ def test_movable_pass_edge_with_energy(env):
     Vessel = type("vessel", (Movable, ConsumesEnergy, VesselProperties), {})
     data_vessel = {
         "env": env,
+        "name": "test_schip",
         "route": path,
         "geometry": geometry,
         "v": None,  # m/s
@@ -441,12 +448,13 @@ def test_movable_pass_edge_with_current(digraph_movable):
 def test_movable_resource_restriction_one_edge(env):
     path = [0, 1]
     geometry = env.graph.nodes[0]["geometry"]
+    name = "test_schip"
 
     # create two similar movables
-    movable1 = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable1 = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
     movable1.position_on_route = 0
 
-    movable2 = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable2 = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
     movable2.position_on_route = 0
 
     # Assign a resource to the edge
@@ -497,10 +505,11 @@ def test_movable_resource_restriction_one_edge(env):
 def test_movable_resource_restriction_two_edges_and_node(env):
     path = [0, 1, 0]
     geometry = env.graph.nodes[0]["geometry"]
+    name = "test_schip"
 
     # create two similar movables
-    movable1 = Movable(route=path, env=env, v=1.0, geometry=geometry)
-    movable2 = Movable(route=path, env=env, v=1.0, geometry=geometry)
+    movable1 = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
+    movable2 = Movable(name = name, route=path, env=env, v=1.0, geometry=geometry)
 
     # Assign a resource to the edge and the node
     resource = simpy.Resource(env, 1)
@@ -566,8 +575,9 @@ def test_movable_resource_restriction_two_edges_and_node(env):
 
 def test_movable_resource_restriction_two_directions(env):
     # create two similar movables
-    movable1 = Movable(route=[0, 1], env=env, v=1.0, geometry=env.graph.nodes[0]["geometry"])
-    movable2 = Movable(route=[1, 0], env=env, v=1.0, geometry=env.graph.nodes[1]["geometry"])
+    name = "test_schip"
+    movable1 = Movable(name = name, route=[0, 1], env=env, v=1.0, geometry=env.graph.nodes[0]["geometry"])
+    movable2 = Movable(name = name, route=[1, 0], env=env, v=1.0, geometry=env.graph.nodes[1]["geometry"])
 
     # Assign a resource to the edge and the node
     resource = simpy.Resource(env, 1)

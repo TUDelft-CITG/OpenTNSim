@@ -76,6 +76,8 @@ class Routable(SimpyObject):
             )
 
         self.route = route
+        if has_route and route == []:
+            return
 
         if has_route:
             self.origin = route[0]
@@ -242,6 +244,10 @@ class Movable(Identifiable, Locatable, Routable, Log):
         # keep track of distance travelled on edge
         self.distance_left_on_edge = np.nan
 
+        self._check_attributes()
+        if self.route == []:
+            return
+
         # Set default geometry if the caller did not provide one
         if geometry is None:
             start_node = self.origin
@@ -256,7 +262,17 @@ class Movable(Identifiable, Locatable, Routable, Log):
             time_of_registration = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
             self.env.vessels.loc[index, :] = [self.name, self.id, time_of_registration, self]
 
-
+    def _check_attributes(self):
+        """Check if all required attributes are set."""
+        # each node on route should have a geometry
+        geoms = nx.get_node_attributes(self.graph, "geometry")
+        if not all(node in geoms for node in self.route):
+            raise ValueError(
+                "Nodes on route must have a geometry attribute. Missing geometries for nodes: {}".format(
+                    [node for node in self.route if node not in geoms]
+                )
+            )
+    
     @property
     def current_node(self) -> Union[str, None]:
         """Return the current node on the route based on self.position_on_route."""
