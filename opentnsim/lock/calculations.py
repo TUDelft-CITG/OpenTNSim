@@ -2291,7 +2291,7 @@ def calculate_cycle_event_durations(Tc_df):
     total_cycle_time = Tc_df['Cycle duration'].sum()
 
     def timedelta_stat(series, stat="mean"):
-        """Return a Timedelta in seconds, or NaT if no valid result exists."""
+        """Return a Timedelta, or NaT if no valid result exists."""
         if series.empty:
             return pd.NaT
 
@@ -2299,6 +2299,9 @@ def calculate_cycle_event_durations(Tc_df):
 
         if pd.isna(value):
             return pd.NaT
+
+        if isinstance(value, (pd.Timedelta, np.timedelta64)):
+            return pd.Timedelta(seconds=round(pd.Timedelta(value).total_seconds()))
 
         return pd.Timedelta(seconds=round(value))
 
