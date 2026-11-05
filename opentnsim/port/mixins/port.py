@@ -439,7 +439,6 @@ class IsPortAuthority:
             at_berth = True
             if hasattr(parallel_process, 'delay'):
                 delay += parallel_process.delay
-                print(delay, datetime.datetime.fromtimestamp(vessel.env.now), parallel_process.delay)
 
         # optimize: reshuffle planning
         self.vessel_trips, changed_vessel_trips_df = sort_port_trips(self, self.terminals)

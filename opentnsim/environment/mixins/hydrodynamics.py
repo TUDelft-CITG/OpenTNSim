@@ -50,24 +50,13 @@ class HydrodynamicDataManager:
         if self.hydrodynamic_data is None:
             return np.array([])
 
-        parameter = parameter.strip().lower()
-
-        # Properties available in station_data_cache
-        cached_parameters = {
-            "water level": 0,
-            "nautical depth": 1,
-            "mbl": 1,
-        }
-
-        if parameter in cached_parameters:
+        if parameter in self.cached_parameters:
             if station not in self.station_data_cache:
                 raise KeyError(
                     f"No hydrodynamic data cached for station '{station}'."
                 )
 
-            return self.station_data_cache[station][
-                cached_parameters[parameter]
-            ]
+            return self.station_data_cache[station][parameter]
 
         # Fallback for properties not included in the cache
         station_index = self._get_station_index_of_hydrodynamic_data(
@@ -239,7 +228,8 @@ class HydrodynamicDataManager:
         if station is None:
             raise ValueError(f"No station found for node: {node}")
 
-        water_level_array, mbl_array = self.station_data_cache[station]
+        water_level_array = self.station_data_cache[station]['Water level']
+        mbl_array = self.station_data_cache[station]['Nautical depth']
 
         # Convert simulation time to integer nanoseconds
         current_time_ns = np.datetime64(
@@ -268,7 +258,7 @@ class HydrodynamicDataManager:
 
         water_level = water_level_array[time_index]
         MBL = mbl_array[time_index]
-
+        
         return MBL, water_level, water_level - MBL
 
     def _get_time_index_of_hydrodynamic_data(self, time):
@@ -427,34 +417,44 @@ class HydrodynamicData(SimpyObject):
 
         hydro_manager.hydrodynamic_data = hydrodynamic_data
 
-        # -------------------------------------------------
-        # 1. Precompute time array
-        # -------------------------------------------------
-
+        # Precompute time array
         hydro_manager.time_array = (
             hydrodynamic_data["TIME"].values
             .astype("datetime64[ns]")
             .astype(np.int64)
         )
 
-        # -------------------------------------------------
-        # 2. Precompute station data
-        # -------------------------------------------------
-
         hydro_manager.station_data_cache = {}
 
-        water_levels = hydrodynamic_data["Water level"].values
-        nautical_depths = hydrodynamic_data["Nautical depth"].values
+        accepted_vars = [
+            "Water level",
+            "Current velocity",
+            "Current direction",
+            "Nautical depth",
+            "Salinity",
+            "Temperature",
+        ]
+
         stations = hydrodynamic_data["STATION"].values
 
+        available_vars = {
+            var: hydrodynamic_data[var].values
+            if var in hydrodynamic_data.data_vars
+            else None
+            for var in accepted_vars
+        }
+
         hydro_manager.station_data_cache = {
-            station: (water_levels[i], nautical_depths[i])
+            station: {
+                var: values[i] if values is not None else None
+                for var, values in available_vars.items()
+            }
             for i, station in enumerate(stations)
         }
-        # -------------------------------------------------
-        # 3. Precompute node-to-station mapping
-        # -------------------------------------------------
 
+        hydro_manager.cached_parameters = list(available_vars.keys())
+
+        # Precompute node-to-station mapping
         precompute_station_mapping(
             hydro_manager,
             self.env.graph
