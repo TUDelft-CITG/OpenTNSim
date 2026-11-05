@@ -1053,7 +1053,7 @@ def get_sailing_time(vessel, edge_route, currently_sailing = False):
     total_time = 0.0
 
     for i, edge in enumerate(edge_route):
-        edge_data = graph.edges[edge]  # single lookup
+        edge_data = graph.edges[edge]
         dist = edge_data['length_m']
         speed = get_edge_speed(vessel, graph, edge)
 
@@ -1129,26 +1129,27 @@ def get_sailing_information_on_edge_to_distance_on_another_edge(
 
     # obtain dataframe with information of sailing speed, distance and time along route
     if not return_dataframe:
-        total_time = 0.0
+        total_time_seconds = 0.0
         total_distance = 0.0
 
         graph = vessel.env.graph
+        last_index = len(edge_route) - 1
 
         for i, edge in enumerate(edge_route):
             edge_data = graph.edges[edge]
-            dist = edge_data['length_m']
-            speed = get_edge_speed(vessel, graph, edge)
+            dist = edge_data["length_m"]
 
-            if i == 0 and dist > 0:
-                dist = dist - distance_sailed_on_first_edge
-
-            if i == len(edge_route) - 1 and dist > 0:
+            if i == 0:
+                dist -= distance_sailed_on_first_edge
+            if i == last_index:
                 dist = distance_to_be_sailed_on_last_edge
 
-            total_distance += dist
-            total_time += dist / speed
-        total_time = pd.Timedelta(seconds=total_time)
-        return total_time, total_distance
+            if dist > 0:
+                speed = get_edge_speed(vessel, graph, edge)
+                total_distance += dist
+                total_time_seconds += dist / speed
+
+        return pd.Timedelta(seconds=total_time_seconds), total_distance
 
     # determine indexes of first and last edges
     _, sailing_information_df = get_sailing_time(vessel=vessel, edge_route=edge_route)
@@ -1400,7 +1401,6 @@ def check_if_edge_is_suitable(vessel, edge_restrictions):
 
 
 def get_shortest_route(graph, origin, destination, vessel=None):
-
     def weight_by_restrictions(u, v, edge_data):
         if graph.is_multigraph():
             valid_lengths = []
@@ -1434,7 +1434,6 @@ def get_shortest_route(graph, origin, destination, vessel=None):
         target=destination,
         weight=weight_by_restrictions,
     )
-
     return route
 
 def validate_geometry(geometry, epsg):

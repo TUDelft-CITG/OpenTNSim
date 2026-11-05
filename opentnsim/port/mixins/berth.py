@@ -51,6 +51,7 @@ class IsBerth(OnNode, Identifiable, Log):
         self.berth_occupation = pd.DataFrame(
             columns = [
                 'vessel_id', 
+                'trip_id',
                 'operation_id', 
                 'time_start', 
                 'time_stop', 
@@ -99,6 +100,7 @@ class IsBerth(OnNode, Identifiable, Log):
             # add info to berth occupation dataframe
             self.berth_occupation.loc[index, :] = [
                 vessel.id, 
+                vessel.trip_id,
                 vessel.berth_operation_id, 
                 current_time, 
                 etd, 

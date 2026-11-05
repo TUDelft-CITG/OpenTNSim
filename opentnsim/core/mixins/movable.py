@@ -354,7 +354,7 @@ class Movable(Identifiable, Locatable, Routable, Log):
 
         """
         self.position_on_route = position_on_route
-        self.geometry = nx.get_node_attributes(self.graph, "geometry")[self.current_node]
+        self.geometry = self.graph.nodes[self.current_node]["geometry"]
 
     # TODO: Move was eerst een functie met 'destination' als argument, maar dat is nu niet meer het geval. Willen we dat dit weg is?
     def move(self):
@@ -384,10 +384,11 @@ class Movable(Identifiable, Locatable, Routable, Log):
         # look ahead to first node
         self.position_on_route = 0
         yield from self.look_ahead_to_node(self.route[0])
-
+        import time as timepy
         # Move over the path and log every step
         for index, _ in enumerate(zip(self.route[:-1], self.route[1:])):
             edge = self.edge_route[index]
+
             # update current position
             self.update_position(index)
 
@@ -431,7 +432,8 @@ class Movable(Identifiable, Locatable, Routable, Log):
                 yield from self.look_ahead_to_edge(self.current_edge)
             except simpy.exceptions.Interrupt as e:
                 break
-            
+
+
 
         # arrived at end of route. release resource if needed
         if self.req is not None:
@@ -453,7 +455,7 @@ class Movable(Identifiable, Locatable, Routable, Log):
         The time it takes to move to the start of the route.
         """
         # Check if vessel is at correct location - if not, move to location
-        vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
+        vessel_origin_location = self.env.graph.nodes[self.route[0]]["geometry"]
         if self.geometry != vessel_origin_location:
             self.log_entry_v0("Sailing to start start", self.env.now, self.distance, self.geometry)
             start_location = self.geometry
@@ -570,12 +572,13 @@ class Movable(Identifiable, Locatable, Routable, Log):
         ------
         The time it takes to pass the edge.
         """
+        import time as timepy
         origin, destination = edge[:2]
         k = f" on edge {edge[2]} " if len(edge) > 2 else " "
 
         edge_info = self.graph.edges[edge]
-        orig = nx.get_node_attributes(self.graph, "geometry")[origin]
-        dest = nx.get_node_attributes(self.graph, "geometry")[destination]
+        orig = self.env.graph.nodes[origin]["geometry"]
+        dest = self.env.graph.nodes[destination]["geometry"]
         distance = get_length_of_edge(self.graph, edge)
         self.distance_left_on_edge = distance
 
@@ -619,21 +622,25 @@ class Movable(Identifiable, Locatable, Routable, Log):
         # default velocity based on current speed.
         timeout = self.distance_left_on_edge / (self.current_speed + current)
         time_start = datetime.datetime.fromtimestamp(self.env.now)
-        try:
-            yield self.env.timeout(timeout)
-        except simpy.exceptions.Interrupt as e:
-            cause = e.cause
-            time_stop = datetime.datetime.fromtimestamp(self.env.now)
-            time_sailed = (time_stop - time_start).total_seconds()
-            distance_sailed = time_sailed * (self.current_speed + current)
+        while True:
+            try:
+                yield self.env.timeout(timeout)
+                break
+            except simpy.exceptions.Interrupt as e:
+                time_stop = datetime.datetime.fromtimestamp(self.env.now)
+                time_sailed = (time_stop - time_start).total_seconds()
+                distance_sailed = time_sailed * (self.current_speed + current)
+                self.distance_left_on_edge -= distance_sailed
+                timeout = self.distance_left_on_edge / (self.current_speed + current)
+                time_start = time_stop
             
-            self.log_entry_v0(
-                "Sailing from node {} to node {}{}stop".format(self.current_node, self.next_node, k),
-                self.env.now,
-                distance_sailed,
-                dest,
-            )
-            raise simpy.exceptions.Interrupt(cause)
+            # self.log_entry_v0(
+            #     "Sailing from node {} to node {}{}stop".format(self.current_node, self.next_node, k),
+            #     self.env.now,
+            #     distance_sailed,
+            #     dest,
+            # )
+            # raise simpy.exceptions.Interrupt(cause)
         self.distance += self.distance_left_on_edge
 
         self.log_entry_v0(

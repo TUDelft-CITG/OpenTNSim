@@ -46,6 +46,7 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
             continue
         last_index = last_index_df.iloc[0].name
         df_route = df[(df.index >= first_index) & (df.index <= last_index)]
+        
         gdf_route = gpd.GeoDataFrame(df_route,geometry='Geometry',crs="EPSG:4326")
         gdf_route = gdf_route.to_crs(epsg_out)
         df_route['Value'] = gdf_route['Geometry'].apply(lambda x: route_geometry_m.project(x))
@@ -291,15 +292,18 @@ def get_accessibility_info(vessel, origin, waterways, terminal, berth, delay = p
     return port_availability_per_waterway, conflicts_dfs
 
 
-def find_waterways_to_be_passed(vessel):
+def find_waterways_to_be_passed(vessel, route = None):
     passing_waterways = pd.DataFrame(
         columns = ['waterway_name', 'waterway', 'start_node', 'stop_node','time_sailing_start', 'time_sailing_stop'],
         )
 
+    if route is None:
+        route = vessel.route
+
     current_time = datetime.datetime.fromtimestamp(vessel.env.now)
     time_sailing_start = current_time
     route_start_index = vessel.position_on_route
-    for index, node in enumerate(vessel.route):
+    for index, node in enumerate(route):
         next_node = node
         previous_node = node
         if index:
@@ -320,7 +324,7 @@ def find_waterways_to_be_passed(vessel):
                 continue
             _, waterway_route, waterway_edge_route = get_waterway_orientation(waterway, vessel)
             waterway_start_node, waterway_stop_node = waterway_route[0], waterway_route[-1]
-            waterway_route_start_index = vessel.route.index(waterway_start_node)
+            waterway_route_start_index = route.index(waterway_start_node)
             edge_route_to_waterway = vessel.edge_route[route_start_index:waterway_route_start_index]
             sailing_time_to_waterway, _ = get_sailing_time(vessel, edge_route_to_waterway)
             last_message = pd.DataFrame(vessel.logbook).iloc[-1] if len(vessel.logbook) > 0 else None
@@ -329,17 +333,17 @@ def find_waterways_to_be_passed(vessel):
                 sailing_time_on_current_edge = current_time - start_time_sailing_on_current_node
                 sailing_time_to_waterway -= sailing_time_on_current_edge.total_seconds()
 
-            if passing_waterways.empty and waterway_start_node != vessel.route[0]:
+            if passing_waterways.empty and waterway_start_node != route[0]:
                 index = 0
-                start_node = vessel.route[0]
+                start_node = route[0]
                 stop_node = waterway_start_node
                 time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_to_waterway)
                 passing_waterways.loc[index, :] = [
                     'trip_start', None, start_node, stop_node, time_sailing_start, time_sailing_stop]
 
-            if passing_waterways.empty and waterway_start_node != vessel.route[0]:
+            if passing_waterways.empty and waterway_start_node != route[0]:
                 index = 0
-                start_node, stop_node = vessel.route[0], waterway_start_node
+                start_node, stop_node = route[0], waterway_start_node
                 time_sailing_start = current_time
                 sailing_time_on_waterway, _ = get_sailing_time(vessel, vessel.edge_route)
                 time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_on_waterway)
@@ -352,22 +356,22 @@ def find_waterways_to_be_passed(vessel):
             time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_on_waterway)
             passing_waterways.loc[index, :] = [
                 waterway.name, waterway, waterway_start_node, waterway_stop_node, time_sailing_start, time_sailing_stop]
-            route_start_index = vessel.route.index(waterway_stop_node)
+            route_start_index = route.index(waterway_stop_node)
             time_sailing_start = time_sailing_stop
   
     if passing_waterways.empty:
         index = 0
-        start_node, stop_node = vessel.route[0], vessel.route[-1]
+        start_node, stop_node = route[0], route[-1]
         time_sailing_start = current_time
         sailing_time_on_waterway, _ = get_sailing_time(vessel, vessel.edge_route)
         time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_on_waterway)
         passing_waterways.loc[index, :] = [
             'Waterway', None, start_node, stop_node, time_sailing_start, time_sailing_stop]
-    elif waterway_stop_node != vessel.route[-1]:
+    elif waterway_stop_node != route[-1]:
         index = len(passing_waterways)
-        start_node, stop_node = waterway_stop_node, vessel.route[-1]
-        route_over_waterway = vessel.route[route_start_index:]
-        edge_route_over_waterway = list(zip(route_over_waterway[:-1],route_over_waterway[1:]))
+        start_node, stop_node = waterway_stop_node, route[-1]
+        route_over_waterway = route[route_start_index:]
+        edge_route_over_waterway = node_path_to_edge_path(vessel.env.graph, route_over_waterway)
         sailing_time_on_waterway, _ = get_sailing_time(vessel, edge_route_over_waterway)
         time_sailing_stop = time_sailing_start + pd.Timedelta(seconds = sailing_time_on_waterway)
         passing_waterways.loc[index, :] = [
@@ -595,14 +599,14 @@ def provide_nearest_anchorage_area(vessel, node):
 
     return node_anchorage
 
-def add_ukc_policy_to_node(graph, node, rules):
+def add_ukc_policy_to_node(env, node, rules):
 
-    if "Depth_restriction" not in graph.nodes[node]:
-        graph.nodes[node]["Depth_restriction"] = RuleEngine(default = lambda v: 0.0)
-        graph.nodes[node]["Depth_restriction_at_distance"] = 0.
+    if "Depth_restriction" not in env.graph.nodes[node]:
+        env.graph.nodes[node]["Depth_restriction"] = RuleEngine(default = lambda v: 0.0)
+        env.graph.nodes[node]["Depth_restriction_at_distance"] = 0.
 
     for rule in rules:
-        graph.nodes[node]["Depth_restriction"].add_rule(
+        env.graph.nodes[node]["Depth_restriction"].add_rule(
             condition=rule.condition,
             policy=rule.policy,
             name=rule.name,
@@ -775,10 +779,12 @@ def get_vessel_direction_with_waterway(routeA, routeB):
     return direction
 
 
-def get_waterway_orientation(waterway, vessel):
+def get_waterway_orientation(waterway, vessel, route = None):
+    if route is None:
+        route = vessel.route
     waterway_route = waterway.route
     waterway_edge_route = waterway.edge_route
-    direction = get_vessel_direction_with_waterway(waterway_route, vessel.route)
+    direction = get_vessel_direction_with_waterway(waterway_route, route)
     if direction:
         waterway_route = waterway.route_reversed
         waterway_edge_route = waterway.edge_route_reversed
@@ -843,30 +849,28 @@ def check_berth_can_host_vessel(berth, vessel):
 
 def check_vessel_is_tide_bound(vessel, route = None, start_time = pd.Timestamp('NaT')):
     from opentnsim.port.calculations import calculate_minimum_waiting_time_for_tidal_window,  calculate_tidal_windows
-    if route is None:
-        route = vessel.route
     if pd.isna(start_time):
         start_time = datetime.datetime.fromtimestamp(vessel.env.now)
     time_start = np.datetime64(start_time - np.timedelta64(12,'h'))
     edge_route = node_path_to_edge_path(vessel.env.graph, route)
     sailing_time, _ = get_sailing_time(vessel, edge_route)
     sailing_time = max(pd.Timedelta(seconds=sailing_time), pd.Timedelta(hours=96))
-    time_end = np.datetime64(datetime.datetime.fromtimestamp(vessel.env.now) + sailing_time)
+    time_end = np.datetime64(start_time + sailing_time)
     has_tidal_window_policy = check_if_route_contains_restrictions(vessel)
     tidal_window_results = pd.DataFrame(columns=["Accessibility"])
     vessel_can_reach_berth = True
     is_tide_bound = False
     tidal_waiting_time = pd.Timedelta(seconds = 0.)
     if not has_tidal_window_policy:
-        return vessel_can_reach_berth, is_tide_bound, tidal_waiting_time, tidal_window_results
-    
+        return vessel_can_reach_berth, is_tide_bound, tidal_waiting_time, tidal_window_results, sailing_time
+
     tidal_window_results = calculate_tidal_windows(vessel, route, time_start, time_end)
     tidal_windows = (
         tidal_window_results
         .groupby("waterway")["tidal_windows"]
         .apply(classify_tidal_access)
     )
-
+    
     vessel_can_reach_berth = ~tidal_windows.eq("unable_to_enter").any()
     is_tide_bound = tidal_windows.eq("tide_bound").any()
     tidal_waiting_time = pd.Timedelta(seconds = 0)
@@ -878,8 +882,8 @@ def check_vessel_is_tide_bound(vessel, route = None, start_time = pd.Timestamp('
             ))
             .max()
         )
-
-    return vessel_can_reach_berth, is_tide_bound, tidal_waiting_time, tidal_window_results
+    
+    return vessel_can_reach_berth, is_tide_bound, tidal_waiting_time, tidal_window_results, sailing_time
 
 
 def sort_port_trips(port, terminals):
@@ -1209,6 +1213,7 @@ def get_berth_availability_info(vessel, origin, berth, delay = pd.Timedelta(seco
     sailing_time_to_berth = pd.Timedelta(seconds = 0)
     if origin != berth.node:
         sailing_time_to_berth = calculate_sailing_time_to_berth(vessel, origin, berth)
+
     berth_availability.index -= sailing_time_to_berth + delay
 
     # get future availability of fit berths
@@ -1220,8 +1225,9 @@ def get_berth_availability_info(vessel, origin, berth, delay = pd.Timedelta(seco
     return berth_availability
 
 
-def get_terminal_berths_availability(vessel, origin, terminal, delay = pd.Timedelta(seconds = 0), bool = True):
-    berths = terminal.berths.items
+def get_terminal_berths_availability(vessel, origin, terminal, berths = [], delay = pd.Timedelta(seconds = 0), bool = True):
+    if not berths:
+        berths = terminal.berths.items
     
     terminal_berth_availability = pd.DataFrame()
     for berth in berths:

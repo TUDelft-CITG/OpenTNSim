@@ -2,22 +2,174 @@
 import numpy as np
 import xarray as xr
 from opentnsim.core import SimpyObject
+import datetime
 
 class HydrodynamicDataManager:
     """
     Singleton class to manage hydrodynamic data.
-    This class ensures that hydrodynamic data is loaded only once and can be accessed globally.
+    This class ensures that hydrodynamic data is loaded only once
+    and can be accessed globally.
     """
+
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(HydrodynamicDataManager, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance.hydrodynamic_data = None
             cls._instance.hydrodynamic_times = None
+            cls._instance.hydrodynamic_times_ns = None
+
+        # Ensure caches exist, including for older instances
+        if not hasattr(cls._instance, "station_cache"):
+            cls._instance.station_cache = {}
+
+        if not hasattr(cls._instance, "station_data_cache"):
+            cls._instance.station_data_cache = {}
 
         return cls._instance
 
+    def get_station_data(self, station, parameter):
+        """
+        Get a hydrodynamic time series for a station.
+
+        Parameters
+        ----------
+        station : str
+            Station name.
+        parameter : str
+            Hydrodynamic property, e.g. "Water level",
+            "Nautical depth", "Current velocity", or "Salinity".
+
+        Returns
+        -------
+        np.ndarray
+            Time series for the requested property.
+        """
+
+        if self.hydrodynamic_data is None:
+            return np.array([])
+
+        parameter = parameter.strip().lower()
+
+        # Properties available in station_data_cache
+        cached_parameters = {
+            "water level": 0,
+            "nautical depth": 1,
+            "mbl": 1,
+        }
+
+        if parameter in cached_parameters:
+            if station not in self.station_data_cache:
+                raise KeyError(
+                    f"No hydrodynamic data cached for station '{station}'."
+                )
+
+            return self.station_data_cache[station][
+                cached_parameters[parameter]
+            ]
+
+        # Fallback for properties not included in the cache
+        station_index = self._get_station_index_of_hydrodynamic_data(
+            station
+        )
+
+        if station_index is None:
+            raise KeyError(
+                f"Station '{station}' not found in hydrodynamic data."
+            )
+
+        if isinstance(self.hydrodynamic_data, xr.Dataset):
+            return self.hydrodynamic_data[parameter.title()][
+                station_index
+            ].values
+
+        return self.hydrodynamic_data[parameter.title()][station_index]
+
+    def get_water_level(self, station):
+        """Get the water level time series for a station."""
+        return self.get_station_data(station, "Water level")
+
+    def get_mbl(self, station):
+        """Get the nautical depth (MBL) time series for a station."""
+        return self.get_station_data(station, "Nautical depth")
+
+    def get_water_depth(self, station, start_index=None, end_index=None):
+        """
+        Get water depth (water level minus nautical depth).
+
+        Optionally restrict the result to a time interval using indices.
+        """
+
+        water_level = self.get_water_level(station)
+        mbl = self.get_mbl(station)
+
+        if start_index is not None or end_index is not None:
+            water_level = water_level[start_index:end_index]
+            mbl = mbl[start_index:end_index]
+
+        return water_level - mbl
+
+    def get_station_time_slice(
+        self,
+        station,
+        parameter,
+        start_index,
+        end_index,
+    ):
+        """Get a time slice of a station's hydrodynamic data."""
+
+        return self.get_station_data(
+            station, parameter
+        )[start_index:end_index]
+
+    def get_time_array(self):
+        """Get timestamps as integer nanoseconds since Unix epoch."""
+
+        if self.hydrodynamic_data is None:
+            return np.array([], dtype=np.int64)
+
+        if self.hydrodynamic_times is None:
+            if isinstance(self.hydrodynamic_data, xr.Dataset):
+                times = self.hydrodynamic_data["TIME"].values
+            else:
+                times = self.hydrodynamic_data["TIME"]
+
+            self.hydrodynamic_times = np.asarray(
+                times
+            ).astype("datetime64[ns]")
+
+        if self.hydrodynamic_times_ns is None:
+            self.hydrodynamic_times_ns = (
+                self.hydrodynamic_times.astype(np.int64)
+            )
+
+        return self.hydrodynamic_times_ns
+
+    def get_time_slice(self, start_index, end_index):
+        """Get timestamps between two indices, in datetime64[ns]."""
+
+        return self.get_time_array()[
+            start_index:end_index
+        ].astype("datetime64[ns]")
+
+    def _get_station_index_of_hydrodynamic_data(self, node):
+        """Get the station index of a node in the hydrodynamic data."""
+
+        if self.hydrodynamic_data is None:
+            return None
+
+        if isinstance(self.hydrodynamic_data, xr.Dataset):
+            stations = self.hydrodynamic_data["STATION"].values
+        else:
+            stations = self.hydrodynamic_data["STATION"]
+
+        indices = np.flatnonzero(np.asarray(stations) == node)
+
+        if len(indices) == 0:
+            return None
+
+        return int(indices[0])    
 
     def _get_hydrodynamic_data_value(self, time, node, hydrodynamic_property):
         """Gets the interpolated value of a hydrodynamic property at a certain time and node
@@ -60,6 +212,65 @@ class HydrodynamicDataManager:
 
         return value
 
+    def get_water_depth_at_simulation_time(
+        self,
+        node,
+        simulation_time,
+    ):
+        """
+        Get MBL, water level and available water depth at the
+        nearest hydrodynamic timestamp to a simulation time.
+
+        Parameters
+        ----------
+        node : str
+            Graph node identifying the hydrodynamic station.
+        simulation_time : float
+            Simulation time in seconds since the Unix epoch.
+
+        Returns
+        -------
+        tuple
+            MBL, water level, available water depth.
+        """
+
+        station = self.station_cache.get(node)
+
+        if station is None:
+            raise ValueError(f"No station found for node: {node}")
+
+        water_level_array, mbl_array = self.station_data_cache[station]
+
+        # Convert simulation time to integer nanoseconds
+        current_time_ns = np.datetime64(
+            datetime.datetime.fromtimestamp(simulation_time),
+            "ns",
+        ).astype(np.int64)
+
+        # Get cached integer timestamps
+        time_array = self.get_time_array()
+
+        if len(time_array) == 0:
+            raise ValueError("No hydrodynamic timestamps available.")
+
+        # Find nearest timestamp
+        time_index = np.searchsorted(time_array, current_time_ns)
+
+        if time_index == len(time_array):
+            time_index -= 1
+
+        elif time_index > 0:
+            if (
+                current_time_ns - time_array[time_index - 1]
+                < time_array[time_index] - current_time_ns
+            ):
+                time_index -= 1
+
+        water_level = water_level_array[time_index]
+        MBL = mbl_array[time_index]
+
+        return MBL, water_level, water_level - MBL
+
     def _get_time_index_of_hydrodynamic_data(self, time):
         """Gets the time index in the hydrodynamic data closest to a time
 
@@ -85,29 +296,6 @@ class HydrodynamicDataManager:
             time_index = np.absolute(self.hydrodynamic_data["TIME"] - time).argmin()
 
         return time_index
-
-    def _get_station_index_of_hydrodynamic_data(self, node):
-        """Gets the node's station index in the hydrodynamic data
-
-        Parameters
-        ----------
-        node : str
-            the node name in the graph
-
-        Returns
-        -------
-        station_index : str
-            the time index of the hydrodynamic data closest to the time
-        """
-        if self.hydrodynamic_data is None:
-            return None
-
-        if isinstance(self.hydrodynamic_data, xr.Dataset):
-            station_index = np.where(np.array(list((self.hydrodynamic_data["STATION"].values))) == node)[0][0]
-        else:
-            station_index = np.where(np.array(list((self.hydrodynamic_data["STATION"]))) == node)[0]
-
-        return station_index
 
     def _get_hydrodynamic_data_series(self, time, node, hydrodynamic_property):
         """Gets the time series of a hydrodynamic property at a certain node from a certain time onwards
@@ -208,24 +396,67 @@ from opentnsim.environment.utils import (
     check_hydrodynamic_data_coordinates,
     check_hydrodynamic_data_variables,
     check_hydrodynamic_data_temporal_coverage,
-    check_hydrodynamic_data_spatial_coverage,
+    precompute_station_mapping,
     transpose_data_in_accepted_order,
-    sort_data
 )
-
 
 class HydrodynamicData(SimpyObject):
 
     def __init__(self, hydrodynamic_data: xr.Dataset, *args, **kwargs):
+
         super().__init__(*args, **kwargs)
-        if not hasattr(self.env,'graph'):
-            raise NotImplementedError("A graph needs to be added to the environment as env.graph = graph")
+
+        if not hasattr(self.env, 'graph'):
+            raise NotImplementedError(
+                "A graph needs to be added to the environment"
+            )
+
         check_hydrodynamic_data_coordinates(hydrodynamic_data)
         check_hydrodynamic_data_variables(hydrodynamic_data)
-        check_hydrodynamic_data_temporal_coverage(self.env, hydrodynamic_data)
-        # check_hydrodynamic_data_spatial_coverage(self.env.graph, hydrodynamic_data)
-        hydrodynamic_data = transpose_data_in_accepted_order(hydrodynamic_data)
-        # hydrodynamic_data = sort_data(self.env.graph, hydrodynamic_data)
+        check_hydrodynamic_data_temporal_coverage(
+            self.env, hydrodynamic_data
+        )
+
+        hydrodynamic_data = transpose_data_in_accepted_order(
+            hydrodynamic_data
+        )
+
         self.env.hydrodynamics = True
+
         hydro_manager = HydrodynamicDataManager()
+
         hydro_manager.hydrodynamic_data = hydrodynamic_data
+
+        # -------------------------------------------------
+        # 1. Precompute time array
+        # -------------------------------------------------
+
+        hydro_manager.time_array = (
+            hydrodynamic_data["TIME"].values
+            .astype("datetime64[ns]")
+            .astype(np.int64)
+        )
+
+        # -------------------------------------------------
+        # 2. Precompute station data
+        # -------------------------------------------------
+
+        hydro_manager.station_data_cache = {}
+
+        water_levels = hydrodynamic_data["Water level"].values
+        nautical_depths = hydrodynamic_data["Nautical depth"].values
+        stations = hydrodynamic_data["STATION"].values
+
+        hydro_manager.station_data_cache = {
+            station: (water_levels[i], nautical_depths[i])
+            for i, station in enumerate(stations)
+        }
+        # -------------------------------------------------
+        # 3. Precompute node-to-station mapping
+        # -------------------------------------------------
+
+        precompute_station_mapping(
+            hydro_manager,
+            self.env.graph
+        )
+        

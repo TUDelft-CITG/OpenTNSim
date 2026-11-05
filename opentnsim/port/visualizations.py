@@ -14,6 +14,10 @@ import pytz
 import folium
 from shapely.geometry import Point, Polygon
 from matplotlib.ticker import NullLocator
+import os
+import time as timer
+from tqdm.auto import tqdm
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.environment.utils import get_governing_current_velocity, get_nearest_time_index
@@ -21,6 +25,10 @@ from opentnsim.graph.utils import get_sailing_time
 from opentnsim.port.calculations import calculate_interpolated_depth_values
 from opentnsim.port.logutils import isolate_events
 from opentnsim.port.utils import create_logbook_with_directed_distances
+from opentnsim.graph.utils import (
+    node_path_to_edge_path,
+    get_sailing_distance,
+)
 
 
 def lighten_color(color, alpha):
@@ -585,11 +593,14 @@ def plot_berth_occupation(berth, time_start = None, time_stop = None, style = 'm
     from opentnsim.port.mixins.berth import IsQuay, IsJetty
     if time_start is None:
         time_start = berth.env.simulation_start
+    elif time_stop < berth.env.simulation_start:
+        raise ValueError("Time start is greater then or equal to time stop")    
     if time_stop is None:
         time_stop = berth.env.simulation_stop
-
-    if time_start == time_stop:
-        return None
+    elif time_stop < berth.env.simulation_start:
+        raise ValueError("Time stop is smaller then or equal to time stop")
+    if time_stop <= time_start:
+        raise ValueError("Time stop is smaller then or equal to time start")
 
     df = berth.berth_occupation
     if style == 'matplotlib':
@@ -1957,14 +1968,16 @@ def plot_vessel_arrival_timeline(berth):
         all_events.append(events)
 
     # Combine all vessel events
-    plot_df = pd.concat(all_events, ignore_index=True)
+    plot_df = pd.DataFrame()
+    if all_events:
+        plot_df = pd.concat(all_events, ignore_index=True)
 
-    # Remove invalid intervals
-    plot_df = plot_df.dropna(subset=["Start", "Stop", "Event"])
-    plot_df = plot_df[plot_df["Stop"] > plot_df["Start"]]
+        # Remove invalid intervals
+        plot_df = plot_df.dropna(subset=["Start", "Stop", "Event"])
+        plot_df = plot_df[plot_df["Stop"] > plot_df["Start"]]
 
-    # Ensure hover data contains JSON-compatible values
-    plot_df["Duration (hours)"] = plot_df["Duration (hours)"].astype(float)
+        # Ensure hover data contains JSON-compatible values
+        plot_df["Duration (hours)"] = plot_df["Duration (hours)"].astype(float)
 
     event_colors = {
         "Sailing":              "#B7D2DE", 
@@ -1978,43 +1991,724 @@ def plot_vessel_arrival_timeline(berth):
     event_order = list(event_colors.keys())
 
     # Create interactive Gantt chart
-    fig = px.timeline(
-        plot_df,
-        x_start="Start",
-        x_end="Stop",
-        y="Vessel",
-        color="Event",
-        color_discrete_map=event_colors,
-        category_orders={"Event": event_order},
-        hover_data={
-            "Start": "|%Y-%m-%d %H:%M:%S",
-            "Stop": "|%Y-%m-%d %H:%M:%S",
-            "Duration (hours)": ":.2f",
-        },
-        labels={
-            "Vessel": "Vessel",
-            "Event": "Activity",
-            "Duration (hours)": "Duration (hours)",
-        },
-    )
+    if plot_df.empty:
+        print(f'No vessels scheduled at berth "{berth.name}"')
 
-    # Format chart
-    fig.update_yaxes(
-        autorange="reversed",
-        title="Vessel",
-    )
+        fig = go.Figure()
+        fig.update_layout(
+            width=10,
+            height=10,
+            margin=dict(l=0, r=0, t=0, b=0),
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+        )
 
-    fig.update_xaxes(
-        title="Time",
-        tickformat="%d %b\n%H:%M",
-        rangeslider_visible=False,
-    )
+        return fig
+    else:
+        fig = px.timeline(
+            plot_df,
+            x_start="Start",
+            x_end="Stop",
+            y="Vessel",
+            color="Event",
+            color_discrete_map=event_colors,
+            category_orders={"Event": event_order},
+            hover_data={
+                "Start": "|%Y-%m-%d %H:%M:%S",
+                "Stop": "|%Y-%m-%d %H:%M:%S",
+                "Duration (hours)": ":.2f",
+            },
+            labels={
+                "Vessel": "Vessel",
+                "Event": "Activity",
+                "Duration (hours)": "Duration (hours)",
+            },
+        )
 
-    fig.update_layout(
-        height=max(350, 60 * plot_df["Vessel"].nunique()),
-        legend_title="Activity",
-        hovermode="closest",
-        bargap=0.25,
-    )
+        # Format chart
+        fig.update_yaxes(
+            autorange="reversed",
+            title="Vessel",
+        )
+
+        fig.update_xaxes(
+            title="Time",
+            tickformat="%d %b\n%H:%M",
+            rangeslider_visible=False,
+        )
+
+        fig.update_layout(
+            height=max(350, 60 * plot_df["Vessel"].nunique()),
+            legend_title="Activity",
+            hovermode="closest",
+            bargap=0.25,
+        )
+
+        fig.update_layout(title=f'Vessels scheduled at berth "{berth.name}"')
 
     return fig
+
+
+def create_tidal_window_animation(vessel, route):
+    
+    # --------------------------------------------------
+    # 1. Prepare vessel logbook
+    # --------------------------------------------------
+    # Assumes the logbook DataFrame is called logbook
+    # and contains Timestamp, Value and Message columns.
+
+    vessel_logbook = pd.DataFrame(vessel.logbook.copy())
+    vessel_logbook = create_logbook_with_directed_distances(vessel, route)
+    time_start = vessel_logbook.iloc[0].Timestamp - pd.Timedelta(hours = 2)
+    time_stop = vessel_logbook.iloc[-1].Timestamp + pd.Timedelta(hours = 2)
+
+    vessel_logbook["Timestamp"] = pd.to_datetime(
+        vessel_logbook["Timestamp"]
+    )
+
+    # Keep sailing events only
+    vessel_logbook = vessel_logbook[
+        vessel_logbook["Message"].str.contains(
+            "Sailing",
+            na=False
+        )
+    ].copy()
+
+    vessel_logbook = vessel_logbook.sort_values(
+        "Timestamp"
+    ).reset_index(drop=True)
+
+    vessel_logbook["Value"] = pd.to_numeric(
+        vessel_logbook["Value"],
+        errors="coerce"
+    )
+
+    vessel_logbook = vessel_logbook.dropna(
+        subset=["Timestamp", "Value"]
+    )
+
+    if vessel_logbook.empty:
+        raise ValueError("No valid sailing events found in the logbook.")
+
+    # Convert timestamps to the same timezone convention as simulation
+    # Assumes both are timezone-naive or both timezone-aware.
+    logbook_times = vessel_logbook["Timestamp"].to_numpy(
+        dtype="datetime64[ns]"
+    )
+
+    logbook_distances = vessel_logbook["Value"].to_numpy(
+        dtype=float
+    )
+
+    # --------------------------------------------------
+    # 2. Find route and subset hydrodynamic data
+    # --------------------------------------------------
+
+    simulation_start = pd.Timestamp(vessel.env.simulation_start)
+
+    hydromanager = HydrodynamicDataManager()
+    hydrodynamic_data = hydromanager.hydrodynamic_data
+    route_hydrodynamics = hydrodynamic_data.sel(
+        STATION=route,
+        TIME=slice(
+            time_start,
+            time_stop,
+        )
+    )
+
+    # --------------------------------------------------
+    # 3. Calculate cumulative distance along route
+    # --------------------------------------------------
+    edges = node_path_to_edge_path(vessel.env.graph, route)
+    _, df = get_sailing_distance(vessel.env.graph, edges)
+    df['edge'] = df.apply(lambda x: (x.node_start, x.node_stop), axis=1)
+    edge_distances = np.asarray(df["distance"].values, dtype=float)
+    distances = np.concatenate(([0.0], np.cumsum(edge_distances)))
+
+    if len(distances) != len(route):
+        raise ValueError(
+            f"{len(distances)} distances for {len(route)} stations. "
+            "Check the edge-distance output."
+        )
+
+    route_hydrodynamics = route_hydrodynamics.assign_coords(
+        Distance=("STATION", distances)
+    )
+
+    # --------------------------------------------------
+    # 4. Prepare water-level data
+    # --------------------------------------------------
+    water_level = route_hydrodynamics["Water level"].transpose(
+        "TIME", "STATION"
+    )
+
+    nautical_depth = route_hydrodynamics["Nautical depth"].transpose(
+        "TIME", "STATION"
+    )
+    time = route_hydrodynamics["TIME"].values
+    distance = route_hydrodynamics["Distance"].values
+
+    # Actual water levels, varying with time and distance
+    water_levels = np.asarray(water_level.values, dtype=float)
+
+    # Nautical depths, also varying with time and distance
+    nautical_depths = np.asarray(nautical_depth.values, dtype=float)
+
+    # --------------------------------------------------
+    # Create stepwise required-depth profile
+    # --------------------------------------------------
+    trip_id = vessel.trips.iloc[0].trip_id
+    node_required_depths = (
+        vessel.tidal_window_calculations[trip_id]
+        .iloc[0]
+        .required_water_depth_per_node
+    )
+    node_required_depths = [
+        value
+        for node, value in node_required_depths.items()
+        if node in route
+    ]
+
+    # --------------------------------------------------
+    # Prepare available depth at each route station
+    # --------------------------------------------------
+    node_available_depths = []
+
+    for i, node in enumerate(route):
+
+        # Time-dependent nautical depth at this station
+        original_depth = -nautical_depths[:, i].copy()
+
+        # Apply berth / anchorage overrides
+        if 'Berth' in vessel.env.graph.nodes[node]:
+            berths = vessel.env.graph.nodes[node]['Berth']
+            new_depth = max(berth.depth for berth in berths)
+            original_depth = np.full(len(time), new_depth)
+
+        elif 'Anchorage' in vessel.env.graph.nodes[node]:
+            anchorages = vessel.env.graph.nodes[node]['Anchorage']
+            new_depth = max(anchorage.depth for anchorage in anchorages)
+            original_depth = np.full(len(time), new_depth)
+
+        node_available_depths.append(original_depth)
+
+    # --------------------------------------------------
+    # Create staircase profile
+    # --------------------------------------------------
+    original_distances = distance.copy()
+
+    step_distances = [original_distances[0]]
+    step_depths = [node_available_depths[0]]
+    required_step_depths = [node_required_depths[0]*np.ones(len(node_available_depths[i]))]
+
+    for i in range(len(node_required_depths)):
+        # First node: transition only after the node
+        if i == 0:
+            delta_after = original_distances[i + 1] - original_distances[i]
+            x_after = original_distances[i] + 0.1 * delta_after
+
+            step_distances.extend([x_after, x_after])
+            step_depths.extend([
+                node_available_depths[i],
+                node_available_depths[i + 1]
+            ])
+            required_step_depths.extend([
+                node_required_depths[i]*np.ones(len(node_available_depths[i])),
+                node_required_depths[i + 1]*np.ones(len(node_available_depths[i])),
+            ])
+
+        # Last node: transition only before the node
+        elif i == len(route) - 1:
+            delta_before = original_distances[i] - original_distances[i - 1]
+            x_before = original_distances[i] - 0.1 * delta_before
+        
+            # Vertical transition: previous depth -> last-node depth
+            step_distances.extend([x_before, x_before])
+            step_depths.extend([
+                node_available_depths[i - 1],
+                node_available_depths[i]
+            ])
+            required_step_depths.extend([
+                node_required_depths[i - 1]*np.ones(len(node_available_depths[i])),
+                node_required_depths[i]*np.ones(len(node_available_depths[i])),
+            ])
+        
+            # Continue to the end of the route
+            step_distances.append(original_distances[i])
+            step_depths.append(node_available_depths[i])
+            required_step_depths.append(node_required_depths[i]*np.ones(len(node_available_depths[i])))
+
+        # Interior nodes
+        else:
+            delta_before = original_distances[i] - original_distances[i - 1]
+            delta_after = original_distances[i + 1] - original_distances[i]
+
+            x_before = original_distances[i] - 0.1 * delta_before
+            x_after = original_distances[i] + 0.1 * delta_after
+
+            # Before the node: maintain current depth
+            step_distances.extend([x_before, x_before])
+            step_depths.extend([
+                node_available_depths[i],
+                node_available_depths[i]
+            ])
+            required_step_depths.extend([
+                node_required_depths[i]*np.ones(len(node_available_depths[i])),
+                node_required_depths[i]*np.ones(len(node_available_depths[i])),
+            ])
+
+            # Horizontal section through the node
+            step_distances.append(x_after)
+            step_depths.append(node_available_depths[i])
+            required_step_depths.append(node_required_depths[i]*np.ones(len(node_available_depths[i])))
+
+            # Transition after the node, except at the penultimate node
+            if i < len(route) - 2:
+                step_distances.append(x_after)
+                step_depths.append(node_available_depths[i + 1])
+                required_step_depths.append(node_required_depths[i + 1]*np.ones(len(node_available_depths[i])))
+
+
+    depth_distances = np.asarray(step_distances, dtype=float)
+    available_depths = np.column_stack(step_depths)
+
+    if water_levels.shape != (len(time), len(distance)):
+        raise ValueError("Water-level data shape does not match time and distance.")
+
+    if nautical_depths.shape != water_levels.shape:
+        raise ValueError("Nautical-depth data shape does not match water levels.")
+
+    if available_depths.shape[1] != len(depth_distances):
+        raise ValueError("Available depths and step distances must match.")
+
+    if available_depths.shape[0] != len(water_levels):
+        raise ValueError("Available depths and water levels must have matching time steps.")
+
+    # --------------------------------------------------
+    # Calculate required water-level profile
+    # --------------------------------------------------
+
+    depth_distances = np.asarray(step_distances, dtype=float)
+    available_depths = np.column_stack(step_depths)
+    step_required_depths = np.column_stack(required_step_depths)
+
+    smooth_required_levels = (
+        step_required_depths - available_depths
+    )
+
+    # --------------------------------------------------
+    # Calculate actual water-level profiles
+    # --------------------------------------------------
+
+    smooth_water_levels = np.full_like(
+        water_levels,
+        np.nan,
+        dtype=float
+    )
+
+    for frame in range(len(time)):
+
+        valid = (
+            np.isfinite(distance)
+            & np.isfinite(water_levels[frame, :])
+        )
+
+        if np.count_nonzero(valid) >= 2:
+
+            x = distance[valid]
+            y = water_levels[frame, valid]
+
+            order = np.argsort(x)
+            x = x[order]
+            y = y[order]
+
+            x_unique, indices = np.unique(
+                x,
+                return_index=True
+            )
+
+            y_unique = y[indices]
+
+            smooth_water_levels[frame, :] = np.interp(
+                distance,
+                x_unique,
+                y_unique
+            )
+
+    # --------------------------------------------------
+    # Prepare static vessel trajectory
+    # --------------------------------------------------
+
+    # Create regular 5-minute time steps
+    trajectory_times = pd.date_range(
+        start=vessel_logbook["Timestamp"].min(),
+        end=vessel_logbook["Timestamp"].max(),
+        freq="5min"
+    )
+
+    trajectory_time_ns = trajectory_times.to_numpy(
+        dtype="datetime64[ns]"
+    ).astype("int64")
+
+    logbook_time_ns = logbook_times.astype(
+        "datetime64[ns]"
+    ).astype("int64")
+
+    # Interpolate vessel distance at every 5-minute interval
+    trajectory_distances = np.interp(
+        trajectory_time_ns,
+        logbook_time_ns,
+        logbook_distances
+    )
+
+    # Interpolate experienced water level at every 5-minute interval
+    trajectory_water_levels = np.full(
+        len(trajectory_times),
+        np.nan
+    )
+
+    for i, timestamp in enumerate(trajectory_times):
+
+        frame_idx = np.searchsorted(
+            time,
+            timestamp.to_datetime64(),
+            side="right"
+        ) - 1
+
+        if frame_idx < 0 or frame_idx >= len(time):
+            continue
+
+        valid = (
+            np.isfinite(distance)
+            & np.isfinite(smooth_water_levels[frame_idx, :])
+        )
+
+        if np.count_nonzero(valid) < 2:
+            continue
+
+        trajectory_water_levels[i] = np.interp(
+            trajectory_distances[i],
+            distance[valid],
+            smooth_water_levels[frame_idx, valid]
+        )
+
+    # --------------------------------------------------
+    # 6. Create animation
+    # --------------------------------------------------
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    # Animated water-depth profile
+    # Actual water level
+    line, = ax.plot(
+        [],
+        [],
+        lw=2.5,
+        color="royalblue",
+        label="Water level"
+    )
+
+    # Required water level
+    required_depth, = ax.plot(
+        [],
+        [],
+        lw=2.5,
+        color="navy",
+        linestyle="--",
+        label="Required water level"
+    )
+
+    # Black vessel marker
+    vessel_marker, = ax.plot(
+        [],
+        [],
+        marker="o",
+        linestyle="None",
+        color="black",
+        markersize=9,
+        zorder=10,
+        label="Vessel position"
+    )
+
+    # Dynamic vessel trajectory (previous two hours)
+    vessel_trajectory, = ax.plot(
+        [],
+        [],
+        color="k",
+        linewidth=3,
+        alpha=0.9,
+        zorder=8,
+    )
+
+    # Time annotation
+    time_text = ax.text(
+        0.02,
+        0.02,
+        "",
+        transform=ax.transAxes,
+        fontsize=12,
+        verticalalignment="bottom"
+    )
+
+    # Vessel position annotation
+    vessel_text = ax.text(
+        0.98,
+        0.02,
+        "",
+        transform=ax.transAxes,
+        fontsize=10,
+        horizontalalignment="right",
+        verticalalignment="bottom",
+        bbox=dict(
+            facecolor="white",
+            alpha=0.8,
+            edgecolor="none"
+        )
+    )
+
+    ax.set_xlabel("Distance along waterway (m)")
+    ax.set_ylabel("Water level (m)")
+    ax.set_title(f'Tidal window calculation for vessel "{vessel.name}"')
+
+    ax.grid(True, alpha=0.3)
+
+    # Legend
+    ax.legend(
+        handles=[line, required_depth, vessel_marker, vessel_trajectory],
+        labels=[
+            "Actual water level",
+            "Required water level",
+            "Vessel",
+            "Experienced water level",
+        ],
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=4,
+        frameon=False
+    )
+
+    ax.set_xlim(
+        np.nanmin(distance) - 500,
+        np.nanmax(distance) + 500,
+    )
+
+    all_levels = np.concatenate([
+        smooth_water_levels.ravel(),
+        smooth_required_levels.ravel()
+    ])
+
+    all_levels = all_levels[np.isfinite(all_levels)]
+
+    ymin = np.min(all_levels)
+    ymax = np.max(all_levels)
+
+    margin = max((ymax - ymin) * 0.1, 0.01)
+
+    ax.set_ylim(ymin - margin, ymax + margin)
+
+    # --------------------------------------------------
+    # 7. Animation update
+    # --------------------------------------------------
+
+    def update(frame):
+
+        # 1. Update actual and required water-level profiles
+        current_water_level = smooth_water_levels[frame, :]
+        current_required_level = smooth_required_levels[frame, :]
+
+        # Define validity masks BEFORE using them
+        valid_water = (
+            np.isfinite(distance)
+            & np.isfinite(current_water_level)
+        )
+
+        valid_required = (
+            np.isfinite(depth_distances)
+            & np.isfinite(current_required_level)
+        )
+
+        line.set_data(
+            distance[valid_water],
+            current_water_level[valid_water]
+        )
+
+        required_depth.set_data(
+            depth_distances[valid_required],
+            current_required_level[valid_required]
+        )
+
+        # 2. Update timestamp
+        current_time = pd.Timestamp(time[frame])
+
+        time_text.set_text(
+            f"Time: {current_time:%Y-%m-%d %H:%M:%S}"
+        )
+
+        current_time_ns = (
+            current_time.to_datetime64()
+            .astype("datetime64[ns]")
+            .astype("int64")
+        )
+
+        logbook_time_ns = (
+            logbook_times
+            .astype("datetime64[ns]")
+            .astype("int64")
+        )
+
+        # 3. Historical vessel trajectory (last four hours)
+        trajectory_time_ns = trajectory_times.to_numpy(
+            dtype="datetime64[ns]"
+        ).astype("int64")
+
+        trajectory_mask = (
+            (trajectory_time_ns >= current_time_ns - int(pd.Timedelta(hours=4).value))
+            & (trajectory_time_ns <= current_time_ns)
+            & np.isfinite(trajectory_water_levels)
+        )
+
+        vessel_trajectory.set_data(
+            trajectory_distances[trajectory_mask],
+            trajectory_water_levels[trajectory_mask]
+        )
+
+        # 4. Interpolate vessel position
+        if (
+            current_time_ns >= logbook_time_ns[0]
+            and current_time_ns <= logbook_time_ns[-1]
+        ):
+
+            vessel_distance = np.interp(
+                current_time_ns,
+                logbook_time_ns,
+                logbook_distances
+            )
+
+            # 5. Actual water level at vessel position
+            if (
+                np.count_nonzero(valid_water) >= 2
+                and distance[valid_water].min()
+                <= vessel_distance
+                <= distance[valid_water].max()
+            ):
+
+                vessel_water_level = np.interp(
+                    vessel_distance,
+                    distance[valid_water],
+                    current_water_level[valid_water]
+                )
+
+                vessel_marker.set_data(
+                    [vessel_distance],
+                    [vessel_water_level]
+                )
+
+                # 6. Required water level at vessel position
+                if (
+                    np.count_nonzero(valid_required) >= 2
+                    and depth_distances[valid_required].min()
+                    <= vessel_distance
+                    <= depth_distances[valid_required].max()
+                ):
+
+                    vessel_required_level = np.interp(
+                        vessel_distance,
+                        depth_distances[valid_required],
+                        current_required_level[valid_required]
+                    )
+
+                    difference = (
+                        vessel_water_level - vessel_required_level
+                    )
+
+                    vessel_text.set_text(
+                        f"Vessel position: {vessel_distance:.0f} m\n"
+                        f"Available water level: {vessel_water_level:.2f} m\n"
+                        f"Required water level: {vessel_required_level:.2f} m\n"
+                        f"Water level margin: {difference:.2f} m"
+                    )
+
+                else:
+                    vessel_text.set_text(
+                        f"Vessel position: {vessel_distance:.0f} m\n"
+                        f"Water level: {vessel_water_level:.2f} m"
+                    )
+
+            else:
+                vessel_marker.set_data([], [])
+                vessel_text.set_text("")
+
+        else:
+            vessel_marker.set_data([], [])
+            vessel_text.set_text("")
+
+        return (
+            line,
+            required_depth,
+            vessel_trajectory,
+            vessel_marker,
+            time_text,
+            vessel_text
+        )
+
+
+    ani = FuncAnimation(
+        fig,
+        update,
+        frames=len(time),
+        interval=100,
+        blit=True,
+        cache_frame_data=False
+    )
+
+    plt.tight_layout()
+
+    # --------------------------------------------------
+    # 8. Save MP4 with progress bar
+    # --------------------------------------------------
+    output_file = os.path.abspath(
+        "tidal_water_level.mp4"
+    )
+
+    writer = FFMpegWriter(
+        fps=10,
+        codec="libx264",
+        bitrate=1800,
+        extra_args=["-pix_fmt", "yuv420p"]
+    )
+
+    start = timer.time()
+    total_frames = len(time)
+
+    print(f"Saving to: {output_file}", flush=True)
+
+    with tqdm(
+        total=total_frames,
+        desc="Saving tidal animation",
+        unit="frame"
+    ) as pbar:
+
+        def progress_callback(current, total):
+
+            pbar.n = min(current + 1, total)
+            pbar.refresh()
+
+        ani.save(
+            output_file,
+            writer=writer,
+            dpi=80,
+            progress_callback=progress_callback
+        )
+
+    print(
+        f"Finished in {timer.time() - start:.1f} seconds"
+    )
+
+    print(
+        f"File size: {os.path.getsize(output_file) / 1e6:.2f} MB"
+    )
+
+    plt.close(fig)
+
+    return ani

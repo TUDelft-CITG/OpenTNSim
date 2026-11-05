@@ -133,7 +133,6 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         # - set new trip index and id
         self.trip_index += 1
         self.trip_id = str(uuid.uuid4())
-        # - perform loading operation
         request_to_leave_terminal = yield from self.loading(destination)
         yield request_to_leave_terminal
 
@@ -154,7 +153,7 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
             self.next_deberthing_times = self.next_deberthing_times[1:]
 
         # 7) starting next trip
-        self.env.process(self.move())
+        self.mission = self.env.process(self.move())
         raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
     def request_berth_access(self):
@@ -180,10 +179,7 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         -----
         origin: str
             node in the environment.graph
-        """
-        # set current time
-        current_time = datetime.datetime.fromtimestamp(self.env.now)
-        
+        """        
         # log berthing start
         self.log_entry_v0("Berthing start",
                           self.env.now,
@@ -191,26 +187,23 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
                           self.env.graph.nodes[origin]["geometry"])
 
         # set berthing time and berthing stop time    
-        berthing_time =  pd.Timedelta(seconds=self.berthing_time*60)    
-        berthing_stop_time = current_time + berthing_time
+        def berthing_process(self, berthing_time):
+            berthing_start_time = self.env.now
+            while berthing_time > 0:
+                try:
+                    # yields berthing process (when done breaks while True loop)
+                    yield self.env.timeout(berthing_time)
+                    break
+                except simpy.Interrupt:
+                    current_time = self.env.now
+                    berthing_time_completed = current_time - berthing_start_time
+                    berthing_time -= berthing_time_completed
+                    berthing_start_time = current_time
         
-        # create berthing process
-        berthing_process = self.env.timeout(berthing_time.total_seconds())
+        # create and yield berthing process (as mission)
+        self.mission = self.env.process(berthing_process(self, self.berthing_time*60))
+        yield self.mission
         
-        # yield berthing process (when interrupted, continues where left)
-        while True:
-            try:
-                # yields berthing process (when done breaks while True loop)
-                yield berthing_process
-                break
-            except simpy.Interrupt:
-                # Determines current time
-                current_time = datetime.datetime.fromtimestamp(self.env.now)
-                # Determines remaining time for vessel to berth
-                remaining_berthing_time = berthing_stop_time - current_time
-                # Creates new berthing process
-                berthing_process = self.env.timeout(remaining_berthing_time.total_seconds())
-
         # log berthing stop
         self.log_entry_v0("Berthing stop",
                           self.env.now,
@@ -242,10 +235,23 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         # determine loading and deberthing durations, and loading stop time
         loading_time = pd.Timedelta(seconds=self.loading_time*3600)
         deberthing_time = pd.Timedelta(seconds = self.deberthing_time*60)
-        loading_stop_time = current_time + loading_time
 
-        # create loading process
-        loading_process = self.env.timeout(loading_time.total_seconds())
+        def loading_process(self, loading_time):
+            loading_start_time = self.env.now
+            while loading_time > 0:
+                try:
+                    yield self.env.timeout(loading_time)
+                    break
+                except simpy.Interrupt:
+                    current_time = self.env.now
+                    loading_time_completed = current_time - loading_start_time
+                    loading_time -= loading_time_completed
+                    loading_start_time = current_time
+
+        # create and yield berthing process (as mission)
+        self.mission = self.env.process(loading_process(self, loading_time.total_seconds()))
+        self.mission.process_name = 'loading at berth'
+        self.mission.delay = loading_time
 
         # create process for request_to_leave_terminal
         new_route = determine_new_route_for_vessel(self)
@@ -255,20 +261,12 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         request_to_leave_terminal = self.env.process(
             self.request_port_exit(
                 origin, 
-                parallel_process = loading_process, 
+                parallel_process = self.mission, 
                 delay = deberthing_time,
             )
         )
 
-        # yield loading process (when interrupted, continues where left)
-        while True:
-            try:
-                yield loading_process
-                break
-            except simpy.Interrupt:
-                current_time = datetime.datetime.fromtimestamp(self.env.now)
-                remaining_loading_time = loading_stop_time - current_time
-                loading_process = self.env.timeout(remaining_loading_time.total_seconds())
+        yield self.mission
 
         # Log loading stop  
         self.log_entry_v0("Loading stop",
@@ -286,8 +284,6 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         origin: str
             node in the environment.graph
         """
-        # set current time
-        current_time = datetime.datetime.fromtimestamp(self.env.now)
 
         # log deberthing start
         self.log_entry_v0("Deberthing start",
@@ -295,22 +291,23 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
                           self.distance,
                           self.env.graph.nodes[origin]["geometry"])
 
-        # set deberthing duration and deberthing stop time
-        deberthing_time = pd.Timedelta(seconds=self.deberthing_time*60)
-        deberthing_stop_time = current_time + deberthing_time
+        # set berthing time and berthing stop time    
+        def deberthing_process(self, deberthing_time):
+            deberthing_start_time = self.env.now
+            while deberthing_time > 0:
+                try:
+                    # yields berthing process (when done breaks while True loop)
+                    yield self.env.timeout(deberthing_time)
+                    break
+                except simpy.Interrupt:
+                    current_time = self.env.now
+                    deberthing_time_completed = current_time - deberthing_start_time
+                    deberthing_time -= deberthing_time_completed
+                    deberthing_start_time = current_time
 
-        # creating deberthing process
-        deberthing_process = self.env.timeout(deberthing_time.total_seconds())
-        
-        # yield deberhting process (when interrupted, continues where left)
-        while True:
-            try:
-                yield deberthing_process
-                break
-            except simpy.Interrupt:
-                current_time = datetime.datetime.fromtimestamp(self.env.now)
-                remaining_deberthing_time = deberthing_stop_time - current_time
-                deberthing_process = self.env.timeout(remaining_deberthing_time.total_seconds())
+        # create and yield berthing process (as mission)
+        self.mission = self.env.process(deberthing_process(self, self.deberthing_time*60))
+        yield self.mission
 
         # log deberthing stop    
         self.log_entry_v0("Deberthing stop",
@@ -514,7 +511,11 @@ class IsTerminal(Log, Identifiable, IsPortComponent):
         # determine availability of berths that are accessible for the vessel (fit)
         terminal_berths = self.berths.items
         fit_berths = [berth for berth in terminal_berths if (berth.depth >= vessel.T) and (berth.berth_length >= vessel.L)]
-        fit_berth_availability = get_terminal_berths_availability(vessel, origin, self)
+        fit_berth_availability = get_terminal_berths_availability(vessel, origin, self, fit_berths)
+        first_instance = fit_berth_availability[fit_berth_availability.index < current_time].iloc[-1]
+        fit_berth_availability.loc[current_time] = first_instance
+        fit_berth_availability = fit_berth_availability.sort_index()
+        fit_berth_availability = fit_berth_availability[fit_berth_availability.index >= current_time]
 
         # loop over berths
         for berth in fit_berths:
@@ -535,13 +536,13 @@ class IsTerminal(Log, Identifiable, IsPortComponent):
                 berth_availability_stop_times = berth_available[
                     (berth_available.index > berth_availability_start_time)&(berth_available == False)]
                 if not len(berth_availability_stop_times):
-                    berth_availability_stop_time = berth_available.index[-1]
+                    berth_availability_stop_time = self.env.simulation_stop
                 else:
                     berth_availability_stop_time = berth_availability_stop_times.index[0]
 
                 # skip berth if window of availability is smaller than the operation of the vessel requires
                 berth_availability_duration = berth_availability_stop_time - berth_availability_start_time
-                if berth_availability_duration < occupation_duration:
+                if berth_availability_duration < occupation_duration and berth_availability_stop_time != self.env.simulation_stop:
                     continue
                     
                 # determine if vessel will wait for another terminal operation to end
@@ -592,7 +593,7 @@ class IsTerminal(Log, Identifiable, IsPortComponent):
             availability of the terminal
         """
         # get terminal availability of fit berth
-        terminal_berths_availability = get_terminal_berths_availability(vessel, origin, self, delay)   
+        terminal_berths_availability = get_terminal_berths_availability(vessel, origin, self, [berth], delay)   
 
         # get list of fit berths (or fit berth if berth has been selected)
         terminal_berths = self.berths.items
@@ -634,7 +635,10 @@ class IsTerminal(Log, Identifiable, IsPortComponent):
         index = berth_info.iloc[-1].name
 
         # overwrite berth availability with actual availability (minus vessel in question)
-        self.berth_availability = get_terminal_berths_availability(vessel, origin, self, delay, bool = False)
+        berth_availability = get_terminal_berths_availability(vessel, origin, self, [berth], delay, bool = False)
+        self.berth_availability[berth.name] = berth_availability[berth.name]
+        self.berth_availability.ffill(inplace=True)
+        self.berth_availability.bfill(inplace=True)
 
         # get ETA at port and berth, and the operation the vessel may be waiting for (this information did not change)
         eta_port = berth_planning.loc[index, 'ETA_port']

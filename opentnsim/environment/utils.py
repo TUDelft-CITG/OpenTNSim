@@ -63,61 +63,19 @@ def sort_data(graph, hydrodynamic_data):
     return hydrodynamic_data
 
 
-def station_contains_node(station, node):
-
-    if isinstance(node, int):
-        node = np.int64(node)
-
-    
-    # station is already tuple
-    if isinstance(station, tuple):
-        return node in station
-
-    if isinstance(station, np.int64):
-        return node == station
-
-    # fallback if it's accidentally a string
-    if isinstance(station, str):
-        node = str(node)
-        if station.startswith("("):
-            parts = station.strip("()").split(",")
-            parts = [p.strip() for p in parts]
-            return node in parts
-        return station == node
-
-    return False
-
-
 def find_station(node):
     hydromanager = HydrodynamicDataManager()
-    stations = hydromanager.hydrodynamic_data["STATION"].values
-    return next(
-        (s for s in stations if station_contains_node(s, node)),
-        None
-    )
+    return hydromanager.station_cache.get(node)
 
 
 def get_water_depth(vessel, node, delay=0):
 
-    hydromanager = HydrodynamicDataManager()
-    ds = hydromanager.hydrodynamic_data
-    station = find_station(node)
+    manager = HydrodynamicDataManager()
 
-    if station is None:
-        raise ValueError(f"No station found for node: {node}")
-    
-    current_time = pd.Timestamp(
-        datetime.datetime.fromtimestamp(vessel.env.now + delay)
-    ).to_datetime64()
-
-    time_index = np.abs(ds["TIME"].values - current_time).argmin()
-
-    water_level = ds["Water level"].sel(STATION=station).isel(TIME=time_index).values
-    MBL = ds["Nautical depth"].sel(STATION=station).isel(TIME=time_index).values
-
-    available_water_depth = water_level - MBL
-
-    return MBL, water_level, available_water_depth
+    return manager.get_water_depth_at_simulation_time(
+        node,
+        vessel.env.now + delay,
+    )
 
 
 def get_depth_averaged_current_velocity(interpolation_depth, times, relative_layer_height, current_velocity, station_index):
@@ -390,3 +348,28 @@ def set_station_value(ds, station, variable, value):
     ds[variable].loc[dict(STATION=station)] = value
 
     return ds
+
+
+def precompute_station_mapping(hydromanager, graph):
+
+    stations = hydromanager.hydrodynamic_data["STATION"].values
+
+    station_cache = {}
+
+    for station in stations:
+
+        if isinstance(station, tuple):
+            for node in station:
+                station_cache.setdefault(node, station)
+
+        elif isinstance(station, (int, np.integer, str)):
+            station_cache.setdefault(station, station)
+
+    # Keep only nodes present in the graph
+    graph_nodes = set(graph.nodes)
+
+    hydromanager.station_cache = {
+        node: station
+        for node, station in station_cache.items()
+        if node in graph_nodes
+    }

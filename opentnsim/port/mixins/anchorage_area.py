@@ -38,20 +38,18 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
         """
         # request access to this anchorage area
         yield from self.request_anchorage_area_access(anchorage_area)
-
         # determine routes to and from anchorage areas
         self.route_to_anchorage_area = get_shortest_route(self.env.graph, origin, anchorage_area.node, self)
         self.route_after_anchorage_area = get_shortest_route(self.env.graph, anchorage_area.node, self.route[-1], self)
-
+        
         # if the vessel is not yet at the anchorage area -> move to the anchorage area
         if len(self.route_to_anchorage_area) > 1:
             self.routes_sailed.append(self.route_to_anchorage_area)
             self.route = self.route_to_anchorage_area
             self.edge_route = node_path_to_edge_path(self.env.graph, self.route)
-            yield self.env.process(self.move())
+            self.mission = self.env.process(self.move())
+            yield self.mission
 
-            # route has changed
-            raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
     def pass_anchorage(self, origin):
         """Vessel is able to continue its trip to its berth of destination (after waiting)
@@ -96,7 +94,7 @@ class CanWaitAtAnchorage(Movable, Identifiable, VesselProperties):
         delattr(self,'route_after_anchorage_area')
 
         # create new move process for vessel to sail to the terminal
-        self.env.process(self.move())
+        self.mission = self.env.process(self.move())
         raise simpy.exceptions.Interrupt('Route of vessel has changed.')
 
     def request_anchorage_area_access(self, anchorage_area):
