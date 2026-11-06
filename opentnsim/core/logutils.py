@@ -94,6 +94,7 @@ def logbook2eventtable(objs):
             start_location = start_row["Geometry"]
             stop_location = stop_row["Geometry"]
 
+            edge = None
             edge_match = False
             if "Sailing" in activity:
                 edge_match = re.search(r"Sailing from node (.+?) to node (.+?)(?: on edge (\S+))?$", activity)
@@ -123,6 +124,7 @@ def logbook2eventtable(objs):
                     "stop time": stop_time.round('s'),
                     "distance (m)": distance_meters,
                     "duration (s)": duration_seconds,
+                    'edge': edge,
                 }
             )
 
@@ -258,7 +260,7 @@ def logbook2eventtable(objs):
     combined_df.loc[combined_df['subactivity name'].isna(), 'subactivity name'] = ''
     eventtable = combined_df[['object id', 'object name', 'main activity name', 'subactivity name',
                               'start location', 'stop location', 'start time', 'stop time',
-                              'distance (m)', 'duration (s)']]
+                              'distance (m)', 'duration (s)', 'edge']]
 
 
 

@@ -297,18 +297,19 @@ def find_waterways_to_be_passed(vessel, route = None):
         columns = ['waterway_name', 'waterway', 'start_node', 'stop_node','time_sailing_start', 'time_sailing_stop'],
         )
 
+    route_start_index = vessel.position_on_route
     if route is None:
+        route_start_index = 0
         route = vessel.route
 
     current_time = datetime.datetime.fromtimestamp(vessel.env.now)
     time_sailing_start = current_time
-    route_start_index = vessel.position_on_route
     for index, node in enumerate(route):
         next_node = node
         previous_node = node
         if index:
             previous_index = index - 1
-            previous_node = vessel.route[previous_index]
+            previous_node = route[previous_index]
 
         previous_waterways = []
         if "Waterway" in vessel.env.graph.nodes[previous_node]:

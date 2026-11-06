@@ -236,14 +236,15 @@ def plot_graph_folium(graph, longitude, latitude, zoom_start=5,
             fields = ["u", "v", "k"]
         edges.append(edge_info)
 
-    gdf_edges = gpd.GeoDataFrame(edges,geometry="geometry", crs='EPSG:4326')
+    if edges:
+        gdf_edges = gpd.GeoDataFrame(edges,geometry="geometry", crs='EPSG:4326')
 
-    folium.GeoJson(
-        gdf_edges,
-        style_function=lambda x: {"color": "violet", "weight": 2},
-        popup=folium.GeoJsonPopup(fields=fields),
-        tooltip=folium.GeoJsonTooltip(fields=fields),
-    ).add_to(m)
+        folium.GeoJson(
+            gdf_edges,
+            style_function=lambda x: {"color": "violet", "weight": 2},
+            popup=folium.GeoJsonPopup(fields=fields),
+            tooltip=folium.GeoJsonTooltip(fields=fields),
+        ).add_to(m)
 
     nodes = []
     for node, data in graph.nodes(data=True):
@@ -252,14 +253,15 @@ def plot_graph_folium(graph, longitude, latitude, zoom_start=5,
             "name": node
         })
 
-    gdf_nodes = gpd.GeoDataFrame(nodes, geometry="geometry", crs='EPSG:4326')
+    if nodes:
+        gdf_nodes = gpd.GeoDataFrame(nodes, geometry="geometry", crs='EPSG:4326')
 
-    folium.GeoJson(
-        gdf_nodes,
-        marker=folium.CircleMarker(radius=3, color='purple', fill=True, fill_opacity=1.0, opacity=1.0),
-        popup=folium.GeoJsonPopup(fields=["name"]),
-        tooltip=folium.GeoJsonTooltip(fields=["name"]),
-    ).add_to(m)
+        folium.GeoJson(
+            gdf_nodes,
+            marker=folium.CircleMarker(radius=3, color='purple', fill=True, fill_opacity=1.0, opacity=1.0),
+            popup=folium.GeoJsonPopup(fields=["name"]),
+            tooltip=folium.GeoJsonTooltip(fields=["name"]),
+        ).add_to(m)
 
     return m
 
