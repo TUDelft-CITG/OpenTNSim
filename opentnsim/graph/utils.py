@@ -239,7 +239,6 @@ def find_closest_node(graph, point):
 
     _, idx = tree.query([point.x, point.y])
     closest_node = lookup[idx]
-    print(lookup)
     return closest_node
 
 

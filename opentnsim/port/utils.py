@@ -64,37 +64,55 @@ def check_if_vessel_is_tide_bound(df_tidal_availability):
 
 
 def determine_nearest_anchorage_area(vessel, node, port, route = None):
-    # Loop over the nodes of the network and identify all the anchorage areas:
-    sailing_time_to_anchorages = []
-    capacity_of_anchorages = []
-    anchorage_area_found = False
-    while not anchorage_area_found:
-        anchorage_area_names = []
-        for anchorage_area_name, anchorage_area in port.anchorage_areas.items():
-            if route is not None and anchorage_area.node not in route:
-                continue
+    if route is None:
+        route = vessel.route
 
-            # Determine if the anchorage area can be reached
-            route_to_anchorage = get_shortest_route(vessel.env.graph, node, anchorage_area.node, vessel)
-            edge_route_to_anchorage = node_path_to_edge_path(vessel.env.graph, route_to_anchorage)
-            sailing_time_to_anchorage, _ = get_sailing_time(vessel, edge_route_to_anchorage)
-            sailing_time_to_anchorages.append(sailing_time_to_anchorage)
-            anchorage_capacity = anchorage_area.resource.capacity 
-            anchorage_intensity = anchorage_area.resource.count
-            anchorage_level = anchorage_capacity - anchorage_intensity
-            capacity_of_anchorages.append(anchorage_level > 0)
-            anchorage_area_names.append(anchorage_area_name)
-        anchorage_selection_df = pd.DataFrame({'Sailing time': sailing_time_to_anchorages,
-                                               'Capacity': capacity_of_anchorages},
-                                               index = anchorage_area_names)
-        if anchorage_selection_df.empty:
-            route = None
-        else:
-            anchorage_area_found = True
-    suitable_anchorage_areas = anchorage_selection_df[anchorage_selection_df.Capacity]
-    suitable_anchorage_areas = suitable_anchorage_areas.sort_values('Sailing time')
-    anchorage_area = port.anchorage_areas[suitable_anchorage_areas.iloc[0].name]
-    return anchorage_area
+    # Loop over the nodes of the network and identify all the anchorage areas:
+    available_anchorages = []
+    for anchorage in port.anchorage_areas.values():
+        node_anchorage = anchorage.node
+        # Determine if the anchorage area can be reached
+        try:
+            route_to_anchorage = get_shortest_route(vessel.env.graph, node, node_anchorage, vessel)
+            route_from_anchorage = get_shortest_route(vessel.env.graph, node_anchorage, route[-1], vessel)
+        except:
+            continue
+
+        anchorage_capacity = anchorage.resource.capacity
+        anchorage_intensity = len(anchorage.resource.users)
+        anchorage_availability = anchorage_capacity - anchorage_intensity
+        edge_route_to_anchorage = node_path_to_edge_path(vessel.env.graph, route_to_anchorage)
+        edge_route_from_anchorage = node_path_to_edge_path(vessel.env.graph, route_from_anchorage)
+        sailing_time_to_anchorage, _ = get_sailing_time(vessel, edge_route_to_anchorage)
+        sailing_time_from_anchorage, _ = get_sailing_time(vessel, edge_route_from_anchorage)
+        if sailing_time_to_anchorage == float('inf') or sailing_time_from_anchorage == float('inf'):
+            continue
+
+        anchorage_info = {
+            'anchorage_area': anchorage,
+            'availability_anchorage': anchorage_availability,
+            'sailing_time_to_anchorage': pd.Timedelta(seconds = sailing_time_to_anchorage),
+            'sailing_time_from_anchorage': pd.Timedelta(seconds = sailing_time_from_anchorage),
+
+        }
+        available_anchorages.append(pd.DataFrame(anchorage_info, index = [node_anchorage]))
+
+    if available_anchorages:
+        available_anchorages_df = pd.concat(available_anchorages)
+    else:
+        raise ValueError(f'There are no available anchorage areas for vessel "{vessel.name}".')
+    
+    node_anchorage = None
+    if not available_anchorages_df.empty:
+        available_anchorages_df['total_sailing_time'] = (
+            available_anchorages_df['sailing_time_to_anchorage'] + 
+            available_anchorages_df['sailing_time_from_anchorage']
+        )
+        available_anchorages_df = available_anchorages_df.sort_values('total_sailing_time')
+        anchorage_info = available_anchorages_df.iloc[0]
+        anchorage = anchorage_info.anchorage_area
+
+    return anchorage, anchorage_info
 
 
 def determine_if_vessel_needs_to_sail_to_the_anchorage_area(vessel, origin, anchorage_area, waiting_time):
@@ -545,60 +563,6 @@ def provide_waiting_time_for_outbound_tidal_window(vessel, route, delay=0):
     vessel.bound = "inbound"
     return waiting_time
 
-
-def provide_nearest_anchorage_area(vessel, node):
-    from opentnsim.port.calculations import calculate_ukc_clearance
-    hydromanager = HydrodynamicDataManager()
-    hydrodynamic_information = hydromanager.hydrodynamic_data
-    nodes_of_anchorages = []
-    capacity_of_anchorages = []
-    users_of_anchorages = []
-    sailing_times_to_anchorages = []
-    # Loop over the nodes of the network and identify all the anchorage areas:
-    for node_anchorage in vessel.multidigraph.nodes:
-        if "Anchorage Area" in vessel.multidigraph.nodes[node_anchorage]:
-            # Determine if the anchorage area can be reached
-            anchorage_reachable = True
-            route_to_anchorage = get_shortest_route(vessel.env.graph, node, node_anchorage, vessel)
-            for node_on_route in route_to_anchorage:
-                station_index = list(hydrodynamic_information["STATION"]).index(node_on_route)
-                min_water_level = np.min(hydrodynamic_information["Water level"][station_index].values)
-                _, _, _, required_water_depth, _, MBL = calculate_ukc_clearance(vessel, node)
-                if min_water_level + MBL < required_water_depth:
-                    anchorage_reachable = False
-                    break
-
-            if not anchorage_reachable:
-                continue
-
-            # Extract information over the individual anchorage areas:
-            # capacity, users, and the sailing distance to the anchorage area
-            # from the designated terminal the vessel is planning to call
-            nodes_of_anchorages.append(node_anchorage)
-            capacity_of_anchorages.append(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.capacity)
-            users_of_anchorages.append(len(vessel.multidigraph.nodes[node_anchorage]["Anchorage"][0].resource.users))
-            route_from_anchorage = get_shortest_route(vessel.env.graph, node_anchorage, vessel.route[-1], vessel)
-            edge_route_from_anchorage = node_path_to_edge_path(vessel.env.graph, route_from_anchorage)
-            sailing_time_to_anchorage = get_sailing_time(vessel, edge_route_from_anchorage)["Time"].sum()
-            sailing_times_to_anchorages.append(sailing_time_to_anchorage)
-
-    # Sort the lists based on the sailing distance to the anchorage area from the designated terminal
-    #  the vessel is planning to call
-    sorted_nodes_anchorages = [nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, nodes_of_anchorages))]
-    sorted_users_of_anchorages = [nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, users_of_anchorages))]
-    sorted_capacity_of_anchorages = [
-        nodes for (distances, nodes) in sorted(zip(sailing_times_to_anchorages, capacity_of_anchorages))
-    ]
-
-    # Take the anchorage area that is closest to the designated terminal the vessel is planning to call if there
-    # is sufficient capacity:
-    node_anchorage = 0
-    for anchorage_index, node_anchorage in enumerate(sorted_nodes_anchorages):
-        if sorted_users_of_anchorages[anchorage_index] < sorted_capacity_of_anchorages[anchorage_index]:
-            # node anchorage is found
-            break
-
-    return node_anchorage
 
 def add_ukc_policy_to_node(env, node, rules):
 

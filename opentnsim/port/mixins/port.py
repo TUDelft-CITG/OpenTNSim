@@ -378,6 +378,7 @@ class IsPortAuthority:
         waiting_events_per_waterway = {}
         total_waiting_time_per_waterway = {}
         total_foreseen_waiting_time = delay.total_seconds()
+        total_sailing_time = pd.Timedelta(seconds = 0.)
         for waterway_info in waterways_to_be_passed.itertuples():
             index = waterway_info.Index
             conflict_df = conflicts_dfs[index]
@@ -390,6 +391,7 @@ class IsPortAuthority:
             waterway = waterway_info.waterway
             waterway_name = waterway_info.waterway_name
             sailing_time_to_waterway = waterway_info.sailing_time_to_waterway
+            total_sailing_time += sailing_time_to_waterway + (waterway_info.time_sailing_stop - waterway_info.time_sailing_start)
             delay = sailing_time_to_waterway.total_seconds() + total_foreseen_waiting_time
             port_availability_df = port_availability_df_per_waterway[waterway_name]
             waiting_events = determine_vessel_waiting_events(self, port_availability_df, delay)
@@ -420,6 +422,7 @@ class IsPortAuthority:
             port_availability_df_per_waterway,
             waiting_events_per_waterway,
             total_waiting_time_per_waterway,
+            total_sailing_time
         )
         return trip_info
 
@@ -455,11 +458,12 @@ class IsPortAuthority:
         if changed_vessel_trips_df.empty:
             trip_info = self.plan_vessel_trip(vessel, origin, terminal, berth, delay)
 
-        df = trip_info[0]
+        availability_df = trip_info[0]
         waiting_events_per_waterway = trip_info[1]
         total_waiting_time_per_waterway = trip_info[2]
+        total_sailing_time = trip_info[3]
         
-        vessel.accessibility_info = df
+        vessel.accessibility_info = availability_df
         if not parallel_process is None:
             yield parallel_process
 
@@ -483,7 +487,8 @@ class IsPortAuthority:
                     terminal = terminal,
                     berth = berth,
                     at_berth = at_berth,
-                    total_waiting_time = total_waiting_time,
+                    total_waiting_time = pd.Timedelta(seconds = total_waiting_time),
+                    total_sailing_time = total_sailing_time,
                 )(origin, destination)
 
                 if parallel_process is None:
@@ -514,37 +519,31 @@ class IsPortAuthority:
         terminal,
         berth=None,
         at_berth = False,
-        total_waiting_time=0.,
+        total_waiting_time= pd.Timedelta(seconds = 0.),
+        total_sailing_time = pd.Timedelta(seconds = 0.),
     ):
         def wait(origin, destination):
 
             # Only trigger at the correct node
             if origin != waiting_node:
                 return
+
+            waiting = True
             if not at_berth:
-                nearest_anchorage_area = determine_nearest_anchorage_area(vessel, origin, self)
-                required_to_sail_to_anchorage_area = True # TODO: create algorithm -> for now true when waiting time and not at berth
-                # required_to_sail_to_anchorage_area = (
-                #     determine_if_vessel_needs_to_sail_to_the_anchorage_area(
-                #         vessel,
-                #         origin,
-                #         nearest_anchorage_area,
-                #         total_waiting_time
-                #     )
-                # )
-
-                if required_to_sail_to_anchorage_area:
-                    yield from self.communicate_vessel_to_sail_to_anchorage(
-                        vessel,
-                        origin,
-                        nearest_anchorage_area,
-                    )
-                    origin = nearest_anchorage_area.node
-
+                nearest_anchorage_area, anchorages_df = determine_nearest_anchorage_area(vessel, origin, self)
+                yield from self.communicate_vessel_to_sail_to_anchorage(
+                    vessel,
+                    origin,
+                    nearest_anchorage_area,
+                )
+                origin = nearest_anchorage_area.node
+                if anchorages_df['total_sailing_time'] - total_sailing_time >= total_waiting_time:
+                    waiting = False
+            
             # Keep the original input arguments unchanged
             current_waiting_events = waiting_events
             
-            while True:
+            while waiting:
                 vessel.waiting = True
                 interrupted = False
                 for reason, wait_time in current_waiting_events.items():
