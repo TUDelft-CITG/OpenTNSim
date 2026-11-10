@@ -183,7 +183,7 @@ class VesselGenerator:
 
 class Simulation(core.Identifiable):
     """
-    A class to generate vessels from a database
+    A class to generate a simuation environment, including vessels and their movements within the network,
 
     Parameters
     ----------
@@ -191,32 +191,62 @@ class Simulation(core.Identifiable):
         The start time of the simulation.
     graph: networkx graph
         The graph that is used for the simulation.
-    scenario:
-        scenario with vessels - should be coupled to the database
+    simulation_start: datetime
+        The start of the simulation, should be coupled to the database,
+    simulation_duration: timedelta
+        The duration of the simulation, should be coupled to the database
+    simulation_stop: datetime
+        The stop time of the simulation, should be coupled to the database
+    hydrodynamic_start_time: datetime
+        The start time for hydrodynamic data, should be coupled to the database
+    hydrodynamic_data_path: str
+        The path to the hydrodynamic data, should be coupled to the database
+    vessel_speed_data_path: str
+        The path to the vessel speed data, should be coupled to the database
+    scenario: scenario
+        The scenario containing vessels, should be coupled to the database
     """
 
-    def __init__(self,
-                 graph,
-                 simulation_start=datetime.datetime.now(),
-                 simulation_duration=None,
-                 simulation_stop=None,
-                 hydrodynamic_start_time=datetime.datetime.now(),
-                 hydrodynamic_data_path=None,
-                 vessel_speed_data_path=None, scenario=None):
-        """ 
-        Initialization 
-        
-        scenario: scenario with vessels - should be coupled to the database
-        """
+    def __init__(
+        self,
+        graph,
+        simulation_start=datetime.datetime.now(),
+        simulation_duration=None,
+        simulation_stop=None,
+        hydrodynamic_start_time=datetime.datetime.now(),
+        hydrodynamic_data_path=None,
+        vessel_speed_data_path=None,
+        scenario=None,
+    ):
+
+        # check time imputs
+        if simulation_start and simulation_duration and simulation_stop:
+            # when all three are provided, check consistency
+            if not simulation_duration == simulation_stop - simulation_start:
+                raise ValueError(
+                    "Simulation duration does not match the difference between simulation stop and start times"
+                )
+        elif simulation_stop and simulation_start:
+            # calculate duration based on start and stop times
+            simulation_duration = simulation_stop - simulation_start
+        elif simulation_start and simulation_duration:
+            # calculate stop time based on start time and duration
+            simulation_stop = simulation_start + simulation_duration
+        elif simulation_stop and simulation_duration and not simulation_start:
+            # calculate start time based on stop time and duration
+            simulation_start = simulation_stop - simulation_duration
+        else:
+            raise ValueError(
+                "Insufficient time information provided for the simulation. "
+                "Provide at least 2 out of [simulation_start, simulation_stop, simulation_duration]"
+            )
+
         self.env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
         self.env.graph = graph
         self.env.simulation_start = simulation_start
         self.env.simulation_stop = simulation_stop
         self.simulation_duration = simulation_duration
-        if self.env.simulation_stop:
-            self.simulation_duration = self.env.simulation_stop-self.env.simulation_start
-        else:
-            self.env.simulation_stop = self.env.simulation_start+self.simulation_duration
+
         self.env.routes = pd.DataFrame.from_dict(
             {
                 "Origin": [],
@@ -232,12 +262,12 @@ class Simulation(core.Identifiable):
         self.env.vessels = []
         self.output = {}
 
-        self.env.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(FG=graph,
-                                                                                      hydrodynamic_start_time = hydrodynamic_start_time,
-                                                                                      hydrodynamic_information_path = hydrodynamic_data_path,
-                                                                                      vessel_speed_data_path=vessel_speed_data_path)
-
-        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data, vessel_speed_data)
+        self.env.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(
+            graph=self.env.graph,
+            hydrodynamic_start_time=hydrodynamic_start_time,
+            hydrodynamic_information_path=hydrodynamic_data_path,
+            vessel_speed_information_path=vessel_speed_data_path,
+        )
 
     def add_vessels(
         self,
