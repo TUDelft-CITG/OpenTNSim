@@ -36,7 +36,7 @@ class VesselGenerator:
     ----------
     vessel_type: class of mixins.
         The type of vessel to be generated.
-    vessel_database: ??
+    vessel_database: pd.DataFrame
         The database from which the vessel is generated.
         Make sure all needed attributes for vessel_type are available in the database.
     loaded: optional
@@ -55,8 +55,20 @@ class VesselGenerator:
         self.vessel_database = vessel_database
         self.loaded = loaded
         random.seed(random_seed)
+        self.check_input()
 
-    def generate(self, environment, vessel_name: str, fleet_distribution=None, scenario=None):
+    def check_input(self):
+        """Check the input parameters for the vessel generator."""
+        if not issubclass(self.vessel_type, core.movable.Movable):
+            raise ValueError("vessel_type must be a subclass of Movable")
+        if not isinstance(self.vessel_database, pd.DataFrame):
+            raise ValueError("vessel_database must be a pandas DataFrame")
+        if self.loaded not in (None, True, False, "Random"):
+            raise ValueError("loaded must be None, True, False, or 'Random'")
+
+    def generate(
+        self, environment, vessel_name: str, route: list, fleet_distribution=None, scenario=None
+    ):
         """Get a random vessel from self.database
 
         Parameters
@@ -65,6 +77,8 @@ class VesselGenerator:
             The environment in which the vessel is generated.
         vessel_name: str
             The name that is assigned to the generated vessel.
+        fleet_distribution: list, optional
+            The distribution of the fleet for sampling vessels from the database. If not specified, uniform sampling is used.
         scenario: str, optional
             The scenario of the generated vessel. If given, the vessel with this scenario is selected from the database.
         """
@@ -94,9 +108,8 @@ class VesselGenerator:
                 vessel_data["level"] = vessel_data["capacity"]
             else:
                 vessel_data["level"] = 0
-        vessel_data["route"] = None
+        vessel_data["route"] = route
         vessel_data["geometry"] = None
-        self.vessel_type(**vessel_data)
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
@@ -131,6 +144,12 @@ class VesselGenerator:
             The scenario that is assigned to the generated vessel.
         arrival_process:  str
             process of arrivals. choose between "Markovian" or "Uniform".
+        fleet_distribution: list
+            A distribution of the fleet. It specifies the types and quantities of vessels available for generation.
+        Yields
+        ------
+        simpy event
+            The next arrival event in the simulation.
         """
 
         # Create an array with inter-arrival times -- average number of seconds between arrivals
@@ -145,6 +164,10 @@ class VesselGenerator:
 
         else:
             raise ValueError("Specify an arrival distribution: type Integer or type List.")
+
+        # initiate vessels in environment if not already present
+        if not hasattr(environment, "vessels"):
+            environment.vessels = []
 
         while True:
 
@@ -169,13 +192,18 @@ class VesselGenerator:
                 )
 
             # Create a vessel
-            vessel = self.generate(environment, "Vessel", fleet_distribution, scenario)
+            route = nx.dijkstra_path(environment.graph, origin, destination)
+            vessel = self.generate(
+                environment,
+                "Vessel",
+                fleet_distribution=fleet_distribution,
+                scenario=scenario,
+                route=route,
+            )
             vessel.output = {}
-            # core.Output.vessel_dependent_output(vessel)
-            vessel.env = environment
-            vessel.route = nx.dijkstra_path(environment.graph, origin, destination)
             vessel.geometry = nx.get_node_attributes(environment.graph, "geometry")[vessel.route[0]]
             environment.vessels.append(vessel)
+
             # Move on path
             process = environment.process(vessel.move())
             vessel.process = process

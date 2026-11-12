@@ -134,7 +134,7 @@ class Movable(Locatable, Routable, Log):
         passed to Locatable. point used to track its current location
     node: str, optional
         passed to Locatable,
-    route: list, optional
+    route: list
         passed to Routable,
     complete_path: list, optional
         passed to Routable,
