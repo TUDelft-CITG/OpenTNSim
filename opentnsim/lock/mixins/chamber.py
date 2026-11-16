@@ -272,7 +272,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         add_lock_to_graph(self)
 
 
-    def get_performance(self):
+    def get_performance(self, show = True):
         Tc_df = calculate_cycle_information(self)
         if Tc_df.empty:
             return pd.Series()
@@ -297,7 +297,7 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
                    'Cycle-averaged occupancy (%)': occupancy,
                    'Average cycle time': event_durations['Average cycle time'],
                    'Cycle event composition': event_durations_summary.to_dict(),
-                   'Lock capacity': np.round(capacity,2),
+                   'Estimated average lock capacity': np.round(capacity,2),
                    'Cycle-averaged I/C-ratio': np.round(ic,2)}
 
         if self.has_salinity:
@@ -311,7 +311,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
             results['Saltwater intrusion causes'] = saltwater_intrusion_causes
 
         summary = pd.Series(results)
-        show_results(summary)
+        if show:
+            show_results(summary)
         return summary
 
 

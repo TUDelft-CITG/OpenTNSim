@@ -62,7 +62,7 @@ def logbook2eventtable(objs):
         obj_ids.append(obj.id)
         graph = obj.env.graph
 
-    if graph is None:
+    if not objs or graph is None:
         return pd.DataFrame()
 
     # construct all logged events

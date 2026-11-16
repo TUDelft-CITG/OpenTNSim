@@ -4,6 +4,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 from opentnsim.graph.utils import get_trajectory, _get_all_simple_edge_paths
 from opentnsim.graph.calculations import transform_geometry
@@ -16,32 +17,65 @@ import folium
 from IPython.display import display, HTML
 
 def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis = 'x', method='Matplotlib', add_doors = False):
+    plotly_shapes = []
+
+    def add_plotly_shape(shape_type, x0, x1, y0, y1,
+                        color, opacity=0.5, name=None,
+                        line=None, layer="below",
+                        xref=None, yref=None):
+
+        # Determine subplot axis references
+        if xref is None or yref is None:
+            _, col = ax
+            suffix = "" if col == 1 else str(col)
+            xref = f"x{suffix}"
+            yref = f"y{suffix}"
+
+        shape = dict(
+            type=shape_type,
+            x0=x0,
+            x1=x1,
+            y0=y0,
+            y1=y1,
+            fillcolor=color,
+            opacity=opacity,
+            line=line or dict(width=0),
+            layer=layer,
+            xref=xref,
+            yref=yref,
+            name=name
+        )
+
+        plotly_shapes.append(shape)
+    
     lock_df = pd.DataFrame(lock_chamber.logbook)
     gate_A_df = pd.DataFrame(lock_chamber.gate_A.logbook)
     gate_B_df = pd.DataFrame(lock_chamber.gate_B.logbook)
-    for index, message_info in lock_df.iterrows():
+    for index, (message, timestamp) in enumerate(
+        zip(lock_df["Message"], lock_df["Timestamp"])
+    ):
         message_found = False
-        if message_info.Message == "Lock gate opening stop" and index != 0:
+        if message == "Lock gate opening stop" and index != 0:
             time_start = lock_df.loc[index - 1, "Timestamp"]
-            time_stop = message_info.Timestamp
+            time_stop = timestamp
             gate_A = gate_A_df[gate_A_df.Timestamp == time_stop]
             color = "violet"
             if gate_A.empty:
                 color = 'purple'      
             name = "Lock gate opening"
             message_found = True
-        if message_info.Message == "Lock gate closing stop" and index != 0:
+        if message == "Lock gate closing stop" and index != 0:
             time_start = lock_df.loc[index - 1, "Timestamp"]
-            time_stop = message_info.Timestamp
+            time_stop = timestamp
             gate_B = gate_B_df[gate_B_df.Timestamp == time_stop]
             color = "purple"
             if gate_B.empty:
                 color = 'violet'  
             name = "Lock gate closing"
             message_found = True
-        if message_info.Message == "Lock levelling stop" and index != 0:
+        if message == "Lock levelling stop" and index != 0:
             time_start = lock_df.loc[index - 1, "Timestamp"]
-            time_stop = message_info.Timestamp
+            time_stop = timestamp
             color = "grey"
             name = "Lock levelling"
             message_found = True
@@ -58,14 +92,13 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis =
             if time_axis == 'y':
                 x_data = extend
                 y_data = [time_start,time_stop]
-            fig.add_shape(type="rect",
-                          x0=x_data[0],
-                          x1=x_data[-1],
-                          y0=y_data[0],
-                          y1=y_data[-1],
-                          fillcolor=color, opacity=0.5,
-                          layer="below", line_width=0,
-                          name=name, row=ax[0], col=ax[1])
+            add_plotly_shape(
+                "rect",
+                x_data[0], x_data[-1],
+                y_data[0], y_data[-1],
+                color=color,
+                name=name
+            )
     
     for df in [gate_A_df, gate_B_df]:
         if df.empty:
@@ -111,67 +144,71 @@ def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis =
                 if time_axis == 'y':
                     x_data = extend
                     y_data = [time_start,time_stop]
-                fig.add_shape(type="rect",
-                            x0=x_data[0],
-                            x1=x_data[-1],
-                            y0=y_data[0],
-                            y1=y_data[-1],
-                            fillcolor='darkgrey', opacity=0.5,
-                            layer="below", line_width=0,
-                            name=name, row=ax[0], col=ax[1])
+                add_plotly_shape(
+                    "rect",
+                    x_data[0], x_data[-1],
+                    y_data[0], y_data[-1],
+                    color="darkgrey",
+                    name="Doors closed"
+                )
 
         gate_A_df.rename(columns={'Status Gate A': 'Value'}, inplace = True)
         gate_B_df.rename(columns={'Status Gate B': 'Value'}, inplace = True)
-        if not add_doors:
-            return
-        for index, df in enumerate([gate_A_df, gate_B_df]):  
-            if index:
-                index = -1
-            s = df['Value'].reset_index(drop=True)
-            events = []
-            i = 0
-            while i < len(s):
-                if s.iloc[i] == 0:
-                    start_zero = i
+        if add_doors:
+            for index, df in enumerate([gate_A_df, gate_B_df]):
+                    if index:
+                        index = -1
+                    s = df['Value'].reset_index(drop=True)
+                    events = []
+                    i = 0
+                    while i < len(s):
+                        if s.iloc[i] == 0:
+                            start_zero = i
 
-                    while i + 1 < len(s) and s.iloc[i + 1] == 0:
+                            while i + 1 < len(s) and s.iloc[i + 1] == 0:
+                                i += 1
+
+                            end_zero = i
+                            if end_zero > start_zero:
+
+                                start_event = max(0, start_zero - 1)
+                                end_event = min(len(s) - 1, end_zero + 1)
+
+                                events.append({
+                                    'start': df.iloc[start_event]['Timestamp'],
+                                    'end': df.iloc[end_event]['Timestamp']
+                                })
                         i += 1
+                    events = pd.DataFrame(events)
 
-                    end_zero = i
-                    if end_zero > start_zero:
+                    for _, event in events.iterrows():
+                        time_start = event.start
+                        time_stop = event.end
+                        if method == 'Matplotlib':
+                            if time_axis == 'y':
+                                ax.plot([extend[index],extend[index]], [time_start, time_stop], color='black', zorder=-1)
+                            else:
+                                ax.plot([time_start, time_stop], [extend[index],extend[index]], color='black', zorder=-1)
+                        elif method == 'Plotly':
+                            x_data = [time_start,time_stop]
+                            y_data = [extend[index],extend[index]]
+                            if time_axis == 'y':
+                                x_data = [extend[index],extend[index]]
+                                
+                                y_data = [time_start,time_stop]
+                            add_plotly_shape(
+                                "line",
+                                x_data[0], x_data[-1],
+                                y_data[0], y_data[-1],
+                                color="black",
+                                line=dict(color="black")
+                            )
+    if method == "Plotly" and plotly_shapes:
+        existing_shapes = list(fig.layout.shapes or [])
 
-                        start_event = max(0, start_zero - 1)
-                        end_event = min(len(s) - 1, end_zero + 1)
-
-                        events.append({
-                            'start': df.iloc[start_event]['Timestamp'],
-                            'end': df.iloc[end_event]['Timestamp']
-                        })
-                i += 1
-            events = pd.DataFrame(events)
-
-            for _, event in events.iterrows():
-                time_start = event.start
-                time_stop = event.end
-                if method == 'Matplotlib':
-                    if time_axis == 'y':
-                        ax.plot([extend[index],extend[index]], [time_start, time_stop], color='black', zorder=-1)
-                    else:
-                        ax.plot([time_start, time_stop], [extend[index],extend[index]], color='black', zorder=-1)
-                elif method == 'Plotly':
-                    x_data = [time_start,time_stop]
-                    y_data = [extend[index],extend[index]]
-                    if time_axis == 'y':
-                        x_data = [extend[index],extend[index]]
-                        
-                        y_data = [time_start,time_stop]
-                    fig.add_shape(type="line",
-                                x0=x_data[0],
-                                x1=x_data[-1],
-                                y0=y_data[0],
-                                y1=y_data[-1],
-                                line=dict(color='black'), layer="below",
-                                name=name, row=ax[0], col=ax[1])
+        fig.update_layout(
+            shapes=existing_shapes + plotly_shapes
+        )
 
 
 def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, offset_x=0.,
@@ -304,7 +341,11 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
         vessel_names.append(vessel.name)
         # Add vessel trace with vessel.name in legend
         if method == 'Plotly':
-            traces.append(go.Scatter(x=distances, y=times, mode='lines', name=vessel.name))
+            traces.append((
+                distances,
+                times,
+                vessel.name
+            ))
 
     nrows = 1
     ncols = 1
@@ -368,8 +409,38 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
                 cols=ncols,
                 column_widths=width_ratios
             )
-        for trace in traces:
-            fig.add_trace(trace, row=1, col=1)
+
+        vessel_ids = list(lock_chamber.env.vessels.keys())  # Adapt if your vessels are stored differently
+        colors = px.colors.qualitative.Plotly
+
+        vessel_colors = {
+            vessel_id: colors[i % len(colors)]
+            for i, vessel_id in enumerate(vessel_ids)
+        }
+
+        for i, (distances, times, vessel_id) in enumerate(traces):
+            fig.add_trace(
+                go.Scatter(
+                    x=distances,
+                    y=times,
+                    mode='lines',
+                    name=f'Vessel {vessel_id}',
+                    line=dict(
+                        color=vessel_colors.get(
+                            vessel_id,
+                            colors[i % len(colors)]
+                        ),
+                        width=2,
+                    ),
+                    hovertemplate=(
+                        f'Vessel: {vessel_id}<br>'
+                        'Distance: %{x:.2f}<br>'
+                        'Time: %{y|%Y-%m-%d %H:%M:%S}<extra></extra>'
+                    )
+                ),
+                row=1,
+                col=1
+            )
         if lock_chamber.has_water_level:
             fig.add_trace(go.Scatter(x=hydromanager.hydrodynamic_data.sel({'STATION': node_A})["Water level"],
                                      y=hydromanager.hydrodynamic_data["TIME"], mode='lines', name=f'Node {node_A}',

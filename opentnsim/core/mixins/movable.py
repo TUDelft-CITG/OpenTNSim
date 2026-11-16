@@ -216,7 +216,7 @@ class Movable(Identifiable, Locatable, Routable, Log):
     def __init__(self, v: float, geometry = None, arrival_time = pd.Timestamp('NaT'), *args, **kwargs):
         """Initialization"""
         super().__init__(geometry = geometry, *args, **kwargs)
-
+        v = float(v)
         if ConsumesEnergy not in type(self).__mro__ and (
             not isinstance(v, (int, float))
             or isinstance(v, bool)
@@ -260,6 +260,8 @@ class Movable(Identifiable, Locatable, Routable, Log):
         if self.id not in self.env.vessels['id'].values:
             index = len(self.env.vessels)
             time_of_registration = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
+            if hasattr(self, 'arrival_time'):
+                time_of_registration = self.arrival_time
             self.env.vessels.loc[index, :] = [self.name, self.id, time_of_registration, self]
 
     def _check_attributes(self):

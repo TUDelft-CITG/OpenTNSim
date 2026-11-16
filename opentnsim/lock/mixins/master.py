@@ -122,6 +122,65 @@ class IsLockMaster:
             ],
         )
 
+        self.operation_entry_cols = (
+            "time_potential_lock_gate_opening_stop",
+            "time_lock_operation_start",
+            "time_lock_entry_start",
+            "time_lock_entry_stop",
+        )
+
+        self.vessel_entry_cols = (
+            "time_potential_lock_gate_opening_stop",
+            "time_potential_lock_gate_closure_start",
+            "time_arrival_at_approach_point",
+            "time_arrival_at_lineup_area",
+            "time_lock_operation_start",
+            "time_lock_entry_start",
+            "time_lock_entry_stop",
+        )
+
+        self.operation_lock_cols = (
+            "time_gate_closing_start",
+            "time_gate_closing_stop",
+            "time_levelling_start",
+            "time_levelling_stop",
+            "time_gate_opening_start",
+            "time_gate_opening_stop",
+        )
+
+        self.operation_exit_cols = (
+            "time_lock_departure_start",
+            "time_lock_departure_stop",
+            "time_lock_operation_stop",
+            "time_potential_lock_gate_closure_start",
+            "maximum_individual_delay",
+        )
+
+        self.vessel_exit_cols = (
+            "time_lock_departure_start",
+            "time_lock_departure_stop",
+            "time_lock_operation_stop",
+            "delay",
+        )
+
+        # Precompute column positions
+        
+        self.operation_entry_idx = self.operation_planning.columns.get_indexer(
+            self.operation_entry_cols
+        )
+        self.vessel_entry_idx = self.vessel_planning.columns.get_indexer(
+            self.vessel_entry_cols
+        )
+        self.operation_lock_idx = self.operation_planning.columns.get_indexer(
+            self.operation_lock_cols
+        )
+        self.operation_exit_idx = self.operation_planning.columns.get_indexer(
+            self.operation_exit_cols
+        )
+        self.vessel_exit_idx = self.vessel_planning.columns.get_indexer(
+            self.vessel_exit_cols
+        )
+
     def register_vessel(self, vessel):
         """
         Registers a vessel to the lock operation and vessel planning
@@ -148,50 +207,50 @@ class IsLockMaster:
         yield from self.optimize_arrival_time_previous_vessel(vessel, operation_index, lock_chamber)
 
 
+
     def add_vessel_to_vessel_planning(self, vessel, direction):
         """
-        Adds vessel to the vessel planning of the lock complex upon request
-
-        Parameters
-        ----------
-        vessel : type
-            a type including the following parent-classes: PassesLockComplex
-        direction : int
-            the direction of the vessel: 0 (direction from node_A to node_B) or 1 (direction from node_B to node_A)
-        time_of_registration : pd.Timestamp
-            the time that the vessel registers to the lock master
+        Adds vessel to the vessel planning of the lock complex.
         """
 
-        # add vessel to the vessel planning dataframe with its information
-        vessel_planning_index = len(self.vessel_planning)
-        self.vessel_planning.loc[vessel_planning_index,"id"] = vessel.id
-        self.vessel_planning.loc[vessel_planning_index,"node_from"] = ''
-        self.vessel_planning.loc[vessel_planning_index,"node_to"] = ''
-        self.vessel_planning.loc[vessel_planning_index, "direction"] = direction
-        self.vessel_planning.loc[vessel_planning_index, "waiting_area"] = None
-        self.vessel_planning.loc[vessel_planning_index, "lineup_area"] = None
-        self.vessel_planning.loc[vessel_planning_index, "lock_chamber"] = None
-        self.vessel_planning.loc[vessel_planning_index, "L"] = vessel.L
-        self.vessel_planning.loc[vessel_planning_index, "B"] = vessel.B
-        self.vessel_planning.loc[vessel_planning_index, "T"] = vessel.T
-        self.vessel_planning.loc[vessel_planning_index, "operation_index"] = np.nan
-        self.vessel_planning.loc[vessel_planning_index, "time_of_registration"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_of_acceptance"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_potential_lock_gate_opening_stop"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_arrival_at_waiting_area"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_arrival_at_lineup_area"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_arrival_at_approach_point"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_lock_operation_start"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_lock_entry_start"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_lock_entry_stop"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_lock_departure_start"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_lock_departure_stop"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_lock_operation_stop"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_potential_lock_gate_closure_start"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "time_to_traverse_waterway_without_lock"] = pd.Timestamp('NaT')
-        self.vessel_planning.loc[vessel_planning_index, "delay"] = pd.Timedelta('NaT')
+        vessel_planning = self.vessel_planning
+        vessel_planning_index = len(vessel_planning)
+
+        new_row = {
+            "id": vessel.id,
+            "node_from": "",
+            "node_to": "",
+            "direction": direction,
+            "waiting_area": None,
+            "lineup_area": None,
+            "lock_chamber": None,
+            "L": vessel.L,
+            "B": vessel.B,
+            "T": vessel.T,
+            "operation_index": np.nan,
+            "time_of_registration": pd.NaT,
+            "time_of_acceptance": pd.NaT,
+            "time_potential_lock_gate_opening_stop": pd.NaT,
+            "time_arrival_at_waiting_area": pd.NaT,
+            "time_arrival_at_lineup_area": pd.NaT,
+            "time_arrival_at_approach_point": pd.NaT,
+            "time_lock_operation_start": pd.NaT,
+            "time_lock_entry_start": pd.NaT,
+            "time_lock_entry_stop": pd.NaT,
+            "time_lock_departure_start": pd.NaT,
+            "time_lock_departure_stop": pd.NaT,
+            "time_lock_operation_stop": pd.NaT,
+            "time_potential_lock_gate_closure_start": pd.NaT,
+            "time_to_traverse_waterway_without_lock": pd.NaT,
+            "delay": pd.NaT,
+        }
+
+        vessel_planning.loc[vessel_planning_index] = new_row
+
         vessel.registered_to_lock = True
+
         return vessel_planning_index
+
 
     
     def add_vessel_to_lock_operation_planning(self, vessel, direction):

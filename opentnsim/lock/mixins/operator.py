@@ -221,13 +221,18 @@ class IsLockChamberOperator:
         if direction is None:
             direction = vessel_planning.loc[vessel_planning_index, "direction"]
         yield from self.communicate_vessel_to_sail_out_of_lock_chamber(vessel, direction)
-        yield self.length.put(vessel.L)
+
+        # putting back vessel.L (preventing that small float rounding errors cause vessels to wait here)
+        remaining_lock_length = self.length.capacity - self.length.level
+        if abs(remaining_lock_length - vessel.L) < 0.1:
+            yield self.length.put(remaining_lock_length)
+        else:
+            yield self.length.put(vessel.L)
         yield self.resource.release(vessel.request_to_enter_lock)
         delattr(vessel, 'request_to_enter_lock')
 
         # determine if the lock has to be levelled
         self.prepare_next_lock_operation(operation_index, direction, vessel)
-
         yield from self.communicate_vessel_to_leave_lock_complex(vessel, direction)
 
 
@@ -284,8 +289,11 @@ class IsLockChamberOperator:
 
     def let_vessel_wait_for_available_lock_operation_in_waiting_area(self, vessel, waiting_area, sailing_to_approach = None):
         # unpacks the lock complex master's vessel planning and the vessel index in this planning
+        operation_planning = self.lock_complex.operation_planning
         vessel_planning = self.lock_complex.vessel_planning
-        vessel_planning_index = vessel_planning[vessel_planning.id == vessel.id].iloc[-1].name
+        vessel_info = vessel_planning[vessel_planning.id == vessel.id].iloc[-1]
+        vessel_planning_index = vessel_info.name
+        operation_index = vessel_info.operation_index
         direction = vessel_planning.loc[vessel_planning_index, 'direction']
         distance_sailed = waiting_area.distance_from_edge_start
 
@@ -324,6 +332,8 @@ class IsLockChamberOperator:
 
             # log the stop of the waiting process
             vessel.log_entry_v0("Waiting for lock operation stop", vessel.env.now, vessel.distance, vessel.logbook[-1]['Geometry'],)
+            mask = (operation_planning.operation_index <= operation_index)&(operation_planning.status != 'processed')
+            operation_planning.loc[mask, 'status'] = 'planned'
 
 
     def let_vessel_wait_for_other_vessels_in_waiting_area(self, waiting_area, vessel):

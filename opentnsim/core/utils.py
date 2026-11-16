@@ -28,7 +28,8 @@ import datetime
 import numpy as np
 import pandas as pd
 import itertools
-import math
+import scipy.stats as stats
+import ast
 
 # OpenTNSim
 import opentnsim
@@ -294,84 +295,831 @@ def get_all_init_params(vessel_class):
     return allowed
 
 
-def generate_vessels_from_distribution(
+DISTRIBUTIONS = {
+    "triangular": {
+        "parameters": ["low", "mode", "high"],
+        "description": "Triangular distribution",
+        "example": "low=60, mode=80, high=100",
+        "factory": lambda p: stats.triang(
+            c=(p["mode"] - p["low"]) / (p["high"] - p["low"]),
+            loc=p["low"],
+            scale=p["high"] - p["low"],
+        ),
+        "validate": lambda p: (
+            p["low"] < p["high"]
+            and p["low"] <= p["mode"] <= p["high"]
+        ),
+    },
+
+    "uniform": {
+        "parameters": ["low", "high"],
+        "description": "Uniform distribution",
+        "example": "low=60, high=100",
+        "factory": lambda p: stats.uniform(
+            loc=p["low"],
+            scale=p["high"] - p["low"],
+        ),
+        "validate": lambda p: p["low"] < p["high"],
+    },
+
+    "normal": {
+        "parameters": ["mean", "std"],
+        "description": "Normal distribution",
+        "example": "mean=80, std=10",
+        "factory": lambda p: stats.norm(
+            loc=p["mean"],
+            scale=p["std"],
+        ),
+        "validate": lambda p: p["std"] > 0,
+    },
+
+    "lognormal": {
+        "parameters": ["mean", "sigma"],
+        "description": "Lognormal distribution",
+        "example": "mean=4.3, sigma=0.2",
+        "factory": lambda p: stats.lognorm(
+            s=p["sigma"],
+            scale=np.exp(p["mean"]),
+        ),
+        "validate": lambda p: p["sigma"] > 0,
+    },
+
+    "constant": {
+        "parameters": ["value"],
+        "description": "Constant value",
+        "example": "value=80",
+        "factory": lambda p: stats.rv_discrete(
+            values=([p["value"]], [1.0])
+        ),
+        "validate": lambda p: True,
+    },
+
+    "gamma": {
+        "parameters": ["mean", "cv"],
+        "description": "Gamma distribution",
+        "example": "mean=10, cv=0.5",
+        "factory": lambda p: stats.gamma(
+            a=1 / p["cv"]**2,
+            scale=p["mean"] * p["cv"]**2,
+        ),
+        "validate": lambda p: (
+            p["mean"] > 0
+            and p["cv"] > 0
+        ),
+    },
+       
+    "discrete": {
+        "parameters": ["values", "probabilities"],
+        "description": "Discrete probability distribution",
+        "example": "values=['small_cargo', 'general_cargo'], probabilities=[0.4, 0.6]",
+        "factory": lambda p: stats.rv_discrete(
+            values=(
+                np.arange(len(p["values"])),
+                p["probabilities"],
+            )
+        ),
+        "validate": lambda p: (
+            len(p["values"]) > 0
+            and len(p["values"]) == len(p["probabilities"])
+            and len(set(p["values"])) == len(p["values"])
+            and all(
+                np.isfinite(probability) and probability >= 0
+                for probability in p["probabilities"]
+            )
+            and np.isclose(sum(p["probabilities"]), 1.0)
+        ),
+    },
+}
+
+
+def list_distributions():
+    """Display supported distributions and required parameters."""
+
+    return pd.DataFrame([
+        {
+            "distribution": name,
+            "description": spec["description"],
+            "required_parameters": ", ".join(spec["parameters"]),
+            "example": spec["example"],
+        }
+        for name, spec in DISTRIBUTIONS.items()
+    ])
+
+
+class Distribution:
+
+    def __init__(
+        self,
+        name,
+        parameters,
+        scipy_distribution,
+        seed=None,
+    ):
+        self.name = name
+        self.parameters = parameters
+        self.scipy_distribution = scipy_distribution
+        self.rng = np.random.default_rng(seed)
+
+    def rvs(self, *args, **kwargs):
+        return self.scipy_distribution.rvs(
+            *args,
+            random_state=self.rng,
+            **kwargs,
+        )
+
+    def ppf(self, q):
+        return self.scipy_distribution.ppf(q)
+
+    def __repr__(self):
+        params = ", ".join(
+            f"{key}={value}" for key, value in self.parameters.items()
+        )
+        return f"{self.name}({params})"
+
+
+
+def create_distribution(distribution, *, seed=None, **parameters):
+    """Create a validated probability distribution."""
+
+    if distribution not in DISTRIBUTIONS:
+        raise ValueError(
+            f"Unsupported distribution '{distribution}'. "
+            f"Supported distributions: {list(DISTRIBUTIONS)}. "
+            "Use list_distributions() for details."
+        )
+
+    specification = DISTRIBUTIONS[distribution]
+
+    required = set(specification["parameters"])
+    supplied = set(parameters)
+
+    missing = required - supplied
+    unexpected = supplied - required
+
+    if missing or unexpected:
+        raise ValueError(
+            f"Invalid parameters for '{distribution}'. "
+            f"Missing: {sorted(missing)}. "
+            f"Unexpected: {sorted(unexpected)}."
+        )
+
+    # Discrete distributions can have categorical values (e.g. vessel classes).
+    if distribution == "discrete":
+        values = parameters["values"]
+        probabilities = parameters["probabilities"]
+
+        if not isinstance(values, (list, tuple, np.ndarray)):
+            raise ValueError("Parameter 'values' must be a sequence.")
+
+        if not isinstance(probabilities, (list, tuple, np.ndarray)):
+            raise ValueError(
+                "Parameter 'probabilities' must be a numerical sequence."
+            )
+
+        if not all(
+            isinstance(p, (int, float, np.integer, np.floating))
+            and not isinstance(p, (bool, np.bool_))
+            and np.isfinite(p)
+            for p in probabilities
+        ):
+            raise ValueError(
+                "Parameter 'probabilities' must contain finite real numbers."
+            )
+
+    else:
+        # All parameters of other distributions must be finite real numbers.
+        for key, value in parameters.items():
+            if (
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(
+                    value,
+                    (int, float, np.integer, np.floating)
+                )
+                or not np.isfinite(value)
+            ):
+                raise ValueError(
+                    f"Parameter '{key}' must be a finite real number."
+                )
+
+    if not specification["validate"](parameters):
+        raise ValueError(
+            f"Invalid parameter values for '{distribution}': "
+            f"{parameters}"
+        )
+
+    scipy_distribution = specification["factory"](parameters)
+
+    return Distribution(
+        name=distribution,
+        parameters=parameters.copy(),
+        scipy_distribution=scipy_distribution,
+        seed=seed,
+    )
+
+
+def validate_generation_inputs(
     env,
-    vessel_class,
-    vessel_parameters,
-    mean_arrival_rate,
-    number_of_vessels,
     origin,
     destination,
-    seed=None,
-    start_time=None,
-    use_fleet=False,
-    fleet_composition=None,
-    fleet_data=None
+    fleet_data,
+    fleet_composition,
+    arrival_distribution,
+    number_of_vessels,
+    correlation_matrices=None,
 ):
+    """Validate vessel configuration and generation inputs."""
+
+    # 1. Validate general inputs
+    if (
+        isinstance(number_of_vessels, (bool, np.bool_))
+        or not isinstance(number_of_vessels, (int, np.integer))
+        or number_of_vessels < 0
+    ):
+        raise ValueError(
+            "number_of_vessels must be a non-negative integer."
+        )
+
+    if not isinstance(arrival_distribution, Distribution):
+        raise TypeError(
+            "arrival_distribution must be a Distribution object."
+        )
+
+    # 2. Validate DataFrame structure
+    required_columns = [
+        "vessel_class",
+        "vessel_object",
+    ]
+
+    missing_columns = set(required_columns) - set(fleet_data.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing DataFrame columns: {sorted(missing_columns)}"
+        )
+
+    if fleet_data.empty:
+        raise ValueError("fleet_data cannot be empty.")
+
+    if fleet_data["vessel_class"].duplicated().any():
+        raise ValueError("Each vessel class must appear only once.")
+
+    if fleet_data[required_columns].isnull().any().any():
+        raise ValueError(
+            "Required vessel configuration values cannot be null."
+        )
+
+    # 3. Validate vessel object parameters
+    external_parameters = {
+        "env": env,
+        "origin": origin,
+        "destination": destination,
+    }
+
+    available_parameters = set(fleet_data.columns)
+
+    available_parameters.update(
+        key for key, value in external_parameters.items()
+        if value is not None
+    )
+
+    for vessel_data in fleet_data.itertuples(index=False):
+
+        vessel_object = vessel_data.vessel_object
+
+        vessel_parameters, _ = inspect_object(
+            vessel_object,
+            show_parameter_table=False,
+        )
+
+        required_parameters = vessel_parameters.loc[
+            vessel_parameters["status"] == "required",
+            "parameter",
+        ].tolist()
+
+        missing_parameters = (
+            set(required_parameters) - available_parameters
+        )
+
+        if missing_parameters:
+            raise ValueError(
+                f"Missing required parameters for "
+                f"{vessel_data.vessel_class}: "
+                f"{sorted(missing_parameters)}"
+            )
+
+    # 4. Validate fleet composition structure
+    composition_columns = [
+        "vessel_class",
+        "fleet_probability",
+    ]
+
+    missing_columns = (
+        set(composition_columns) - set(fleet_composition.columns)
+    )
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing fleet composition columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    if fleet_composition.empty:
+        raise ValueError("fleet_composition cannot be empty.")
+
+    if fleet_composition[composition_columns].isnull().any().any():
+        raise ValueError(
+            "Fleet composition values cannot be null."
+        )
+
+    if fleet_composition["vessel_class"].duplicated().any():
+        raise ValueError(
+            "Each vessel class must appear only once "
+            "in fleet composition."
+        )
+
+    # 5. Validate vessel classes
+    composition_classes = set(fleet_composition["vessel_class"])
+    fleet_classes = set(fleet_data["vessel_class"])
+
+    missing_classes = fleet_classes - composition_classes
+    unexpected_classes = composition_classes - fleet_classes
+
+    if missing_classes or unexpected_classes:
+        raise ValueError(
+            "Fleet composition does not match fleet data. "
+            f"Missing classes: {sorted(missing_classes)}. "
+            f"Unexpected classes: {sorted(unexpected_classes)}."
+        )
+
+    # 6. Validate fleet probabilities
+    probabilities = fleet_composition[
+        "fleet_probability"
+    ].to_numpy(dtype=float)
+
+    if (
+        not np.all(np.isfinite(probabilities))
+        or np.any(probabilities < 0)
+        or not np.isclose(probabilities.sum(), 1.0)
+    ):
+        raise ValueError(
+            "Fleet probabilities must be finite, "
+            "non-negative and sum to one."
+        )
+
+    # 7. Validate correlation matrices.
+    validate_correlation_matrices(
+        correlation_matrices=correlation_matrices,
+        fleet_data=fleet_data,
+    )
+
+    return True
+
+
+
+def validate_correlation_matrices(
+    correlation_matrices,
+    fleet_data,
+):
+    """Validate correlation matrices for the vessel classes."""
+
+    if correlation_matrices is None:
+        return True
+
+    if not isinstance(correlation_matrices, dict):
+        raise TypeError(
+            "correlation_matrices must be a dictionary."
+        )
+
+    fleet_classes = set(fleet_data["vessel_class"])
+
+    # Check that correlation matrices refer to existing vessel classes.
+    unknown_classes = set(correlation_matrices) - fleet_classes
+
+    if unknown_classes:
+        raise ValueError(
+            "Correlation matrices contain unknown vessel classes: "
+            f"{sorted(unknown_classes)}."
+        )
+
+    for vessel_class, matrix in correlation_matrices.items():
+
+        if not isinstance(matrix, pd.DataFrame):
+            raise TypeError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must be a pandas DataFrame."
+            )
+
+        # Check for duplicate variable names.
+        if matrix.index.has_duplicates:
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "contains duplicate index names."
+            )
+
+        if matrix.columns.has_duplicates:
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "contains duplicate column names."
+            )
+
+        # Check that index and columns contain the same variables.
+        if (
+            len(matrix.index) != len(matrix.columns)
+            or set(matrix.index) != set(matrix.columns)
+        ):
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must have identical index and column names."
+            )
+
+        # Ensure the columns follow the same order as the index.
+        matrix = matrix.loc[matrix.index, matrix.index]
+
+        # Check numerical values.
+        try:
+            values = matrix.to_numpy(dtype=float)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must contain numerical values."
+            )
+
+        if not np.all(np.isfinite(values)):
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must contain finite values."
+            )
+
+        # Check diagonal.
+        if not np.allclose(np.diag(values), 1.0):
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must have ones on its diagonal."
+            )
+
+        # Check symmetry.
+        if not np.allclose(values, values.T):
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must be symmetric."
+            )
+
+        # Check correlation bounds.
+        if np.any(np.abs(values) > 1):
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must contain values between -1 and 1."
+            )
+
+        eigenvalues = np.linalg.eigvalsh(values)
+        if np.any(eigenvalues < -1e-10):
+            raise ValueError(
+                f"Correlation matrix for '{vessel_class}' "
+                "must be positive semidefinite."
+            )
+
+    return True
+
+
+def generate_arrival_times(
+    number_of_vessels,
+    start_time,
+    arrival_distribution,
+):
+    """
+    Generate vessel arrival times using an interarrival-time
+    probability distribution.
+    """
+
+    if number_of_vessels == 0:
+        return np.array([])
+
+    interarrival_times = arrival_distribution.rvs(
+        size=number_of_vessels,
+    )
+
+    return [start_time + pd.Timedelta(minutes = time) for time in np.cumsum(interarrival_times)]
+
+
+def generate_vessels_from_distribution(
+    env,
+    fleet_data,
+    fleet_composition,
+    arrival_distribution,
+    number_of_vessels,
+    origin=None,
+    destination=None,
+    route=None,
+    fleet_seed=None,
+    start_time=None,
+    correlation_matrices=None,
+):
+    """
+    Generate vessels using a single vessel configuration DataFrame.
+    """
+    if (origin is None or destination is None) and route is None:
+        raise ValueError('Either an origin/destination node pair or route should be defined')
+    if route is not None:
+        origin = route[0]
+        destination = route[-1]
+
+    # Validate inputs.
+    validate_generation_inputs(
+        env=env,
+        origin=origin,
+        destination=destination,
+        fleet_data=fleet_data,
+        fleet_composition=fleet_composition,
+        arrival_distribution=arrival_distribution,
+        number_of_vessels=number_of_vessels,
+        correlation_matrices=correlation_matrices,
+    )
+
+    if number_of_vessels == 0:
+        return []
+
+    # Determine starting time.
     if start_time is None:
         start_time = env.simulation_start
 
-    rng = np.random.default_rng(seed)
-    arrival_time = start_time
+    # Generate arrival times.
+    arrival_times = generate_arrival_times(
+        number_of_vessels=number_of_vessels,
+        start_time=start_time,
+        arrival_distribution=arrival_distribution,
+    )
 
-    try:
-        number_of_earlier_vessels = len(env.vessels)
-    except:
-        number_of_earlier_vessels = 0
+    # Determine vessel numbering.
+    earlier_vessels = len(getattr(env, "vessels", []))
 
     vessels = []
 
-    if use_fleet:
-        if fleet_composition is None or fleet_data is None:
-            raise ValueError("fleet_composition and fleet_data must be provided when use_fleet=True")
+    fleet_distribution = create_distribution(
+        "discrete",
+        values=fleet_composition["vessel_class"].tolist(),
+        probabilities=fleet_composition["fleet_probability"].tolist(),
+        seed=fleet_seed,
+    )
 
-        fleet_types = list(fleet_composition.keys())
-        fleet_probs = np.array(list(fleet_composition.values()), dtype=float)
-        fleet_probs = fleet_probs / fleet_probs.sum()
+    # Generate vessels.
+    for i, arrival_time in enumerate(arrival_times):
 
-        fleet_specs = fleet_data.set_index("Class")
-
-    for i in range(number_of_vessels):
-
-        arrival_time += pd.Timedelta(
-            minutes=rng.exponential(mean_arrival_rate)
+        # Select vessel class.
+        row = select_vessel_class(
+            fleet_data=fleet_data,
+            fleet_distribution=fleet_distribution, 
         )
 
-        params = {
-            "name": f"Vessel {number_of_earlier_vessels + i}",
-            "arrival_time": arrival_time
-        }
-
-        if not use_fleet:
-            params.update(vessel_parameters)
-        else:
-            vessel_class = rng.choice(fleet_types, p=fleet_probs)
-            class_row = fleet_specs.loc[vessel_class]
-
-            resolved_params = {}
-
-            for out_key, source_key in vessel_parameters.items():
-                if source_key == "Class":
-                    resolved_params[out_key] = vessel_class
-                elif source_key in class_row.index:
-                    resolved_params[out_key] = class_row[source_key]
-                else:
-                    resolved_params[out_key] = source_key
-
-            params.update(resolved_params)
-
-        v = vessel_parameters['v']
-        vessel = create_vessel(
-            env,
-            vessel_class,
-            origin,
-            destination,
-            **params
+        # Generate vessel.
+        vessel = generate_single_vessel(
+            env=env,
+            row=row,
+            origin=origin,
+            destination=destination,
+            arrival_time=arrival_time,
+            vessel_name=f"Vessel {earlier_vessels + i}",
+            correlation_matrices = correlation_matrices,
         )
 
         vessels.append(vessel)
 
     return vessels
+
+
+def sample_correlated_parameters(parameters, correlation_matrix):
+    """
+    Sample vessel parameters using a Gaussian copula.
+
+    Parameters not included in the correlation matrix are sampled
+    independently using their existing distribution objects.
+    """
+
+    sampled_parameters = {}
+    distributions = {}
+
+    # Separate distributions, callables and fixed values
+    for parameter, value in parameters.items():
+
+        distribution = _get_distribution(value)
+
+        if distribution is not None:
+            distributions[parameter] = distribution
+
+        elif callable(value):
+            sampled_parameters[parameter] = value()
+
+        else:
+            sampled_parameters[parameter] = value
+
+    # No correlation matrix: use the original independent sampling
+    if correlation_matrix is None:
+        for parameter, distribution in distributions.items():
+            sampled_parameters[parameter] = distribution.rvs()
+
+        return sampled_parameters
+
+    # Identify stochastic parameters included in the matrix
+    correlated_parameters = [
+        parameter
+        for parameter in correlation_matrix.index
+        if parameter in distributions
+    ]
+
+    # Sample parameters outside the matrix independently
+    independent_parameters = [
+        parameter
+        for parameter in distributions
+        if parameter not in correlated_parameters
+    ]
+
+    for parameter in independent_parameters:
+        sampled_parameters[parameter] = distributions[parameter].rvs()
+
+    if not correlated_parameters:
+        return sampled_parameters
+
+    # Extract and reorder the relevant correlation matrix
+    matrix = correlation_matrix.loc[
+        correlated_parameters, correlated_parameters
+    ].to_numpy(dtype=float)
+
+    # Eigenvalue decomposition also handles positive-semidefinite matrices
+    eigenvalues, eigenvectors = np.linalg.eigh(matrix)
+    eigenvalues = np.clip(eigenvalues, 0.0, None)
+
+    factor = eigenvectors @ np.diag(np.sqrt(eigenvalues))
+
+    # Generate independent standard normal values using the RNG
+    # already stored in each parameter's distribution
+    independent_normals = np.array([
+        _get_stored_rng(distributions[parameter]).standard_normal()
+        for parameter in correlated_parameters
+    ])
+
+    # Introduce the requested correlations
+    correlated_normals = factor @ independent_normals
+
+    # Convert correlated normal values into uniform values
+    uniform_values = stats.norm.cdf(correlated_normals)
+
+    # Avoid numerical problems at the boundaries
+    epsilon = np.finfo(float).eps
+    uniform_values = np.clip(
+        uniform_values,
+        epsilon,
+        1.0 - epsilon
+    )
+
+    # Apply each parameter's original marginal distribution
+    for parameter, uniform_value in zip(
+        correlated_parameters, uniform_values
+    ):
+
+        distribution = _get_scipy_distribution(
+            distributions[parameter]
+        )
+
+        sampled_parameters[parameter] = distribution.ppf(
+            uniform_value
+        )
+
+    return sampled_parameters
+
+
+def _get_distribution(value):
+    """Convert a parameter specification into a distribution object."""
+
+    if isinstance(value, str):
+        expression = ast.parse(value, mode="eval").body
+
+        if not isinstance(expression, ast.Call) or not isinstance(
+            expression.func, ast.Name
+        ):
+            raise ValueError(f"Invalid distribution specification: {value}")
+
+        distribution_name = expression.func.id
+
+        distribution_parameters = {
+            keyword.arg: ast.literal_eval(keyword.value)
+            for keyword in expression.keywords
+            if keyword.arg is not None
+        }
+
+        return create_distribution(
+            distribution_name,
+            **distribution_parameters
+        )
+
+    if hasattr(value, "rvs"):
+        return value
+
+    return None
+
+
+def _get_scipy_distribution(distribution):
+    """Get the underlying SciPy distribution for inverse-CDF sampling."""
+
+    if hasattr(distribution, "ppf"):
+        return distribution
+
+    if hasattr(distribution, "distribution"):
+        underlying = distribution.distribution
+
+        if hasattr(underlying, "ppf"):
+            return underlying
+
+    raise TypeError(
+        "The distribution must expose a SciPy distribution with a ppf method."
+    )
+
+
+def _get_stored_rng(distribution):
+    """Retrieve the random generator already stored in a Distribution."""
+
+    rng = getattr(distribution, "rng", None)
+
+    if rng is None:
+        raise TypeError(
+            "Correlated sampling requires a distribution with a stored "
+            "random generator (distribution.rng)."
+        )
+
+    return rng
+
+
+def generate_single_vessel(
+    env,
+    row,
+    origin,
+    destination,
+    vessel_name,
+    arrival_time=None,
+    show_unused_optional_parameters=False,
+    correlation_matrices=None,
+):
+    """Generate a vessel from a selected fleet composition row."""
+
+    vessel_object = row["vessel_object"]
+
+    # Get the correlation matrix for this vessel class
+    correlation_matrix = None
+
+    if correlation_matrices is not None:
+
+        if isinstance(correlation_matrices, dict):
+            vessel_class = row["vessel_class"]
+            correlation_matrix = correlation_matrices.get(vessel_class)
+
+        else:
+            # Also allow a single DataFrame to be supplied directly
+            correlation_matrix = correlation_matrices
+
+    # Collect parameter specifications
+    parameter_values = {
+        parameter: row[parameter]
+        for parameter in ["L", "B", "T", "v"]
+    }
+
+    # Sample parameters, taking correlations into account
+    parameters = sample_correlated_parameters(
+        parameters=parameter_values,
+        correlation_matrix=correlation_matrix,
+    )
+
+    parameters["name"] = vessel_name
+    parameters["type"] = row["type"]
+
+    if arrival_time is not None:
+        parameters["arrival_time"] = arrival_time
+
+    return create_vessel(
+        env=env,
+        vessel_obj=vessel_object,
+        origin=origin,
+        destination=destination,
+        show_unused_optional_parameters=show_unused_optional_parameters,
+        **parameters,
+    )
+
+
+def select_vessel_class(
+    fleet_data,
+    fleet_distribution,
+):
+    """Select a vessel class and return its DataFrame row."""
+    index = int(fleet_distribution.rvs())
+    vessel_class = fleet_distribution.parameters["values"][index]
+
+    selected = fleet_data[
+        fleet_data["vessel_class"] == vessel_class
+    ]
+
+    if selected.empty:
+        raise ValueError(
+            f"Vessel class '{vessel_class}' not found."
+        )
+
+    return selected.iloc[0]
 
 
 def highlight_row_if_required(row):
@@ -503,7 +1251,7 @@ def create_object(name, classes):
 
 def create_vessel(
     env,
-    vessel_class,
+    vessel_obj,
     origin = None,
     destination = None,
     route = None,
@@ -511,7 +1259,7 @@ def create_vessel(
     **kwargs,
 ):
     # Check vessel class
-    check_class_is_vesselclass(vessel_class)
+    check_class_is_vesselclass(vessel_obj)
 
     # Automatically generated constructor arguments take precedence
     auto_kwargs = {
@@ -524,7 +1272,7 @@ def create_vessel(
 
     # Inspect constructor parameters
     df, missing_parameters = inspect_object(
-        vessel_class,
+        vessel_obj,
         candidate_kwargs,
         False,
     )
@@ -533,7 +1281,7 @@ def create_vessel(
         display(df)
 
     # Separate constructor arguments from extra metadata
-    allowed = get_all_init_params(vessel_class)
+    allowed = get_all_init_params(vessel_obj)
 
     filtered_kwargs = {
         key: value
@@ -547,7 +1295,7 @@ def create_vessel(
     }
 
     # Construct vessel
-    vessel = vessel_class(**filtered_kwargs)
+    vessel = vessel_obj(**filtered_kwargs)
 
     # Store unused parameters as metadata when supported
     if "ExtraMetadata" in {

@@ -530,15 +530,17 @@ class IsPortAuthority:
 
             waiting = True
             if not at_berth:
-                nearest_anchorage_area, anchorages_df = determine_nearest_anchorage_area(vessel, origin, self)
+                nearest_anchorage_area, anchorage_info = determine_nearest_anchorage_area(vessel, origin, self)
                 yield from self.communicate_vessel_to_sail_to_anchorage(
                     vessel,
                     origin,
                     nearest_anchorage_area,
                 )
                 origin = nearest_anchorage_area.node
-                if anchorages_df['total_sailing_time'] - total_sailing_time >= total_waiting_time:
+                if anchorage_info['total_sailing_time'] - total_sailing_time >= total_waiting_time:
                     waiting = False
+
+
             
             # Keep the original input arguments unchanged
             current_waiting_events = waiting_events

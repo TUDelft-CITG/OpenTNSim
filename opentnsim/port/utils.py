@@ -90,12 +90,15 @@ def determine_nearest_anchorage_area(vessel, node, port, route = None):
 
         anchorage_info = {
             'anchorage_area': anchorage,
+            'sailing_edge_route_to_anchorage': edge_route_to_anchorage,
+            'sailing_edge_route_from_anchorage': edge_route_from_anchorage,
             'availability_anchorage': anchorage_availability,
             'sailing_time_to_anchorage': pd.Timedelta(seconds = sailing_time_to_anchorage),
             'sailing_time_from_anchorage': pd.Timedelta(seconds = sailing_time_from_anchorage),
 
         }
-        available_anchorages.append(pd.DataFrame(anchorage_info, index = [node_anchorage]))
+
+        available_anchorages.append(pd.DataFrame([anchorage_info], index = [node_anchorage]))
 
     if available_anchorages:
         available_anchorages_df = pd.concat(available_anchorages)

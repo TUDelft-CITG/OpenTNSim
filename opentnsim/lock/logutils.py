@@ -308,7 +308,6 @@ def get_vessel_delays(lock_chamber):
             )
 
             route = nx.dijkstra_path(vessel.env.graph, node_start, node_stop)
-
             locking_events = get_waiting_and_idle_events(vessel, lock_passing_start_idx, levelling_idx,
                                                          lock_passing_stop_idx, route)
             levelling_event = get_events(vessel, levelling_idx, levelling_idx + 1, route)
@@ -678,7 +677,6 @@ def calculate_cycle_information(lock_chamber):
         # NB: n_max is here equivalent to 2 * n_max, since it counts both the up and down vessels
         n_max = len(up_vessels) + len(down_vessels)
         I_s = (n_max / (Tc_seconds / 3600)) if Tc_seconds else None
-
 
         number_of_upstream_vessels = len(up_vessels)
         number_of_downstream_vessels = len(down_vessels)
