@@ -103,21 +103,43 @@ def node_path_to_edge_path(G, node_path, weight="length_m"):
 def build_graph_spatial_index(graph):
     """
     Build spatial indexes for nodes and edges and store them in graph.graph.
+
+    Supports:
+        nx.Graph
+        nx.DiGraph
+        nx.MultiGraph
+        nx.MultiDiGraph
     """
-    # Avoid rebuilding
-    if "node_lookup" in graph.graph and len(graph.graph['node_lookup']) == len(graph.nodes):
+
+    # Avoid rebuilding if indexes already exist
+    if (
+        "node_lookup" in graph.graph
+        and "edge_lookup" in graph.graph
+        and len(graph.graph["node_lookup"]) == len(graph.nodes)
+        and len(graph.graph["edge_lookup"]) == sum(
+            1 for _, _, data in graph.edges(data=True)
+            if data.get("geometry") is not None
+            and not data["geometry"].is_empty
+        )
+    ):
         return
 
+    # ---- Nodes ----
     node_geoms = []
     node_lookup = []
+
     for n, data in graph.nodes(data=True):
         geom = data.get("geometry")
+
         if geom is not None and not geom.is_empty:
             node_geoms.append((geom.x, geom.y))
             node_lookup.append(n)
 
-    node_coords = np.array(node_geoms)
-    node_tree = cKDTree(node_coords)
+    if node_geoms:
+        node_coords = np.array(node_geoms)
+        node_tree = cKDTree(node_coords)
+    else:
+        node_tree = None
 
     graph.graph["node_kdtree"] = node_tree
     graph.graph["node_lookup"] = node_lookup
@@ -125,13 +147,27 @@ def build_graph_spatial_index(graph):
     # ---- Edges ----
     edge_geoms = []
     edge_lookup = {}
-    for u, v, data in graph.edges(data=True):
-        geom = data.get("geometry")
-        if geom is not None and not geom.is_empty:
-            edge_geoms.append(geom)
-            edge_lookup[geom] = (u, v)
 
-    edge_tree = STRtree(edge_geoms)
+    if graph.is_multigraph():
+        for u, v, k, data in graph.edges(keys=True, data=True):
+            geom = data.get("geometry")
+
+            if geom is not None and not geom.is_empty:
+                idx = len(edge_geoms)
+                edge_geoms.append(geom)
+                edge_lookup[idx] = (u, v, k)
+
+    else:
+        for u, v, data in graph.edges(data=True):
+            geom = data.get("geometry")
+
+            if geom is not None and not geom.is_empty:
+                idx = len(edge_geoms)
+                edge_geoms.append(geom)
+                edge_lookup[idx] = (u, v)
+
+    edge_tree = STRtree(edge_geoms) if edge_geoms else None
+
     graph.graph["edge_spatial_tree"] = edge_tree
     graph.graph["edge_lookup"] = edge_lookup
 
@@ -242,36 +278,41 @@ def find_closest_node(graph, point):
     return closest_node
 
 
+
 def find_closest_edge(graph, point):
     """
     Find the closest edge to a Shapely Point using STRtree.
+
+    Returns:
+        (u, v)    for Graph / DiGraph
+        (u, v, k) for MultiGraph / MultiDiGraph
+
+    Returns None if no edges have valid geometries.
     """
+
     build_graph_spatial_index(graph)
 
     tree = graph.graph["edge_spatial_tree"]
     lookup = graph.graph["edge_lookup"]
 
-    idx = tree.nearest(point)
-    geom = tree.geometries[idx]
-    edge = lookup[geom]
+    if tree is None:
+        return None
 
-    return edge
+    idx = tree.nearest(point)
+
+    return lookup[int(idx)]
 
 
 def determine_edge_based_on_two_locations(graph, geom_start, geom_stop):
    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
-    node_start = find_closest_node(graph, geom_start)
-    node_end = find_closest_node(graph, geom_stop)
-    if node_start == node_end:
-        edge_start = find_closest_edge(graph, geom_start)
-        edge_stop = find_closest_edge(graph, geom_stop)
-        if edge_start == edge_stop:
-            node_start, node_end = edge_start[:2]
-        elif node_start == edge_start[0]:
-            node_start, node_end = edge_start[:2]
-        else:
-            node_start, node_end = edge_stop[:2]
-    return (node_start, node_end)
+    edge_start = find_closest_edge(graph, geom_start)
+    edge_stop = find_closest_edge(graph, geom_stop)
+
+    if edge_start[:2] == edge_stop[:2] or edge_start[:2] == edge_stop[:2][::-1]:
+        edge = edge_start
+    else:
+        edge = edge_stop
+    return edge
 
 
 def network_check(graph):
@@ -784,7 +825,7 @@ def get_trajectory_between_locations(graph, point_1, point_2, tolerance = 0.0001
     edge_1 = find_closest_edge(graph, point_1)
     edge_2 = find_closest_edge(graph, point_2)
 
-    route = get_largest_route_between_edges(graph, edge_1, edge_2)
+    route = get_largest_route_between_edges(graph, edge_1[:2], edge_2[:2])
     geometry = get_trajectory(graph, route[0], route[-1])[0]
 
     lines_1 = split(snap(geometry, point_1, tolerance), point_1).geoms
@@ -1308,8 +1349,8 @@ def get_largest_route_between_edges(graph, edge1, edge2):
     if set(edge1) == set(edge2):
         return list(edge1)
 
-    sources = list(edge1)
-    targets = list(edge2)
+    sources = list(edge1[:2])
+    targets = list(edge2[:2])
 
     lengths = nx.multi_source_dijkstra_path_length(graph, sources, weight=None)
     paths = nx.multi_source_dijkstra_path(graph, sources, weight=None)

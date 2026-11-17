@@ -51,11 +51,11 @@ def calculate_depth(geom_start, geom_stop, graph):
         If there is no edge between the two nodes in the graph graph.
         If the depth data is not available for the edge between the two nodes.
     """
-    node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
+    edge = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
 
     # Read from the graph data from vaarweginformatie.nl the General depth of each edge
-    if "GeneralDepth" in graph.get_edge_data(node_start, node_end).keys():
-        h_0 = graph.get_edge_data(node_start, node_end)["GeneralDepth"]
+    if "GeneralDepth" in graph.get_edge_data(*edge).keys():
+        h_0 = graph.get_edge_data(*edge)["GeneralDepth"]
     else:
         return np.nan  # if no depth data is available, return NaN
     
@@ -89,11 +89,11 @@ def calculate_width(geom_start, geom_stop, graph):
         If there is no edge between the two nodes in the graph graph.
         If the width data is not available for the edge between the two nodes.
     """
-    node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
+    edge = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
     # Read from the graph data from vaarweginformatie.nl the General width of each edge
     try:
-        if "GeneralWidth" in graph.get_edge_data(node_start, node_end).keys():
-            width = graph.get_edge_data(node_start, node_end)["GeneralWidth"]
+        if "GeneralWidth" in graph.get_edge_data(*edge).keys():
+            width = graph.get_edge_data(*edge)["GeneralWidth"]
         else:
             return np.nan  # if no width data is available, return NaN
     except:
@@ -128,11 +128,11 @@ def calculate_current(geom_start, geom_stop, graph):
         If there is no edge between the two nodes in the graph graph.
         If the current data is not available for the edge between the two nodes.
     """
-    node_start, node_end = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
+    edge = determine_edge_based_on_two_locations(graph, geom_start, geom_stop)
     # Read from the graph data from vaarweginformatie.nl the Current of each edge
     try:
-        if "Current" in graph.get_edge_data(node_start, node_end).keys():
-            current = graph.get_edge_data(node_start, node_end)["Current"]
+        if "Current" in graph.get_edge_data(*edge).keys():
+            current = graph.get_edge_data(*edge)["Current"]
         else:
             return 0.0  # if no current data is available, return NaN
     except:
@@ -324,7 +324,7 @@ def calculate_distance_over_network_to_location(graph, node_1, node_2, location,
 def calculate_distance_between_locations_along_edges(graph, location_1, location_2):
     edge_1 = find_closest_edge(graph, location_1)
     edge_2 = find_closest_edge(graph, location_2)
-    route = get_largest_route_between_edges(graph, edge_1, edge_2)
+    route = get_largest_route_between_edges(graph, edge_1[:2], edge_2[:2])
     geometry, length_m = get_trajectory(graph, route[0], route[-1])
     geometry_length = geometry.length
 

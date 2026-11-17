@@ -9,6 +9,7 @@ from shapely.geometry import LineString, Point
 # packages for data handling
 import numpy as np
 import pandas as pd
+import folium
 
 # plotting libraries
 import matplotlib.pyplot as plt
@@ -16,6 +17,7 @@ import plotly.colors as pc
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.offline import init_notebook_mode, iplot
+import branca.colormap as cm
 
 # spatial libraries
 import networkx as nx
@@ -545,3 +547,185 @@ def plot_gdf_eventtable(gdf, attr=None, colorscale="Reds", padding=0.05):
     )
 
     return fig
+
+
+COLORMAPS = {
+    "CO2": cm.LinearColormap(
+        colors=[plt.cm.YlOrBr(x) for x in np.linspace(0, 1, 256)],
+        vmin=0,
+        vmax=2,
+    ),
+    "PM10": cm.LinearColormap(
+        colors=[plt.cm.BuPu(x) for x in np.linspace(0, 1, 256)],
+        vmin=0,
+        vmax=2,
+    ),
+}
+
+def plot_gdf_eventtable_folium(
+    gdf,
+    attr=None,
+    colormap="CO2",
+):
+
+    # Resolve colormap
+    if isinstance(colormap, str):
+        if colormap not in COLORMAPS:
+            raise ValueError(
+                f"Unknown colormap '{colormap}'. "
+                f"Available colormaps: {list(COLORMAPS.keys())}"
+            )
+
+        # Extract the exact original color gradient
+        colors = COLORMAPS[colormap].colors
+
+    elif isinstance(colormap, (list, tuple)):
+        if not colormap:
+            raise ValueError("Colormap must contain at least one color.")
+
+        colors = list(colormap)
+
+    elif isinstance(colormap, cm.LinearColormap):
+        colors = colormap.colors
+
+    else:
+        raise TypeError(
+            "colormap must be a string, list, tuple, "
+            "or branca LinearColormap."
+        )
+
+    # Ensure geographic coordinates
+    if gdf.crs is None:
+        raise ValueError("GeoDataFrame must have a CRS.")
+
+    gdf = gdf.to_crs(epsg=4326)
+
+    edges_gdf = gdf[
+        gdf.geometry.apply(lambda x: isinstance(x, LineString))
+    ]
+
+    nodes_gdf = gdf[
+        gdf.geometry.apply(lambda x: isinstance(x, Point))
+    ]
+
+    # Determine map center
+    bounds = gdf.total_bounds
+    x_min, y_min, x_max, y_max = bounds
+
+    center = [
+        (y_min + y_max) / 2,
+        (x_min + x_max) / 2,
+    ]
+
+    m = folium.Map(
+        location=center,
+        tiles=None,
+        zoom_start=10,
+    )
+
+    folium.TileLayer(
+        tiles="https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}.png",
+        attr="© Stadia Maps © Stamen Design © OpenStreetMap contributors",
+        name="Stamen Toner Lite",
+        max_zoom=20,
+        overlay=False,
+        control=False,
+    ).add_to(m)
+
+    # Determine color scale
+    values = pd.Series(dtype=float)
+
+    if attr is not None and attr in gdf.columns:
+        values = pd.to_numeric(gdf[attr], errors="coerce").dropna()
+
+    if not values.empty:
+        v_min = values.min()
+        v_max = values.max()
+
+        if v_min == v_max:
+            v_max = v_min + 1
+
+        color_scale = cm.LinearColormap(
+            colors=colors,
+            vmin=v_min,
+            vmax=v_max,
+        )
+    else:
+        color_scale = None
+
+    # --- edges ---
+    for _, row in edges_gdf.iterrows():
+
+        geom = row.geometry
+
+        if color_scale is not None and attr in edges_gdf.columns:
+            val = row[attr]
+
+            color = (
+                color_scale(float(val))
+                if pd.notna(val)
+                else "gray"
+            )
+
+            popup = f"{attr}: {val}"
+
+        else:
+            color = "red"
+            popup = "Edge"
+
+        coordinates = [
+            [lat, lon]
+            for lon, lat in geom.coords
+        ]
+
+        folium.PolyLine(
+            locations=coordinates,
+            color=color,
+            weight=3,
+            opacity=0.8,
+            tooltip=popup,
+        ).add_to(m)
+
+    # --- nodes ---
+    for _, row in nodes_gdf.iterrows():
+
+        geom = row.geometry
+
+        if color_scale is not None and attr in nodes_gdf.columns:
+            val = row[attr]
+
+            color = (
+                color_scale(float(val))
+                if pd.notna(val)
+                else "gray"
+            )
+
+            popup = f"{attr}: {val}"
+
+        else:
+            color = "blue"
+            popup = "Node"
+
+        folium.CircleMarker(
+            location=[geom.y, geom.x],
+            radius=6,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.9,
+            tooltip=popup,
+        ).add_to(m)
+
+    # Add color scale
+    if color_scale is not None:
+        color_scale.caption = attr
+        color_scale.add_to(m)
+
+    # Fit map to GeoDataFrame bounds
+    if not gdf.empty:
+        m.fit_bounds([
+            [y_min, x_min],
+            [y_max, x_max],
+        ])
+
+    return m

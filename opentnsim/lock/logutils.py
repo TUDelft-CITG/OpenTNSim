@@ -795,15 +795,15 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, objs)
                         df_eventtable_energy.loc[index, 'waterway width (m)'] = lock_chamber.lock_width
                         break  # Stop once we found the correct lock chamber
 
-            # Now propagate these values to the other rows in this lock group
-            df_target_group = df_group[df_group['subactivity name'] != 'Waiting for lock levelling'].copy()
-            if not df_ref_group.empty:
-                # There may be multiple levelling rows; pick first or nearest timestamp
-                waterdepth = df_eventtable_energy.loc[df_ref_group.index, 'waterdepth (m)'].iloc[0]
-                waterway_width = df_eventtable_energy.loc[df_ref_group.index, 'waterway width (m)'].iloc[0]
+            # # Now propagate these values to the other rows in this lock group
+            # df_target_group = df_group[df_group['subactivity name'] != 'Waiting for lock levelling'].copy()
+            # if not df_ref_group.empty:
+            #     # There may be multiple levelling rows; pick first or nearest timestamp
+            #     waterdepth = df_eventtable_energy.loc[df_ref_group.index, 'waterdepth (m)'].iloc[0]
+            #     waterway_width = df_eventtable_energy.loc[df_ref_group.index, 'waterway width (m)'].iloc[0]
 
-                df_eventtable_energy.loc[df_target_group.index, 'waterdepth (m)'] = waterdepth
-                df_eventtable_energy.loc[df_target_group.index, 'waterway width (m)'] = waterway_width
+            #     df_eventtable_energy.loc[df_target_group.index, 'waterdepth (m)'] = waterdepth
+            #     df_eventtable_energy.loc[df_target_group.index, 'waterway width (m)'] = waterway_width
 
     return df_eventtable_energy
 

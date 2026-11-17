@@ -226,7 +226,7 @@ class HydrodynamicDataManager:
         station = self.station_cache.get(node)
 
         if station is None:
-            raise ValueError(f"No station found for node: {node}")
+            return np.nan, np.nan, np.nan
 
         water_level_array = self.station_data_cache[station]['Water level']
         mbl_array = self.station_data_cache[station]['Nautical depth']

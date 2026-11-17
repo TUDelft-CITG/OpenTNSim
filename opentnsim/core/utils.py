@@ -453,6 +453,7 @@ class Distribution:
         parameters,
         scipy_distribution,
         seed=None,
+        decimals=None,
         offset=0.0,
         multiplier=1.0,
     ):
@@ -460,34 +461,49 @@ class Distribution:
         self.parameters = parameters
         self.scipy_distribution = scipy_distribution
         self.rng = np.random.default_rng(seed)
-
+        self.decimals = decimals
         self.offset = offset
         self.multiplier = multiplier
 
-    def rvs(self, *args, **kwargs):
-        """Generate random samples."""
+
+    def _round(self, values):
+        if self.decimals is not None:
+            return np.round(values, self.decimals)
+        return values
+    
+
+    def rvs(self, *args, random_state=None, **kwargs):
+        rng = self.rng if random_state is None else random_state
+
         samples = self.scipy_distribution.rvs(
             *args,
-            random_state=self.rng,
-            **kwargs,
+            random_state=rng,
+            **kwargs
         )
 
-        return self.offset + self.multiplier * samples
+        samples = self.offset + self.multiplier * samples
+
+        if self.decimals is not None:
+            samples = np.round(samples, self.decimals)
+
+        return samples
 
     def ppf(self, q):
         """Percent point function (inverse CDF)."""
         if self.multiplier >= 0:
-            return (
+            samples = (
                 self.offset
                 + self.multiplier * self.scipy_distribution.ppf(q)
             )
-
-        return (
-            self.offset
-            + self.multiplier * self.scipy_distribution.ppf(
-                1 - np.asarray(q)
+        else:
+            samples = (
+                self.offset
+                + self.multiplier * self.scipy_distribution.ppf(
+                    1 - np.asarray(q)
+                )
             )
-        )
+
+        return self._round(samples)
 
     def cdf(self, x):
         """Cumulative distribution function."""
@@ -552,6 +568,7 @@ def create_distribution(
     distribution,
     *,
     seed=None,
+    decimals=None,
     offset=0.0,
     scale=1.0,
     **parameters,
@@ -648,6 +665,7 @@ def create_distribution(
         parameters=parameters.copy(),
         scipy_distribution=scipy_distribution,
         seed=seed,
+        decimals=decimals,
         offset=offset,
         multiplier=scale,
     )
@@ -917,6 +935,41 @@ def validate_correlation_matrices(
     return True
 
 
+def generate_correlated_parameters(row, correlation_matrix):
+    parameters = {}
+
+    names = correlation_matrix.index.tolist()
+    corr = correlation_matrix.loc[names, names].to_numpy()
+
+    # Generate one reproducible uniform value per parameter.
+    u = np.array([
+        row[name].rng.random()
+        for name in names
+    ])
+
+    # Convert to independent standard normal values.
+    z_independent = stats.norm.ppf(u)
+
+    # Impose the Gaussian copula correlation.
+    L = np.linalg.cholesky(corr)
+    z_correlated = L @ z_independent
+
+    # Convert back to uniform values.
+    u_correlated = stats.norm.cdf(z_correlated)
+
+    # Apply the individual marginal distributions.
+    for i, name in enumerate(names):
+        distribution = row[name]
+        value = distribution.ppf(u_correlated[i])
+
+        if distribution.decimals is not None:
+            value = np.round(value, distribution.decimals)
+
+        parameters[name] = value
+
+    return parameters
+
+
 def generate_arrival_times(
     number_of_vessels,
     start_time,
@@ -1006,15 +1059,20 @@ def generate_vessels_from_distribution(
             fleet_distribution=fleet_distribution, 
         )
 
+        correlation_matrix = None
+        if correlation_matrices is not None:
+            vessel_class = row["vessel_class"]
+            correlation_matrix = correlation_matrices[vessel_class]
+
         # Generate vessel.
         vessel = generate_single_vessel(
             env=env,
             row=row,
             origin=origin,
             destination=destination,
-            arrival_time=arrival_time,
             vessel_name=f"Vessel {earlier_vessels + i}",
-            correlation_matrices = correlation_matrices,
+            arrival_time=arrival_time,
+            correlation_matrix = correlation_matrix,
         )
 
         vessels.append(vessel)
@@ -1190,29 +1248,28 @@ def generate_single_vessel(
     destination,
     vessel_name,
     arrival_time=None,
+    correlation_matrix=None,
     show_unused_optional_parameters=False,
-    correlation_matrices=None,
+    seed=None,
 ):
     """Generate a vessel from a selected fleet composition row."""
 
     vessel_object = row["vessel_object"]
 
-    # Get the correlation matrix for this vessel class
-    correlation_matrix = None
-
-    if correlation_matrices is not None:
-
-        if isinstance(correlation_matrices, dict):
-            vessel_class = row["vessel_class"]
-            correlation_matrix = correlation_matrices.get(vessel_class)
-
-        else:
-            # Also allow a single DataFrame to be supplied directly
-            correlation_matrix = correlation_matrices
-
     # Collect parameter specifications
-    parameters = {}
+    if correlation_matrix is not None:
+        parameters = generate_correlated_parameters(
+            row,
+            correlation_matrix
+        )
+    else:
+        parameters = {}
+
+    # Generate remaining parameters independently
     for parameter, value in row.items():
+
+        if parameter in parameters:
+            continue
 
         if isinstance(value, Distribution):
             parameters[parameter] = value.rvs()
@@ -1220,9 +1277,10 @@ def generate_single_vessel(
         else:
             parameters[parameter] = value
 
-    parameters['name'] = vessel_name
+    parameters["name"] = vessel_name
+
     if arrival_time is not None:
-        parameters['arrival_time'] = arrival_time
+        parameters["arrival_time"] = arrival_time
 
     return create_vessel(
         env=env,

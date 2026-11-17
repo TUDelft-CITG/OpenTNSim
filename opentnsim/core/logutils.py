@@ -5,7 +5,7 @@ Core utiltities related to logging.
 
 # generic
 import pandas as pd
-from opentnsim.graph.utils import find_closest_node, find_closest_edge
+from opentnsim.graph.utils import find_closest_node, find_closest_edge, node_path_to_edge_path
 from shapely.ops import split, snap
 from shapely.geometry import MultiPoint, LineString, Point
 import geopandas as gpd
@@ -252,6 +252,23 @@ def logbook2eventtable(objs):
     combined_df = combined_df.sort_values(['object id', 'start time']).reset_index(drop=True)
     combined_df['main activity name'] = combined_df['main activity name'].ffill()
 
+    for index, row in combined_df.iterrows():
+        activity = row['main activity name']
+        edge = None
+        edge_match = False
+        if "Sailing" in activity:
+            edge_match = re.search(r"Sailing from node (.+?) to node (.+?)(?: on edge (\S+))?$", activity)
+
+        duration_seconds = (stop_time - start_time).total_seconds()
+        if edge_match:
+            origin, destination, k = edge_match.groups()
+            edge = (
+                (origin, destination, int(k))
+                if k is not None
+                else (origin, destination)
+            )
+            combined_df.at[index, 'edge'] = edge
+
     combined_df = combined_df.sort_values(
         by=['object id', 'start time'],
         key=lambda col: col.map({v: i for i, v in enumerate(obj_ids)}) if col.name == 'object id' else col
@@ -296,7 +313,6 @@ def eventtable2gdf(df_eventtable, objs):
             return LineString([start, stop])
 
     def determine_if_geometry_on_node(row, graph):
-        geometry = row['geometry']
         start_location = row['start location']
         stop_location = row['stop location']
         node_start = find_closest_node(graph, start_location)
@@ -309,7 +325,7 @@ def eventtable2gdf(df_eventtable, objs):
             stop_location_on_node = True
         return start_location_on_node, stop_location_on_node
 
-    def split_edge_in_graph(G, u, v, segments):
+    def split_edge_in_graph(G, edge, segments):
         """
         Replace edge (u, v) with multiple segment edges.
 
@@ -317,8 +333,7 @@ def eventtable2gdf(df_eventtable, objs):
         """
         G_new = G.copy()
 
-        # Get original edge data
-        edge_data = G.edges[u, v].copy()
+        u, v = edge[:2]
 
         # Remove original edge
         G_new.remove_edge(u, v)
@@ -400,7 +415,7 @@ def eventtable2gdf(df_eventtable, objs):
         edge_lengths = []
         edge_geoms = []
         for edge in edges:
-            u, v = edge
+            u, v = edge[:2]
             geom = graph.edges[edge]['geometry']
             if isinstance(geom, LineString):
                 length = geom.length
@@ -446,13 +461,13 @@ def eventtable2gdf(df_eventtable, objs):
         edge_geometry = graph.edges[edge]['geometry']
         splitter = snap(MultiPoint(points), edge_geometry, tolerance=1e-6)
         segments = split(edge_geometry, splitter)
-        graph_new = split_edge_in_graph(graph_new, edge[0], edge[1], segments.geoms)
+        graph_new = split_edge_in_graph(graph_new, edge, segments.geoms)
 
     df_eventtable['start_node'] = df_eventtable['start location'].apply(lambda x: find_closest_node(graph_new, x))
     df_eventtable['stop_node'] = df_eventtable['stop location'].apply(lambda x: find_closest_node(graph_new, x))
     df_eventtable['route'] = df_eventtable.apply(lambda x: nx.dijkstra_path(graph_new, x.start_node, x.stop_node),
                                                  axis=1)
-    df_eventtable['edges'] = df_eventtable['route'].apply(lambda r: list(zip(r[:-1], r[1:])))
+    df_eventtable['edges'] = df_eventtable['route'].apply(lambda r: node_path_to_edge_path(graph, r))
 
     expanded_rows = []
 
@@ -466,7 +481,7 @@ def eventtable2gdf(df_eventtable, objs):
     df_expanded['start_node'] = df_expanded['start location'].apply(lambda x: find_closest_node(graph_new, x))
     df_expanded['stop_node'] = df_expanded['stop location'].apply(lambda x: find_closest_node(graph_new, x))
     df_expanded['network_geometry'] = df_expanded.apply(
-        lambda x: graph_new.edges[(x.start_node, x.stop_node)]['geometry'] if x.start_node != x.stop_node else
+        lambda x: graph_new.edges[(x.edge)]['geometry'] if x.edge else
         graph_new.nodes[x.start_node]['geometry'], axis=1)
 
     first_cols = ['network_geometry', 'waterway width (m)']
