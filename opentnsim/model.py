@@ -167,10 +167,13 @@ class VesselGenerator:
 
         # Create an array with inter-arrival times -- average number of seconds between arrivals
         if type(arrival_distribution) == int or type(arrival_distribution) == float:
-            self.inter_arrival_times = [3600 / arrival_distribution] * 24
+            if arrival_distribution == 0:
+                self.inter_arrival_times = [None] * 24
+            else:
+                self.inter_arrival_times = [3600 / arrival_distribution] * 24
 
         elif type(arrival_distribution) == list and len(arrival_distribution) == 24:
-            self.inter_arrival_times = [3600 / n for n in arrival_distribution]
+            self.inter_arrival_times = [3600 / n if n != 0 else None for n in arrival_distribution]
 
         elif type(arrival_distribution) == list:
             raise ValueError("List should contain an average number of vessels per hour for an entire day: 24 entries.")
@@ -185,7 +188,14 @@ class VesselGenerator:
         while True:
 
             # Check simulation time
-            inter_arrival = self.inter_arrival_times[datetime.datetime.fromtimestamp(environment.now).hour]
+            dt_now = datetime.datetime.fromtimestamp(environment.now)
+            inter_arrival = self.inter_arrival_times[dt_now.hour]
+
+            # als inter_arrival time none is, gaan we naar het volgende uur zonder een schip te genereren
+            if inter_arrival is None:
+                time_until_next_hour = 3600 - dt_now.minute * 60 - dt_now.second
+                yield environment.timeout(time_until_next_hour)  # wacht tot volgende uur
+                continue
 
             # In the case of a Markovian arrival process
             if arrival_process == "Markovian":

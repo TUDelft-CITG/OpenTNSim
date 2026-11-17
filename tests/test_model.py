@@ -126,7 +126,41 @@ def test_vessel_generator_arrival_process(environment):
             environment=environment,
             origin="A",
             destination="B",
-            arrival_distribution=1000,
+            arrival_distribution=2,
+            scenario=None,
+            arrival_process="Uniform",
+            fleet_distribution=None,
+        )
+    )
+
+    # Run the simulation for a short time to allow vessel generation
+    environment.run(until=3601)
+
+    # Check if a vessel has been added to the environment
+    assert len(environment.vessels) == 2
+
+    # Check if the vessel has the correct route and geometry
+    vessel = environment.vessels[0]
+    assert vessel.route == ["A", "B"]
+    assert vessel.geometry == shapely.geometry.Point(0, 0)
+
+    # check arrival times (exactly every half hour)
+    assert environment.vessels[0].logbook[0]["Timestamp"] == datetime(1970, 1, 1, 1, 30)
+    assert environment.vessels[1].logbook[0]["Timestamp"] == datetime(1970, 1, 1, 2, 0)
+
+
+def test_vessel_generator_arrival_process_with_zero_arrival_rate(environment):
+    vessel_database = pd.DataFrame({"vessel_id": [1], "v": 10})
+    vessel_type = type("Vessel", (Movable, Identifiable), {})
+    vg = VesselGenerator(vessel_type=vessel_type, vessel_database=vessel_database)
+
+    # add arrival process to the environment
+    environment.process(
+        vg.arrival_process(
+            environment=environment,
+            origin="A",
+            destination="B",
+            arrival_distribution=[5] * 2 + [0] * 20 + [5] * 2,
             scenario=None,
             arrival_process="Markovian",
             fleet_distribution=None,
@@ -134,12 +168,12 @@ def test_vessel_generator_arrival_process(environment):
     )
 
     # Run the simulation for a short time to allow vessel generation
-    environment.run(until=10)
+    environment.run(until=24 * 60 * 60)  # run 1 dag
 
-    # Check if a vessel has been added to the environment
-    assert len(environment.vessels) > 0
+    # check arrival times of each vessel:
+    arrival_times = [v.logbook[0]["Timestamp"] for v in environment.vessels]
+    arrival_hours = [t.hour for t in arrival_times]
 
-    # Check if the vessel has the correct route and geometry
-    vessel = environment.vessels[0]
-    assert vessel.route == ["A", "B"]
-    assert vessel.geometry == shapely.geometry.Point(0, 0)
+    # expected arrival in hour 0, 1, hour 22, hour 23. Eentje kan nog in uur twee komen omdat die al in uur 1 was gepland
+    assert set(arrival_hours).issubset({0, 1, 2, 22, 23})
+    assert arrival_hours.count(2) <= 1
