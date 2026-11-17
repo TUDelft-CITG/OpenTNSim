@@ -36,6 +36,7 @@ class VesselGenerator:
     ----------
     vessel_type: class of mixins.
         The type of vessel to be generated.
+        Should be a mixin of at least Movable. It is advised to also use mixin Identifiable or ExtraMetadata.
     vessel_database: pd.DataFrame
         The database from which the vessel is generated.
         Make sure all needed attributes for vessel_type are available in the database.
@@ -63,6 +64,8 @@ class VesselGenerator:
             raise ValueError("vessel_type must be a subclass of Movable")
         if not isinstance(self.vessel_database, pd.DataFrame):
             raise ValueError("vessel_database must be a pandas DataFrame")
+        if len(self.vessel_database) == 0:
+            raise ValueError("vessel_database must not be empty")
         if self.loaded not in (None, True, False, "Random"):
             raise ValueError("loaded must be None, True, False, or 'Random'")
 
@@ -81,19 +84,29 @@ class VesselGenerator:
             The distribution of the fleet for sampling vessels from the database. If not specified, uniform sampling is used.
         scenario: str, optional
             The scenario of the generated vessel. If given, the vessel with this scenario is selected from the database.
+            If scenario is provided, make sure that the database contains vessels with this scenario.
+            Also, make sure that the Vessel-type can receive the attribute 'scenario'.
         """
 
-        if fleet_distribution == None:
-            vessel_info = self.vessel_database.sample(n=1, random_state=int(1000 * random.random()))
+        # first: filter the vessel database based on the scenario if provided
+        if scenario:
+            vessel_database = self.vessel_database[self.vessel_database["scenario"] == scenario]
+            if vessel_database.empty:
+                raise ValueError(f"No vessels available for scenario {scenario}")
         else:
-            vessel_info = self.vessel_database.sample(n=1, weights=fleet_distribution, random_state=int(1000 * random.random()))
+            vessel_database = self.vessel_database
+
+        # select random vessel from the filtered vessel database
+        if fleet_distribution == None:
+            vessel_info = vessel_database.sample(n=1, random_state=int(1000 * random.random()))
+        else:
+            vessel_info = vessel_database.sample(
+                n=1, weights=fleet_distribution, random_state=int(1000 * random.random())
+            )
         vessel_data = {}
 
         vessel_data["env"] = environment
         vessel_data["name"] = vessel_name
-
-        if scenario:
-            vessel_info = vessel_info[vessel_info["scenario"] == scenario]
 
         for key in vessel_info:
             if key == "vessel_id":
