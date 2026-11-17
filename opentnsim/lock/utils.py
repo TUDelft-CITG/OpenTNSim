@@ -871,7 +871,7 @@ def _correct_lock_operation_start_time_if_outside_of_operational_hours(
 
 
 def _update_future_lock_operations_by_lock_delay_previous_operation(
-    lock_chamber, operation_index, lock_departure_information
+    lock_chamber, operation_index, lock_departure_information, 
 ):
     """Update future lock operations and vessel plans based on delays."""
 
@@ -1259,8 +1259,6 @@ def determine_if_gate_is_closed(
         previous_vessel_id = this_operation["vessels"][vessel_index - 1].id
         previous_vessel_planning_index = vessel_planning[vessel_planning.id == previous_vessel_id].iloc[-1].name
         last_time_gate_closed = vessel_planning.loc[previous_vessel_planning_index, "time_potential_lock_gate_closure_start"] + pd.Timedelta(seconds=lock_chamber.gate_closing_time)
-    elif operation_index == 0:
-        last_time_gate_closed = datetime.datetime.fromtimestamp(lock_chamber.env.now)
     else:
         previous_operations = _get_previous_operations(lock_chamber, operation_index)
         if not previous_operations.empty:

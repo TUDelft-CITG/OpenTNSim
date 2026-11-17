@@ -420,7 +420,7 @@ class IsLockChamberOperator:
 
     def prepare_lock_operation(self, operation_index, direction, vessel = None):
         is_first_vessel = _check_if_vessel_is_first_vessel(self, vessel, operation_index)  
-        
+        delay = 0.
         between_arrivals = False
         if self.closing_gate_in_between_arrivals and not is_first_vessel:
             between_arrivals = True
@@ -432,9 +432,9 @@ class IsLockChamberOperator:
         gate_is_closed, gate_required_to_be_open, operation_time, levelling_required = determine_if_gate_is_closed(
             self, operation_index, direction, vessel, is_first_vessel, between_arrivals, new_operation = new_operation)
         if not gate_is_closed and not levelling_required:
-            return
+            return delay
         elif self.closing_gate_in_between_operations and levelling_required and not is_first_vessel and not gate_is_closed:
-            return
+            return delay
 
         current_time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
         delay = (gate_required_to_be_open-current_time-operation_time).total_seconds()    
@@ -446,6 +446,7 @@ class IsLockChamberOperator:
         close_gate = True
         if gate_is_closed:
             close_gate = False
+
         if levelling_required:
             vessel.env.process(
                 self.convert_chamber(
@@ -459,6 +460,7 @@ class IsLockChamberOperator:
         else:
             vessel.env.process(self.open_gate(gate, vessel, delay=delay))
 
+        return delay
     
     def prepare_next_lock_operation(self, operation_index, direction, vessel = None):
         """Lock operator checks and (if required) initiates an empty lock operation or closes the gate if there is sufficient time with respect to the next operation's start time

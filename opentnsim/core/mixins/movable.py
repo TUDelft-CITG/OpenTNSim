@@ -216,14 +216,16 @@ class Movable(Identifiable, Locatable, Routable, Log):
     def __init__(self, v: float, geometry = None, arrival_time = pd.Timestamp('NaT'), *args, **kwargs):
         """Initialization"""
         super().__init__(geometry = geometry, *args, **kwargs)
-        v = float(v)
-        if ConsumesEnergy not in type(self).__mro__ and (
-            not isinstance(v, (int, float))
-            or isinstance(v, bool)
-            or not math.isfinite(v)
-            or v <= 0
-        ):
-            raise ValueError("v must be a finite, positive speed in m/s.")
+
+        if ConsumesEnergy not in type(self).__mro__:
+            v = float(v)
+            if (
+                not isinstance(v, (int, float))
+                or isinstance(v, bool)
+                or not math.isfinite(v)
+                or v <= 0
+            ):
+                raise ValueError("v must be a finite, positive speed in m/s.")
         
         self.v = v
         if pd.isna(arrival_time): 

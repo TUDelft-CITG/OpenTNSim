@@ -82,8 +82,6 @@ def calculate_z(
                 wlev_init = H_A_init
                 if lock_chamber.closing_gate_in_between_operations and last_operation_stop <= t_start:
                     wlev_init = hydromanager._get_interpolated_hydrodynamic_series(last_operation_stop, start_node, "Water level")[0]
-        elif lock_chamber.closing_gate_in_between_operations:
-            wlev_init = lock_chamber.water_level_init
         elif node_open == start_node:
             wlev_init = H_A_init
         else:

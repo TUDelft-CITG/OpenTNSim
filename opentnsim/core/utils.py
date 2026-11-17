@@ -30,6 +30,8 @@ import pandas as pd
 import itertools
 import scipy.stats as stats
 import ast
+from scipy.optimize import brentq
+from scipy.special import gamma
 
 # OpenTNSim
 import opentnsim
@@ -389,6 +391,42 @@ DISTRIBUTIONS = {
             and np.isclose(sum(p["probabilities"]), 1.0)
         ),
     },
+    "weibull": {
+        "parameters": ["mean", "cv"],
+        "description": "Weibull distribution (mean and coefficient of variation)",
+        "example": "mean=17.7, cv=0.523",
+        "factory": lambda p: stats.weibull_min(
+            c=(
+                brentq(
+                    lambda k: (
+                        np.sqrt(
+                            gamma(1 + 2/k) /
+                            gamma(1 + 1/k)**2 - 1
+                        ) - p["cv"]
+                    ),
+                    0.1, 100
+                )
+            ),
+            scale=(
+                p["mean"] /
+                gamma(
+                    1 + 1 / brentq(
+                        lambda k: (
+                            np.sqrt(
+                                gamma(1 + 2/k) /
+                                gamma(1 + 1/k)**2 - 1
+                            ) - p["cv"]
+                        ),
+                        0.1, 100
+                    )
+                )
+            ),
+        ),
+        "validate": lambda p: (
+            p["mean"] > 0
+            and p["cv"] > 0
+        ),
+    },
 }
 
 
@@ -406,6 +444,7 @@ def list_distributions():
     ])
 
 
+
 class Distribution:
 
     def __init__(
@@ -414,38 +453,114 @@ class Distribution:
         parameters,
         scipy_distribution,
         seed=None,
+        offset=0.0,
+        multiplier=1.0,
     ):
         self.name = name
         self.parameters = parameters
         self.scipy_distribution = scipy_distribution
         self.rng = np.random.default_rng(seed)
 
+        self.offset = offset
+        self.multiplier = multiplier
+
     def rvs(self, *args, **kwargs):
-        return self.scipy_distribution.rvs(
+        """Generate random samples."""
+        samples = self.scipy_distribution.rvs(
             *args,
             random_state=self.rng,
             **kwargs,
         )
 
+        return self.offset + self.multiplier * samples
+
     def ppf(self, q):
-        return self.scipy_distribution.ppf(q)
+        """Percent point function (inverse CDF)."""
+        if self.multiplier >= 0:
+            return (
+                self.offset
+                + self.multiplier * self.scipy_distribution.ppf(q)
+            )
+
+        return (
+            self.offset
+            + self.multiplier * self.scipy_distribution.ppf(
+                1 - np.asarray(q)
+            )
+        )
+
+    def cdf(self, x):
+        """Cumulative distribution function."""
+        if self.multiplier == 0:
+            return np.where(
+                np.asarray(x) < self.offset, 0.0, 1.0
+            )
+
+        z = (np.asarray(x) - self.offset) / self.multiplier
+
+        if self.multiplier > 0:
+            return self.scipy_distribution.cdf(z)
+
+        return self.scipy_distribution.sf(z)
+
+    def pdf(self, x):
+        """Probability density function."""
+        if self.multiplier == 0:
+            raise ValueError(
+                "PDF is undefined for a constant distribution."
+            )
+
+        z = (np.asarray(x) - self.offset) / self.multiplier
+
+        return (
+            self.scipy_distribution.pdf(z)
+            / abs(self.multiplier)
+        )
+
+    def mean(self):
+        """Expected value."""
+        return (
+            self.offset
+            + self.multiplier * self.scipy_distribution.mean()
+        )
+
+    def var(self):
+        """Variance."""
+        return (
+            self.multiplier**2
+            * self.scipy_distribution.var()
+        )
+
+    def std(self):
+        """Standard deviation."""
+        return abs(self.multiplier) * self.scipy_distribution.std()
 
     def __repr__(self):
         params = ", ".join(
-            f"{key}={value}" for key, value in self.parameters.items()
+            f"{key}={value}"
+            for key, value in self.parameters.items()
         )
-        return f"{self.name}({params})"
+
+        transformation = (
+            f", offset={self.offset}, scale={self.multiplier}"
+        )
+
+        return f"{self.name}({params}{transformation})"
 
 
-
-def create_distribution(distribution, *, seed=None, **parameters):
-    """Create a validated probability distribution."""
+def create_distribution(
+    distribution,
+    *,
+    seed=None,
+    offset=0.0,
+    scale=1.0,
+    **parameters,
+):
+    """Create a validated and optionally transformed distribution."""
 
     if distribution not in DISTRIBUTIONS:
         raise ValueError(
-            f"Unsupported distribution '{distribution}'. "
-            f"Supported distributions: {list(DISTRIBUTIONS)}. "
-            "Use list_distributions() for details."
+            f"Unsupported distribution '{distribution}'."
         )
 
     specification = DISTRIBUTIONS[distribution]
@@ -463,17 +578,33 @@ def create_distribution(distribution, *, seed=None, **parameters):
             f"Unexpected: {sorted(unexpected)}."
         )
 
-    # Discrete distributions can have categorical values (e.g. vessel classes).
+    # Validate distribution parameters
     if distribution == "discrete":
+
         values = parameters["values"]
         probabilities = parameters["probabilities"]
 
         if not isinstance(values, (list, tuple, np.ndarray)):
-            raise ValueError("Parameter 'values' must be a sequence.")
+            raise ValueError(
+                "Parameter 'values' must be a sequence."
+            )
 
         if not isinstance(probabilities, (list, tuple, np.ndarray)):
             raise ValueError(
                 "Parameter 'probabilities' must be a numerical sequence."
+            )
+
+        if not all(
+            isinstance(v, (str, int, float, bool, np.integer,
+                           np.floating, np.bool_))
+            and (
+                not isinstance(v, (float, np.floating))
+                or np.isfinite(v)
+            )
+            for v in values
+        ):
+            raise ValueError(
+                "Discrete values must be strings or finite numerical values."
             )
 
         if not all(
@@ -483,11 +614,11 @@ def create_distribution(distribution, *, seed=None, **parameters):
             for p in probabilities
         ):
             raise ValueError(
-                "Parameter 'probabilities' must contain finite real numbers."
+                "Probabilities must contain finite numerical values."
             )
 
     else:
-        # All parameters of other distributions must be finite real numbers.
+        # Other distributions require finite numerical parameters.
         for key, value in parameters.items():
             if (
                 isinstance(value, (bool, np.bool_))
@@ -507,6 +638,9 @@ def create_distribution(distribution, *, seed=None, **parameters):
             f"{parameters}"
         )
 
+    if not np.isfinite(offset) or not np.isfinite(scale):
+        raise ValueError("Offset and scale must be finite.")
+
     scipy_distribution = specification["factory"](parameters)
 
     return Distribution(
@@ -514,6 +648,8 @@ def create_distribution(distribution, *, seed=None, **parameters):
         parameters=parameters.copy(),
         scipy_distribution=scipy_distribution,
         seed=seed,
+        offset=offset,
+        multiplier=scale,
     )
 
 
@@ -1075,22 +1211,18 @@ def generate_single_vessel(
             correlation_matrix = correlation_matrices
 
     # Collect parameter specifications
-    parameter_values = {
-        parameter: row[parameter]
-        for parameter in ["L", "B", "T", "v"]
-    }
+    parameters = {}
+    for parameter, value in row.items():
 
-    # Sample parameters, taking correlations into account
-    parameters = sample_correlated_parameters(
-        parameters=parameter_values,
-        correlation_matrix=correlation_matrix,
-    )
+        if isinstance(value, Distribution):
+            parameters[parameter] = value.rvs()
 
-    parameters["name"] = vessel_name
-    parameters["type"] = row["type"]
+        else:
+            parameters[parameter] = value
 
+    parameters['name'] = vessel_name
     if arrival_time is not None:
-        parameters["arrival_time"] = arrival_time
+        parameters['arrival_time'] = arrival_time
 
     return create_vessel(
         env=env,

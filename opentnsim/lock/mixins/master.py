@@ -23,6 +23,7 @@ from opentnsim.lock.utils import (
     _update_operation_planning_for_delayed_arrival,
     _find_available_lock_operation,
     _update_future_lock_operations_by_lock_delay_previous_operation,
+    _get_operation_info,
 )
 from opentnsim.graph.utils import node_path_to_edge_path, expand_path_edges
 
@@ -329,8 +330,7 @@ class IsLockMaster:
                                                                                               vessel,
                                                                                               operation_index,
                                                                                               direction)
-
-
+        
         # update the next lock operations if the previous lock operation caused a delay
         _update_future_lock_operations_by_lock_delay_previous_operation(lock_chamber, operation_index,
                                                                         lock_operation_information)
@@ -361,7 +361,15 @@ class IsLockMaster:
                     self.env.process(empty_levelling_process)
 
         if lock_chamber.closing_gate_in_between_operations:
-            lock_chamber.prepare_lock_operation(operation_index, direction, vessel)
+            delay = lock_chamber.prepare_lock_operation(operation_index, direction, vessel)
+            if delay < 0.:
+                operation_info = _get_operation_info(lock_chamber, operation_index)
+                lock_departure_information = {}
+                lock_departure_information["time_potential_lock_gate_closure_start"] = operation_info['time_lock_operation_start'] - pd.Timedelta(seconds = delay)
+                lock_departure_information["time_lock_operation_stop"] = operation_info['time_lock_operation_start'] - pd.Timedelta(seconds = delay)
+                _update_future_lock_operations_by_lock_delay_previous_operation(
+                    lock_chamber, operation_index - 1, lock_departure_information
+                )
 
         if not route_goes_through_lock:
             vessel.has_registered = True
