@@ -369,11 +369,15 @@ class Simulation(core.Identifiable):
                 )
             )
 
-    def run(self, duration=24 * 60 * 60):
+    def run(self, duration=None):
         """
         Run the simulation
 
         duration:   float
-            specify the duration of the simulation in seconds
+            specify the duration of the simulation in seconds.
+            If not specified, self.simulation_duration will be used.
         """
-        self.env.run(until=self.env.now + self.simulation_duration.total_seconds())
+
+        if duration is None:
+            duration = self.simulation_duration.total_seconds()
+        self.env.run(until=self.env.now + duration)
