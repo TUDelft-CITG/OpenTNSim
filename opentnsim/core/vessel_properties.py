@@ -9,6 +9,7 @@ The following classes are provided:
 """
 # package(s) for documentation, debugging, saving and loading
 import logging
+import warnings
 
 # math packages
 import random
@@ -214,10 +215,9 @@ class VesselProperties:
         minWidth=None,
         minHeight=None,
         minDepth=None,
-        randomSeed=4,
     ):
         """Calculate a path based on vessel restrictions
-        restrictions are only applied if the graph has the attributes ['Width', 'Height', 'Depth']
+        restrictions are only applied if the graph has ALL the attributes ['Width', 'Height', 'Depth']
 
         Parameters
         ----------
@@ -239,40 +239,69 @@ class VesselProperties:
         """
 
         graph = graph if graph else self.graph
-        minWidth = minWidth if minWidth else 1.1 * self.B
-        minHeight = minHeight if minHeight else 1.1 * self.H
-        minDepth = minDepth if minDepth else 1.1 * self.T
+        if minWidth is None and hasattr(self, "B"):
+            minWidth = 1.1 * self.B
+        if minHeight is None and hasattr(self, "H"):
+            minHeight = 1.1 * self.H
+        if minDepth is None and hasattr(self, "T"):
+            minDepth = 1.1 * self.T
 
-        # Check if information on restrictions is added to the edges
-        random.seed(randomSeed)
-        edge = random.choice(list(graph.edges(data=True)))
-        edge_attrs = list(edge[2].keys())
+        # determine on which restrictions we need to check the graph:
+        possible_restrictions = []
+        if minWidth is not None:
+            possible_restrictions.append("Width")
+        if minHeight is not None:
+            possible_restrictions.append("Height")
+        if minDepth is not None:
+            possible_restrictions.append("Depth")
 
-        # IMPROVE THIS TO CHECK ALL EDGES AND COMBINATIONS OF RESTRICTIONS
+        # Check if information on restrictions is added to the edges.
+        restriction_attributes = []
+        for attr in possible_restrictions:
+            if all(attr in edge[2] for edge in graph.edges(data=True)):
+                restriction_attributes.append(attr)
 
-        if all(item in edge_attrs for item in ["Width", "Height", "Depth"]):
+        if len(restriction_attributes) == 0:
+            warnings.warn("No restrictions are applied when calculating the route.")
+        elif len(restriction_attributes) < 3:
+            warnings.warn(
+                "Only restrictions for "
+                + ", ".join(restriction_attributes)
+                + " is applied for calculating the route."
+            )
+
+        if len(restriction_attributes) > 0:
+            # voer restricties uit
             edges = []
             nodes = []
 
             for edge in graph.edges(data=True):
-                if edge[2]["Width"] >= minWidth and edge[2]["Height"] >= minHeight and edge[2]["Depth"] >= minDepth:
-                    edges.append(edge)
+                # skip edge if width, height or depth does not fulfill requirements
+                if "Width" in restriction_attributes and edge[2]["Width"] < minWidth:
+                    continue
+                if "Height" in restriction_attributes and edge[2]["Height"] < minHeight:
+                    continue
+                if "Depth" in restriction_attributes and edge[2]["Depth"] < minDepth:
+                    continue
 
-                    nodes.append(graph.nodes[edge[0]])
-                    nodes.append(graph.nodes[edge[1]])
+                # if not skipped, we can add the edge to the subgraph
+                edges.append(edge)
+                nodes.append((edge[0], graph.nodes[edge[0]]))
+                nodes.append((edge[1], graph.nodes[edge[1]]))
 
             subGraph = graph.__class__()
 
-            for node in nodes:
+            for node_id, node in nodes:
+                name = node["name"] if "name" in node else node_id
                 subGraph.add_node(
-                    node["name"],
-                    name=node["name"],
+                    node_id,
+                    name=name,
                     geometry=node["geometry"],
                     position=(node["geometry"].x, node["geometry"].y),
                 )
 
             for edge in edges:
-                subGraph.add_edge(edge[0], edge[1], attr_dict=edge[2])
+                subGraph.add_edge(edge[0], edge[1], **edge[2])
 
             try:
                 return nx.dijkstra_path(subGraph, origin, destination)

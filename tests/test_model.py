@@ -133,16 +133,18 @@ def test_vessel_generator_arrival_process(environment):
         )
     )
 
-    # Run the simulation for a short time to allow vessel generation
-    environment.run(until=3601)
-
-    # Check if a vessel has been added to the environment
-    assert len(environment.vessels) == 2
-
+    # Run the simulation for half an hour to allow vessel generation but no movement
+    environment.run(until=30 * 60 + 1)
     # Check if the vessel has the correct route and geometry
     vessel = environment.vessels[0]
     assert vessel.route == ["A", "B"]
     assert vessel.geometry == shapely.geometry.Point(0, 0)
+
+    # Run simulation for a day to check the arrival of subsequent vessels
+    environment.run(until=60 * 60 + 1)  # run for 1 day
+
+    # Check if a vessel has been added to the environment
+    assert len(environment.vessels) == 2
 
     # check arrival times (exactly every half hour)
     assert environment.vessels[0].logbook[0]["Timestamp"] == datetime(1970, 1, 1, 1, 30)
