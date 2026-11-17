@@ -5,7 +5,7 @@ Core utiltities related to logging.
 
 # generic
 import pandas as pd
-from opentnsim.graph.utils import find_closest_node, find_closest_edge, node_path_to_edge_path
+from opentnsim.graph.utils import find_closest_node, find_closest_edge, node_path_to_edge_path, determine_edge_based_on_two_locations
 from shapely.ops import split, snap
 from shapely.geometry import MultiPoint, LineString, Point
 import geopandas as gpd
@@ -467,7 +467,7 @@ def eventtable2gdf(df_eventtable, objs):
     df_eventtable['stop_node'] = df_eventtable['stop location'].apply(lambda x: find_closest_node(graph_new, x))
     df_eventtable['route'] = df_eventtable.apply(lambda x: nx.dijkstra_path(graph_new, x.start_node, x.stop_node),
                                                  axis=1)
-    df_eventtable['edges'] = df_eventtable['route'].apply(lambda r: node_path_to_edge_path(graph, r))
+    df_eventtable['edges'] = df_eventtable['route'].apply(lambda r: node_path_to_edge_path(graph_new, r))
 
     expanded_rows = []
 
@@ -480,8 +480,17 @@ def eventtable2gdf(df_eventtable, objs):
     df_expanded['geometry'] = df_expanded.apply(get_unique_geometries, axis=1)
     df_expanded['start_node'] = df_expanded['start location'].apply(lambda x: find_closest_node(graph_new, x))
     df_expanded['stop_node'] = df_expanded['stop location'].apply(lambda x: find_closest_node(graph_new, x))
+    df_expanded['edge'] = df_expanded.apply(
+        lambda row: determine_edge_based_on_two_locations(
+            graph_new,
+            row['start location'],
+            row['stop location']
+        ),
+        axis=1
+    )
+
     df_expanded['network_geometry'] = df_expanded.apply(
-        lambda x: graph_new.edges[(x.edge)]['geometry'] if x.edge else
+        lambda x: graph_new.edges[(x.edge)]['geometry'] if x['start location'] != x['stop location'] else
         graph_new.nodes[x.start_node]['geometry'], axis=1)
 
     first_cols = ['network_geometry', 'waterway width (m)']
