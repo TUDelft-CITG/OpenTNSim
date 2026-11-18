@@ -14,7 +14,8 @@ from opentnsim.graph.utils import (
     create_transformer, 
     get_trajectory, 
     check_if_geometry_is_aligned_with_edge, 
-    find_closest_edge,
+    find_closest_edges,
+    find_closest_node,
     determine_edge_based_on_two_locations,
     get_largest_route_between_edges, 
     get_geometry_of_edge, 
@@ -322,9 +323,20 @@ def calculate_distance_over_network_to_location(graph, node_1, node_2, location,
 
 
 def calculate_distance_between_locations_along_edges(graph, location_1, location_2):
-    edge_1 = find_closest_edge(graph, location_1)
-    edge_2 = find_closest_edge(graph, location_2)
-    route = get_largest_route_between_edges(graph, edge_1[:2], edge_2[:2])
+    edges_start = find_closest_edges(graph, location_1)
+    edges_stop = find_closest_edges(graph, location_2)
+    if len(edges_start) > 1:
+        node_start = find_closest_node(graph, location_1)
+        edge_start = (node_start, node_start, 0)
+    else:
+        edge_start = edges_start[0]
+    if len(edges_stop) > 1:
+        node_stop = find_closest_node(graph, location_2)
+        edge_stop = (node_stop, node_stop, 0)
+    else:
+        edge_stop = edges_stop[0]
+
+    route = get_largest_route_between_edges(graph, edge_start[:2], edge_stop[:2])
     geometry, length_m = get_trajectory(graph, route[0], route[-1])
     geometry_length = geometry.length
 
@@ -571,6 +583,101 @@ def split_edge_based_on_point_along_edge(graph, edge, point):
     first_edge_geometry = splitted_edge_geometries[0]
     second_edge_geometry = splitted_edge_geometries[2]
     return first_edge_geometry, second_edge_geometry
+
+
+def split_geometry_at_location(geometry, location, tolerance=1e-6):
+    """
+    Split a LineString at the point on the line closest to location.
+
+    Parameters
+    ----------
+    geometry : LineString
+    location : Point
+        Point that may be slightly offset from the line.
+    tolerance : float
+        Minimum distance from either endpoint required for a split,
+        in the coordinate system's units.
+
+    Returns
+    -------
+    split_point, geom1, geom2
+    """
+    from shapely.ops import substring
+    # Project location onto the LineString
+    distance = geometry.project(location)
+    split_point = geometry.interpolate(distance)
+
+    # Check whether the split is too close to an endpoint
+    if distance <= tolerance or geometry.length - distance <= tolerance:
+        raise ValueError("Split location is too close to an edge endpoint.")
+
+    # Extract the two segments by distance
+    geom1 = substring(geometry, 0, distance)
+    geom2 = substring(geometry, distance, geometry.length)
+
+    return split_point, geom1, geom2
+
+
+def split_edge_at_location(graph, edge, location, node_name = 'test', geometry_attr="geometry"):
+    """
+    Split an existing edge into two edges at a given location.
+
+    Parameters
+    ----------
+    graph : nx.Graph, nx.DiGraph, nx.MultiGraph or nx.MultiDiGraph
+    u, v : nodes
+        Endpoints of the edge.
+    location : shapely.geometry.Point
+        Location at which to split the edge.
+    key : optional
+        Edge key (required when identifying a specific edge in a MultiGraph
+        with parallel edges).
+    geometry_attr : str
+        Name of the edge attribute containing its LineString geometry.
+
+    Returns
+    -------
+    new_node : node
+        The newly created node.
+    """
+    is_multi = graph.is_multigraph()
+    u, v = edge[:2]
+
+    # Retrieve edge attributes
+    edge_data = graph.edges[edge]
+
+    # Get edge geometry
+    geometry = edge_data[geometry_attr]
+
+    # Project location onto the edge
+    projected_distance = geometry.project(location)
+    split_point = geometry.interpolate(projected_distance)
+
+    # Split geometry
+    _, geom1, geom2  = split_geometry_at_location(geometry, split_point)
+
+    # Create a new node
+    graph.add_node(node_name, geometry=split_point)
+
+    # Copy original edge attributes
+    attrs1 = edge_data.copy()
+    attrs2 = edge_data.copy()
+
+    attrs1[geometry_attr] = geom1
+    attrs2[geometry_attr] = geom2
+
+    # Remove original edge
+    if is_multi:
+        key = edge[2]
+        graph.remove_edge(u, v, key)
+        graph.add_edge(u, node_name, **attrs1)
+        graph.add_edge(node_name, v, **attrs2)
+    else:
+        graph.remove_edge(u, v)
+        graph.add_edge(u, node_name, **attrs1)
+        graph.add_edge(node_name, v, **attrs2)
+
+    return graph
 
 
 def split_edge_based_on_geometry_along_edge(graph, edge, geometry):

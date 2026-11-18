@@ -654,6 +654,7 @@ def plot_gdf_eventtable_folium(
         color_scale = None
 
     # --- edges ---
+    edge_layers = []
     for _, row in edges_gdf.iterrows():
 
         geom = row.geometry
@@ -678,13 +679,47 @@ def plot_gdf_eventtable_folium(
             for lon, lat in geom.coords
         ]
 
-        folium.PolyLine(
+        line = folium.PolyLine(
             locations=coordinates,
             color=color,
             weight=3,
             opacity=0.8,
             tooltip=popup,
         ).add_to(m)
+
+        edge_layers.append(line)
+
+    from branca.element import MacroElement
+    from jinja2 import Template
+
+    zoom_control = MacroElement()
+    zoom_control._template = Template("""
+    {% macro script(this, kwargs) %}
+        var map = {{ this._parent.get_name() }};
+        var edgeLayers = [
+            {% for layer in this.edge_layers %}
+                {{ layer.get_name() }},
+            {% endfor %}
+        ];
+
+        function updateEdgeThickness() {
+            var zoom = map.getZoom();
+
+            // Adjust these values to your preference
+            var weight = Math.max(1, (zoom - 8) * 0.8);
+
+            edgeLayers.forEach(function(layer) {
+                layer.setStyle({weight: weight});
+            });
+        }
+
+        map.on('zoomend', updateEdgeThickness);
+        updateEdgeThickness();
+    {% endmacro %}
+    """)
+
+    zoom_control.edge_layers = edge_layers
+    m.add_child(zoom_control)
 
     # --- nodes ---
     for _, row in nodes_gdf.iterrows():

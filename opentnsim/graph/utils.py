@@ -17,6 +17,8 @@ from shapely.geometry import LineString, Point, MultiLineString
 from shapely.ops import split, snap
 from shapely.strtree import STRtree
 from scipy.spatial import cKDTree
+from pyproj import Geod
+geod = Geod(ellps="WGS84")
 
 class NetworkWarning(Warning):
     pass
@@ -278,16 +280,18 @@ def find_closest_node(graph, point):
     return closest_node
 
 
-
-def find_closest_edge(graph, point):
+def find_closest_edges(graph, point, tolerance=1e-8):
     """
-    Find the closest edge to a Shapely Point using STRtree.
+    Find edges closest to a Shapely Point using STRtree.
+
+    If point coincides with a graph node, return all edges
+    connected to that node.
 
     Returns:
-        (u, v)    for Graph / DiGraph
-        (u, v, k) for MultiGraph / MultiDiGraph
+        list of (u, v) for Graph / DiGraph
+        list of (u, v, k) for MultiGraph / MultiDiGraph
 
-    Returns None if no edges have valid geometries.
+        Returns [] if no valid edges exist.
     """
 
     build_graph_spatial_index(graph)
@@ -296,22 +300,35 @@ def find_closest_edge(graph, point):
     lookup = graph.graph["edge_lookup"]
 
     if tree is None:
-        return None
+        return []
 
+    # 1. Check whether point coincides with a node
+    for node, data in graph.nodes(data=True):
+        node_point = data['geometry']
+
+        if point.distance(node_point) <= tolerance:
+            # Return all edges connected to this node
+            if graph.is_multigraph():
+                return list(graph.edges(node, keys=True))
+            else:
+                return list(graph.edges(node))
+
+    # 2. Otherwise, find closest edge
     idx = tree.nearest(point)
 
-    return lookup[int(idx)]
+    return [lookup[int(idx)]]
 
 
 def determine_edge_based_on_two_locations(graph, geom_start, geom_stop):
    # The node on the graph of vaarweginformatie.nl closest to geom_start and geom_stop
-    edge_start = find_closest_edge(graph, geom_start)
-    edge_stop = find_closest_edge(graph, geom_stop)
+    edges_start = find_closest_edges(graph, geom_start)
+    edges_stop = find_closest_edges(graph, geom_stop)
 
-    if edge_start[:2] == edge_stop[:2] or edge_start[:2] == edge_stop[:2][::-1]:
-        edge = edge_start
-    else:
-        edge = edge_stop
+    edge = None
+    for edge_start in edges_start:
+        for edge_stop in edges_stop:
+            if edge_start[:2] == edge_stop[:2] or edge_start[:2] == edge_stop[:2][::-1]:
+                edge = edge_start
     return edge
 
 
@@ -822,10 +839,20 @@ def get_trajectory(graph, node_1, node_2):
 
 
 def get_trajectory_between_locations(graph, point_1, point_2, tolerance = 0.0001):
-    edge_1 = find_closest_edge(graph, point_1)
-    edge_2 = find_closest_edge(graph, point_2)
+    edges_start = find_closest_edges(graph, point_1)
+    edges_stop = find_closest_edges(graph, point_2)
+    if len(edges_start) > 1:
+        node_start = find_closest_node(graph, point_1)
+        edge_start = (node_start, node_start)
+    else:
+        edge_start = edges_start[0]
+    if len(edges_stop) > 1:
+        node_stop = find_closest_node(graph, point_2)
+        edge_stop = (node_stop, node_stop)
+    else:
+        edge_stop = edges_stop[0]
 
-    route = get_largest_route_between_edges(graph, edge_1[:2], edge_2[:2])
+    route = get_largest_route_between_edges(graph, edge_start[:2], edge_stop[:2])
     geometry = get_trajectory(graph, route[0], route[-1])[0]
 
     lines_1 = split(snap(geometry, point_1, tolerance), point_1).geoms
@@ -1357,7 +1384,6 @@ def get_largest_route_between_edges(graph, edge1, edge2):
 
     best_target = None
     best_length = -1
-
     for t in targets:
         if t in lengths and lengths[t] > best_length:
             best_length = lengths[t]
@@ -1366,7 +1392,10 @@ def get_largest_route_between_edges(graph, edge1, edge2):
     if best_target is None:
         raise nx.NetworkXNoPath
 
-    return paths[best_target]
+    path = paths[best_target]
+    if len(path) == 1:
+        path = tuple(set(edge1 + edge2))[:2]
+    return path
 
 
 def get_previous_and_next_edge_of_vessel(vessel, route = None, node = None):
@@ -1530,3 +1559,23 @@ def check_node(node):
         raise TypeError("node must be an instance of Locatable.")
     elif not isinstance(node, HasCRS):
         raise TypeError("node must have a coordinate reference system (HasCRS).")
+
+
+def check_if_location_is_close_to_edge_nodes(graph, edge, location, min_distance=1.0):
+    u, v = edge[:2]
+
+    for node in (u, v):
+        node_geometry = graph.nodes[node].get("geometry")
+
+        if node_geometry is None:
+            continue
+
+        _, _, distance = geod.inv(
+            location.x, location.y,
+            node_geometry.x, node_geometry.y
+        )
+
+        if distance < min_distance:
+            return True
+
+    return False

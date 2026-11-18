@@ -154,6 +154,9 @@ class GraphMixin:
 
     def add_node(self, node: Node | None = None, **attr) -> None:
         """Add a Node object or construct one from keyword attributes."""
+        if isinstance(node, str):
+            attr['name'] = node
+            node = None
 
         if node is not None:
             check_node(node)
@@ -186,96 +189,98 @@ class GraphMixin:
 
         super().add_node(node.name, **attributes)
 
-    def add_edge(self, edge: Edge | tuple[str, str], **attr) -> None:
-        """Add an Edge object or construct one from two node names."""
+    def add_edge(
+        self,
+        edge: Edge | tuple[str, str] | str,
+        v: str | None = None,
+        **attr,
+    ) -> None:
+        """Add an Edge object or construct one from node names.
 
+        Supports:
+            add_edge(edge_object)
+            add_edge((u, v), **attr)
+            add_edge(u, v, **attr)
+        """
 
-        if isinstance(edge, tuple):
+        # Support NetworkX-style add_edge(u, v)
+        if v is not None:
+            if not isinstance(edge, str):
+                raise TypeError(
+                    "When providing two node names, both must be strings."
+                )
+
+            u = edge
+            node_v = v
+
+        # Support tuple-style add_edge((u, v))
+        elif isinstance(edge, tuple):
             if len(edge) != 2:
                 raise ValueError(
                     "A tuple edge must contain exactly two node names."
                 )
 
-            node_0, node_1 = edge
+            u, node_v = edge
 
-            if node_0 not in self or node_1 not in self:
-                raise ValueError(
-                    f"Both nodes {node_0!r} and {node_1!r} "
-                    "must exist in the graph."
-                )
+        # Support custom Edge objects
+        elif isinstance(edge, Edge):
+            u = edge.node_0.name
+            node_v = edge.node_1.name
 
-            geometry = None
-            epsg = None
-            length_m = None
-            if 'geometry' in attr:
-                geometry = attr['geometry']
-            if 'epsg' in attr:
-                epsg = attr['epsg']
-            if 'length_m' in attr:
-                length_m = attr['length_m']
-            
-            edge = Edge(
-                self.nodes[node_0]["node"],
-                self.nodes[node_1]["node"],
-                geometry,
-                epsg,
-                length_m,
+        else:
+            raise TypeError(
+                "edge must be an Edge object, a tuple (u, v), "
+                "or two node names (u, v)."
             )
 
-        elif not isinstance(edge, Edge):
-            if not isinstance(edge, Identifiable):
-                raise TypeError("edge must be an instance of Identifiable.")
-            elif not isinstance(edge, HasCRS):
-                raise TypeError("edge must have a coordinate reference system (HasCRS).")
-            elif not hasattr(edge, 'node_0'):
-                raise ValueError("edge must have an attributes 'node_0' of a Node class type.")
-            elif hasattr(edge, 'node_0'):
-                node = edge.node_0
-                try:
-                    check_node(node)
-                except ValueError as e:
-                    raise ValueError(f"'node_0' is not of Node class type: {e}.")
-            elif not hasattr(edge, 'node_1'):
-                raise ValueError("edge must have an attributes 'node_1' of a Node class type.")
-            elif hasattr(edge, 'node_1'):
-                node = edge.node_1
-                try:
-                    check_node(node)
-                except ValueError as e:
-                    raise ValueError(f"'node_1' is not of Node class type: {e}.")
-
-        u = edge.node_0.name
-        v = edge.node_1.name
-
-        if u not in self or v not in self:
+        # Validate that both nodes exist
+        if u not in self or node_v not in self:
             raise ValueError(
-                f"Both nodes {u!r} and {v!r} must exist in the graph."
+                f"Both nodes {u!r} and {node_v!r} must exist in the graph."
             )
 
-        if not self.is_multigraph() and self.has_edge(u, v):
+        # Construct an Edge if node names were provided
+        if not isinstance(edge, Edge):
+            edge = Edge(
+                self.nodes[u]["node"],
+                self.nodes[node_v]["node"],
+                attr.get("geometry"),
+                attr.get("epsg"),
+                attr.get("length_m"),
+            )
+
+        # Check duplicate edges
+        if not self.is_multigraph() and self.has_edge(u, node_v):
             if self.is_directed():
                 message = (
-                    f"A directed edge from {u!r} to {v!r} already exists. "
+                    f"A directed edge from {u!r} to {node_v!r} already exists. "
                     "Skipping this edge."
                 )
             else:
                 message = (
-                    f"An edge between {u!r} and {v!r} already exists. "
+                    f"An edge between {u!r} and {node_v!r} already exists. "
                     "Skipping this edge."
                 )
 
             warnings.warn(message, UserWarning, stacklevel=2)
             return
 
+        # Transform geometry to EPSG:4326
         if edge.epsg != 4326:
-            edge.geometry = transform_geometry(edge.geometry, edge.epsg, 4326)
+            edge.geometry = transform_geometry(
+                edge.geometry,
+                edge.epsg,
+                4326,
+            )
+
+        # Preserve Edge attributes and allow additional attributes
         attributes = {
             **vars(edge),
             **attr,
             "geometry": edge.geometry,
         }
 
-        super().add_edge(u, v, **attributes)
+        super().add_edge(u, node_v, **attributes)
 
 
     def from_shape(
@@ -386,6 +391,36 @@ class GraphMixin:
                 environment,
                 capacity=capacity,
             )
+
+    def remove_node(self, node: str) -> None:
+        """Remove a node and all its incident edges."""
+
+        if node not in self:
+            raise ValueError(f"Node {node!r} does not exist in the graph.")
+
+        super().remove_node(node)
+
+
+    def remove_edge(self, u, v=None) -> None:
+        """Remove an edge between two nodes.
+
+        Supports both NetworkX-style arguments (u, v)
+        and tuple-style arguments ((u, v)).
+        """
+
+        if v is None:
+            if not isinstance(u, tuple) or len(u) != 2:
+                raise ValueError(
+                    "Provide either two node names or a tuple (u, v)."
+                )
+            u, v = u
+
+        if not self.has_edge(u, v):
+            raise ValueError(
+                f"Edge between {u!r} and {v!r} does not exist in the graph."
+            )
+
+        super().remove_edge(u, v)
 
     def plot(self):
         """Plot this graph."""
