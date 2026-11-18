@@ -338,7 +338,10 @@ def calculate_distance_between_locations_along_edges(graph, location_1, location
 
     route = get_largest_route_between_edges(graph, edge_start[:2], edge_stop[:2])
     geometry, length_m = get_trajectory(graph, route[0], route[-1])
-    geometry_length = geometry.length
+    try:
+        geometry_length = geometry.length
+    except:
+        return 0
 
     distance_1 = geometry.project(location_1)
     distance_2 = geometry.project(location_2)

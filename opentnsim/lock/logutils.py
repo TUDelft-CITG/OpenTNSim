@@ -803,10 +803,12 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, objs)
         # Filter only rows that are part of lock activities
         target_msgs = [
             'Sailing to position in lock',
+            'Waiting for other vessels to enter lock',
             'Waiting for lock gate closing',
             'Waiting for lock levelling',
             'Waiting for lock gate opening',
-            'Sailing to second lock gate'
+            'Waiting for other vessels to leave lock',
+            'Sailing to second lock gate',
         ]
 
         df_lock = df_vessel[df_vessel['subactivity name'].isin(target_msgs)].copy()
@@ -848,7 +850,7 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, objs)
         before = vessel_events[vessel_events.index < first_index]
 
         # Find the most recent event on a different edge
-        different_edge = before[before['edge'] != lock_chamber.edge]
+        different_edge = before[before['edge'] != lock_edge]
 
         if different_edge.empty:
             previous_index = float('-inf')
@@ -859,8 +861,8 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, objs)
         mask_before_lock = (
             (df_eventtable_energy['object id'] == vessel_id) &
             (df_eventtable_energy['edge'] == lock_edge) &
-            (df_eventtable_energy.index > previous_index) &
-            (df_eventtable_energy.index < first_index)
+            (df_eventtable_energy.index >= previous_index) &
+            (df_eventtable_energy.index <= first_index)
         )
 
         df_eventtable_energy.loc[mask_before_lock, 'geometry'] = graph_with_lock_chambers_as_edges.edges[edge_before_new]['geometry']
@@ -869,7 +871,7 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, objs)
         after = vessel_events[vessel_events.index > last_index]
 
         # Find the first event on a different edge
-        different_edge = after[after['edge'] != lock_chamber.edge]
+        different_edge = after[after['edge'] != lock_edge]
 
         if different_edge.empty:
             next_index = float('inf')
@@ -879,13 +881,18 @@ def add_lock_chamber_dimensions_in_energy_eventtable(df_eventtable_energy, objs)
         # Select only events in the same continuous edge traversal
         mask_after_lock = (
             (df_eventtable_energy['object id'] == vessel_id) &
-            (df_eventtable_energy['edge'] == lock_chamber.edge) &
-            (df_eventtable_energy.index > last_index) &
-            (df_eventtable_energy.index < next_index)
+            (df_eventtable_energy['edge'] == lock_edge) &
+            (df_eventtable_energy.index >= last_index) &
+            (df_eventtable_energy.index <= next_index)
         )
-
-        # display(df_eventtable_energy.loc[mask_before_lock, 'message'])
-        # display(df_eventtable_energy.loc[mask_before_lock, 'message'])
+        if vessel_id == 'e1a4d2dd-f506-4493-8f50-1440b6390666':
+            df = df_eventtable_energy[df_eventtable_energy['object id'] == vessel_id]
+            mask_before_lock = (
+                        (df['object id'] == vessel_id) &
+                        (df['edge'] == lock_edge) &
+                        (df.index >= previous_index) &
+                        (df.index <= first_index)
+                    )
 
         df_eventtable_energy.loc[mask_after_lock, 'geometry'] = graph_with_lock_chambers_as_edges.edges[edge_after_new]['geometry']
 

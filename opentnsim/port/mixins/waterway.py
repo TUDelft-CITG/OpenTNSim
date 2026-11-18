@@ -54,7 +54,7 @@ class WaterwayTraversable(Movable, Identifiable, VesselProperties):
             return
 
         # if vessel has made a request but not for the found waterway -> error (should not happen)
-        if hasattr(self, 'waterway_request') and self.waterway_request.waterway == waterway:
+        if hasattr(self, 'waterway_request') and self.waterway_request.waterway != waterway:
             raise ValueError(
                 f"Vessel ({self.id}) did not request access to the correct waterway while accessing waterway ({waterway.name})."
             )
@@ -124,7 +124,6 @@ class WaterwayTraversable(Movable, Identifiable, VesselProperties):
             raise ValueError(
                 f"Vessel ({self.id}) did not request access to waterway ({waterway.name}) while leaving it."
             )
-
 
         yield waterway.resource.release(self.waterway_request)
 
