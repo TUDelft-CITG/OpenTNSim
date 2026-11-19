@@ -296,8 +296,144 @@ def get_all_init_params(vessel_class):
             allowed.add(name)
     return allowed
 
+class TruncatedNormalMixture:
 
+    def __init__(
+        self,
+        mode_1,
+        mode_2,
+        std_1,
+        std_2,
+        mixing_weight,
+    ):
+        self.mode_1 = mode_1
+        self.mode_2 = mode_2
+        self.std_1 = std_1
+        self.std_2 = std_2
+        self.mixing_weight = mixing_weight
+
+        self.dist_1 = stats.truncnorm(
+            (0 - mode_1) / std_1,
+            (1 - mode_1) / std_1,
+            loc=mode_1,
+            scale=std_1,
+        )
+
+        self.dist_2 = stats.truncnorm(
+            (0 - mode_2) / std_2,
+            (1 - mode_2) / std_2,
+            loc=mode_2,
+            scale=std_2,
+        )
+
+    def rvs(self, size=None, random_state=None, **kwargs):
+        rng = random_state or np.random.default_rng()
+
+        if size is None:
+            first = rng.random() < self.mixing_weight
+            return (
+                self.dist_1.rvs(random_state=rng)
+                if first
+                else self.dist_2.rvs(random_state=rng)
+            )
+
+        first = rng.random(size) < self.mixing_weight
+
+        samples = np.empty(size)
+
+        n1 = first.sum()
+        n2 = (~first).sum()
+
+        if n1:
+            samples[first] = self.dist_1.rvs(
+                size=n1, random_state=rng
+            )
+
+        if n2:
+            samples[~first] = self.dist_2.rvs(
+                size=n2, random_state=rng
+            )
+
+        return samples
+
+    def pdf(self, x):
+        return (
+            self.mixing_weight * self.dist_1.pdf(x)
+            + (1 - self.mixing_weight) * self.dist_2.pdf(x)
+        )
+
+    def cdf(self, x):
+        return (
+            self.mixing_weight * self.dist_1.cdf(x)
+            + (1 - self.mixing_weight) * self.dist_2.cdf(x)
+        )
+
+    def ppf(self, q):
+        # Numerical inversion of the mixture CDF
+        from scipy.optimize import brentq
+
+        q = np.asarray(q)
+
+        def inverse(prob):
+            if prob <= 0:
+                return 0.0
+            if prob >= 1:
+                return 1.0
+
+            return brentq(
+                lambda x: self.cdf(x) - prob,
+                0, 1,
+            )
+
+        return np.vectorize(inverse)(q).item() if q.ndim == 0 else np.vectorize(inverse)(q)
+
+    def mean(self):
+        return (
+            self.mixing_weight * self.dist_1.mean()
+            + (1 - self.mixing_weight) * self.dist_2.mean()
+        )
+
+    def var(self):
+        m1 = self.dist_1.mean()
+        m2 = self.dist_2.mean()
+        mean = self.mean()
+
+        return (
+            self.mixing_weight * (self.dist_1.var() + (m1 - mean)**2)
+            + (1 - self.mixing_weight) * (self.dist_2.var() + (m2 - mean)**2)
+        )
+
+    def std(self):
+        return np.sqrt(self.var())
+    
 DISTRIBUTIONS = {
+    "beta_mixture": {
+        "parameters": [
+            "mode_1",
+            "mode_2",
+            "std_1",
+            "std_2",
+            "mixing_weight",
+        ],
+        "description": (
+            "Mixture of two truncated normal distributions "
+            "bounded between 0 and 1, allowing two preferred "
+            "value ranges."
+        ),
+        "example": (
+            "mode_1=0.1, mode_2=0.9, "
+            "std_1=0.05, std_2=0.05, "
+            "mixing_weight=0.5"
+        ),
+        "factory": lambda p: TruncatedNormalMixture(**p),
+        "validate": lambda p: (
+            0 <= p["mode_1"] <= 1
+            and 0 <= p["mode_2"] <= 1
+            and p["std_1"] > 0
+            and p["std_2"] > 0
+            and 0 <= p["mixing_weight"] <= 1
+        ),
+    },
     "triangular": {
         "parameters": ["low", "mode", "high"],
         "description": "Triangular distribution",
@@ -312,7 +448,6 @@ DISTRIBUTIONS = {
             and p["low"] <= p["mode"] <= p["high"]
         ),
     },
-
     "uniform": {
         "parameters": ["low", "high"],
         "description": "Uniform distribution",
@@ -388,7 +523,7 @@ DISTRIBUTIONS = {
                 np.isfinite(probability) and probability >= 0
                 for probability in p["probabilities"]
             )
-            and np.isclose(sum(p["probabilities"]), 1.0)
+            and np.isclose(sum(p["probabilities"]), 1.0,)
         ),
     },
     "weibull": {
@@ -813,7 +948,7 @@ def validate_generation_inputs(
     if (
         not np.all(np.isfinite(probabilities))
         or np.any(probabilities < 0)
-        or not np.isclose(probabilities.sum(), 1.0)
+        or not np.isclose(probabilities.sum(), 1.0,  atol=0.001)
     ):
         raise ValueError(
             "Fleet probabilities must be finite, "
@@ -827,7 +962,6 @@ def validate_generation_inputs(
     )
 
     return True
-
 
 
 def validate_correlation_matrices(
@@ -996,6 +1130,7 @@ def generate_vessels_from_distribution(
     fleet_composition,
     arrival_distribution,
     number_of_vessels,
+    loading_factor = None,
     origin=None,
     destination=None,
     route=None,
@@ -1065,14 +1200,16 @@ def generate_vessels_from_distribution(
             correlation_matrix = correlation_matrices[vessel_class]
 
         # Generate vessel.
+        name = row['name']
         vessel = generate_single_vessel(
             env=env,
             row=row,
             origin=origin,
             destination=destination,
-            vessel_name=f"Vessel {earlier_vessels + i}",
+            vessel_name=f"{name} {earlier_vessels + i}",
             arrival_time=arrival_time,
             correlation_matrix = correlation_matrix,
+            loading_factor = loading_factor,
         )
 
         vessels.append(vessel)
@@ -1250,7 +1387,7 @@ def generate_single_vessel(
     arrival_time=None,
     correlation_matrix=None,
     show_unused_optional_parameters=False,
-    seed=None,
+    loading_factor = None,
 ):
     """Generate a vessel from a selected fleet composition row."""
 
@@ -1288,6 +1425,7 @@ def generate_single_vessel(
         origin=origin,
         destination=destination,
         show_unused_optional_parameters=show_unused_optional_parameters,
+        loading_factor = loading_factor,
         **parameters,
     )
 
@@ -1439,6 +1577,25 @@ def create_object(name, classes):
     raise TypeError("No valid base class order exists")
 
 
+def resolve_property(func, kwargs):
+    required_params = inspect.signature(func).parameters
+
+    params = {
+        key: kwargs[key]
+        for key in required_params
+        if key in kwargs
+    }
+
+    missing = set(required_params) - set(params)
+    missing -= {"args", "kwargs"}
+    if missing:
+        raise ValueError(
+            f"Missing parameters for {func.__name__}: {missing}"
+        )
+
+    return func(**params)
+
+
 def create_vessel(
     env,
     vessel_obj,
@@ -1446,6 +1603,7 @@ def create_vessel(
     destination = None,
     route = None,
     show_unused_optional_parameters=False,
+    loading_factor = None,
     **kwargs,
 ):
     # Check vessel class
@@ -1484,8 +1642,18 @@ def create_vessel(
         if key not in allowed
     }
 
+    all_kwargs = {**filtered_kwargs, **extra_kwargs}
+    if isinstance(loading_factor, Distribution):
+        loading_factor = loading_factor.rvs()
+    all_kwargs["loading_factor"] = loading_factor
+
+    for key, value in all_kwargs.items():
+        if callable(value) and not inspect.isclass(value):
+            filtered_kwargs[key] = resolve_property(value, all_kwargs)
+
     # Construct vessel
     vessel = vessel_obj(**filtered_kwargs)
+    display(filtered_kwargs)
 
     # Store unused parameters as metadata when supported
     if "ExtraMetadata" in {
