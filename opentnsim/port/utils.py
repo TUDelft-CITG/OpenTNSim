@@ -676,7 +676,8 @@ def parse_rule(fn):
         if the source of the condition is not available or the condition is not a single expression
     """
     expression = extract_return_expr(fn)
-    return RuleParser(namespace=function_namespace(fn)).visit(expression)
+    parser = RuleParser(namespace=function_namespace(fn))
+    return parser.visit(expression)
 
 
 def render_rule(node, indent=0):
@@ -714,15 +715,25 @@ def extract_return_expr(fn):
 
     tree = ast.parse(source)
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn.__name__:
-            statements = [
-                statement for statement in node.body
-                if not (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str))
-            ]
-            if len(statements) == 1 and isinstance(statements[0], ast.Return) and statements[0].value is not None:
-                return statements[0].value
-            raise ValueError(f"The function {fn.__name__} does not consist of a single return statement.")
+        is_function = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if not is_function or node.name != fn.__name__:
+            continue
+
+        statements = [statement for statement in node.body if not _is_docstring(statement)]
+        only_statement = statements[0] if len(statements) == 1 else None
+        if isinstance(only_statement, ast.Return) and only_statement.value is not None:
+            return only_statement.value
+        raise ValueError(f"The function {fn.__name__} does not consist of a single return statement.")
+
     raise ValueError(f"Cannot find the function {fn.__name__} in its source.")
+
+
+def _is_docstring(statement):
+    """Whether a statement of a function body is a docstring (or another string that is not used)"""
+    if not isinstance(statement, ast.Expr):
+        return False
+    value = statement.value
+    return isinstance(value, ast.Constant) and isinstance(value.value, str)
 
 
 def _find_lambdas(source):
@@ -732,47 +743,88 @@ def _find_lambdas(source):
     or only a part of a larger statement (e.g. an entry of a dictionary), which cannot be parsed as a whole.
     """
     try:
-        lambdas = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Lambda)]
+        tree = ast.parse(source)
+    except SyntaxError:
+        tree = None
+
+    if tree is not None:
+        lambdas = [node for node in ast.walk(tree) if isinstance(node, ast.Lambda)]
         if lambdas:
             return lambdas
-    except SyntaxError:
-        pass
 
-    # part of a larger statement: from each 'lambda', use the longest piece of the source that is an expression
+    # part of a larger statement: parse the expression that starts at each 'lambda'
     lambdas = []
     for match in re.finditer(r"\blambda\b", source):
-        for end in range(len(source), match.start(), -1):
-            try:
-                expression = ast.parse(source[match.start():end].strip(), mode="eval").body
-            except SyntaxError:
-                continue
-            if isinstance(expression, ast.Tuple) and expression.elts:
-                # the lambda is followed by a comma
-                expression = expression.elts[0]
-            if isinstance(expression, ast.Lambda):
-                lambdas.append(expression)
-            break
+        lam = _parse_lambda_starting_at(source, match.start())
+        if lam is not None:
+            lambdas.append(lam)
     return lambdas
 
 
-def _select_lambda(lambdas, fn):
-    """The lambda from the candidates in the source that belongs to the lambda function: by parameter names, then by bytecode"""
-    code = fn.__code__
-    parameters = code.co_varnames[: code.co_argcount + code.co_kwonlyargcount]
-    candidates = [
-        lam for lam in lambdas
-        if tuple(arg.arg for arg in lam.args.posonlyargs + lam.args.args + lam.args.kwonlyargs) == parameters
-    ] or lambdas
-
-    def has_same_code(lam):
+def _parse_lambda_starting_at(source, start):
+    """The lambda that starts at a position in the source: the longest piece of source from there that is an expression"""
+    for end in range(len(source), start, -1):
+        piece = source[start:end].strip()
         try:
-            compiled = compile(ast.fix_missing_locations(ast.Expression(body=copy.deepcopy(lam))), "<rule>", "eval")
-        except (SyntaxError, ValueError, TypeError):
-            return False
-        inner = next((constant for constant in compiled.co_consts if inspect.iscode(constant)), None)
-        return inner is not None and inner.co_code == code.co_code and inner.co_names == code.co_names
+            expression = ast.parse(piece, mode="eval").body
+        except SyntaxError:
+            continue
 
-    return next((lam for lam in candidates if has_same_code(lam)), candidates[0])
+        if isinstance(expression, ast.Tuple) and expression.elts:
+            # the lambda is followed by a comma
+            expression = expression.elts[0]
+        if isinstance(expression, ast.Lambda):
+            return expression
+        return None
+    return None
+
+
+def _lambda_parameter_names(lam):
+    """The names of the parameters (without *args and **kwargs) of a lambda in a syntax tree"""
+    arguments = lam.args
+    parameters = arguments.posonlyargs + arguments.args + arguments.kwonlyargs
+    return tuple(parameter.arg for parameter in parameters)
+
+
+def _has_same_code(lam, code):
+    """Whether a lambda in a syntax tree compiles to the same bytecode as a code object"""
+    expression = ast.Expression(body=copy.deepcopy(lam))
+    ast.fix_missing_locations(expression)
+    try:
+        compiled = compile(expression, "<rule>", "eval")
+    except (SyntaxError, ValueError, TypeError):
+        return False
+
+    inner = None
+    for constant in compiled.co_consts:
+        if inspect.iscode(constant):
+            inner = constant
+            break
+    if inner is None:
+        return False
+
+    same_bytecode = inner.co_code == code.co_code
+    same_names = inner.co_names == code.co_names
+    return same_bytecode and same_names
+
+
+def _select_lambda(lambdas, fn):
+    """The lambda from the candidates in the source that belongs to the lambda function
+
+    The candidates are filtered by the names of the parameters, then by the bytecode.
+    """
+    code = fn.__code__
+    number_of_parameters = code.co_argcount + code.co_kwonlyargcount
+    parameter_names = code.co_varnames[:number_of_parameters]
+
+    candidates = [lam for lam in lambdas if _lambda_parameter_names(lam) == parameter_names]
+    if not candidates:
+        candidates = lambdas
+
+    for lam in candidates:
+        if _has_same_code(lam, code):
+            return lam
+    return candidates[0]
 
 
 def get_vessel_direction_with_waterway(routeA, routeB):

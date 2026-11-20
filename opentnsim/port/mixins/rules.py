@@ -19,12 +19,21 @@ OPERATOR_MAP = {
     ast.IsNot: "is not",
 }
 
+# the kinds of function parameters that can be given an argument by position
+POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+
 # maximum number of nested restriction functions that is expanded in the overview of a rule
 MAX_INLINE_DEPTH = 10
 
+# the indentation of one level in the overview of a rule
+INDENT = "  "
+
 
 class Node:
-    """Parent class of the nodes in the tree of a rule condition (see RuleParser). The tree is shown by RuleEngine.overview."""
+    """Parent class of the nodes in the tree of a rule condition (see RuleParser).
+
+    The tree is shown by RuleEngine.overview.
+    """
 
     def render(self, indent=0):
         """Text of the node (and its children), indented with two spaces per level"""
@@ -38,7 +47,7 @@ class Expression(Node):
     text: str
 
     def render(self, indent=0):
-        return "  " * indent + self.text
+        return INDENT * indent + self.text
 
 
 @dataclass
@@ -48,7 +57,7 @@ class Compare(Node):
     right: str
 
     def render(self, indent=0):
-        return "  " * indent + f"{self.left} {self.op} {self.right}"
+        return INDENT * indent + f"{self.left} {self.op} {self.right}"
 
 
 @dataclass
@@ -59,7 +68,8 @@ class Call(Node):
     args: list
 
     def render(self, indent=0):
-        return "  " * indent + f"{self.name}({', '.join(self.args)})"
+        arguments = ", ".join(self.args)
+        return INDENT * indent + f"{self.name}({arguments})"
 
 
 @dataclass
@@ -67,10 +77,12 @@ class Not(Node):
     item: Node
 
     def render(self, indent=0):
-        pad = "  " * indent
+        pad = INDENT * indent
         if isinstance(self.item, (Expression, Compare, Call)):
-            return f"{pad}NOT {self.item.render().strip()}"
-        return "\n".join([f"{pad}NOT:", self.item.render(indent + 1)])
+            # short enough to be on the same line
+            return f"{pad}NOT {self.item.render()}"
+        lines = [f"{pad}NOT:", self.item.render(indent + 1)]
+        return "\n".join(lines)
 
 
 @dataclass
@@ -78,7 +90,10 @@ class And(Node):
     items: List[Node]
 
     def render(self, indent=0):
-        return "\n".join(["  " * indent + "ALL of:"] + [item.render(indent + 1) for item in self.items])
+        lines = [INDENT * indent + "ALL of:"]
+        for item in self.items:
+            lines.append(item.render(indent + 1))
+        return "\n".join(lines)
 
 
 @dataclass
@@ -86,7 +101,10 @@ class Or(Node):
     items: List[Node]
 
     def render(self, indent=0):
-        return "\n".join(["  " * indent + "ANY of:"] + [item.render(indent + 1) for item in self.items])
+        lines = [INDENT * indent + "ANY of:"]
+        for item in self.items:
+            lines.append(item.render(indent + 1))
+        return "\n".join(lines)
 
 
 @dataclass
@@ -97,7 +115,8 @@ class AnyOf(Node):
     iteration: str
 
     def render(self, indent=0):
-        return "\n".join(["  " * indent + f"FOR ANY {self.iteration}:", self.expr.render(indent + 1)])
+        lines = [INDENT * indent + f"FOR ANY {self.iteration}:", self.expr.render(indent + 1)]
+        return "\n".join(lines)
 
 
 @dataclass
@@ -108,7 +127,8 @@ class AllOf(Node):
     iteration: str
 
     def render(self, indent=0):
-        return "\n".join(["  " * indent + f"FOR ALL {self.iteration}:", self.expr.render(indent + 1)])
+        lines = [INDENT * indent + f"FOR ALL {self.iteration}:", self.expr.render(indent + 1)]
+        return "\n".join(lines)
 
 
 class ParameterSubstituter(ast.NodeTransformer):
@@ -124,10 +144,13 @@ class ParameterSubstituter(ast.NodeTransformer):
 
 
 class RuleParser(ast.NodeVisitor):
-    """Translates the expression of a rule condition into a tree of nodes (And, Or, Not, Compare, AnyOf, AllOf, Call, Expression).
+    """Translates the expression of a rule condition into a tree of nodes.
 
-    Calls of functions that consist of a single return statement (restriction functions) are replaced by the expression
-    of that function, with the parameters replaced by the arguments of the call. Other expressions are kept as text.
+    The nodes are And, Or, Not, Compare, AnyOf, AllOf, Call and Expression.
+
+    Calls of functions that consist of a single return statement (restriction functions) are replaced by the
+    expression of that function, with the parameters replaced by the arguments of the call. Other expressions are
+    kept as text.
 
     Parameters
     ----------
@@ -145,12 +168,16 @@ class RuleParser(ast.NodeVisitor):
         return Expression(ast.unparse(node))
 
     def visit_BoolOp(self, node):
-        node_type = And if isinstance(node.op, ast.And) else Or
+        if isinstance(node.op, ast.And):
+            node_type = And
+        else:
+            node_type = Or
+
         items = []
         for value in node.values:
             item = self.visit(value)
-            # a nested expression with the same operator is part of the same list: (a and b) and c -> ALL of: a, b, c
             if isinstance(item, node_type):
+                # a nested expression with the same operator is part of the same list: (a and b) and c -> ALL of: a, b, c
                 items.extend(item.items)
             else:
                 items.append(item)
@@ -165,74 +192,132 @@ class RuleParser(ast.NodeVisitor):
         if len(node.ops) != 1:
             # chained comparison: a < b < c
             return self.generic_visit(node)
-        return Compare(
-            left=ast.unparse(node.left),
-            op=OPERATOR_MAP.get(type(node.ops[0]), type(node.ops[0]).__name__),
-            right=ast.unparse(node.comparators[0]),
-        )
+
+        operator_type = type(node.ops[0])
+        operator = OPERATOR_MAP.get(operator_type, operator_type.__name__)
+        left = ast.unparse(node.left)
+        right = ast.unparse(node.comparators[0])
+        return Compare(left=left, op=operator, right=right)
 
     def visit_Call(self, node):
         if isinstance(node.func, ast.Name):
-            if node.func.id in ("any", "all") and len(node.args) == 1 and not node.keywords:
+            function_name = node.func.id
+            one_argument = len(node.args) == 1 and not node.keywords
+            if function_name in ("any", "all") and one_argument:
                 quantifier = self._visit_any_or_all(node)
                 if quantifier is not None:
                     return quantifier
+
             expanded = self._expand_function(node)
             if expanded is not None:
                 return expanded
-        arguments = [ast.unparse(arg) for arg in node.args] + [ast.unparse(keyword) for keyword in node.keywords]
+
+        return self._call_as_text(node)
+
+    @staticmethod
+    def _call_as_text(node):
+        """A call that is shown as text: the name of the function and its arguments"""
+        arguments = []
+        for argument in node.args:
+            arguments.append(ast.unparse(argument))
+        for keyword in node.keywords:
+            arguments.append(ast.unparse(keyword))
         return Call(name=ast.unparse(node.func), args=arguments)
 
     def _visit_any_or_all(self, node):
         """any(...) or all(...) over a generator or a list: None if the argument is of another type."""
-        any_ = node.func.id == "any"
+        is_any = node.func.id == "any"
         argument = node.args[0]
+
         if isinstance(argument, (ast.GeneratorExp, ast.ListComp, ast.SetComp)):
-            iteration = ", ".join(
-                f"{ast.unparse(generator.target)} in {ast.unparse(generator.iter)}"
-                + "".join(f" if {ast.unparse(condition)}" for condition in generator.ifs)
-                for generator in argument.generators
-            )
-            return (AnyOf if any_ else AllOf)(expr=self.visit(argument.elt), iteration=iteration)
+            iteration = self._describe_iteration(argument.generators)
+            expression = self.visit(argument.elt)
+            if is_any:
+                return AnyOf(expr=expression, iteration=iteration)
+            return AllOf(expr=expression, iteration=iteration)
+
         if isinstance(argument, (ast.List, ast.Tuple, ast.Set)):
-            return (Or if any_ else And)(items=[self.visit(element) for element in argument.elts])
+            items = [self.visit(element) for element in argument.elts]
+            if is_any:
+                return Or(items=items)
+            return And(items=items)
+
         return None
+
+    @staticmethod
+    def _describe_iteration(generators):
+        """The loops of a generator expression as text, e.g. 'v1 in vessels if v1.T > 5'"""
+        loops = []
+        for generator in generators:
+            target = ast.unparse(generator.target)
+            iterable = ast.unparse(generator.iter)
+            loop = f"{target} in {iterable}"
+            for condition in generator.ifs:
+                loop += f" if {ast.unparse(condition)}"
+            loops.append(loop)
+        return ", ".join(loops)
 
     def _expand_function(self, node):
         """The expression of a restriction function with the parameters replaced by the arguments, or None if not possible."""
         from opentnsim.port.utils import extract_return_expr
 
         function = self.namespace.get(node.func.id)
-        if not inspect.isfunction(function) or self.depth >= MAX_INLINE_DEPTH:
+        if not inspect.isfunction(function):
             return None
-        if any(isinstance(arg, ast.Starred) for arg in node.args) or any(keyword.arg is None for keyword in node.keywords):
+        if self.depth >= MAX_INLINE_DEPTH:
             return None
-        parameters = [
-            name
-            for name, parameter in inspect.signature(function).parameters.items()
-            if parameter.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-        ]
-        keywords = {keyword.arg: keyword.value for keyword in node.keywords}
-        if len(node.args) > len(parameters) or any(name not in parameters for name in keywords):
+
+        mapping = self._bind_arguments(function, node)
+        if mapping is None:
             return None
+
         try:
             expression = extract_return_expr(function)
         except (OSError, TypeError, SyntaxError, ValueError):
+            # the source of the function is not available, or the function is not a single return statement
             return None
+
+        expression = copy.deepcopy(expression)
+        expression = ParameterSubstituter(mapping).visit(expression)
+        parser = RuleParser(namespace=function_namespace(function), depth=self.depth + 1)
+        return parser.visit(expression)
+
+    @staticmethod
+    def _bind_arguments(function, node):
+        """The argument expression for each parameter of a call, or None if the call does not match the parameters."""
+        for argument in node.args:
+            if isinstance(argument, ast.Starred):
+                return None
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                # **kwargs
+                return None
+
+        parameters = []
+        for name, parameter in inspect.signature(function).parameters.items():
+            if parameter.kind in POSITIONAL_KINDS:
+                parameters.append(name)
+        if len(node.args) > len(parameters):
+            return None
+
         mapping = dict(zip(parameters, node.args))
-        mapping.update(keywords)
-        expression = ParameterSubstituter(mapping).visit(copy.deepcopy(expression))
-        return RuleParser(namespace=function_namespace(function), depth=self.depth + 1).visit(expression)
+        for keyword in node.keywords:
+            if keyword.arg not in parameters:
+                return None
+            mapping[keyword.arg] = keyword.value
+        return mapping
 
 
 def function_namespace(function):
     """The names that are available to a function: its globals and the variables of the function(s) it is defined in."""
     namespace = dict(function.__globals__)
-    for name, cell in zip(function.__code__.co_freevars, function.__closure__ or ()):
+    names = function.__code__.co_freevars
+    cells = function.__closure__ or ()
+    for name, cell in zip(names, cells):
         try:
             namespace[name] = cell.cell_contents
         except ValueError:
-            # empty cell: variable that is not assigned yet
+            # empty cell: a variable that is not assigned yet
             pass
     return namespace
 
@@ -329,30 +414,40 @@ class RuleEngine:
 
         output = []
         for rule in self.rules:
+            policy = describe_policy(rule.policy)
+            header = f"{rule.name} (policy: {policy})"
             try:
-                condition = render_rule(parse_rule(rule.condition), indent=1)
+                tree = parse_rule(rule.condition)
+                condition = render_rule(tree, indent=1)
             except (OSError, TypeError, SyntaxError, ValueError):
                 # the source of the condition is not available (e.g. a function that is defined interactively)
-                condition = f"  {getattr(rule.condition, '__name__', repr(rule.condition))} (source not available)"
-            output.append(f"{rule.name} (policy: {describe_policy(rule.policy)})\n{condition}")
+                condition_name = getattr(rule.condition, "__name__", repr(rule.condition))
+                condition = f"{INDENT}{condition_name} (source not available)"
+            output.append(f"{header}\n{condition}")
 
         print("\n\n".join(output))
 
 
 def describe_policy(policy):
-    """Short text for the policy of a rule: TrafficRules.prohibited -> 'prohibited', a function -> its name, a lambda -> its expression"""
+    """Short text for the policy of a rule
+
+    TrafficRules.prohibited -> 'prohibited', a function -> its name, a lambda -> its expression
+    """
     from opentnsim.port.utils import extract_return_expr
 
     for name, member in vars(TrafficRules).items():
         if member is policy and not name.startswith("_"):
             return name
+
     name = getattr(policy, "__name__", None)
     if name and name != "<lambda>":
         return name
+
     try:
-        return ast.unparse(extract_return_expr(policy))
+        expression = extract_return_expr(policy)
     except (OSError, TypeError, SyntaxError, ValueError):
         return repr(policy)
+    return ast.unparse(expression)
 
 
 class TrafficRules(Enum):
