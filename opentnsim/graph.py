@@ -286,6 +286,28 @@ def get_minimum_depth(graph, route):
     return h_min
 
 
+def edge_key(graph, u, v):
+    """Key of the edge u -> v on a multigraph: the parallel edge with the shortest geometry."""
+
+    def geometry_length(k):
+        length = getattr(graph[u][v][k].get("geometry"), "length", None)
+        return length if length is not None else 1e18
+
+    return min(graph[u][v], key=geometry_length)
+
+
+def edge_length(edge):
+    """Sailing length of an edge in m: "length_m", else the geodesic length of the geometry, else "length"."""
+    if edge.get("length_m") is not None:
+        return float(edge["length_m"])
+    if edge.get("geometry") is not None:
+        coords = list(edge["geometry"].coords)
+        return float(sum(wgs84.inv(x1, y1, x2, y2)[2] for (x1, y1), (x2, y2) in zip(coords, coords[1:])))
+    if edge.get("length") is not None:
+        return float(edge["length"])
+    return None
+
+
 def compute_distance(edge, orig, dest):
     """compute distance over edge, or if edge does not have a geometry over orig-dest"""
     if "geometry" not in edge:
@@ -322,10 +344,10 @@ def compute_distance(edge, orig, dest):
         sub_dest = shapely.geometry.Point(edge_route[index + 1][0], edge_route[index + 1][1])
 
         distance += wgs84.inv(
-            shapely.geometry.asShape(sub_orig).x,
-            shapely.geometry.asShape(sub_orig).y,
-            shapely.geometry.asShape(sub_dest).x,
-            shapely.geometry.asShape(sub_dest).y,
+            sub_orig.x,
+            sub_orig.y,
+            sub_dest.x,
+            sub_dest.y,
         )[2]
     return distance
 
