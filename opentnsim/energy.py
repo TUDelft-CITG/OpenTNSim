@@ -79,8 +79,8 @@ def power2v(vessel, edge, upperbound=None):
         if isinstance(vessel.P_tot, complex):
             raise ValueError(f"P tot is complex: {vessel.P_tot}")
 
-        # compute difference between power setting by captain (incl hotel) and power needed for velocity (incl hotel)
-        diff = vessel.P_tot_given - P_given # vessel.P_tot
+        # compare with P_tot, not P_given: P_given is capped at P_installed, so full power gives no unique speed
+        diff = vessel.P_tot_given - vessel.P_tot
         logger.debug(f"optimizing for v: {v}, P_tot_given: {vessel.P_tot_given}, P_tot {vessel.P_tot}, P_given {P_given}")
 
         return diff**2
@@ -88,14 +88,14 @@ def power2v(vessel, edge, upperbound=None):
     # fill in some of the parameters that we already know
     fun = functools.partial(seek_v_given_power, vessel=vessel, edge=edge)
     # lookup a minimum
-    fit = scipy.optimize.minimize_scalar(fun, bounds=(0, upperbound), method="bounded", options=dict(xatol=0.0000001))
+    fit = scipy.optimize.minimize_scalar(fun, bounds=(1e-6, upperbound), method="bounded", options=dict(xatol=0.0000001))
 
     # check if we found a minimum
     if not fit.success:
         raise ValueError(fit)
     logger.debug(f"fit: {fit}")
 
-    return fit.x
+    return float(fit.x)
 
 
 class ConsumesEnergy:
