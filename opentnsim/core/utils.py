@@ -1419,6 +1419,10 @@ def generate_single_vessel(
     if arrival_time is not None:
         parameters["arrival_time"] = arrival_time
 
+    if "loading_factor" in parameters:
+        loading_factor = parameters["loading_factor"]
+        parameters.pop("loading_factor", None)
+
     return create_vessel(
         env=env,
         vessel_obj=vessel_object,
@@ -1643,10 +1647,12 @@ def create_vessel(
     }
 
     all_kwargs = {**filtered_kwargs, **extra_kwargs}
+
     if isinstance(loading_factor, Distribution):
         loading_factor = loading_factor.rvs()
-    all_kwargs["loading_factor"] = loading_factor
 
+    all_kwargs["loading_factor"] = loading_factor
+    
     for key, value in all_kwargs.items():
         if callable(value) and not inspect.isclass(value):
             filtered_kwargs[key] = resolve_property(value, all_kwargs)
