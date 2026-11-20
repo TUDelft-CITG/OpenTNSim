@@ -40,6 +40,8 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
         route_geometry, _ = get_trajectory(vessel.env.graph,route[0],route[-1])
         route_geometry_m = transform_geometry(route_geometry, epsg_out = epsg_out)
         mask = df.index > first_index
+        # The lambda gets the pattern as default argument, so that it keeps the value of this pass of the loop (a lambda
+        # that uses the variable directly looks it up when it is called, and would see the value of a later pass).
         pattern = rf'\b{selected_route[-1]}\b'
         mask2 = df[mask].Message.apply(lambda x, pattern=pattern: bool(re.search(pattern, x)) and 'stop' in x)
         last_index_df = df[mask][mask2]
@@ -77,7 +79,7 @@ def determine_nearest_anchorage_area(vessel, node, port, route = None):
             route_to_anchorage = get_shortest_route(vessel.env.graph, node, node_anchorage, vessel)
             route_from_anchorage = get_shortest_route(vessel.env.graph, node_anchorage, route[-1], vessel)
         except nx.NetworkXException:
-            # no route to or from the anchorage area
+            # networkx raises NetworkXNoPath if there is no route and NodeNotFound if the node is not in the graph
             continue
 
         anchorage_capacity = anchorage.resource.capacity
@@ -598,7 +600,15 @@ def add_ukc_policy_to_edge(graph, edge, rules, distance_of_series = None):
     for edge in edge_route:
         if "Depth_restriction" not in graph.edges[edge]:
             graph.edges[edge]["Depth_restriction"] = RuleEngine(default = lambda v: 0.0)
-            graph.edges[edge]["Depth_restriction_at_distance"] = lambda e, edge=edge: distance_of_series if e == edge else distance_of_series_rev
+
+            # the distance of the series from the start of the edge depends on the direction in which the edge is sailed
+            # (e = the edge of the vessel): edge is a default argument so that it keeps the value of this pass of the loop
+            def distance_of_series_on_edge(e, edge=edge):
+                if e == edge:
+                    return distance_of_series
+                return distance_of_series_rev
+
+            graph.edges[edge]["Depth_restriction_at_distance"] = distance_of_series_on_edge
     
         for rule in rules:
             graph.edges[edge]["Depth_restriction"].add_rule(

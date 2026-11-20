@@ -54,3 +54,19 @@ def test_unexpected_errors_in_the_route_calculation_are_not_hidden(scenario, mon
     monkeypatch.setattr(utils, "get_shortest_route", broken)
     with pytest.raises(RuntimeError):
         determine_nearest_anchorage_area(vessel, "origin", port)
+
+
+# %% add_ukc_policy_to_edge: the distance of the series depends on the direction in which the edge is sailed
+def test_distance_of_the_series_on_an_edge_and_on_the_reversed_edge():
+    edge = ("A", "B", 0)
+    reversed_edge = ("B", "A", 0)
+    graph = nx.MultiDiGraph()
+    graph.add_edge("A", "B", length_m=1000.0)
+    graph.add_edge("B", "A", length_m=1000.0)
+
+    rule = types.SimpleNamespace(condition=lambda vessel: True, policy=lambda vessel: 0.0, name="ukc")
+    utils.add_ukc_policy_to_edge(graph, edge, [rule], distance_of_series=300.0)
+
+    distance_at = graph.edges[edge]["Depth_restriction_at_distance"]
+    assert distance_at(edge) == 300.0
+    assert distance_at(reversed_edge) == 700.0

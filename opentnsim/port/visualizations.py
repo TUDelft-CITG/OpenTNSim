@@ -1063,7 +1063,11 @@ def get_vessel_logbook_through_waterway(vessel, waterway, extra_nodes = None):
     group = gap.cumsum()
     last_group = group.max()
     last_block_idx = waiting_pre.index[group == last_group]
-    if len(last_block_idx) and last_block_idx[-1]+1 == first_valid_sailing_idx:
+
+    # Keep the last block of waiting events if it is directly followed by the first sailing on the waterway. There is no
+    # block (it is empty) if the vessel does not wait before the first sailing.
+    has_waiting_block = len(last_block_idx) > 0
+    if has_waiting_block and last_block_idx[-1] + 1 == first_valid_sailing_idx:
         keep.loc[last_block_idx] = True
 
     vessel_df_waterway = vessel_df[keep]

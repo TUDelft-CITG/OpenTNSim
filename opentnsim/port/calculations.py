@@ -1350,6 +1350,8 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
         route = get_shortest_route(vessel.env.graph, trip_info.origin, trip_info.destination)
 
         edges = list(zip(route[:-1], route[1:]))
+        # the sailing events on the route to the terminal; edges is a default argument so that the lambda keeps the value
+        # of this pass of the loop
         df_to_terminal = df_sailing[df_sailing.apply(lambda x, edges=edges: (x["node_start"], x["node_stop"]) in edges, axis=1)]
         df_to_terminal = df_to_terminal[df_to_terminal["event"].isin(["start", "stop"])]
         first_index_sailing = df_to_terminal.index[0]

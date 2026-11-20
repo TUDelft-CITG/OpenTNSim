@@ -56,13 +56,19 @@ def _has_hydrodynamic_data(hydromanager, time, node, hydrodynamic_property):
     """
     if hydromanager.hydrodynamic_data is None:
         return False
+
+    # Check the node here: for a node without a station _get_hydrodynamic_data_value does not return NaN, but fails with a
+    # confusing TypeError (the station index is None).
     if hydromanager._get_station_index_of_hydrodynamic_data(node) is None:
         return False
+
     try:
         value = hydromanager._get_hydrodynamic_data_value(time, node, hydrodynamic_property)
     except KeyError:
-        # the hydrodynamic data does not contain this property
+        # the hydrodynamic data does not contain this property (e.g. data with a water level, but without salinity)
         return False
+
+    # there is a station and a property, but no value at this time
     return not pd.isna(value)
 
 

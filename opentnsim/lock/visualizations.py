@@ -17,7 +17,10 @@ import folium
 from IPython.display import display, HTML
 
 def _first_axes(axes):
-    """Returns the first axes of multiple axes (array, list or tuple), or the axes itself if it is a single axes"""
+    """Returns the first axes of multiple axes (array, list or tuple), or the axes itself if it is a single axes
+
+    plt.subplots returns a single axes if the figure has one plot, and an array of axes if it has several.
+    """
     if isinstance(axes, (np.ndarray, list, tuple)):
         return axes[0]
     return axes

@@ -505,8 +505,13 @@ def calculate_sailing_time_to_waiting_area(waiting_area, vessel):
     # calculation of the sailing time, distance, and average speed to the waiting area
     sailing_to_waiting_area_time = sailing_to_waiting_area[0]
     sailing_distance = sailing_to_waiting_area[1]
+    # a vessel that does not have to sail (e.g. it is at the waiting area already) has no sailing time and no speed. Check this
+    # explicitly: a division by 0 only raises an error for Python floats, a numpy distance would give an infinite speed.
     sailing_seconds = sailing_to_waiting_area_time.total_seconds()
-    average_sailing_speed = sailing_distance / sailing_seconds if sailing_seconds else 0.
+    if sailing_seconds:
+        average_sailing_speed = sailing_distance / sailing_seconds
+    else:
+        average_sailing_speed = 0.
 
     return sailing_to_waiting_area_time, sailing_distance, average_sailing_speed
 
@@ -1008,8 +1013,11 @@ def calculate_lock_operation_times(
     this_operation = _get_operation_info(lock_chamber, operation_index)
     operation_planning_index = this_operation.name
     operation_row = operation_planning.loc[operation_planning_index]
-    time_gate_closing_start = operation_row["time_gate_closing_start"]
-    vessel_goes_with_previous_operation = bool(pd.notna(time_gate_closing_start) and start_time < time_gate_closing_start)
+    # The vessel goes with the operation that is already planned if the gates of that operation have not started closing yet
+    # at the start time of the vessel. Nothing is planned yet (time is NaT, NaN or None) if the operation has no vessels.
+    planned_closing_start = operation_row["time_gate_closing_start"]
+    planned = pd.notna(planned_closing_start)
+    vessel_goes_with_previous_operation = planned and start_time < planned_closing_start
 
     if vessel_goes_with_previous_operation and not new_operation:
         time_gate_closing_start = operation_row["time_gate_closing_start"]
@@ -1850,8 +1858,11 @@ def _get_ship_volume_in_levelling(df_operations, phase_info):
     ship_volume : float
         the volume of the vessels in the first levelling cycle within the phase [m3] (0 if there is none)
     """
+    # without levelling cycles the dataframe has no columns with the times of the levelling to select on
     if df_operations.empty:
         return 0.
+
+    # the levelling cycles that are completely within the phase
     levelling_event_df = df_operations[(df_operations.leveling_start >= phase_info.time_start) &
                                        (df_operations.leveling_stop <= phase_info.time_stop)]
     if levelling_event_df.empty:
@@ -2031,8 +2042,13 @@ def calculate_water_exchange_fluxes(lock_chamber, zsf_events = None):
     if zsf_events.empty:
         return pd.DataFrame()
 
+    # The results of an earlier calculation of this lock chamber are kept, except for the last 3 phases, which are
+    # calculated again. There are no earlier results (skiprows is 0) the first time that the fluxes are calculated.
     zsf_results = getattr(lock_chamber, "ZSF_results", None)
-    skiprows = max(len(zsf_results) - 3, 0) if zsf_results is not None else 0
+    if zsf_results is None:
+        skiprows = 0
+    else:
+        skiprows = max(len(zsf_results) - 3, 0)
 
     lock_parameters = {
         "lock_length": lock_chamber.lock_length,
@@ -2258,6 +2274,11 @@ def calculate_lock_salinity_and_saltmass(lock_chamber, ZSF_results = None):
                 saltmass_when_fully_exchanged = lock_volume * phase.salinity_sea
             saltmass_start = phase.saltmass_lock_a
             saltmass_stop = phase.saltmass_lock_b
+            # The salt mass in the lock chamber follows the salt mass of the sea (or lake) as exchange_frac = tanh(t / t_exch)
+            # during the time that the gate is open (see the loop below). The exchange time t_exch follows from the salt mass
+            # at the end of the phase, which is exchange_frac = (saltmass_stop - saltmass_start) / (fully exchanged - start):
+            #     t_exch = t_open / atanh(exchange_frac)
+            # If there is no useful exchange fraction, the exchange time is 30 minutes.
             try:
                 exchange_frac = np.nan
                 if phase.routine == 'Gate open at sea' and (saltmass_when_fully_exchanged - saltmass_start):
@@ -2268,7 +2289,8 @@ def calculate_lock_salinity_and_saltmass(lock_chamber, ZSF_results = None):
                 if pd.isna(exchange_frac):
                     t_exch = 1800.
             except (ZeroDivisionError, ValueError):
-                # no exchange (atanh(0) = 0) or an exchange fraction outside (-1, 1) (atanh is not defined)
+                # nothing was exchanged (atanh(0) = 0, so a division by zero), or the exchange fraction is outside (-1, 1),
+                # where atanh is not defined (e.g. a lock that is fully exchanged)
                 t_exch = 1800.
             dt = lock_chamber.time_step
             time_index_lock_start = np.abs(lock_chamber.time - phase.time_start).argmin()
