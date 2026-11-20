@@ -10,14 +10,7 @@
 """
 import sys
 
-from pkg_resources import require, VersionConflict
 from setuptools import setup, find_packages
-
-try:
-    require("setuptools>=38.3")
-except VersionConflict:
-    print("Error: version of setuptools is too old (<38.3)!")
-    sys.exit(1)
 
 requires = [
     "pandas>=0.24.0",
@@ -49,6 +42,8 @@ requires = [
     "Deprecated",
     "tqdm",
     "xarray",
+    "pyyaml",
+    "pytz",
 ]
 
 setup_requirements = [
@@ -107,7 +102,7 @@ setup(
     include_package_data=True,
     keywords="OpenTNSim",
     name="opentnsim",
-    packages=find_packages(include=["opentnsim"]),
+    packages=find_packages(include=["opentnsim", "opentnsim.*"]),
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=tests_require,
