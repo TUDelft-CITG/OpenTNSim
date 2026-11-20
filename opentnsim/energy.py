@@ -9,6 +9,7 @@ import scipy.optimize
 # OpenTNSim
 import opentnsim
 import opentnsim.strategy
+from opentnsim.graph import edge_length
 
 logger = logging.getLogger(__name__)
 
@@ -1422,7 +1423,15 @@ class EnergyCalculation:
                 self.energy_use["edge_stop"].append(geometries[i + 1])
 
                 # calculate the distance travelled and the associated velocity
-                distance = calculate_distance(geometries[i], geometries[i + 1])
+                # distance along the sailed edge, the straight distance as fallback
+                distance = None
+                message = messages[i]
+                if "from node " in message and "to node " in message:
+                    node_start = message.split("from node ")[1].split(" to node")[0]
+                    node_stop = message.split("to node ")[1].split(" ")[0]
+                    distance = edge_length(self.vessel.env.FG.edges[node_start, node_stop])
+                if distance is None:
+                    distance = calculate_distance(geometries[i], geometries[i + 1])
                 v = distance / delta_t
                 self.energy_use["distance"].append(distance)
 
