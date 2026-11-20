@@ -22,7 +22,7 @@ def vessel_planning(vessels, activities, colors, web=False):
         """extract 'start' and 'stop' of activities from log"""
         x = []
         y = []
-        for i, v in series.iteritems():
+        for i, v in series.items():
             if v == activity + " start":
                 start = i
             if v == activity + " stop":
@@ -69,12 +69,10 @@ def vessel_planning(vessels, activities, colors, web=False):
         legend=dict(x=0, y=-0.2, orientation="h"),
         xaxis=dict(
             title="Time",
-            titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
             range=[0, df.index[-1]],
         ),
         yaxis=dict(
             title="Vessels",
-            titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
         ),
     )
 
