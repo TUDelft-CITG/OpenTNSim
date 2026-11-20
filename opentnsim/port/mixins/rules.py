@@ -132,15 +132,29 @@ class AllOf(Node):
 
 
 class ParameterSubstituter(ast.NodeTransformer):
-    """Replaces the names of function parameters in an expression by the expressions that were passed as arguments."""
+    """Replaces the names of function parameters in an expression by the expressions that were passed as arguments.
+
+    For the function
+        def restriction(vessel_1, vessel_2):
+            return vessel_1.B > 0 and vessel_2.B > 0
+    that is called as restriction(v2, v1), the mapping is {'vessel_1': v2, 'vessel_2': v1} and the expression
+    'vessel_1.B > 0 and vessel_2.B > 0' becomes 'v2.B > 0 and v1.B > 0'.
+
+    Parameters
+    ----------
+    mapping : dict
+        the name of each parameter and the syntax tree of the argument that is passed for it
+    """
 
     def __init__(self, mapping):
         self.mapping = mapping
 
     def visit_Name(self, node):
-        if node.id in self.mapping:
-            return copy.deepcopy(self.mapping[node.id])
-        return node
+        if node.id not in self.mapping:
+            return node
+        # a copy, because a parameter can be used several times in the expression and the nodes of the syntax tree
+        # should not be shared
+        return copy.deepcopy(self.mapping[node.id])
 
 
 class RuleParser(ast.NodeVisitor):
@@ -165,6 +179,8 @@ class RuleParser(ast.NodeVisitor):
         self.depth = depth
 
     def generic_visit(self, node):
+        # ast.NodeVisitor calls this for every type of node that has no visit_<Type> method (names, attributes,
+        # constants, arithmetic, ...). Such an expression is not split up further, but shown as text.
         return Expression(ast.unparse(node))
 
     def visit_BoolOp(self, node):
@@ -200,6 +216,9 @@ class RuleParser(ast.NodeVisitor):
         return Compare(left=left, op=operator, right=right)
 
     def visit_Call(self, node):
+        # A call is either (1) any(...) or all(...), which is shown with its loop, (2) a call of a restriction function
+        # in the namespace, which is replaced by the expression of that function, or (3) any other call, which is shown
+        # as a call. Only calls of a name are expanded: for 'module.function(...)' the function is not looked up.
         if isinstance(node.func, ast.Name):
             function_name = node.func.id
             one_argument = len(node.args) == 1 and not node.keywords
@@ -229,6 +248,7 @@ class RuleParser(ast.NodeVisitor):
         is_any = node.func.id == "any"
         argument = node.args[0]
 
+        # any(<expression> for <loops>): the expression is shown once, for 'any' or 'all' of the items of the loops
         if isinstance(argument, (ast.GeneratorExp, ast.ListComp, ast.SetComp)):
             iteration = self._describe_iteration(argument.generators)
             expression = self.visit(argument.elt)
@@ -236,6 +256,7 @@ class RuleParser(ast.NodeVisitor):
                 return AnyOf(expr=expression, iteration=iteration)
             return AllOf(expr=expression, iteration=iteration)
 
+        # any([a, b, c]): the same as 'a or b or c'
         if isinstance(argument, (ast.List, ast.Tuple, ast.Set)):
             items = [self.visit(element) for element in argument.elts]
             if is_any:
@@ -259,32 +280,54 @@ class RuleParser(ast.NodeVisitor):
 
     def _expand_function(self, node):
         """The expression of a restriction function with the parameters replaced by the arguments, or None if not possible."""
+        # Example: in the condition 'restriction(v2, v1)', with
+        #     def restriction(vessel_1, vessel_2):
+        #         return vessel_1.B > 0 and vessel_2.B > 0
+        # the call is replaced by 'v2.B > 0 and v1.B > 0'. The steps are:
+        #   1. find the function by its name
+        #   2. match the arguments of the call to the parameters of the function
+        #   3. get the expression that the function returns (from its source)
+        #   4. replace the parameters in that expression by the arguments
+        #   5. translate that expression to a tree, as for the condition itself (it can call other restriction functions)
         from opentnsim.port.utils import extract_return_expr
 
+        # 1. only functions that are defined in Python can be expanded (not builtins, or objects that are called)
         function = self.namespace.get(node.func.id)
         if not inspect.isfunction(function):
             return None
+
+        # a function that (indirectly) calls itself would be expanded forever
         if self.depth >= MAX_INLINE_DEPTH:
             return None
 
+        # 2.
         mapping = self._bind_arguments(function, node)
         if mapping is None:
             return None
 
+        # 3.
         try:
             expression = extract_return_expr(function)
         except (OSError, TypeError, SyntaxError, ValueError):
             # the source of the function is not available, or the function is not a single return statement
             return None
 
+        # 4. on a copy: the syntax tree of the function is also used when the function is called again, with other arguments
         expression = copy.deepcopy(expression)
         expression = ParameterSubstituter(mapping).visit(expression)
+
+        # 5. the names in the expression are looked up in the namespace of the function that it came from, not in the
+        # namespace of the condition: the function can be defined in another module
         parser = RuleParser(namespace=function_namespace(function), depth=self.depth + 1)
         return parser.visit(expression)
 
     @staticmethod
     def _bind_arguments(function, node):
-        """The argument expression for each parameter of a call, or None if the call does not match the parameters."""
+        """The argument expression for each parameter of a call, or None if the call does not match the parameters.
+
+        For restriction(a, vessel_2=b) with the parameters (vessel_1, vessel_2) this is {'vessel_1': a, 'vessel_2': b}.
+        """
+        # restriction(*vessels) and restriction(**options) cannot be matched to parameters without running the code
         for argument in node.args:
             if isinstance(argument, ast.Starred):
                 return None
@@ -293,12 +336,17 @@ class RuleParser(ast.NodeVisitor):
                 # **kwargs
                 return None
 
+        # the parameters that can be given by position, in the order of the definition. Parameters that can only be given
+        # by keyword, *args and **kwargs do not take positional arguments.
         parameters = []
         for name, parameter in inspect.signature(function).parameters.items():
             if parameter.kind in POSITIONAL_KINDS:
                 parameters.append(name)
         if len(node.args) > len(parameters):
             return None
+
+        # the first argument is for the first parameter, etc.; then the arguments that are given by keyword. Parameters
+        # without an argument (that have a default value) are not in the mapping: their name stays in the expression.
 
         mapping = dict(zip(parameters, node.args))
         for keyword in node.keywords:
@@ -310,6 +358,9 @@ class RuleParser(ast.NodeVisitor):
 
 def function_namespace(function):
     """The names that are available to a function: its globals and the variables of the function(s) it is defined in."""
+    # The globals are the names of the module in which the function is defined. For a function that is defined inside
+    # another function (e.g. a lambda in a function that creates rules) the names of that function are not globals,
+    # but 'free variables': their names are in co_freevars and their values in the cells of the closure, in the same order.
     namespace = dict(function.__globals__)
     names = function.__code__.co_freevars
     cells = function.__closure__ or ()
@@ -435,6 +486,8 @@ def describe_policy(policy):
     """
     from opentnsim.port.utils import extract_return_expr
 
+    # TrafficRules.prohibited is not an Enum member but a plain function: Enum does not turn functions that are defined in
+    # the class into members. Its name is 'lambda', so find the name that it has in the class instead.
     for name, member in vars(TrafficRules).items():
         if member is policy and not name.startswith("_"):
             return name
