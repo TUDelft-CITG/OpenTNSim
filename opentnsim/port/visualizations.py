@@ -59,8 +59,8 @@ def merge_figures(fig1, fig2):
     return new_fig, new_ax
 
 
-def plot_vessels_over_route(env, node_start, node_stop, ddistance=1000, vessels = {},
-                            xmin=None, xmax = None, ymin = None, ymax = None, zmin=0, zmax = 15, dz = 1, levels = []):
+def plot_vessels_over_route(env, node_start, node_stop, ddistance=1000, vessels = None,
+                            xmin=None, xmax = None, ymin = None, ymax = None, zmin=0, zmax = 15, dz = 1, levels = None):
     if not vessels:
         vessels = env.vessels["obj"].dropna().tolist()
 
@@ -1063,11 +1063,8 @@ def get_vessel_logbook_through_waterway(vessel, waterway, extra_nodes = None):
     group = gap.cumsum()
     last_group = group.max()
     last_block_idx = waiting_pre.index[group == last_group]
-    try:
-        if last_block_idx[-1]+1 == first_valid_sailing_idx:
-            keep.loc[last_block_idx] = True
-    except:
-        pass
+    if len(last_block_idx) and last_block_idx[-1]+1 == first_valid_sailing_idx:
+        keep.loc[last_block_idx] = True
 
     vessel_df_waterway = vessel_df[keep]
     if vessel_df_waterway.empty:
@@ -1459,7 +1456,7 @@ def plot_time_distance_diagram_multi(
 
 def plot_time_distance_diagram_multi_plotly(
     waterways,
-    draught_values = np.arange(9.5, 11.6, 0.1),
+    draught_values = None,
     time_start=None,
     time_end=None,
     hydrodynamic_data = None,
@@ -1473,8 +1470,11 @@ def plot_time_distance_diagram_multi_plotly(
     width=900,
     show_rules = False,
     color_function = None,
-    vessels_to_show_rules = [],
+    vessels_to_show_rules = None,
 ):
+
+    if draught_values is None:
+        draught_values = np.arange(9.5, 11.6, 0.1)
 
     fig = go.Figure()
 

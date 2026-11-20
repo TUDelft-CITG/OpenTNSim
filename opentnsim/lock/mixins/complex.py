@@ -488,7 +488,7 @@ class IsLockComplex(SimpyObject, Identifiable, IsLockMaster):
                  lock_chambers,                                 #
                  waiting_areas,                                 #
                  registration_nodes,                            #
-                 lineup_areas = [],                             #
+                 lineup_areas = None,                           #
                  *args,
                  **kwargs):
 
@@ -499,6 +499,8 @@ class IsLockComplex(SimpyObject, Identifiable, IsLockMaster):
             lock_chambers = list(lock_chambers.values())
         if isinstance(waiting_areas, dict):
             waiting_areas = list(waiting_areas.values())
+        if lineup_areas is None:
+            lineup_areas = []
         if isinstance(lineup_areas, dict):
             waiting_areas = list(lineup_areas.values())
 

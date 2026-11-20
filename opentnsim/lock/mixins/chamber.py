@@ -34,6 +34,38 @@ from opentnsim.lock.utils import (
 from opentnsim.lock.visualizations import create_time_distance_plot, show_results
 
 
+def _has_hydrodynamic_data(hydromanager, time, node, hydrodynamic_property):
+    """Determine if the hydrodynamic data has a value for a property at a node
+
+    Parameters
+    ----------
+    hydromanager : HydrodynamicDataManager
+        the manager of the hydrodynamic data
+    time : pd.Timestamp
+        the time at which the value is needed
+    node : str
+        the node name in the graph
+    hydrodynamic_property : str
+        the hydrodynamic property: e.g. "Water level" or "Salinity"
+
+    Returns
+    -------
+    has_data : bool
+        False if there is no hydrodynamic data, the data has no station at the node, the data does not contain the
+        property, or the value is NaN. True otherwise.
+    """
+    if hydromanager.hydrodynamic_data is None:
+        return False
+    if hydromanager._get_station_index_of_hydrodynamic_data(node) is None:
+        return False
+    try:
+        value = hydromanager._get_hydrodynamic_data_value(time, node, hydrodynamic_property)
+    except KeyError:
+        # the hydrodynamic data does not contain this property
+        return False
+    return not pd.isna(value)
+
+
 class IsLockGate(HasResource, Log, Locatable, Identifiable):
     def __init__(self, *args, **kwargs):
         super().__init__(nr_resources=1, *args, **kwargs)
@@ -186,20 +218,8 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         self.valve_opening_time = valve_opening_time
         time = pd.Timestamp(datetime.datetime.fromtimestamp(self.env.now))
         hydromanager = HydrodynamicDataManager()
-        try:
-            self.has_water_level = True
-            wlev_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Water level")
-            if pd.isna(wlev_init):
-                self.has_water_level = False
-        except:
-            self.has_water_level = False
-        try:
-            self.has_salinity = True
-            sal_init = hydromanager._get_hydrodynamic_data_value(time, self.gate_open_at_node, "Salinity")
-            if pd.isna(sal_init):
-                self.has_salinity = False
-        except:
-            self.has_salinity = False
+        self.has_water_level = _has_hydrodynamic_data(hydromanager, time, self.gate_open_at_node, "Water level")
+        self.has_salinity = _has_hydrodynamic_data(hydromanager, time, self.gate_open_at_node, "Salinity")
 
         if self.has_water_level:
             time_series = pd.date_range(

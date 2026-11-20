@@ -81,10 +81,10 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
                  loading_time,
                  deberthing_time,
                  next_destination = None,
-                 next_terminals = [],
-                 next_berthing_times=[],
-                 next_loading_times = [],
-                 next_deberthing_times = [],
+                 next_terminals = None,
+                 next_berthing_times = None,
+                 next_loading_times = None,
+                 next_deberthing_times = None,
                  *args,
                  **kwargs):
         """Initialization"""
@@ -92,6 +92,10 @@ class TerminalHandable(Movable, Identifiable, VesselProperties):
         self.berthing_time = berthing_time
         self.loading_time = loading_time
         self.deberthing_time = deberthing_time
+        next_terminals = [] if next_terminals is None else next_terminals
+        next_berthing_times = [] if next_berthing_times is None else next_berthing_times
+        next_loading_times = [] if next_loading_times is None else next_loading_times
+        next_deberthing_times = [] if next_deberthing_times is None else next_deberthing_times
         if next_destination is None and not len(next_terminals):
             raise ValueError('The vessel has no destination after the terminal.')
         self.next_destination = next_destination
