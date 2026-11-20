@@ -121,6 +121,7 @@ class ConsumesEnergy:
     - C_B: block coefficient ('fullness') [-] (default to 0.85)
     - one_k2: appendage resistance factor (1+k2) [-]
     - C_year: construction year of the engine [y]
+    - karpov_correction: apply the Karpov speed V_2 in the wave and residual resistance (default False)
     """
 
     def __init__(
@@ -146,6 +147,7 @@ class ConsumesEnergy:
         C_BB=0.2,
         C_B=0.85,
         one_k2=2.5, # following Segers (2021) we assume (1 + k2) to be 2.5 (see below Eq 3.27)
+        karpov_correction=False,
         *args,
         **kwargs,
     ):
@@ -160,7 +162,7 @@ class ConsumesEnergy:
         # Required power for systems on board, "5%" based on De Vos and van Gils (2011): Walstroom versus generator stroom
         self.P_hotel_perc = P_hotel_perc
 
-        if P_hotel:  # if P_hotel is specified use the given value
+        if P_hotel is not None:  # if P_hotel is specified use the given value
             self.P_hotel = P_hotel
         else:  # if P_hotel is None calculate it from P_hotel_percentage and P_installed
             self.P_hotel = self.P_hotel_perc * self.P_installed
@@ -180,6 +182,7 @@ class ConsumesEnergy:
         self.c_stern = c_stern
         self.C_BB = C_BB
         self.C_B = C_B
+        self.karpov_correction = karpov_correction
 
         self.one_k2 = one_k2
 
@@ -206,7 +209,7 @@ class ConsumesEnergy:
         assert self.L_w in [1, 2, 3], "Invalid value L_w, should be 1,2 or 3"
         if self.L_w == 1:  # Weight class L1
             self.k = 1.3
-            self.lmb = 20.5
+            self.lmb = 20.4
         elif self.L_w == 2:  # Weight class L2
             self.k = 1.12
             self.lmb = 18.5
@@ -244,7 +247,7 @@ class ConsumesEnergy:
         self.lcb = -13.5 + 19.4 * self.C_P  # longitudinal center of buoyancy
         # Van Koningsveld et al (2023) - Part IV Eq 5.13
         self.L_R = self.L * (
-            1 - self.C_P + ((0.06 * self.C_P * self.lcb) / (4 * self.C_P - 1)) * (19.4 * self.C_P - 13.5)
+            1 - self.C_P + (0.06 * self.C_P * self.lcb) / (4 * self.C_P - 1)
         )  # length parameter reflecting the length of the run
 
         # Van Koningsveld et al (2023) - below Eq 5.16
@@ -517,7 +520,7 @@ class ConsumesEnergy:
                     self.alpha_xx = 1
                 if self.F_rh >= 0.6:
                     self.alpha_xx = (
-                        -6.0727 * self.F_rh**6
+                        -6.0737 * self.F_rh**6
                         + 44.97 * self.F_rh**5
                         - 135.21 * self.F_rh**4
                         + 210.13 * self.F_rh**3
@@ -526,6 +529,8 @@ class ConsumesEnergy:
                         - 11.893
                     )
 
+        if not self.karpov_correction:
+            self.alpha_xx = 1
         self.V_2 = v / self.alpha_xx
 
 
@@ -542,13 +547,13 @@ class ConsumesEnergy:
         assert self.g >= 0, f"g should be positive: {self.g}"
         assert self.L >= 0, f"L should be positive: {self.L}"
 
-        self.F_rL = v / np.sqrt(self.g * self.L)  # Froude number based on ship's speed to water and its length of waterline
+        self.F_rL = self.V_2 / np.sqrt(self.g * self.L)  # Froude number based on the Karpov speed V_2 and the length of waterline
 
         # parameter c_7 is determined by the B/L ratio
         # Van Koningsveld et al (2023) - Part IV Table 5.1
         if self.B / self.L < 0.11:
             self.c_7 = 0.229577 * (self.B / self.L) ** 0.33333
-        if self.B / self.L > 0.25:
+        elif self.B / self.L > 0.25:
             self.c_7 = 0.5 - 0.0625 * (self.L / self.B)
         else:
             self.c_7 = self.B / self.L
@@ -572,7 +577,7 @@ class ConsumesEnergy:
         # Van Koningsveld et al (2023) - Part IV Table 5.1
         if (self.L**3) / self.delta < 512:
             self.c_15 = -1.69385
-        if (self.L**3) / self.delta > 1727:
+        elif (self.L**3) / self.delta > 1727:
             self.c_15 = 0
         else:
             self.c_15 = -1.69385 + (self.L / (self.delta ** (1 / 3)) - 8) / 2.36
@@ -619,8 +624,6 @@ class ConsumesEnergy:
         """
 
         self.karpov(v, h_0)
-
-        self.V_2 = v
         # Resistance due to immersed transom: R_TR [kN]
         self.F_nT = self.V_2 / np.sqrt(
             2 * self.g * self.A_T / (self.B + self.B * self.C_WP)
@@ -1266,7 +1269,7 @@ class ConsumesEnergy:
 
         max_sinkage = 0
         if self.h_squat:
-            max_sinkage = (self.C_B * ((self.B * self._T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
+            max_sinkage = (self.C_B * ((self.B * self.T) / (width * h_0)) ** 0.81) * ((v * 1.94) ** 2.08) / 20
 
         return max_sinkage
 
