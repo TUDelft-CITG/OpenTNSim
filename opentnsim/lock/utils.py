@@ -1442,9 +1442,13 @@ def _get_vessel_sailing_speed_in_lock(lock_chamber, vessel, direction):
 
     """
     # TODO: sailing_in_speed_B zou A of B moeten zijn. Checken of deze eigenschap vaker voorkomt.
+    from opentnsim.lock.calculations import calculate_lock_velocity
     speed = lock_chamber.sailing_in_speed_B
     if not direction:
         speed = lock_chamber.sailing_in_speed_A
+
+    if speed is None:
+        speed = calculate_lock_velocity(lock_chamber, vessel)
 
     return speed
 
@@ -1467,9 +1471,14 @@ def _get_vessel_sailing_speed_out_lock(lock_chamber, vessel, direction):
         the average speed in the lock from the lock gate to the location of berthing
 
     """
+    from opentnsim.lock.calculations import calculate_lock_velocity
+
     speed = lock_chamber.sailing_out_speed_A
     if not direction:
         speed = lock_chamber.sailing_out_speed_B
+
+    if speed is None:
+        speed = 1.66*calculate_lock_velocity(lock_chamber, vessel)
 
     return speed
 
@@ -1504,6 +1513,7 @@ def _get_vessel_sailing_in_speed(lock_chamber, vessel, direction):
     # if there is an overruled speed on the edge, use this speed
     if "overruled_speed" in dir(vessel) and edge in vessel.overruled_speed.index:
         speed = vessel.overruled_speed.loc[edge, "speed"]
+    
     return speed
 
 

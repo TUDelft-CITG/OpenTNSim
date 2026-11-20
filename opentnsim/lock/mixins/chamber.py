@@ -69,10 +69,10 @@ class IsLockChamber(IsLockChamberOperator, OnEdge, HasResource, HasLength, Ident
         sailing_distance_to_crossing_point=370.0,  # a float that is the distance at which vessels can safely pass each other in front of the lock (last vessel that sails out and first vessel that sails in) [m]
         sailing_distance_to_crossing_point_A = None,
         sailing_distance_to_crossing_point_B = None,
-        sailing_in_speed_A=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
-        sailing_out_speed_A=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
-        sailing_in_speed_B=2 * knots,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
-        sailing_out_speed_B=2 * knots,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
+        sailing_in_speed_A=None,  # a float that is the speed at which the vessel sails into the lock to the sea side [m/s]
+        sailing_out_speed_A=None,  # a float that is the speed at which the vessel sails out of the lock to the sea side [m/s]
+        sailing_in_speed_B=None,  # a float that is the speed at which the vessel sails into the lock to the canal side [m/s]
+        sailing_out_speed_B=None,  # a float that is the speed at which the vessel sails out of the lock to the canal side [m/s]
         minimum_manoeuvrability_speed=2 * knots,  # a float that is the minimum speed at which the vessel is still safely manoeuvrable [m/s]
         gate_open_at_node=None,  # a string that is the node name to which the lock was last levelled to at the initial time of simulation (either start_node or end_node)
         water_level_init = None,

@@ -1653,7 +1653,6 @@ def create_vessel(
 
     # Construct vessel
     vessel = vessel_obj(**filtered_kwargs)
-    display(filtered_kwargs)
 
     # Store unused parameters as metadata when supported
     if "ExtraMetadata" in {

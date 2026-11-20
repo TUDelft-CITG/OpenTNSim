@@ -681,7 +681,6 @@ def calculate_sailing_time_in_lock(lock_chamber, vessel, operation_index, direct
     vessel_index = vessels.index(vessel)
     sailing_distance_from_lock_gate = (lock_chamber.lock_length - np.sum([vessel.L for vessel in vessels[:vessel_index]])) - 0.5 * vessel.L
 
-
     # determine the sailing speed of the vessel in the lock
     sailing_speed_into_lock = _get_vessel_sailing_speed_in_lock(lock_chamber, vessel, direction)
 
@@ -2343,8 +2342,14 @@ def estimate_lock_capacity(lock_chamber):
     lock_length = lock_chamber.lock_length
     distance_last_ship_to_sail_in = lock_length/n_max/2
     distance_last_ship_to_sail_out = lock_length/n_max/2
-    sailing_in_speed = np.mean([lock_chamber.sailing_in_speed_A, lock_chamber.sailing_in_speed_B])
-    sailing_out_speed = np.mean([lock_chamber.sailing_out_speed_A, lock_chamber.sailing_out_speed_B])
+    sailing_in_speeds = []
+    sailing_out_speeds = []
+    for vessel in vessels:
+        # TODO: direction should be included as well as time (tidal component)
+        sailing_in_speeds.append(_get_vessel_sailing_in_speed(lock_chamber, vessel, direction = 0))
+        sailing_out_speeds.append(_get_vessel_sailing_out_speed(lock_chamber, vessel, direction = 0))
+    sailing_in_speed = np.mean(sailing_in_speeds)
+    sailing_out_speed = np.mean(sailing_out_speeds)
 
     # Part III, Ch3, Eq. 3.2 (NB: de helft van de looptime wordt hier effectief geimplementeerd door de sailing to lock te berekenen)
     sailing_distance_to_crossing_point = np.mean([
@@ -2694,3 +2699,39 @@ def calculate_saltwater_intrusion(lock_chamber, ZSF_results = None):
         )
     )
     return saltwater_inrusion_results, saltwater_intrusion_causes_sorted
+
+
+def calculate_lock_velocity(
+    lock_chamber,
+    vessel,
+    C_M=0.98,
+    k_blockage=1.5,
+    lateral_clearance_ref=1.0,
+    v_squat_max=None,
+):
+    #TODO: this is a non-science based formula to account for different sailing in times for vessels
+
+    # 1. Blockage ratio
+    A_ship = vessel.B * vessel.T * C_M
+    A_lock = lock_chamber.lock_width * lock_chamber.lock_depth
+    beta = A_ship / A_lock
+
+    # 2. Relative lateral clearance
+    r_w = (lock_chamber.lock_width - vessel.B) / (2 * vessel.B)
+
+    # 3. Correction factors
+    f_blockage = np.exp(-k_blockage * beta)
+
+    f_width = min(
+        1.0,
+        r_w / lateral_clearance_ref
+    )
+
+    # 4. Preliminary velocity
+    velocity = vessel.v * f_blockage * f_width
+
+    # 5. Limit velocity based on squat
+    if v_squat_max is not None:
+        velocity = min(velocity, v_squat_max)
+
+    return velocity
