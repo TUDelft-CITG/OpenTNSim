@@ -1,0 +1,5 @@
+# Keep Unix line endings for text files we edit, so diffs show real changes only
+*.py    text eol=lf
+*.ipynb text eol=lf
+*.md    text eol=lf
+*.rst   text eol=lf

@@ -77,3 +77,7 @@ MANIFEST
 .vscode/settings.json
 notebooks/Port_of_Rotterdam/geospatial_data
 notebooks/Port_of_Rotterdam
+
+# macOS
+.DS_Store
+.localized
