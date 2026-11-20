@@ -246,7 +246,7 @@ def get_v(vessel, width, depth, margin, bounds):
         max_sinkage = vessel.calculate_max_sinkage(v=v, h_0=depth, width=width)
 
         # calculate available underkeel clearance (vessel in rest)
-        available_clearance = depth - vessel._T
+        available_clearance = depth - vessel.T
 
         # compute difference between the sinkage and the space available for sinkage (including safety margin)
         diff = available_clearance - max_sinkage - margin
