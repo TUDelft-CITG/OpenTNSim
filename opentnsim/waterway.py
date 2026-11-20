@@ -66,7 +66,7 @@ class IsWaterwayJunction(core.HasResource,core.SimpyObject,core.Identifiable, co
         self.overtaking_restrictions = overtaking_restrictions
         self.detector_nodes = detector_nodes
         independent_resources = {section[-1]: 1 for section in self.sections}
-        super().__init__(independent_resources=independent_resources,*args, **kwargs)
+        super().__init__(parallel_resources=independent_resources, *args, **kwargs)
         "Initialization"
 
         for section,detector_node in zip(self.sections,self.detector_nodes):
