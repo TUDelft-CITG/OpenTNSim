@@ -287,9 +287,10 @@ class ConsumesEnergy:
         - A modification to the original friction line is applied, based on literature of Zeng (2018), to account for shallow water effects
         """
 
+        T = self._hydraulic_draught()
         self.R_e = v * self.L / self.nu  # Reynolds number
 
-        self.D = h_0 - self.T  # distance from bottom ship to the bottom of the fairway
+        self.D = h_0 - T  # distance from bottom ship to the bottom of the fairway
         assert self.D > 0, f"D should be > 0: {self.D}"
 
         # Friction coefficient based on CFD computations of Zeng et al. (2018), in deep water
@@ -316,8 +317,8 @@ class ConsumesEnergy:
 
         # The average velocity underneath the ship, taking into account the shallow water effect
         # This calculation is to get V_B, which will be used in the following Cf for shallow water equation:
-        if h_0 / self.T <= 4:
-            self.V_B = 0.4277 * v * np.exp((h_0 / self.T) ** (-0.07625))
+        if h_0 / T <= 4:
+            self.V_B = 0.4277 * v * np.exp((h_0 / T) ** (-0.07625))
         else:
             self.V_B = v
 
@@ -325,7 +326,7 @@ class ConsumesEnergy:
         # into account. Therefore, the following formula for the final friction coefficient 'C_f' for deep water or shallow water is
         # defined according to Zeng et al. (2018)
 
-        if (h_0 - self.T) / self.L > 1:
+        if (h_0 - T) / self.L > 1:
             # calculate Friction coefficient C_f for deep water:
             # Zeng et al. (2018)
             self.C_f = self.Cf_0 + (self.Cf_deep - self.Cf_Katsui) * (self.S_B / self.S)
@@ -342,6 +343,9 @@ class ConsumesEnergy:
         self.R_f = (0.5 * self.rho * (v**2) * self.C_f *  self.S) / 1000
         assert not isinstance(self.R_f, complex), f"R_f should not be complex: {self.R_f}"
 
+    def _hydraulic_draught(self):
+        """Draught for the under-keel clearance and the shallow-water friction [m]."""
+        return self.T
 
     def calculate_viscous_resistance(self):
         """Viscous resistance
@@ -717,31 +721,7 @@ class ConsumesEnergy:
         # Effective Horse Power (EHP), P_e (Van Koningsveld et al (2023) - Part IV Eq 5.17)
         self.P_e = v * self.R_tot
 
-        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        # Appendix C
-        if self.F_rL < 0.2:
-            self.dw = 0    # the velocity correction coefficient is 0 when FrL is smaller than 0.2
-        else:
-            self.dw = 0.1  # otherwise the velocity correction coefficient is 0.1
-
-        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
-        # Appendix C - Eq C.1
-        self.w = (
-            0.11
-            * (0.16 / self.x)
-            * self.C_B
-            * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
-            - self.dw
-        )  # wake fraction 'w'
-
-        assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
-
-        if self.x == 1:
-            # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
-            self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
-        else:
-            # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
-            self.t = 0.8 * self.w * (1 + 0.25 * self.w)
+        self.calculate_wake_and_thrust()
 
         self.eta_h = (1 - self.t) / (1 - self.w)  # hull efficiency eta_h
 
@@ -844,6 +824,34 @@ class ConsumesEnergy:
         # 3) self.P_given, the actual power the engine gives for "propulsion + hotel" within its capacity (means installed power). This varible is used for calculating delta_energy of each sailing time step.
 
         return self.P_given
+
+    def calculate_wake_and_thrust(self):
+        """Wake fraction w and thrust deduction factor t."""
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C
+        if self.F_rL < 0.2:
+            self.dw = 0    # the velocity correction coefficient is 0 when FrL is smaller than 0.2
+        else:
+            self.dw = 0.1  # otherwise the velocity correction coefficient is 0.1
+
+        # Segers (2021) (http://resolver.tudelft.nl/uuid:a260bc48-c6ce-4f7c-b14a-e681d2e528e3)
+        # Appendix C - Eq C.1
+        self.w = (
+            0.11
+            * (0.16 / self.x)
+            * self.C_B
+            * np.sqrt((self.delta ** (1 / 3)) / self.D_s)
+            - self.dw
+        )  # wake fraction 'w'
+
+        assert not isinstance(self.w, complex), f"w should not be complex: {self.w}"
+
+        if self.x == 1:
+            # (Van Koningsveld et al (2023) - Part IV Eq 5.22)
+            self.t = 0.6 * self.w * (1 + 0.67 * self.w)  # thrust deduction factor 't'
+        else:
+            # (Van Koningsveld et al (2023) - Part IV Eq 5.23)
+            self.t = 0.8 * self.w * (1 + 0.25 * self.w)
 
     def emission_factors_general(self):
         """General emission factors:
@@ -1021,7 +1029,7 @@ class ConsumesEnergy:
 
         logger.debug(f"The general fuel consumption factor for diesel is {self.SFC_diesel_C_year} g/kWh")
 
-    def correction_factors(self, v, h_0):
+    def correction_factors(self, v, h_0, P_partial=None):
         """Partial engine load correction factors (C_partial_load):
 
         - The correction factors have to be multiplied by the general emission factors (or general SFC), to get the total emission factors (or final SFC)
@@ -1032,7 +1040,11 @@ class ConsumesEnergy:
         - the correction factors for renewable fuels used in fuel cell engine are based on literature Kim et al (2020) (A Preliminary Study on an Alternative Ship Propulsion System Fueled by Ammonia: Environmental and Economic Assessments, https://doi.org/10.3390/jmse8030183)
         """
         # TODO: create correction factors for renewable powered ship, the factor may be 100%
-        self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
+        if P_partial is None:
+            self.calculate_total_power_required(v=v, h_0=h_0)  # You need the P_partial values
+        else:
+            # factors at a given engine load, e.g. the hotel load when the vessel waits
+            self.P_partial = P_partial
 
         # Import the correction factors table
         # TODO: use package data, not an arbitrary location
@@ -1146,14 +1158,14 @@ class ConsumesEnergy:
         logger.debug(f"Partial engine load correction factor of fuel consumption in SOFC is {self.C_partial_load_SOFC}")
         logger.debug(f"Partial engine load correction factor of energy consumption in battery is {self.C_partial_load_battery}")
 
-    def calculate_emission_factors_total(self, v, h_0):
+    def calculate_emission_factors_total(self, v, h_0, P_partial=None):
         """Total emission factors:
 
         - The total emission factors can be computed by multiplying the general emission factor by the correction factor
         """
 
         self.emission_factors_general()  # You need the values of the general emission factors of CO2, PM10, NOX
-        self.correction_factors(v=v, h_0=h_0)  # You need the correction factors of CO2, PM10, NOX
+        self.correction_factors(v=v, h_0=h_0, P_partial=P_partial)  # You need the correction factors of CO2, PM10, NOX
 
         # The total emission factor is calculated by multiplying the general emission factor (EF_CO2 / EF_PM10 / EF_NOX)
         # By the correction factor (C_partial_load_CO2 / C_partial_load_PM10 / C_partial_load_NOX)
@@ -1166,7 +1178,7 @@ class ConsumesEnergy:
         logger.debug(f"The total emission factor of PM10 is {self.total_factor_PM10} g/kWh")
         logger.debug(f"The total emission factor CO2 is {self.total_factor_NOX} g/kWh")
 
-    def calculate_SFC_final(self, v, h_0):
+    def calculate_SFC_final(self, v, h_0, P_partial=None):
         """The final SFC is computed by multiplying the general SFC by the partial engine load correction factor.
 
         The calculation of final SFC below includes
@@ -1177,7 +1189,7 @@ class ConsumesEnergy:
         """
 
         self.SFC_general()  # You need the values of the general SFC
-        self.correction_factors(v=v, h_0=h_0)  # You need the correction factors of SFC
+        self.correction_factors(v=v, h_0=h_0, P_partial=P_partial)  # You need the correction factors of SFC
 
         # final SFC of fuel cell in mass   [g/kWh]
         self.final_SFC_LH2_mass_PEMFC = self.SFC_LH2_FuelCell_mass * self.C_partial_load_PEMFC
