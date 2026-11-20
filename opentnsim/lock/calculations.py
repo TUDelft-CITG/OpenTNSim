@@ -2494,7 +2494,10 @@ def calculate_cycle_event_durations(Tc_df):
     if Tc_df.empty:
         return pd.Series(), pd.Series()
 
-    timedelta_columns = Tc_df.select_dtypes(include="timedelta64[ns]").columns
+    # Convert all columns with durations to seconds. Select on 'timedelta' and not on 'timedelta64[ns]': since pandas 3 a
+    # column of pd.Timedelta values has the resolution of its values (e.g. timedelta64[us]), which 'timedelta64[ns]' does
+    # not select. The columns would stay Timedelta, and pd.to_timedelta(..., unit='s') below would warn about that.
+    timedelta_columns = Tc_df.select_dtypes(include="timedelta").columns
     Tc_df[timedelta_columns] = Tc_df[timedelta_columns].apply(lambda col: col.dt.total_seconds().astype("int64"))
 
     Tc_df_down = Tc_df[Tc_df['Direction first operation'] == 1]

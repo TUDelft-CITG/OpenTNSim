@@ -18,7 +18,12 @@ from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
 from opentnsim.port.mixins.rules import RuleEngine, TrafficRules, RuleParser, function_namespace
-pd.options.mode.chained_assignment = None
+
+# Switch off the SettingWithCopyWarning of pandas 2 for the dataframes in this module. This only works for pandas 2: pandas 3
+# no longer has this warning (it uses copy-on-write) and warns about setting this option.
+PANDAS_MAJOR_VERSION = int(pd.__version__.split(".")[0])
+if PANDAS_MAJOR_VERSION < 3:
+    pd.options.mode.chained_assignment = None
 
 
 def get_vessel_from_id(env, vessel_ids):
