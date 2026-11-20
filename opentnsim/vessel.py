@@ -5,7 +5,7 @@ import numpy as np
 import math
 import bisect
 
-from opentnsim import core, output, graph
+from opentnsim import core, output, graph, strategy
 
 
 class ExtraMetadata:
@@ -106,18 +106,18 @@ class VesselProperties:
         if self._T is not None:
             # if we were passed a T value, use that one
             T = self._T
-        elif self.T_f is not None and self.T_e is not None:
+        elif getattr(self, "T_f", None) is not None and getattr(self, "T_e", None) is not None:
             # base draught on filling degree
             T = self.filling_degree * (self.T_f - self.T_e) + self.T_e
         elif self.payload is not None and self.vessel_type is not None:
-            T = opentnsim.strategy.Payload2T(
+            T = strategy.Payload2T(
                 self,
                 Payload_strategy=self.payload,
                 vessel_type=self.vessel_type,
-                bounds=(0, 40),
+                bounds=(0, 5),
             )  # this need to be tested
-        # todo: for later possibly include Payload2T
-
+        else:
+            raise ValueError(f"No draught for vessel {getattr(self, 'name', '?')}: give T, (T_e, T_f) or (payload, vessel_type).")
         return T
 
     @property
@@ -126,12 +126,13 @@ class VesselProperties:
         This will default to using the draught passed by the constructor. If it is None it will try to find one in the super class.
         """
         if self._H is not None:
-            # if we were passed a T value, use that one
+            # if we were passed an H value, use that one
             H = self._H
-        elif self.H_f is not None and self.H_e is not None:
-            # base draught on filling degree
+        elif getattr(self, "H_f", None) is not None and getattr(self, "H_e", None) is not None:
+            # base height on filling degree
             H = self.filling_degree * (self.H_f - self.H_e) + self.H_e
-
+        else:
+            raise ValueError(f"No height for vessel {getattr(self, 'name', '?')}: give H or (H_e, H_f).")
         return H
 
     @property
@@ -139,7 +140,7 @@ class VesselProperties:
         if self._h_min is not None:
             h_min = self._h_min
         else:
-            h_min = opentnsim.graph_module.get_minimum_depth(graph=self.graph, route=self.route)
+            h_min = graph.get_minimum_depth(graph=self.graph, route=self.route)
 
         return h_min
 
