@@ -54,7 +54,7 @@ class HasResource(SimpyObject):
 
         else:
             self.resource = {}
-            for resource_name,capacity in independent_resources.items():
+            for resource_name, capacity in parallel_resources.items():
                 self.resource[resource_name] = simpy.PriorityResource(self.env, capacity=capacity)
 
 
@@ -64,7 +64,7 @@ class Neighbours:
     - travel_to: list of locatables to which can be travelled
     """
 
-    def ___init(self, travel_to, *args, **kwargs):
+    def __init__(self, travel_to, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """Initialization"""
         self.neighbours = travel_to
@@ -145,7 +145,6 @@ class Routable(SimpyObject):
 
     def __init__(self, origin, destination, next_destinations=[], *args, **kwargs):
         """Initialization"""
-        super().__init__(*args, **kwargs)
         env = kwargs.get("env")
         super().__init__(*args, **kwargs)
         self.origin = origin
@@ -198,6 +197,10 @@ class Movable(Locatable, Routable, Log):
         self.on_pass_edge_functions = []
         self.on_complete_pass_edge_functions = []
         self.on_look_ahead_to_node_functions = []
+        self.on_pass_node = self.on_pass_node_functions
+        self.on_pass_edge = self.on_pass_edge_functions
+        self.on_complete_pass_edge = self.on_complete_pass_edge_functions
+        self.on_look_ahead_to_node = self.on_look_ahead_to_node_functions
         self.wgs84 = pyproj.Geod(ellps="WGS84")
 
     def move(self):
@@ -207,9 +210,12 @@ class Movable(Locatable, Routable, Log):
         """
 
         # time-out if arrival time lies in future
-        yield self.env.timeout((self.metadata['arrival_time'] - self.env.simulation_start).total_seconds())
-        self.arrival_time = self.env.now
-        self.metadata['arrival_time'] = self.env.simulation_start  # resets delay
+        if hasattr(self, "metadata") and "arrival_time" in self.metadata and hasattr(self.env, "simulation_start"):
+            delay = (self.metadata['arrival_time'] - self.env.simulation_start).total_seconds()
+            if delay > 0:
+                yield self.env.timeout(delay)
+            self.arrival_time = self.env.now
+            self.metadata['arrival_time'] = self.env.simulation_start  # resets delay
 
         # default distance to next node
         self.distance = 0
@@ -244,7 +250,7 @@ class Movable(Locatable, Routable, Log):
             end_location = nx.get_node_attributes(self.env.FG, "geometry")[self.next_node]
 
             # It is important for the locking module that the message of sailing should be before passing the first node in preparation of the actual sailing
-            k = sorted(self.multidigraph[self.current_node][self.next_node],key=lambda x: self.multidigraph[self.current_node][self.next_node][x]['geometry'].length)[0]
+            k = graph_module.edge_key(self.multidigraph, self.current_node, self.next_node)
             status_report = self.update_sailing_status_report(self.current_node, self.next_node, (self.current_node, self.next_node, k))
             self.log_entry("Sailing from node {} to node {} start".format(self.current_node, self.next_node),
                            self.env.now, status_report, start_location)
@@ -285,8 +291,11 @@ class Movable(Locatable, Routable, Log):
 
     def pass_edge(self, origin, destination, end_location):
         edge = self.graph.edges[origin, destination]
-        k = sorted(self.multidigraph[origin][destination], key=lambda x: self.multidigraph[origin][destination][x]['geometry'].length)[0]
-        self.distance = self.multidigraph.edges[origin, destination, k]['length']
+        orig = nx.get_node_attributes(self.graph, "geometry")[origin]
+        k = graph_module.edge_key(self.multidigraph, origin, destination)
+        self.distance = graph_module.edge_length(self.multidigraph.edges[origin, destination, k])
+        if self.distance is None:
+            raise ValueError("No distance found for this edge")
 
         next_node = None
         if self.route[-1] != destination:
@@ -301,33 +310,12 @@ class Movable(Locatable, Routable, Log):
         # This is the case if we are sailing on power
         value = 0
         if getattr(self, "P_tot_given", None) is not None:
-            edge = self.graph.edges[origin, destination]
-            depth = self.graph.get_edge_data(origin, destination)["Info"]["GeneralDepth"]
-
-            # You can input more power than is realistic
-            # There are two mechanisms that reduce the power given:
-            # 1. The grounding speed:
-            (
-                upperbound,
-                selected,
-                results_df,
-            ) = opentnsim.strategy.get_upperbound_for_power2v(self, width=150, depth=depth, margin=0)
-
-
-            # Here the upperbound is used to estimate the actual velocity
-            power_used = min(self.P_tot_given, upperbound)
-            self.v = self.power2v(self, edge, power_used)
-            # store upperbound velocity
-            # TODO: remove these three fields after debugging
-            self.selected = selected
-            self.results_df = results_df
-            self.upperbound = upperbound
-            # use upperbound power (used to compute the sailing speed)
-            value = power_used
+            self.v = self.power2v(self, edge)
+            value = self.P_tot_given
 
         # Maximum speed restriction may be limiting the on power speed
         if 'vessel_traffic_service' in dir(self.env):
-            self.v = self.env.vessel_traffic_service.provide_speed(self,edge)
+            self.v = self.env.vessel_traffic_service.provide_speed(self, (origin, destination))
 
         # Wait for edge resources to become available
         if "Resources" in edge.keys():
@@ -348,9 +336,9 @@ class Movable(Locatable, Routable, Log):
                         orig,
                     )
 
-        # default velocity based on current speed.
-        timeout = self.distance / self.current_speed
-        yield self.env.timeout(timeout)
+        # sailing time from the speed over ground
+        current = self._get_current(origin, destination)
+        yield self.env.timeout(self.distance / (self.current_speed + current))
         if next_node:
             status_report = self.update_sailing_status_report(self.next_node,next_node,(self.current_node, self.next_node, k))
         else:
@@ -373,6 +361,10 @@ class Movable(Locatable, Routable, Log):
             except simpy.exceptions.Interrupt as e:
                 logger.debug("Re-routing", exc_info=True)
                 raise simpy.exceptions.Interrupt('Re-routing')
+
+    def _get_current(self, origin, destination):
+        """Current [m/s] on the edge, positive in the sailing direction; zero here, a vessel mixin can override it."""
+        return 0.0
 
     @property
     def current_speed(self):

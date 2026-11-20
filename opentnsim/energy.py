@@ -47,15 +47,19 @@ def find_closest_node(G, point):
     return name_node, distance_node
 
 
-def power2v(vessel, edge, upperbound):
+def power2v(vessel, edge, upperbound=None):
     """Compute vessel velocity given an edge and power (P_tot_given)
 
-    bounds is the limits where to look for a solution for the velocity [m/s]
+    upperbound: highest velocity [m/s] to search; None uses strategy.get_upperbound_for_power2v at the edge depth
     returns velocity [m/s]
     """
 
     assert isinstance(vessel, opentnsim.vessel.VesselProperties), "vessel should be an instance of VesselProperties"
     assert vessel.C_B is not None, "C_B cannot be None"
+
+    if upperbound is None:
+        depth = edge["Info"]["GeneralDepth"]
+        upperbound, _, _ = opentnsim.strategy.get_upperbound_for_power2v(vessel, width=150, depth=depth, margin=0)
 
     def seek_v_given_power(v, vessel, edge):
         """function to optimize"""
