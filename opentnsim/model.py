@@ -44,21 +44,20 @@ class VesselGenerator:
     def generate(self, environment, vessel_name, fleet_distribution=None, scenario=None):
         """ Generate a vessel """
 
+        database = self.vessel_database
+        if scenario:
+            database = database[database["scenario"] == scenario]
+            if len(database) == 0:
+                raise ValueError(f"No vessels with scenario '{scenario}' in the vessel database.")
+
         if fleet_distribution == None:
-            vessel_info = self.vessel_database.sample(
-                n=1, random_state=int(1000 * random.random())
-            )
+            vessel_info = database.sample(n=1, random_state=int(1000 * random.random()))
         else:
-            vessel_info = self.vessel_database.sample(
-                n=1, weights=fleet_distribution,random_state=int(1000 * random.random())
-            )
+            vessel_info = database.sample(n=1, weights=fleet_distribution, random_state=int(1000 * random.random()))
         vessel_data = {}
 
         vessel_data["env"] = environment
         vessel_data["name"] = vessel_name
-
-        if scenario:
-            vessel_info = vessel_info[vessel_info["scenario"] == scenario]
 
         for key in vessel_info:
             if key == "vessel_id":
@@ -75,7 +74,6 @@ class VesselGenerator:
                 vessel_data["level"] = 0
         vessel_data["route"] = None
         vessel_data["geometry"] = None
-        self.vessel_type(**vessel_data)
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
