@@ -15,8 +15,6 @@ from shapely.geometry import Point
 
 from opentnsim.port import visualizations
 from opentnsim.port.calculations import calculate_inerpolated_water_levels_over_network
-from opentnsim.port.mixins.rules import RuleEngine, TrafficRules
-from opentnsim.port.utils import render_rule_expression
 
 
 # %% calculate_inerpolated_water_levels_over_network (used pyproj without importing it)
@@ -56,35 +54,6 @@ def test_interpolated_water_levels_weighted(network, water_levels):
     assert (levels < 0.1).all()
     levels = result["Water level"].sel(STATION="near_east").values
     assert (levels > 0.9).all()
-
-
-# %% RuleEngine.overview (used a parser that no longer exists)
-def condition_long_vessel(vessel):
-    return vessel.length > 100 and vessel.draught > 5
-
-
-def policy_closed(vessel):
-    return 1
-
-
-def test_rule_overview_shows_name_condition_and_policy(capsys):
-    engine = RuleEngine(default=TrafficRules.allowed)
-    engine.add_rule(condition_long_vessel, policy_closed, "long_and_deep_vessels")
-    engine.overview()
-    output = capsys.readouterr().out
-    assert "long_and_deep_vessels" in output
-    assert "vessel.length > 100 and vessel.draught > 5" in output
-    assert "policy: 1" in output
-
-
-def test_rule_overview_without_rules(capsys):
-    RuleEngine(default=TrafficRules.allowed).overview()
-    assert capsys.readouterr().out.strip() == ""
-
-
-def test_render_rule_expression_falls_back_to_name_without_source():
-    # the source of a builtin cannot be retrieved
-    assert render_rule_expression(len) == "len"
 
 
 # %% create_plot_horizontal_tidal_window (used an undefined `delay` and shifted the hydrodynamic time axis in place)

@@ -1,3 +1,4 @@
+import copy
 import datetime
 import pandas as pd
 import geopandas as gpd
@@ -16,7 +17,7 @@ from collections import defaultdict
 from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to_edge_path, get_shortest_route
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.port.mixins.rules import RuleEngine, TrafficRules
+from opentnsim.port.mixins.rules import RuleEngine, TrafficRules, RuleParser, function_namespace
 pd.options.mode.chained_assignment = None
 
 
@@ -656,51 +657,122 @@ def add_traffic_overtaking_exception_to_edge(graph, edge, rules, name = "Traffic
     add_traffic_encountering_exception_to_edge(graph, edge, rules, name = name)
 
 
-def render_rule_expression(fn):
-    """Return the condition or policy of a rule as readable text.
-
-    The text is the source expression of the callable (the returned expression of a function, or the body of a lambda).
-    If the source cannot be retrieved or parsed (e.g. a function defined interactively, or a lambda that is part of a
-    multi-line statement), the name of the callable is returned instead.
+def parse_rule(fn):
+    """Translate the condition of a rule into a tree of nodes (see RuleParser) that RuleEngine.overview shows
 
     Parameters
     ----------
     fn : callable
-        the condition or policy of a rule
+        the condition of a rule: a lambda or a function that consists of a single return statement
 
     Returns
     -------
-    text : str
-        the expression of the callable, or its name as a fallback
+    tree : Node
+        the condition as a tree. Restriction functions that are called in the condition are expanded.
+
+    Raises
+    ------
+    OSError, TypeError, SyntaxError, ValueError
+        if the source of the condition is not available or the condition is not a single expression
     """
-    try:
-        return ast.unparse(extract_return_expr(fn))
-    except (OSError, TypeError, SyntaxError, ValueError):
-        return getattr(fn, "__name__", repr(fn))
+    expression = extract_return_expr(fn)
+    return RuleParser(namespace=function_namespace(fn)).visit(expression)
+
+
+def render_rule(node, indent=0):
+    """Text of the tree of a rule condition (see parse_rule), indented with two spaces per level"""
+    return node.render(indent)
 
 
 def extract_return_expr(fn):
+    """Return the expression that a function returns, as syntax tree
 
-    # get raw source
+    Parameters
+    ----------
+    fn : callable
+        a lambda, or a function that consists of a single return statement (and optionally a docstring)
+
+    Returns
+    -------
+    expression : ast.expr
+        the body of the lambda, or the value of the return statement
+
+    Raises
+    ------
+    OSError, TypeError
+        if the source of the function is not available (e.g. a function that is defined interactively)
+    SyntaxError, ValueError
+        if the function is not a lambda or a single return statement, or if its source cannot be interpreted
+    """
     source = textwrap.dedent(inspect.getsource(fn))
 
-    # parse independently
+    if fn.__name__ == "<lambda>":
+        lambdas = _find_lambdas(source)
+        if not lambdas:
+            raise ValueError(f"Cannot find the lambda of {fn} in its source: {source!r}")
+        return _select_lambda(lambdas, fn).body
+
     tree = ast.parse(source)
-
     for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn.__name__:
+            statements = [
+                statement for statement in node.body
+                if not (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str))
+            ]
+            if len(statements) == 1 and isinstance(statements[0], ast.Return) and statements[0].value is not None:
+                return statements[0].value
+            raise ValueError(f"The function {fn.__name__} does not consist of a single return statement.")
+    raise ValueError(f"Cannot find the function {fn.__name__} in its source.")
 
-        # CASE 1: return in def
-        if isinstance(node, ast.Return):
-            return node.value
 
-        # CASE 2: lambda body
-        if isinstance(node, ast.Lambda):
-            return node.body
+def _find_lambdas(source):
+    """All lambdas in the source of a lambda function.
 
-    raise ValueError(
-        f"Cannot extract expression from {fn}. "
-        f"AST root types: {[type(n) for n in tree.body]}"
-    )
+    The source of a lambda is the whole line(s) it is on, so it can contain several lambdas (e.g. a condition and a policy),
+    or only a part of a larger statement (e.g. an entry of a dictionary), which cannot be parsed as a whole.
+    """
+    try:
+        lambdas = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Lambda)]
+        if lambdas:
+            return lambdas
+    except SyntaxError:
+        pass
+
+    # part of a larger statement: from each 'lambda', use the longest piece of the source that is an expression
+    lambdas = []
+    for match in re.finditer(r"\blambda\b", source):
+        for end in range(len(source), match.start(), -1):
+            try:
+                expression = ast.parse(source[match.start():end].strip(), mode="eval").body
+            except SyntaxError:
+                continue
+            if isinstance(expression, ast.Tuple) and expression.elts:
+                # the lambda is followed by a comma
+                expression = expression.elts[0]
+            if isinstance(expression, ast.Lambda):
+                lambdas.append(expression)
+            break
+    return lambdas
+
+
+def _select_lambda(lambdas, fn):
+    """The lambda from the candidates in the source that belongs to the lambda function: by parameter names, then by bytecode"""
+    code = fn.__code__
+    parameters = code.co_varnames[: code.co_argcount + code.co_kwonlyargcount]
+    candidates = [
+        lam for lam in lambdas
+        if tuple(arg.arg for arg in lam.args.posonlyargs + lam.args.args + lam.args.kwonlyargs) == parameters
+    ] or lambdas
+
+    def has_same_code(lam):
+        try:
+            compiled = compile(ast.fix_missing_locations(ast.Expression(body=copy.deepcopy(lam))), "<rule>", "eval")
+        except (SyntaxError, ValueError, TypeError):
+            return False
+        inner = next((constant for constant in compiled.co_consts if inspect.iscode(constant)), None)
+        return inner is not None and inner.co_code == code.co_code and inner.co_names == code.co_names
+
+    return next((lam for lam in candidates if has_same_code(lam)), candidates[0])
 
 
 def get_vessel_direction_with_waterway(routeA, routeB):
