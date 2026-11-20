@@ -4,6 +4,8 @@ import geopandas as gpd
 import numpy as np
 import networkx as nx
 import shapely
+import shapely.geometry
+import shapely.ops
 import inspect
 import textwrap
 import inspect
@@ -515,13 +517,14 @@ def get_tidal_availability_info(vessel, waterways, delay = pd.Timedelta(seconds=
 
 def provide_trajectory(vessel, node_1, node_2):
     nodes = get_shortest_route(vessel.env.graph, node_1, node_2, vessel)
-    for loc, edge in enumerate(zip(nodes[:-1], nodes[1:])):
+    final_geometry = None
+    for edge in zip(nodes[:-1], nodes[1:]):
         geom = vessel.env.graph.edges[edge[0], edge[1]]["geometry"]
-        if loc:
+        if final_geometry is None:
+            final_geometry = geom
+        else:
             multi_line = shapely.geometry.MultiLineString([final_geometry, geom])
             final_geometry = shapely.ops.linemerge(multi_line)
-        else:
-            final_geometry = geom
     return final_geometry
 
 
@@ -653,64 +656,27 @@ def add_traffic_overtaking_exception_to_edge(graph, edge, rules, name = "Traffic
     add_traffic_encountering_exception_to_edge(graph, edge, rules, name = name)
 
 
-def render_rule(node, indent=0):
+def render_rule_expression(fn):
+    """Return the condition or policy of a rule as readable text.
 
-    pad = "  " * indent
+    The text is the source expression of the callable (the returned expression of a function, or the body of a lambda).
+    If the source cannot be retrieved or parsed (e.g. a function defined interactively, or a lambda that is part of a
+    multi-line statement), the name of the callable is returned instead.
 
-    if isinstance(node, AnyOf):
-        lines = [" "]
+    Parameters
+    ----------
+    fn : callable
+        the condition or policy of a rule
 
-        lines.append(
-            render_rule(node.expr, indent)
-        )
-
-        return "\n".join(lines)
-
-    if isinstance(node, And):
-
-        lines = [f"{pad}ALL of:"]
-
-        for item in node.items:
-            lines.append(
-                render_rule(item, indent + 1)
-            )
-
-        return "\n".join(lines)
-
-    if isinstance(node, Or):
-
-        lines = [f"{pad}ANY of:"]
-
-        for item in node.items:
-            lines.append(
-                render_rule(item, indent + 1)
-            )
-
-        return "\n".join(lines)
-
-    if isinstance(node, Compare):
-
-        return (
-            f"{pad}"
-            f"{node.left} {node.op} {node.right}"
-        )
-
-    if isinstance(node, Call):
-
-        return (
-            f"{pad}"
-            f"{node.name}("
-            f"{', '.join(node.args)})"
-        )
-
-    return f"{pad}{node}"
-
-
-def parse_rule(fn):
-    from opentnsim.port.mixins.rules import RuleParser
-    expr = extract_return_expr(fn)
-    parser = RuleParser(namespace=fn.__globals__)
-    return parser.visit(expr)
+    Returns
+    -------
+    text : str
+        the expression of the callable, or its name as a fallback
+    """
+    try:
+        return ast.unparse(extract_return_expr(fn))
+    except (OSError, TypeError, SyntaxError, ValueError):
+        return getattr(fn, "__name__", repr(fn))
 
 
 def extract_return_expr(fn):

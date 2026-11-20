@@ -77,17 +77,15 @@ class RuleEngine:
         return rules
     
     def overview(self):
-        "Provides an overview of all the rules (conditions: policy) that are implemented"
-        from opentnsim.port.utils import parse_rule, render_rule
+        "Provides an overview of all the rules (name, condition and policy) that are implemented"
+        from opentnsim.port.utils import render_rule_expression
         output = []
 
         for rule in self.rules:
-
-            tree = parse_rule(rule.condition)
-
             output.append(
-                f"{rule.condition.__name__}\n"
-                f"{render_rule(tree)}"
+                f"{rule.name}\n"
+                f"  condition: {render_rule_expression(rule.condition)}\n"
+                f"  policy: {render_rule_expression(rule.policy)}"
             )
 
         print("\n\n".join(output))
