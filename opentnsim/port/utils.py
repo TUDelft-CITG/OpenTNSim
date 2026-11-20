@@ -43,7 +43,10 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
         route_geometry, _ = get_trajectory(vessel.env.graph,route[0],route[-1])
         route_geometry_m = transform_geometry(route_geometry, epsg_out = epsg_out)
         mask = df.index > first_index
-        mask2 = df[mask].Message.apply(lambda x: bool(re.search(rf'\b{selected_route[-1]}\b', x)) and 'stop' in x)
+        # The lambda gets the pattern as default argument, so that it keeps the value of this pass of the loop (a lambda
+        # that uses the variable directly looks it up when it is called, and would see the value of a later pass).
+        pattern = rf'\b{selected_route[-1]}\b'
+        mask2 = df[mask].Message.apply(lambda x, pattern=pattern: bool(re.search(pattern, x)) and 'stop' in x)
         last_index_df = df[mask][mask2]
         if last_index_df.empty:
             continue
@@ -52,7 +55,7 @@ def create_logbook_with_directed_distances(vessel, route, epsg_out='EPSG:4087'):
         
         gdf_route = gpd.GeoDataFrame(df_route,geometry='Geometry',crs="EPSG:4326")
         gdf_route = gdf_route.to_crs(epsg_out)
-        df_route['Value'] = gdf_route['Geometry'].apply(lambda x: route_geometry_m.project(x))
+        df_route['Value'] = gdf_route['Geometry'].apply(route_geometry_m.project)
         first_index = last_index + 1
         corrected_df = pd.concat([corrected_df, df_route])
     corrected_df = corrected_df.ffill()
@@ -78,7 +81,8 @@ def determine_nearest_anchorage_area(vessel, node, port, route = None):
         try:
             route_to_anchorage = get_shortest_route(vessel.env.graph, node, node_anchorage, vessel)
             route_from_anchorage = get_shortest_route(vessel.env.graph, node_anchorage, route[-1], vessel)
-        except:
+        except nx.NetworkXException:
+            # networkx raises NetworkXNoPath if there is no route and NodeNotFound if the node is not in the graph
             continue
 
         anchorage_capacity = anchorage.resource.capacity
@@ -600,7 +604,15 @@ def add_ukc_policy_to_edge(graph, edge, rules, distance_of_series = None):
     for edge in edge_route:
         if "Depth_restriction" not in graph.edges[edge]:
             graph.edges[edge]["Depth_restriction"] = RuleEngine(default = lambda v: 0.0)
-            graph.edges[edge]["Depth_restriction_at_distance"] = lambda e: distance_of_series if e == edge else distance_of_series_rev
+
+            # the distance of the series from the start of the edge depends on the direction in which the edge is sailed
+            # (e = the edge of the vessel): edge is a default argument so that it keeps the value of this pass of the loop
+            def distance_of_series_on_edge(e, edge=edge):
+                if e == edge:
+                    return distance_of_series
+                return distance_of_series_rev
+
+            graph.edges[edge]["Depth_restriction_at_distance"] = distance_of_series_on_edge
     
         for rule in rules:
             graph.edges[edge]["Depth_restriction"].add_rule(
@@ -1309,7 +1321,7 @@ def get_berth_availability_info(vessel, origin, berth, delay = pd.Timedelta(seco
     return berth_availability
 
 
-def get_terminal_berths_availability(vessel, origin, terminal, berths = [], delay = pd.Timedelta(seconds = 0), bool = True):
+def get_terminal_berths_availability(vessel, origin, terminal, berths = None, delay = pd.Timedelta(seconds = 0), bool = True):
     if not berths:
         berths = terminal.berths.items
     

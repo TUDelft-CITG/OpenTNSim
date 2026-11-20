@@ -16,6 +16,23 @@ from opentnsim.lock.utils import _get_vessels_that_passed_the_lock_chamber
 import folium
 from IPython.display import display, HTML
 
+def _first_axes(axes):
+    """Returns the first axes of multiple axes (array, list or tuple), or the axes itself if it is a single axes
+
+    plt.subplots returns a single axes if the figure has one plot, and an array of axes if it has several.
+    """
+    if isinstance(axes, (np.ndarray, list, tuple)):
+        return axes[0]
+    return axes
+
+
+def _as_axes_list(axes):
+    """Returns the axes as a list, also if it is a single axes"""
+    if isinstance(axes, (np.ndarray, list, tuple)):
+        return list(axes)
+    return [axes]
+
+
 def add_locking_phases_to_plot(lock_chamber, fig, ax, extend, ylims, time_axis = 'x', method='Matplotlib', add_doors = False):
     plotly_shapes = []
 
@@ -366,10 +383,7 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
         axes = ax
         if ax is None:
             fig, axes = plt.subplots(nrows, ncols, width_ratios=width_ratios)
-            try:
-                ax = axes[0]
-            except:
-                ax = axes
+            ax = _first_axes(axes)
         for distances, times, vessel_name in zip(all_distances, all_times, vessel_names):
             ax.plot(distances, times, label=vessel_name)
         if lock_chamber.has_water_level:
@@ -533,10 +547,7 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
 
     lock_extend_x = np.array([x_lock_gateA, x_lock_gateA, x_lock_gateB, x_lock_gateB]) - x_correction_indirection + offset_x
     if method == 'Matplotlib':
-        try:
-            ax = axes[0]
-        except:
-            ax = axes
+        ax = _first_axes(axes)
         ax.fill(lock_extend_x, [ylimmin, ylimmax, ylimmax, ylimmin], color="lightgrey", zorder=-2)
     elif method == 'Plotly':
         fig.add_shape(type="rect",
@@ -574,10 +585,7 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
     xlabel = "Distance from Lock Complex [m]"
     ylabel = "Timestamp"
     if method == 'Matplotlib':
-        try:
-            ax = axes[0]
-        except:
-            ax = axes
+        ax = _first_axes(axes)
         ax.axvline(-lock_chamber.sailing_distance_to_crossing_point_A + offset_x - lock_chamber.lock_length/2, color="lightgrey", zorder=0)
         ax.axvline(lock_chamber.sailing_distance_to_crossing_point_B + offset_x + lock_chamber.lock_length/2, color="lightgrey", zorder=0)
         ax.set_xlim([xlimmin, xlimmax])
@@ -594,11 +602,8 @@ def create_time_distance_plot(lock_chamber, xlimmin, xlimmax, ylimmin, ylimmax, 
                 ncol=ncol,
                 frameon=False
             )
-        try:
-            for ax in axes:
-                ax.set_ylim([ylimmin, ylimmax])
-        except:
-            axes.set_ylim([ylimmin, ylimmax])
+        for ax in _as_axes_list(axes):
+            ax.set_ylim([ylimmin, ylimmax])
         if ncols > 1:
             ax = axes[-1]
             extend_x = ax.get_xlim()

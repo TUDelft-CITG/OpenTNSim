@@ -348,11 +348,15 @@ def determine_tidal_window_restriction(vessel, route, specifications, node, dela
 def calculate_horizontal_tidal_window(vessel,
                                       time_start_index,
                                       time_end_index,
-                                      critical_limits=[],
-                                      cross_current_limit_dataframe=pd.DataFrame(),
+                                      critical_limits=None,
+                                      cross_current_limit_dataframe=None,
                                       flood=True,
                                       ebb=True,
                                       decreasing=False):
+    if critical_limits is None:
+        critical_limits = []
+    if cross_current_limit_dataframe is None:
+        cross_current_limit_dataframe = pd.DataFrame()
     hydromanager = HydrodynamicDataManager()
     hydrodynamic_data = hydromanager.hydrodynamic_data
     station = hydrodynamic_data.STATION.values
@@ -1347,7 +1351,9 @@ def calculate_berth_performance(berth, time_start = None, time_stop = None):
         route = get_shortest_route(vessel.env.graph, trip_info.origin, trip_info.destination)
 
         edges = list(zip(route[:-1], route[1:]))
-        df_to_terminal = df_sailing[df_sailing.apply(lambda x: (x["node_start"], x["node_stop"]) in edges, axis=1)]
+        # the sailing events on the route to the terminal; edges is a default argument so that the lambda keeps the value
+        # of this pass of the loop
+        df_to_terminal = df_sailing[df_sailing.apply(lambda x, edges=edges: (x["node_start"], x["node_stop"]) in edges, axis=1)]
         df_to_terminal = df_to_terminal[df_to_terminal["event"].isin(["start", "stop"])]
         first_index_sailing = df_to_terminal.index[0]
         last_index_sailing = df_to_terminal.index[-1]
