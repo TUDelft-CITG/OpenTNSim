@@ -1,9 +1,12 @@
+import copy
 import datetime
 import pandas as pd
 import geopandas as gpd
 import numpy as np
 import networkx as nx
 import shapely
+import shapely.geometry
+import shapely.ops
 import inspect
 import textwrap
 import inspect
@@ -14,7 +17,7 @@ from collections import defaultdict
 from opentnsim.graph.utils import get_sailing_time, get_trajectory, node_path_to_edge_path, get_shortest_route
 from opentnsim.graph.calculations import transform_geometry
 from opentnsim.environment.mixins.hydrodynamics import HydrodynamicDataManager
-from opentnsim.port.mixins.rules import RuleEngine, TrafficRules
+from opentnsim.port.mixins.rules import RuleEngine, TrafficRules, RuleParser, function_namespace
 pd.options.mode.chained_assignment = None
 
 
@@ -515,13 +518,14 @@ def get_tidal_availability_info(vessel, waterways, delay = pd.Timedelta(seconds=
 
 def provide_trajectory(vessel, node_1, node_2):
     nodes = get_shortest_route(vessel.env.graph, node_1, node_2, vessel)
-    for loc, edge in enumerate(zip(nodes[:-1], nodes[1:])):
+    final_geometry = None
+    for edge in zip(nodes[:-1], nodes[1:]):
         geom = vessel.env.graph.edges[edge[0], edge[1]]["geometry"]
-        if loc:
+        if final_geometry is None:
+            final_geometry = geom
+        else:
             multi_line = shapely.geometry.MultiLineString([final_geometry, geom])
             final_geometry = shapely.ops.linemerge(multi_line)
-        else:
-            final_geometry = geom
     return final_geometry
 
 
@@ -653,88 +657,200 @@ def add_traffic_overtaking_exception_to_edge(graph, edge, rules, name = "Traffic
     add_traffic_encountering_exception_to_edge(graph, edge, rules, name = name)
 
 
-def render_rule(node, indent=0):
-
-    pad = "  " * indent
-
-    if isinstance(node, AnyOf):
-        lines = [" "]
-
-        lines.append(
-            render_rule(node.expr, indent)
-        )
-
-        return "\n".join(lines)
-
-    if isinstance(node, And):
-
-        lines = [f"{pad}ALL of:"]
-
-        for item in node.items:
-            lines.append(
-                render_rule(item, indent + 1)
-            )
-
-        return "\n".join(lines)
-
-    if isinstance(node, Or):
-
-        lines = [f"{pad}ANY of:"]
-
-        for item in node.items:
-            lines.append(
-                render_rule(item, indent + 1)
-            )
-
-        return "\n".join(lines)
-
-    if isinstance(node, Compare):
-
-        return (
-            f"{pad}"
-            f"{node.left} {node.op} {node.right}"
-        )
-
-    if isinstance(node, Call):
-
-        return (
-            f"{pad}"
-            f"{node.name}("
-            f"{', '.join(node.args)})"
-        )
-
-    return f"{pad}{node}"
-
-
 def parse_rule(fn):
-    from opentnsim.port.mixins.rules import RuleParser
-    expr = extract_return_expr(fn)
-    parser = RuleParser(namespace=fn.__globals__)
-    return parser.visit(expr)
+    """Translate the condition of a rule into a tree of nodes (see RuleParser) that RuleEngine.overview shows
+
+    Parameters
+    ----------
+    fn : callable
+        the condition of a rule: a lambda or a function that consists of a single return statement
+
+    Returns
+    -------
+    tree : Node
+        the condition as a tree. Restriction functions that are called in the condition are expanded.
+
+    Raises
+    ------
+    OSError, TypeError, SyntaxError, ValueError
+        if the source of the condition is not available or the condition is not a single expression
+    """
+    expression = extract_return_expr(fn)
+    parser = RuleParser(namespace=function_namespace(fn))
+    return parser.visit(expression)
+
+
+def render_rule(node, indent=0):
+    """Text of the tree of a rule condition (see parse_rule), indented with two spaces per level"""
+    return node.render(indent)
 
 
 def extract_return_expr(fn):
+    """Return the expression that a function returns, as syntax tree
 
-    # get raw source
+    Parameters
+    ----------
+    fn : callable
+        a lambda, or a function that consists of a single return statement (and optionally a docstring)
+
+    Returns
+    -------
+    expression : ast.expr
+        the body of the lambda, or the value of the return statement
+
+    Raises
+    ------
+    OSError, TypeError
+        if the source of the function is not available (e.g. a function that is defined interactively)
+    SyntaxError, ValueError
+        if the function is not a lambda or a single return statement, or if its source cannot be interpreted
+    """
+    # inspect.getsource returns the complete lines of the definition. For a function this is its def block. For a lambda it
+    # is all the lines of the statement that the lambda is part of, which can contain other code, and even other lambdas.
     source = textwrap.dedent(inspect.getsource(fn))
 
-    # parse independently
+    if fn.__name__ == "<lambda>":
+        # every lambda has this name, so the lambda of this function has to be found in the source
+        lambdas = _find_lambdas(source)
+        if not lambdas:
+            raise ValueError(f"Cannot find the lambda of {fn} in its source: {source!r}")
+        return _select_lambda(lambdas, fn).body
+
+    # a function can only be shown as an expression if it is: [docstring] + return <expression>. A function with more
+    # statements (if, for, assignments, ...) cannot be shown as an expression: showing only its first return would be wrong.
     tree = ast.parse(source)
-
     for node in ast.walk(tree):
+        is_function = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if not is_function or node.name != fn.__name__:
+            continue
 
-        # CASE 1: return in def
-        if isinstance(node, ast.Return):
-            return node.value
+        statements = [statement for statement in node.body if not _is_docstring(statement)]
+        only_statement = statements[0] if len(statements) == 1 else None
+        if isinstance(only_statement, ast.Return) and only_statement.value is not None:
+            return only_statement.value
+        raise ValueError(f"The function {fn.__name__} does not consist of a single return statement.")
 
-        # CASE 2: lambda body
-        if isinstance(node, ast.Lambda):
-            return node.body
+    raise ValueError(f"Cannot find the function {fn.__name__} in its source.")
 
-    raise ValueError(
-        f"Cannot extract expression from {fn}. "
-        f"AST root types: {[type(n) for n in tree.body]}"
-    )
+
+def _is_docstring(statement):
+    """Whether a statement of a function body is a docstring (or another string that is not used)"""
+    if not isinstance(statement, ast.Expr):
+        return False
+    value = statement.value
+    return isinstance(value, ast.Constant) and isinstance(value.value, str)
+
+
+def _find_lambdas(source):
+    """All lambdas in the source of a lambda function.
+
+    The source of a lambda is the whole line(s) it is on, so it can contain several lambdas (e.g. a condition and a policy),
+    or only a part of a larger statement (e.g. an entry of a dictionary), which cannot be parsed as a whole.
+    """
+    # Case 1: the source is valid Python. This is the usual way to define a rule, e.g. in a notebook:
+    #     condition=lambda vessels: any(restriction(v1, v2) for v1, v2 in combinations(vessels, 2)),
+    # Python reads this as an assignment of a tuple with the lambda, so every lambda in the syntax tree is a candidate.
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        tree = None
+
+    if tree is not None:
+        lambdas = [node for node in ast.walk(tree) if isinstance(node, ast.Lambda)]
+        if lambdas:
+            return lambdas
+
+    # Case 2: the source is a line of a larger statement, e.g. the entry of a dictionary:
+    #     ('a', 'b'): [Rule(condition=lambda vessel: vessel.T > 5, policy=TrafficRules.prohibited)],
+    # This is not valid Python on its own (SyntaxError), so look for the places where a lambda starts and read the
+    # expression that starts there.
+    lambdas = []
+    for match in re.finditer(r"\blambda\b", source):
+        lam = _parse_lambda_starting_at(source, match.start())
+        if lam is not None:
+            lambdas.append(lam)
+    return lambdas
+
+
+def _parse_lambda_starting_at(source, start):
+    """The lambda that starts at a position in the source: the longest piece of source from there that is an expression"""
+    # Where the lambda ends is not known: in
+    #     lambda vessel: vessel.T > 5, policy=TrafficRules.prohibited)],
+    # the lambda ends at the comma, but the text that follows is not valid Python. Try the whole rest of the source first
+    # and make it shorter until it can be parsed. The first piece that can be parsed is the longest one, so the lambda is
+    # never cut short ('lambda vessel: vessel.T' is also valid, but it is only a part of the lambda).
+    # The source is only a few lines, so trying every length is fast enough.
+    for end in range(len(source), start, -1):
+        piece = source[start:end].strip()
+        try:
+            expression = ast.parse(piece, mode="eval").body
+        except SyntaxError:
+            continue
+
+        if isinstance(expression, ast.Tuple) and expression.elts:
+            # 'lambda vessel: vessel.T > 5, policy' is valid as a tuple of the lambda and 'policy': the lambda is the first element
+            expression = expression.elts[0]
+        if isinstance(expression, ast.Lambda):
+            return expression
+        return None
+    return None
+
+
+def _lambda_parameter_names(lam):
+    """The names of the parameters (without *args and **kwargs) of a lambda in a syntax tree"""
+    arguments = lam.args
+    parameters = arguments.posonlyargs + arguments.args + arguments.kwonlyargs
+    return tuple(parameter.arg for parameter in parameters)
+
+
+def _has_same_code(lam, code):
+    """Whether a lambda in a syntax tree compiles to the same bytecode as a code object"""
+    # The bytecode of a lambda does not depend on where it is in the source, so the lambda from the source compiles to the
+    # same bytecode as the lambda function that is running. This tells apart lambdas that have the same parameters, e.g. a
+    # condition and a policy on one line: 'lambda v: v.T > 5, lambda v: 0'.
+    expression = ast.Expression(body=copy.deepcopy(lam))
+    ast.fix_missing_locations(expression)
+    try:
+        compiled = compile(expression, "<rule>", "eval")
+    except (SyntaxError, ValueError, TypeError):
+        return False
+
+    # the code of the lambda is a constant of the compiled expression
+    inner = None
+    for constant in compiled.co_consts:
+        if inspect.iscode(constant):
+            inner = constant
+            break
+    if inner is None:
+        return False
+
+    # the bytecode refers to names by their index in co_names, so the names have to be the same as well
+    same_bytecode = inner.co_code == code.co_code
+    same_names = inner.co_names == code.co_names
+    return same_bytecode and same_names
+
+
+def _select_lambda(lambdas, fn):
+    """The lambda from the candidates in the source that belongs to the lambda function
+
+    The candidates are filtered by the names of the parameters, then by the bytecode.
+    """
+    code = fn.__code__
+
+    # 1. the parameters: 'lambda vessel: ...' and 'lambda a, b: ...' cannot be the same lambda
+    number_of_parameters = code.co_argcount + code.co_kwonlyargcount
+    parameter_names = code.co_varnames[:number_of_parameters]
+    candidates = [lam for lam in lambdas if _lambda_parameter_names(lam) == parameter_names]
+    if not candidates:
+        candidates = lambdas
+
+    # 2. the bytecode. A lambda that uses variables of the function it is defined in (a closure) compiles differently when
+    # it is compiled on its own, so it is not recognised. Then the first candidate is used, which is the right one if the
+    # lambda is the only one with these parameters.
+    for lam in candidates:
+        if _has_same_code(lam, code):
+            return lam
+    return candidates[0]
 
 
 def get_vessel_direction_with_waterway(routeA, routeB):

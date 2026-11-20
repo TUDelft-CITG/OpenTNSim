@@ -397,10 +397,13 @@ def create_plot_horizontal_tidal_window(vessel, name_waterway_of_interest = None
         current_velocity = None
         for node, station in zip(horizontal_tidal_restriction_nodes, horizontal_tidal_restriction_stations):
             governing_current_velocity, _ = get_governing_current_velocity(vessel,station,time_start_index,time_end_index)
-            sailing_time, _ = get_sailing_time(vessel, route[: (route.index(node) + 1)]) + delay
+            # same correction as in calculate_horizontal_tidal_windows: sailing time over the edges up to the restriction node
+            edge_route = node_path_to_edge_path(vessel.env.graph, route[: (route.index(node) + 1)])
+            sailing_time, _ = get_sailing_time(vessel, edge_route)
             horizontal_tidal_accessibility_time_correction = np.timedelta64(int(sailing_time), "s")
-            horizontal_tidal_accessibility_time = hydrodynamic_information.TIME.values[time_start_index:time_end_index]
-            horizontal_tidal_accessibility_time -= horizontal_tidal_accessibility_time_correction
+            time_axis = hydrodynamic_information.TIME.values[time_start_index:time_end_index]
+            # not in-place: the slice is a view on the (shared) hydrodynamic data and must not be shifted
+            horizontal_tidal_accessibility_time = time_axis - horizontal_tidal_accessibility_time_correction
             (current_velocity,) = ax.plot(horizontal_tidal_accessibility_time, governing_current_velocity,
                                         color="firebrick", linewidth=3,)
             #ax.axhline(0, color="indianred", linestyle="--", linewidth=2)
