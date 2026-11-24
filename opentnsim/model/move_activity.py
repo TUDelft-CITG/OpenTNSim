@@ -35,12 +35,12 @@ class NetworkMoveActivity(GenericActivity):
         if not isinstance(mover, Movable):
             raise ValueError("mover must be an instance of opentnsim.core.Movable")
 
-        # make sure to set the proper logger
-        self.mover._logger = "v1"
-
         # store the mover and route
         self.mover = mover
         self.route = route
+
+        # make sure to set the proper logger
+        self.mover._logger = "v1"
 
         # initialize the base class
         super().__init__(*args, **kwargs)
