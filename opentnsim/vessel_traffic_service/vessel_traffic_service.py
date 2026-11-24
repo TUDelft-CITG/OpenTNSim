@@ -133,7 +133,7 @@ class VesselTrafficService(mixins.HasMultiDiGraph):
         return edges_info.set_index("Edge")
 
     def read_tidal_periods(self,hydrodynamic_data,tidal_period_type,station_index):
-        if 'tidal_period_type' not in hydrodynamic_data.variables:
+        if tidal_period_type not in hydrodynamic_data.variables:
             return None
         data = hydrodynamic_data[tidal_period_type][station_index, :, :]
         for tide_index, (time_start, tide) in enumerate(data):
