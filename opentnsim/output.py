@@ -94,6 +94,11 @@ class HasOutput:
         elif self.__class__.__name__ == "IsLockWaitingArea":
             self.output["visiting_vessels"] = []
 
+        else:
+            raise NotImplementedError(
+                f"Output initialization not implemented for {self.__class__.__name__}"
+            )
+
     def update_route_status_report(self, move_stop=False):
         if not move_stop:
             self.output["length"] = self.L
@@ -163,14 +168,23 @@ class HasOutput:
             self.output["turning_times"].append(deepcopy(turning_basin.output)["vessel_turning_time"])
 
     def update_waiting_status(self, priority=False, availability=False, tidal_window=False, waiting_stop=False):
+        # make sure waiting_time is initialized
+        if "waiting_time" not in self.output.keys():
+            self.output["waiting_time"] = {}
+
+        # waiting starts: initialize waiting start time and waiting time categories when not yet existent
         if not waiting_stop:
             self.output["waiting_start"] = self.env.now
-            if "waiting_time" not in self.output.keys():
-                self.output["waiting_time"] = {
+            self.output["waiting_time"].update(
+                {
                     "Priority": pd.Timedelta(0, "s"),
                     "Availability": pd.Timedelta(0, "s"),
                     "Tidal window": pd.Timedelta(0, "s"),
-                }
+                },
+                overwrite=False,
+            )
+
+        # waiting stops: update waiting time for the relevant categories
         else:
             if availability:
                 self.output["waiting_time"]["Availability"] = pd.Timedelta(int(self.env.now - self.output["waiting_start"]), "s")
