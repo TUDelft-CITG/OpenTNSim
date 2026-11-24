@@ -228,6 +228,38 @@ class Movable(Locatable, Routable, Log):
 
         self._logger_val = value
 
+    def _log(self, t, message, state, geometry, distance):
+        """Call the logging function."""
+        if self._logger == "v1":
+            if hasattr(self, "activity_id"):
+                activity_id = self.activity_id
+            else:
+                activity_id = None
+            if state == "start":
+                state = LogState.START
+            elif state == "stop":
+                state = LogState.STOP
+            else:
+                state = LogState.UNKNOWN
+
+            self.log_entry_v1(
+                t=t,
+                activity_id=activity_id,
+                activity_state=state,
+                additional_state={
+                    "geometry": geometry,
+                    "message": message,
+                    "distance": distance,
+                },
+            )
+        else:
+            self.log_entry_v0(
+                log=f"{message} {state}",
+                t=t,
+                value=distance,
+                geometry_log=geometry,
+            )
+
     @property
     def current_node(self) -> Union[str, None]:
         """Return the current node on the route based on self.position_on_route."""
@@ -363,21 +395,14 @@ class Movable(Locatable, Routable, Log):
         # Check if vessel is at correct location - if not, move to location
         vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
         if self.geometry != vessel_origin_location:
-            if self._logger == "v0":
-                self.log_entry_v0(
-                    "Sailing to start start", self.env.now, self.distance, self.geometry
-                )
-            elif self._logger == "v1":
-                self.log_entry_v1(
-                    t=self.env.now,
-                    activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                    activity_state=LogState.START,
-                    additional_state={
-                        "geometry": self.geometry,
-                        "message": "moving to start",
-                        "distance": self.distance,
-                    },
-                )
+            self._log(
+                self.env.now,
+                "Sailing to start",
+                "start",
+                self.geometry,
+                self.distance,
+            )
+
             start_location = self.geometry
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
@@ -392,21 +417,13 @@ class Movable(Locatable, Routable, Log):
             yield self.env.timeout(self.distance / self.current_speed)
             self.geometry = vessel_origin_location
 
-            if self._logger == "v0":
-                self.log_entry_v0(
-                    "Sailing to start stop", self.env.now, self.distance, self.geometry
-                )
-            elif self._logger == "v1":
-                self.log_entry_v1(
-                    t=self.env.now,
-                    activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                    activity_state=LogState.STOP,
-                    additional_state={
-                        "geometry": self.geometry,
-                        "message": "moving to start",
-                        "distance": self.distance,
-                    },
-                )
+            self._log(
+                self.env.now,
+                "Sailing to start",
+                "stop",
+                self.geometry,
+                self.distance,
+            )
 
     def pass_node(self, node):
         """pass a node and call all on_pass_node_functions
@@ -428,40 +445,20 @@ class Movable(Locatable, Routable, Log):
 
             # we had to wait, log it
             if arrival != self.env.now:
-                if self._logger == "v0":
-                    self.log_entry_v0(
-                        "Waiting to pass node {} start".format(node),
-                        arrival,
-                        self.distance,
-                        self.graph.nodes[node]["geometry"],
-                    )
-                    self.log_entry_v0(
-                        "Waiting to pass node {} stop".format(node),
-                        self.env.now,
-                        self.distance,
-                        self.graph.nodes[node]["geometry"],
-                    )
-                elif self._logger == "v1":
-                    self.log_entry_v1(
-                        t=arrival,
-                        activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                        activity_state=LogState.START,
-                        additional_state={
-                            "geometry": self.geometry,
-                            "message": f"waiting to pass node {node}",
-                            "distance": self.distance,
-                        },
-                    )
-                    self.log_entry_v1(
-                        t=self.env.now,
-                        activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                        activity_state=LogState.STOP,
-                        additional_state={
-                            "geometry": self.geometry,
-                            "message": f"waiting to pass node {node}",
-                            "distance": self.distance,
-                        },
-                    )
+                self._log(
+                    arrival,
+                    f"Waiting to pass node {node}",
+                    "start",
+                    self.graph.nodes[node]["geometry"],
+                    self.distance,
+                )
+                self._log(
+                    self.env.now,
+                    f"Waiting to pass node {node}",
+                    "stop",
+                    self.graph.nodes[node]["geometry"],
+                    self.distance,
+                )
 
         # call all on_pass_node_functions
         for on_pass_node_function in self.on_pass_node_functions:
@@ -548,59 +545,28 @@ class Movable(Locatable, Routable, Log):
             yield from self._request_resource(self.graph.edges[origin, destination]["Resources"])
             # we had to wait, log it
             if arrival != self.env.now:
-                if self._logger == "v0":
-                    self.log_entry_v0(
-                        "Waiting to pass edge {} - {} start".format(origin, destination),
-                        arrival,
-                        self.distance,
-                        orig,
-                    )
-                    self.log_entry_v0(
-                        "Waiting to pass edge {} - {} stop".format(origin, destination),
-                        self.env.now,
-                        self.distance,
-                        orig,
-                    )
-                elif self._logger == "v1":
-                    self.log_entry_v1(
-                        t=arrival,
-                        activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                        activity_state=LogState.START,
-                        additional_state={
-                            "geometry": self.geometry,
-                            "message": f"waiting to pass edge {origin} - {destination}",
-                            "distance": self.distance,
-                        },
-                    )
-                    self.log_entry_v1(
-                        t=self.env.now,
-                        activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                        activity_state=LogState.STOP,
-                        additional_state={
-                            "geometry": self.geometry,
-                            "message": f"done waiting for edge {origin} - {destination}",
-                            "distance": self.distance,
-                        },
-                    )
+                self._log(
+                    arrival,
+                    f"Waiting to pass edge {origin} - {destination}",
+                    "start",
+                    orig,
+                    self.distance,
+                )
+                self._log(
+                    self.env.now,
+                    f"Waiting to pass edge {origin} - {destination}",
+                    "stop",
+                    orig,
+                    self.distance,
+                )
 
-        if self._logger == "v0":
-            self.log_entry_v0(
-                "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
-                self.env.now,
-                self.distance,
-                orig,
-            )
-        elif self._logger == "v1":
-            self.log_entry_v1(
-                t=self.env.now,
-                activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                activity_state=LogState.START,
-                additional_state={
-                    "geometry": self.geometry,
-                    "message": f"moving from node {self.current_node} to node {self.next_node}",
-                    "distance": self.distance,
-                },
-            )
+        self._log(
+            self.env.now,
+            f"Sailing from node {self.current_node} to node {self.next_node}",
+            "start",
+            orig,
+            self.distance,
+        )
 
         # on pass edge functions
         for on_pass_edge_function in self.on_pass_edge_functions:
@@ -611,24 +577,13 @@ class Movable(Locatable, Routable, Log):
         yield self.env.timeout(timeout)
         self.distance += self.distance_left_on_edge
 
-        if self._logger == "v0":
-            self.log_entry_v0(
-                "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
-                self.env.now,
-                self.distance,  # TODO distance klopt nu  niet na een sluismodule
-                dest,
-            )
-        elif self._logger == "v1":
-            self.log_entry_v1(
-                t=self.env.now,
-                activity_id=self.activity_id if hasattr(self, "activity_id") else None,
-                activity_state=LogState.STOP,
-                additional_state={
-                    "geometry": self.geometry,
-                    "message": f"done moving to node {self.next_node}",
-                    "distance": self.distance,
-                },
-            )
+        self._log(
+            self.env.now,
+            f"Sailing from node {self.current_node} to node {self.next_node}",
+            "stop",
+            orig,
+            self.distance,  # TODO distance klopt nu niet na een sluismodule
+        )
         self.geometry = dest
 
         # release resource if needed
