@@ -6,7 +6,6 @@ import pandas as pd
 
 from opentnsim.plot import vessel_planning
 from opentnsim.core import Movable, Identifiable
-from tests.energy.test_basic_energy import vessel
 
 
 @pytest.fixture
