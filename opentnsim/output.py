@@ -94,6 +94,9 @@ class HasOutput:
         elif self.__class__.__name__ == "IsLockWaitingArea":
             self.output["visiting_vessels"] = []
 
+        elif self.__class__.__name__ == "IsLockChamber":
+            self.output["visiting_vessels"] = []
+
         else:
             raise NotImplementedError(
                 f"Output initialization not implemented for {self.__class__.__name__}"
