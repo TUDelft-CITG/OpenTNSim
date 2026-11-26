@@ -1,17 +1,13 @@
 """
---- Add description for the MoveActivity class. ---
+Move activity for network-based movement of entities. This activity can directly be
+used in combination with OpenCLSim.
 """
 
 # %% DEPENDENCIES
 # generic
-import shapely
-import pandas as pd
 import networkx as nx
-import datetime as dt
-import geopandas as gpd
 
 # openclsim imports
-from openclsim.core.log import LogState
 from openclsim.model import GenericActivity
 from opentnsim.core import Movable
 
@@ -30,6 +26,11 @@ class NetworkMoveActivity(GenericActivity):
             A list of nodes representing the route to follow. Must be the string names
             of the nodes in the graph. The graph is expected to be stored in the
             simulation environment as `env.graph`.
+
+        Note
+        ----
+        There is a potential mismatch between logging in OpenCLSim and OpenTNSim. This
+        class makes sure that the mover uses the OpenCLSim logger.
         """
         # mover must be an opentnsim Movable instance
         if not isinstance(mover, Movable):
