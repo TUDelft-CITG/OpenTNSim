@@ -2,11 +2,12 @@
 FROM continuumio/miniconda3
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt update
-RUN apt install -y build-essential python3-dev ffmpeg
+RUN apt install -y build-essential python3-dev ffmpeg curl ca-certificates
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs
 
 # Install conda stuff first
-# install gdal library and nodejs 22 LTS (required for Jupyter Book 2)
-RUN conda install -y gdal "nodejs>=22,<23"
+# install gdal library
+RUN conda install -y gdal
 
 WORKDIR /OpenTNSim
 ENV PROJ_DATA=/opt/conda/share/proj
