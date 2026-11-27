@@ -5,8 +5,8 @@ RUN apt update
 RUN apt install -y build-essential python3-dev ffmpeg
 
 # Install conda stuff first
-# install gdal library and nodejs (required for Jupyter Book 2)
-RUN conda install -y gdal "nodejs>=22"
+# install gdal library and nodejs 22 LTS (required for Jupyter Book 2)
+RUN conda install -y gdal "nodejs>=22,<23"
 
 WORKDIR /OpenTNSim
 ENV PROJ_DATA=/opt/conda/share/proj
