@@ -5,6 +5,7 @@ The following classes are provided:
 - Movable
 - ContainerDependentMovable
 """
+
 # package(s) for documentation, debugging, saving and loading
 import logging
 import warnings
@@ -27,7 +28,7 @@ import datetime
 
 # use OpenCLSim objects for core objects (identifiable is imported for later use)
 import opentnsim.strategy
-from openclsim.core import SimpyObject, Locatable, Log
+from openclsim.core import SimpyObject, Locatable, Log, LogState
 from opentnsim.core.container import HasContainer
 from opentnsim.energy.mixins import ConsumesEnergy
 from opentnsim.graph.mixins import get_length_of_edge
@@ -67,7 +68,10 @@ class Routable(SimpyObject):
             has_fg = hasattr(env, "FG")
             has_graph = hasattr(env, "graph")
             if has_fg and not has_graph:
-                warnings.warn(".FG attribute has been renamed to .graph, please update your code", DeprecationWarning)
+                warnings.warn(
+                    ".FG attribute has been renamed to .graph, please update your code",
+                    DeprecationWarning,
+                )
                 env.graph = env.FG
             assert (
                 has_fg or has_graph
@@ -209,6 +213,54 @@ class Movable(Locatable, Routable, Log):
             )
 
     @property
+    def _logger(self):
+        """Return logger. Defaults to v0."""
+        try:
+            return self._logger_val
+        except AttributeError:
+            return "v0"
+
+    @_logger.setter
+    def _logger(self, value):
+        """Check and set logger."""
+        if not value in ["v0", "v1"]:
+            raise ValueError("logger must be 'v0' or 'v1'")
+
+        self._logger_val = value
+
+    def _log(self, t, message, state, geometry, distance):
+        """Call the logging function."""
+        if self._logger == "v1":
+            if hasattr(self, "activity_id"):
+                activity_id = self.activity_id
+            else:
+                activity_id = None
+            if state == "start":
+                state = LogState.START
+            elif state == "stop":
+                state = LogState.STOP
+            else:
+                state = LogState.UNKNOWN
+
+            self.log_entry_v1(
+                t=t,
+                activity_id=activity_id,
+                activity_state=state,
+                additional_state={
+                    "geometry": geometry,
+                    "message": message,
+                    "distance": distance,
+                },
+            )
+        else:
+            self.log_entry_v0(
+                log=f"{message} {state}",
+                t=t,
+                value=distance,
+                geometry_log=geometry,
+            )
+
+    @property
     def current_node(self) -> Union[str, None]:
         """Return the current node on the route based on self.position_on_route."""
         if 0 <= self.position_on_route < len(self.route):
@@ -283,7 +335,7 @@ class Movable(Locatable, Routable, Log):
 
         # Check if vessel has arrival time and let vessel wait to start moving
         if hasattr(self, "metadata") and "arrival_time" in self.metadata:
-            arrival_time = self.metadata['arrival_time']
+            arrival_time = self.metadata["arrival_time"]
             current_time = datetime.datetime.fromtimestamp(self.env.now)
             delay = (arrival_time - current_time).total_seconds()
             yield self.env.timeout(delay)
@@ -327,7 +379,9 @@ class Movable(Locatable, Routable, Log):
         logger.debug("  distance: " + "%4.2f" % self.distance + " m")
         if self.current_speed is not None:
             logger.debug("  sailing:  " + "%4.2f" % self.current_speed + " m/s")
-            logger.debug("  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs")
+            logger.debug(
+                "  duration: " + "%4.2f" % ((self.distance / self.current_speed) / 3600) + " hrs"
+            )
         else:
             logger.debug("  current_speed:  not set")
 
@@ -341,18 +395,35 @@ class Movable(Locatable, Routable, Log):
         # Check if vessel is at correct location - if not, move to location
         vessel_origin_location = nx.get_node_attributes(self.env.graph, "geometry")[self.route[0]]
         if self.geometry != vessel_origin_location:
-            self.log_entry_v0("Sailing to start start", self.env.now, self.distance, self.geometry)
+            self._log(
+                self.env.now,
+                "Sailing to start",
+                "start",
+                self.geometry,
+                self.distance,
+            )
+
             start_location = self.geometry
             logger.debug("Origin: {orig}")
             logger.debug("Destination: {dest}")
 
-            self.distance += self.wgs84.inv(start_location.x, start_location.y, vessel_origin_location.x, vessel_origin_location.y)[
-                2
-            ]
+            self.distance += self.wgs84.inv(
+                start_location.x,
+                start_location.y,
+                vessel_origin_location.x,
+                vessel_origin_location.y,
+            )[2]
 
             yield self.env.timeout(self.distance / self.current_speed)
             self.geometry = vessel_origin_location
-            self.log_entry_v0("Sailing to start stop", self.env.now, self.distance, self.geometry)
+
+            self._log(
+                self.env.now,
+                "Sailing to start",
+                "stop",
+                self.geometry,
+                self.distance,
+            )
 
     def pass_node(self, node):
         """pass a node and call all on_pass_node_functions
@@ -374,17 +445,19 @@ class Movable(Locatable, Routable, Log):
 
             # we had to wait, log it
             if arrival != self.env.now:
-                self.log_entry_v0(
-                    "Waiting to pass node {} start".format(node),
+                self._log(
                     arrival,
-                    self.distance,
+                    f"Waiting to pass node {node}",
+                    "start",
                     self.graph.nodes[node]["geometry"],
+                    self.distance,
                 )
-                self.log_entry_v0(
-                    "Waiting to pass node {} stop".format(node),
+                self._log(
                     self.env.now,
-                    self.distance,
+                    f"Waiting to pass node {node}",
+                    "stop",
                     self.graph.nodes[node]["geometry"],
+                    self.distance,
                 )
 
         # call all on_pass_node_functions
@@ -472,24 +545,27 @@ class Movable(Locatable, Routable, Log):
             yield from self._request_resource(self.graph.edges[origin, destination]["Resources"])
             # we had to wait, log it
             if arrival != self.env.now:
-                self.log_entry_v0(
-                    "Waiting to pass edge {} - {} start".format(origin, destination),
+                self._log(
                     arrival,
-                    self.distance,
+                    f"Waiting to pass edge {origin} - {destination}",
+                    "start",
                     orig,
+                    self.distance,
                 )
-                self.log_entry_v0(
-                    "Waiting to pass edge {} - {} stop".format(origin, destination),
+                self._log(
                     self.env.now,
-                    self.distance,
+                    f"Waiting to pass edge {origin} - {destination}",
+                    "stop",
                     orig,
+                    self.distance,
                 )
 
-        self.log_entry_v0(
-            "Sailing from node {} to node {} start".format(self.current_node, self.next_node),
+        self._log(
             self.env.now,
-            self.distance,
+            f"Sailing from node {self.current_node} to node {self.next_node}",
+            "start",
             orig,
+            self.distance,
         )
 
         # on pass edge functions
@@ -501,11 +577,12 @@ class Movable(Locatable, Routable, Log):
         yield self.env.timeout(timeout)
         self.distance += self.distance_left_on_edge
 
-        self.log_entry_v0(
-            "Sailing from node {} to node {} stop".format(self.current_node, self.next_node),
+        self._log(
             self.env.now,
-            self.distance,  # TODO distance klopt nu  niet na een sluismodule
+            f"Sailing from node {self.current_node} to node {self.next_node}",
+            "stop",
             dest,
+            self.distance,  # TODO distance klopt nu niet na een sluismodule
         )
         self.geometry = dest
 
@@ -583,7 +660,7 @@ class Movable(Locatable, Routable, Log):
         """
 
         edge = (origin, destination)
-        if hasattr(self,'overruled_speed') and edge in self.overruled_speed.index:
+        if hasattr(self, "overruled_speed") and edge in self.overruled_speed.index:
             overruled_speed = self.overruled_speed.loc[edge]
             return overruled_speed
 
@@ -599,7 +676,8 @@ class Movable(Locatable, Routable, Log):
             depth = edge["Info"]["GeneralDepth"]
         except KeyError:
             raise ValueError(
-                f"Edge {origin} - {destination} has no GeneralDepth in Info. " f"\n Add info or remove ConsumesEnergy mixin"
+                f"Edge {origin} - {destination} has no GeneralDepth in Info. "
+                f"\n Add info or remove ConsumesEnergy mixin"
             )
 
         # You can input more power than is realistic
@@ -610,7 +688,9 @@ class Movable(Locatable, Routable, Log):
         edge_width = self._get_general_width(origin, destination)
         edge_width = edge_width if edge_width is not None else 150  # default width if not set
 
-        upperbound = opentnsim.strategy.get_upperbound_for_power2v_optim(self, width=edge_width, depth=depth, margin=0)
+        upperbound = opentnsim.strategy.get_upperbound_for_power2v_optim(
+            self, width=edge_width, depth=depth, margin=0
+        )
         # Here the upperbound is used to estimate the actual velocity
         power_used = min(self.P_tot_given, upperbound)
         return self.power2v(self, edge, power_used)
