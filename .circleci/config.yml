@@ -12,7 +12,7 @@ jobs:
       - run:
           name: Install coverage badge beforte running tests
           command: |
-            docker exec -it opentnsim bash -c "pip install coverage coverage-badge "
+            docker exec -it opentnsim bash -c "pip install coverage 'genbadge[coverage]'"
 
       - run:
           name: Run tests - Pytest
@@ -30,7 +30,7 @@ jobs:
       - run:
           name: Generate coverage badge
           command: |
-            docker exec -it opentnsim bash -c "coverage-badge -o coverage.svg"
+            docker exec -it opentnsim bash -c "coverage xml && genbadge coverage -i coverage.xml -o coverage.svg"
             docker cp opentnsim:/OpenTNSim/coverage.svg /tmp/artifacts/
           
       - run: 
