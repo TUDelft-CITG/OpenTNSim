@@ -581,7 +581,7 @@ class Movable(Locatable, Routable, Log):
             self.env.now,
             f"Sailing from node {self.current_node} to node {self.next_node}",
             "stop",
-            orig,
+            dest,
             self.distance,  # TODO distance klopt nu niet na een sluismodule
         )
         self.geometry = dest
