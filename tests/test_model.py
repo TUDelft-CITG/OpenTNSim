@@ -147,8 +147,8 @@ def test_vessel_generator_arrival_process(environment):
     assert len(environment.vessels) == 2
 
     # check arrival times (exactly every half hour)
-    assert environment.vessels[0].logbook[0]["Timestamp"] == datetime(1970, 1, 1, 1, 30)
-    assert environment.vessels[1].logbook[0]["Timestamp"] == datetime(1970, 1, 1, 2, 0)
+    assert environment.vessels[0].logbook[0]["Timestamp"] == datetime.fromtimestamp(30 * 60)
+    assert environment.vessels[1].logbook[0]["Timestamp"] == datetime.fromtimestamp(60 * 60)
 
 
 def test_vessel_generator_arrival_process_with_zero_arrival_rate(environment):
