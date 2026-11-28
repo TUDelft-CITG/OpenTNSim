@@ -15,7 +15,7 @@ import networkx as nx
 from simplekml import Kml, Style
 
 
-def vessel_planning(vessels, activities, colors, web=False):
+def vessel_planning(vessels, activities, colors):
     """create a plot of the planning of vessels
 
     Parameters
@@ -26,13 +26,15 @@ def vessel_planning(vessels, activities, colors, web=False):
         The activities to plot. Must be denoted in logbook as '<activity> start' and '<activity> stop'
     colors : list of colors
         The colors to use for the activities. must be the same length as activities
+    save_path : str, optional
+        The path to save the plot as an HTML file. If None, the plot is not saved. Default is None.
     """
 
     def get_segments(series, activity, y_val):
         """extract 'start' and 'stop' of activities from log"""
         x = []
         y = []
-        for i, v in series.iteritems():
+        for i, v in series.items():
             if v == activity + " start":
                 start = i
             if v == activity + " stop":
@@ -41,23 +43,26 @@ def vessel_planning(vessels, activities, colors, web=False):
         return x, y
 
     # organise logdata into 'dataframes'
-    dataframes = []
+    dataframes = {}
     for vessel in vessels:
         rename = {"Value": "log_value", "Message": "log_string"}
         df = pd.DataFrame(vessel.logbook)
+        if df.empty:
+            df = pd.DataFrame(columns=["Timestamp", "Value", "Message"])
         df = df.set_index("Timestamp").rename(columns=rename)
-
-        dataframes.append(df)
-    df = dataframes[0]
+        dataframes[vessel.name] = df
 
     # prepare traces for each of the activities
     traces = []
     for i, activity in enumerate(activities):
         x_combined = []
         y_combined = []
-        for k, df in enumerate(dataframes):
-            y_val = vessels[k].name
+        for name, df in dataframes.items():
+            y_val = name
             x, y = get_segments(df["log_string"], activity=activity, y_val=y_val)
+            if len(x) == 0:
+                x = [None]
+                y = [name]
             x_combined.extend(x)
             y_combined.extend(y)
         traces.append(
@@ -72,26 +77,34 @@ def vessel_planning(vessels, activities, colors, web=False):
             )
         )
 
+    xmin = min(df.index[0] for df in dataframes.values() if not df.empty)
+    xmax = max(df.index[-1] for df in dataframes.values() if not df.empty)
+
     # prepare layout of figure
     layout = go.Layout(
         title="Vessel planning",
         hovermode="closest",
         legend=dict(x=0, y=-0.2, orientation="h"),
-        xaxis=dict(
-            title="Time",
-            titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
-            range=[0, df.index[-1]],
-        ),
-        yaxis=dict(
-            title="Vessels",
-            titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
-        ),
+        xaxis={
+            "title": {
+                "text": "Time",
+                "font": dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
+            },
+            "range": [xmin, xmax],
+        },
+        yaxis={
+            "title": {
+                "text": "Vessels",
+                "font": dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
+            },
+        },
     )
 
     # plot figure
     init_notebook_mode(connected=True)
     fig = go.Figure(data=traces, layout=layout)
-    return iplot(fig, filename="news-source")
+    iplot(fig, filename="news-source")
+    return fig
 
 
 def vessel_kml(

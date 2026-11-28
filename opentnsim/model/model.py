@@ -36,7 +36,8 @@ class VesselGenerator:
     ----------
     vessel_type: class of mixins.
         The type of vessel to be generated.
-    vessel_database: ??
+        Should be a mixin of at least Movable. It is advised to also use mixin Identifiable or ExtraMetadata.
+    vessel_database: pd.DataFrame
         The database from which the vessel is generated.
         Make sure all needed attributes for vessel_type are available in the database.
     loaded: optional
@@ -55,8 +56,22 @@ class VesselGenerator:
         self.vessel_database = vessel_database
         self.loaded = loaded
         random.seed(random_seed)
+        self.check_input()
 
-    def generate(self, environment, vessel_name: str, fleet_distribution=None, scenario=None):
+    def check_input(self):
+        """Check the input parameters for the vessel generator."""
+        if not issubclass(self.vessel_type, core.movable.Movable):
+            raise ValueError("vessel_type must be a subclass of Movable")
+        if not isinstance(self.vessel_database, pd.DataFrame):
+            raise ValueError("vessel_database must be a pandas DataFrame")
+        if len(self.vessel_database) == 0:
+            raise ValueError("vessel_database must not be empty")
+        if self.loaded not in (None, True, False, "Random"):
+            raise ValueError("loaded must be None, True, False, or 'Random'")
+
+    def generate(
+        self, environment, vessel_name: str, route: list, fleet_distribution=None, scenario=None
+    ):
         """Get a random vessel from self.database
 
         Parameters
@@ -65,21 +80,33 @@ class VesselGenerator:
             The environment in which the vessel is generated.
         vessel_name: str
             The name that is assigned to the generated vessel.
+        fleet_distribution: list, optional
+            The distribution of the fleet for sampling vessels from the database. If not specified, uniform sampling is used.
         scenario: str, optional
             The scenario of the generated vessel. If given, the vessel with this scenario is selected from the database.
+            If scenario is provided, make sure that the database contains vessels with this scenario.
+            Also, make sure that the Vessel-type can receive the attribute 'scenario'.
         """
 
-        if fleet_distribution == None:
-            vessel_info = self.vessel_database.sample(n=1, random_state=int(1000 * random.random()))
+        # first: filter the vessel database based on the scenario if provided
+        if scenario:
+            vessel_database = self.vessel_database[self.vessel_database["scenario"] == scenario]
+            if vessel_database.empty:
+                raise ValueError(f"No vessels available for scenario {scenario}")
         else:
-            vessel_info = self.vessel_database.sample(n=1, weights=fleet_distribution, random_state=int(1000 * random.random()))
+            vessel_database = self.vessel_database
+
+        # select random vessel from the filtered vessel database
+        if fleet_distribution == None:
+            vessel_info = vessel_database.sample(n=1, random_state=int(1000 * random.random()))
+        else:
+            vessel_info = vessel_database.sample(
+                n=1, weights=fleet_distribution, random_state=int(1000 * random.random())
+            )
         vessel_data = {}
 
         vessel_data["env"] = environment
         vessel_data["name"] = vessel_name
-
-        if scenario:
-            vessel_info = vessel_info[vessel_info["scenario"] == scenario]
 
         for key in vessel_info:
             if key == "vessel_id":
@@ -94,9 +121,8 @@ class VesselGenerator:
                 vessel_data["level"] = vessel_data["capacity"]
             else:
                 vessel_data["level"] = 0
-        vessel_data["route"] = None
+        vessel_data["route"] = route
         vessel_data["geometry"] = None
-        self.vessel_type(**vessel_data)
         return self.vessel_type(**vessel_data)
 
     def arrival_process(
@@ -131,14 +157,23 @@ class VesselGenerator:
             The scenario that is assigned to the generated vessel.
         arrival_process:  str
             process of arrivals. choose between "Markovian" or "Uniform".
+        fleet_distribution: list
+            A distribution of the fleet. It specifies the types and quantities of vessels available for generation.
+        Yields
+        ------
+        simpy event
+            The next arrival event in the simulation.
         """
 
         # Create an array with inter-arrival times -- average number of seconds between arrivals
         if type(arrival_distribution) == int or type(arrival_distribution) == float:
-            self.inter_arrival_times = [3600 / arrival_distribution] * 24
+            if arrival_distribution == 0:
+                self.inter_arrival_times = [None] * 24
+            else:
+                self.inter_arrival_times = [3600 / arrival_distribution] * 24
 
         elif type(arrival_distribution) == list and len(arrival_distribution) == 24:
-            self.inter_arrival_times = [3600 / n for n in arrival_distribution]
+            self.inter_arrival_times = [3600 / n if n != 0 else None for n in arrival_distribution]
 
         elif type(arrival_distribution) == list:
             raise ValueError("List should contain an average number of vessels per hour for an entire day: 24 entries.")
@@ -146,10 +181,21 @@ class VesselGenerator:
         else:
             raise ValueError("Specify an arrival distribution: type Integer or type List.")
 
+        # initiate vessels in environment if not already present
+        if not hasattr(environment, "vessels"):
+            environment.vessels = []
+
         while True:
 
             # Check simulation time
-            inter_arrival = self.inter_arrival_times[datetime.datetime.fromtimestamp(environment.now).hour]
+            dt_now = datetime.datetime.fromtimestamp(environment.now)
+            inter_arrival = self.inter_arrival_times[dt_now.hour]
+
+            # als inter_arrival time none is, gaan we naar het volgende uur zonder een schip te genereren
+            if inter_arrival is None:
+                time_until_next_hour = 3600 - dt_now.minute * 60 - dt_now.second
+                yield environment.timeout(time_until_next_hour)  # wacht tot volgende uur
+                continue
 
             # In the case of a Markovian arrival process
             if arrival_process == "Markovian":
@@ -169,13 +215,18 @@ class VesselGenerator:
                 )
 
             # Create a vessel
-            vessel = self.generate(environment, "Vessel", fleet_distribution, scenario)
+            route = nx.dijkstra_path(environment.graph, origin, destination)
+            vessel = self.generate(
+                environment,
+                "Vessel",
+                fleet_distribution=fleet_distribution,
+                scenario=scenario,
+                route=route,
+            )
             vessel.output = {}
-            # core.Output.vessel_dependent_output(vessel)
-            vessel.env = environment
-            vessel.route = nx.dijkstra_path(environment.graph, origin, destination)
             vessel.geometry = nx.get_node_attributes(environment.graph, "geometry")[vessel.route[0]]
             environment.vessels.append(vessel)
+
             # Move on path
             process = environment.process(vessel.move())
             vessel.process = process
@@ -183,7 +234,7 @@ class VesselGenerator:
 
 class Simulation(core.Identifiable):
     """
-    A class to generate vessels from a database
+    A class to generate a simuation environment, including vessels and their movements within the network,
 
     Parameters
     ----------
@@ -191,32 +242,62 @@ class Simulation(core.Identifiable):
         The start time of the simulation.
     graph: networkx graph
         The graph that is used for the simulation.
-    scenario:
-        scenario with vessels - should be coupled to the database
+    simulation_start: datetime
+        The start of the simulation, should be coupled to the database,
+    simulation_duration: timedelta
+        The duration of the simulation, should be coupled to the database
+    simulation_stop: datetime
+        The stop time of the simulation, should be coupled to the database
+    hydrodynamic_start_time: datetime
+        The start time for hydrodynamic data, should be coupled to the database
+    hydrodynamic_data_path: str
+        The path to the hydrodynamic data, should be coupled to the database
+    vessel_speed_data_path: str
+        The path to the vessel speed data, should be coupled to the database
+    scenario: scenario
+        The scenario containing vessels, should be coupled to the database
     """
 
-    def __init__(self,
-                 graph,
-                 simulation_start=datetime.datetime.now(),
-                 simulation_duration=None,
-                 simulation_stop=None,
-                 hydrodynamic_start_time=datetime.datetime.now(),
-                 hydrodynamic_data_path=None,
-                 vessel_speed_data_path=None, scenario=None):
-        """ 
-        Initialization 
-        
-        scenario: scenario with vessels - should be coupled to the database
-        """
+    def __init__(
+        self,
+        graph,
+        simulation_start=datetime.datetime.now(),
+        simulation_duration=None,
+        simulation_stop=None,
+        hydrodynamic_start_time=datetime.datetime.now(),
+        hydrodynamic_data_path=None,
+        vessel_speed_data_path=None,
+        scenario=None,
+    ):
+
+        # check time imputs
+        if simulation_start and simulation_duration and simulation_stop:
+            # when all three are provided, check consistency
+            if not simulation_duration == simulation_stop - simulation_start:
+                raise ValueError(
+                    "Simulation duration does not match the difference between simulation stop and start times"
+                )
+        elif simulation_stop and simulation_start:
+            # calculate duration based on start and stop times
+            simulation_duration = simulation_stop - simulation_start
+        elif simulation_start and simulation_duration:
+            # calculate stop time based on start time and duration
+            simulation_stop = simulation_start + simulation_duration
+        elif simulation_stop and simulation_duration and not simulation_start:
+            # calculate start time based on stop time and duration
+            simulation_start = simulation_stop - simulation_duration
+        else:
+            raise ValueError(
+                "Insufficient time information provided for the simulation. "
+                "Provide at least 2 out of [simulation_start, simulation_stop, simulation_duration]"
+            )
+
         self.env = simpy.Environment(initial_time=time.mktime(simulation_start.timetuple()))
         self.env.graph = graph
         self.env.simulation_start = simulation_start
         self.env.simulation_stop = simulation_stop
         self.simulation_duration = simulation_duration
-        if self.env.simulation_stop:
-            self.simulation_duration = self.env.simulation_stop-self.env.simulation_start
-        else:
-            self.env.simulation_stop = self.env.simulation_start+self.simulation_duration
+
         self.env.routes = pd.DataFrame.from_dict(
             {
                 "Origin": [],
@@ -232,12 +313,12 @@ class Simulation(core.Identifiable):
         self.env.vessels = []
         self.output = {}
 
-        self.env.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(FG=graph,
-                                                                                      hydrodynamic_start_time = hydrodynamic_start_time,
-                                                                                      hydrodynamic_information_path = hydrodynamic_data_path,
-                                                                                      vessel_speed_data_path=vessel_speed_data_path)
-
-        self.environment.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(hydrodynamic_data, vessel_speed_data)
+        self.env.vessel_traffic_service = vessel_traffic_service.VesselTrafficService(
+            graph=self.env.graph,
+            hydrodynamic_start_time=hydrodynamic_start_time,
+            hydrodynamic_information_path=hydrodynamic_data_path,
+            vessel_speed_information_path=vessel_speed_data_path,
+        )
 
     def add_vessels(
         self,
@@ -298,11 +379,15 @@ class Simulation(core.Identifiable):
                 )
             )
 
-    def run(self, duration=24 * 60 * 60):
+    def run(self, duration=None):
         """
         Run the simulation
 
         duration:   float
-            specify the duration of the simulation in seconds
+            specify the duration of the simulation in seconds.
+            If not specified, self.simulation_duration will be used.
         """
-        self.env.run(until=self.env.now + self.simulation_duration.total_seconds())
+
+        if duration is None:
+            duration = self.simulation_duration.total_seconds()
+        self.env.run(until=self.env.now + duration)

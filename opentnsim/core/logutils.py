@@ -115,6 +115,8 @@ def logbook2eventtable(objs):
      - a specific section of the waterway,
      - a specific time.
 
+     When an event is not finished, the value for stop time in the event table will be empty
+
     Parameters
     ----------
     objs: list
@@ -149,15 +151,22 @@ def logbook2eventtable(objs):
             else:
                 continue  # skip non-start messages
 
-            stop_row = df[(df["Message"] == activity + " stop") & (df["Timestamp"] > df.iloc[i]["Timestamp"])].iloc[0]
+            stop_rows = df[
+                (df["Message"] == activity + " stop") & (df["Timestamp"] > df.iloc[i]["Timestamp"])
+            ]
+            stop_row = stop_rows.iloc[0] if not stop_rows.empty else None
 
             start_time = start_row["Timestamp"]
-            stop_time = stop_row["Timestamp"]
+            stop_time = stop_row["Timestamp"] if stop_row is not None else None
             start_location = start_row["Geometry"]
-            stop_location = stop_row["Geometry"]
+            stop_location = stop_row["Geometry"] if stop_row is not None else None
 
-            duration_seconds = (stop_time - start_time).total_seconds()
-            if isinstance(start_location, Point):
+            if stop_time is None:
+                duration_seconds = None
+            else:
+                duration_seconds = (stop_time - start_time).total_seconds()
+
+            if (isinstance(start_location, Point)) and (isinstance(stop_location, Point)):
                 distance_meters = mixins.calculate_distance(start_location, stop_location)
             else:
                 distance_meters = None
